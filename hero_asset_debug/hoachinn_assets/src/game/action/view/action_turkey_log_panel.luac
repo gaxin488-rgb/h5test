@@ -1,0 +1,249 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      循环赛我的比赛日志
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+ActionTurkeyLogPanel = ActionTurkeyLogPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local role_vo = RoleController:getInstance():getRoleVo()
+local _model = controller:getModel()
+
+function ActionTurkeyLogPanel:__init()
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.win_type = WinType.Big
+	self.is_full_screen = false
+	self.layout_name = "action/action_turkey_log_panel"
+	self.res_list = {
+	-- {path = PathTool.getPlistImgForDownLoad("arena", "arenaloop"), type = ResourcesType.plist},
+	}
+end
+
+function ActionTurkeyLogPanel:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+	self.background:setScale(display.getMaxScale())
+	
+	local main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_container, 2)
+	local main_panel = main_container:getChildByName("main_panel")
+	self.good_cons = main_panel:getChildByName("good_cons")
+	self.Image_2 = main_panel:getChildByName("Image_2")
+	self.win_title = main_panel:getChildByName("win_title")
+	
+	self.close_btn = main_panel:getChildByName("close_btn")
+	self.list_view = main_panel:getChildByName("list_view")
+	
+	self.empty_tips = main_panel:getChildByName("empty_tips")
+	self.empty_tips:getChildByName("desc"):setString(TI18N("语言_c_2552"))
+	
+	self.item = main_panel:getChildByName("item")
+end
+
+function ActionTurkeyLogPanel:register_event()
+	self.background:addTouchEventListener(function(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			playCloseSound()
+			controller:openActionTurkeyLogPanel(false)
+		end
+	end)
+	self.close_btn:addTouchEventListener(function(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			playCloseSound()
+			controller:openActionTurkeyLogPanel(false)
+		end
+	end)
+	if self.update_my_log_list_event == nil then
+		self.update_my_log_list_event = GlobalEvent:getInstance():Bind(ActionEvent.Update_Turkey_Log_Event, function(list)
+			self:updateMyGuessList(list.logs)
+		end)
+	end
+end
+
+function ActionTurkeyLogPanel:openRootWnd()
+	controller:sender22408()
+	self.camp_id = _model:getTurkeyCampId()
+    self.const_cfg = Config.HolidayCollectManualData.data_const[self.camp_id]
+	self.win_title:setString(self.const_cfg["battle_title"].val[1])
+	autoSizeTitleBg(self.win_title,self.Image_2)
+end
+
+function ActionTurkeyLogPanel:updateMyGuessList(list)
+	if list == nil or next(list) == nil then
+		self.empty_tips:setVisible(true)
+		if self.scroll_view then
+			self.scroll_view:setVisible(false)
+		end
+	else
+		self.empty_tips:setVisible(false)
+		if self.scroll_view == nil then
+			local size = self.good_cons:getContentSize()
+			local setting = {
+				item_class = ActionTurkeyLogItem,
+				start_x = 5.5,
+				space_x = 0,
+				start_y = 0,
+				space_y = 5,
+				item_width = 600,
+				item_height = 136,
+				row = 0,
+				col = 1,
+				need_dynamic = true
+			}
+			self.scroll_view = CommonScrollViewLayout.new(self.good_cons, nil, nil, nil, size, setting)
+		end
+		self.scroll_view:setVisible(true)
+		self.scroll_view:setData(list, nil, nil, self.item)
+	end
+end
+
+function ActionTurkeyLogPanel:close_callback()
+	if self.update_my_log_list_event then
+		GlobalEvent:getInstance():UnBind(self.update_my_log_list_event)
+		self.update_my_log_list_event = nil
+	end
+	if self.scroll_view then
+		self.scroll_view:DeleteMe()
+		self.scroll_view = nil
+	end
+	controller:openActionTurkeyLogPanel(false)
+end
+
+
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      冠军赛我的竞猜单列
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+ActionTurkeyLogItem = class("ActionTurkeyLogItem", function()
+	return ccui.Layout:create()
+end)
+
+function ActionTurkeyLogItem:ctor()
+	self.is_completed = false
+end
+
+--==============================--
+--desc:设置扩展参数  {node = self.item, count = self.interaction_count} 
+--time:2018-07-16 09:40:01
+--@data:
+--@return 
+--==============================--
+function ActionTurkeyLogItem:setExtendData(node)	
+	if not tolua.isnull(node) and self.root_wnd == nil then
+		self.is_completed = true
+		local size = node:getContentSize()
+		self:setAnchorPoint(cc.p(0.5, 0.5))
+		self:setContentSize(size)
+		
+		self.root_wnd = node:clone()
+		self.root_wnd:setVisible(true)
+		self.root_wnd:setAnchorPoint(0.5, 0.5)
+		self.root_wnd:setPosition(size.width * 0.5, size.height * 0.5)
+		self:addChild(self.root_wnd)
+		
+		local left_role = self.root_wnd:getChildByName("left_role")
+		self.left_head = PlayerHead.new(PlayerHead.type.circle)
+		self.left_head:setPosition(60, 65)
+		left_role:addChild(self.left_head)
+		
+		local right_role = self.root_wnd:getChildByName("right_role")
+		self.right_head = PlayerHead.new(PlayerHead.type.circle)
+		self.right_head:setPosition(60, 65)
+		right_role:addChild(self.right_head)
+		
+		self.success_img = self.root_wnd:getChildByName("success_img")  -- 胜利的标志,在该竞猜有结果才会显示
+		self.left_name = self.root_wnd:getChildByName("left_name")
+		self.right_name = self.root_wnd:getChildByName("right_name")
+
+		self.fight_type = self.root_wnd:getChildByName("fight_type")
+		self.check_fight_btn = self.root_wnd:getChildByName("check_fight_btn") -- 该竞猜已经出结果的时候的观战按钮
+
+        self.time = self.root_wnd:getChildByName("time")
+		self.tip = self.root_wnd:getChildByName("tip")
+		setTextMaxWidth(self.tip,200,-10)
+		self:registerEvent()
+	end
+end
+
+function ActionTurkeyLogItem:registerEvent()
+	self.right_head:addCallBack(function()
+		message(TI18N("语言_c_6418"))
+	end, false)
+	
+	self.check_fight_btn:addTouchEventListener(function(sender, event_type)
+		customClickAction_2(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			playButtonSound2()
+			if self.data and self.data.id ~= 0 then
+				BattleController:getInstance():csRecordBattle(self.data.id)
+			end
+		end
+	end)
+end
+
+function ActionTurkeyLogItem:setData(data)
+	if data then
+		self.data = data
+		self.unit_cfg = Config.UnitData.data_unit(data.unit_id)
+        -- 左边都是自己
+		self.left_head:setHeadRes(role_vo.face_id, false, LOADTEXT_TYPE, role_vo.face_file, role_vo.face_update_time)
+		self.left_name:setString(role_vo.name)
+		self.left_name:ignoreContentAdaptWithSize(true)
+		self.left_name:setTextAreaSize(cc.size(125,0))
+		if self.unit_cfg then
+			self.right_head:setHeadRes(tonumber(data.head_id), false, LOADTEXT_TYPE)
+			self.right_name:setString(self.unit_cfg.name)
+		end
+		self.right_name:ignoreContentAdaptWithSize(true)
+		self.right_name:setTextAreaSize(cc.size(125,0)) 
+		setTextSpacing(self.left_name)
+		setTextSpacing(self.right_name,-10)
+
+        if self.data.win == 1 then
+            self.success_img:loadTexture(PathTool.getResFrame("common", "txt_cn_common_90012"), LOADTEXT_TYPE_PLIST)
+        else
+            self.success_img:loadTexture(PathTool.getResFrame("common", "txt_cn_common_90013"), LOADTEXT_TYPE_PLIST)
+        end
+		self.camp_id = _model:getTurkeyCampId()
+		self.const_cfg = Config.HolidayCollectManualData.data_const[self.camp_id]
+		if self.data.win == 1 then
+			self.fight_type:setString(TI18N("语言_c_115"))
+			self.tip:setString(self.const_cfg["title_tip2"].val[1])
+		else
+			self.fight_type:setString(TI18N("语言_c_116"))
+			self.tip:setString(self.const_cfg["title_tip1"].val[1])
+		end
+		local nowtime = data.time
+		local timezone = InviteCodeController:getInstance():getModel():getServerTimeZone()--服务器时区
+		local H = TimeTool.xsdate("%H",nowtime,timezone)
+		local M = TimeTool.xsdate("%M",nowtime,timezone)
+		local S = TimeTool.xsdate("%S",nowtime,timezone)
+		local y = TimeTool.xsdate("%Y",nowtime,timezone)
+		local m = TimeTool.xsdate("%m",nowtime,timezone)
+		local d = TimeTool.xsdate("%d",nowtime,timezone)
+		local str = "%s-%s-%s %s:%s:%s"
+		str = string.format(str,y,m,d,H,M,S)
+        self.time:setString(str)
+		self.check_fight_btn:setVisible(data.id ~= 0)
+	end
+end
+
+
+function ActionTurkeyLogItem:DeleteMe()
+	if self.left_head then
+		self.left_head:DeleteMe()
+		self.left_head = nil
+	end
+	if self.right_head then
+		self.right_head:DeleteMe()
+		self.right_head = nil
+	end
+	self:removeAllChildren()
+	self:removeFromParent()
+end 

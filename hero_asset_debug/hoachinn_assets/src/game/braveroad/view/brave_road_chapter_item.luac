@@ -1,0 +1,168 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 勇者之路副本关卡 坑位item
+--------------------------------- 
+local _controller = BraveRoadController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+BraveRoadChapterItem = class("BraveRoadChapterItem", function()
+    return ccui.Widget:create()
+end)
+
+function BraveRoadChapterItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function BraveRoadChapterItem:configUI( )
+	local csbPath = PathTool.getTargetCSB("braveroad/brave_road_chapter_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local main_panel = self.root_wnd:getChildByName("main_panel")
+	self.main_panel = main_panel
+
+	self.img_bg = self.main_panel:getChildByName("img_bg")
+	self.img_bg:ignoreContentAdaptWithSize(true)
+	self.img_bg:setScale(0.8)
+	self.label_name = self.main_panel:getChildByName("label_name")
+	self.main_panel:setTouchEnabled(true)
+
+	self.pass_mark = self.main_panel:getChildByName("pass_mark")
+	self.pass_mark:setVisible(false)
+
+	self.node_boss = self.main_panel:getChildByName("node_boss")
+
+	self.node_effect = self.main_panel:getChildByName("node_effect")
+end
+
+function BraveRoadChapterItem:register_event(  )
+	registerButtonEventListener(self.main_panel, function (  )
+		if not _model:checkIsResertTime() then
+			message(TI18N("语言_c_5340"))
+            return
+        end
+		--判断上一个关卡是否能打
+		local status, msg = _model:checkDunActivity(self.cid, self.dun_id, self.dun_type)
+		if not status then
+			return message(msg)
+		end
+		if self.dun_type == BraveRoadConst.Dun_Type.Boss then
+			_controller:openBraveRoadBossDes(true, {dun_id = 0, cid = self.cid})
+		elseif self.dun_type == BraveRoadConst.Dun_Type.Mobs then
+			_controller:openBraveRoadChapterDes(true, {dun_id = self.dun_id})
+		else
+			--如果是魂器选择
+			_controller:sender13104(self.cid, self.pos)
+		end
+	end, true, 1)
+end
+
+function BraveRoadChapterItem:generateData(data)
+	self.pos = data.pos or 0
+	self.dun_id = data.dun_id or 0
+	self.cid = data.cid
+	self.dun_type = data.dun_type
+end
+
+function BraveRoadChapterItem:setData(data)
+	self:generateData(data)
+	self:updateBaseView()
+end
+ 
+function BraveRoadChapterItem:updateBaseView()
+	self.node_boss:setVisible(self.dun_type == BraveRoadConst.Dun_Type.Boss)
+	if self.dun_type == BraveRoadConst.Dun_Type.Boss then
+		self.main_panel:setContentSize(cc.size(120, 220))
+		local chapter_info = _model:getDunDataById(self.cid or 1)
+		local config = Config.LimitTrainingData.data_dungeon_boss[self.cid or 1] or {}
+		local pos = config.position or cc.p(360, 880)
+		self:setPosition(pos)
+		local name_str = config.type
+		if chapter_info.boss_finish == 1 then
+			name_str = name_str.."已打过"
+		end
+		self.label_name:setString(config.type)
+		self.label_name:setVisible(false)
+		self.img_bg:setVisible(false)
+		-- local config = Config.LimitTrainingData.data_dungeon_boss[self.cid]
+		-- local unit_cfg = {}
+		-- if _model:checkOpenFirstMonth() then
+		-- 	unit_cfg = Config.UnitData.data_unit(config.unit_id2)
+		-- else
+		-- 	unit_cfg = Config.UnitData.data_unit(config.unit_id)
+		-- end
+		-- local monsters = {unit_cfg.monster1, unit_cfg.monster2, unit_cfg.monster3, unit_cfg.monster4, unit_cfg.monster5}
+		-- local body_id = unit_cfg.body_id
+		-- for i,v in ipairs(monsters) do
+		-- 	local monster_id = v
+		-- 	local monster_cfg = Config.UnitData.data_unit(monster_id)
+		-- 	if monster_cfg then
+		-- 		body_id = monster_cfg.body_id
+		-- 		break
+		-- 	end
+		-- end
+		local cfg = Config.LimitTrainingData.data_dungeon_boss[self.cid]
+		if not cfg then return end
+		local body_id = cfg.boss_act
+		if self.spine_model then
+			self.spine_model:removeFromParent()
+			self.spine_model = nil
+		end
+		-- self.spine_model = createSpineByName(body_id, cfg.boss_n)
+		self.spine_model = createEffectSpine(body_id,cc.p(0,90),cc.p(0.5,0),true, cfg.boss_n)
+		self.spine_model:setPositionY(cfg.y_offset[1][2])
+		self.spine_model:setScale(cfg.draw_scale / 100)
+		self.node_boss:addChild(self.spine_model)
+		-- self.spine_model:setAnimation(0, cfg.boss_n, true)
+
+	elseif self.dun_type == BraveRoadConst.Dun_Type.Mobs then
+		local config = Config.LimitTrainingData.data_dungeon[self.dun_id or 1]
+		local pos = cc.p(config.coordinate[1][1], config.coordinate[1][2]) or cc.p(150 + config.pos*200, 420 + (config.stage - 1)*140)
+		self:setPosition(pos)
+		local name = config.dun_name
+		if _model:getDunPassStatus(config.cid, self.dun_id) then
+			name = name.."已消灭"
+			self.main_panel:setTouchEnabled(false)
+			self.node_effect:removeAllChildren()
+			self.spine_model = nil
+			self.label_name:setVisible(false)
+			self.pass_mark:setVisible(true)
+		else
+			self.node_effect:removeAllChildren()
+			self.spine_model = createSpineByName(config.building, PlayerAction.action)
+			self.node_effect:addChild(self.spine_model)
+			self.main_panel:setTouchEnabled(true)
+			self.label_name:setVisible(false)
+			self.label_name:setString(name)
+			local status, msg = _model:checkDunActivity(self.cid, self.dun_id, self.dun_type)
+			if not status then
+				self.spine_model:setAnimation(0, PlayerAction.action_1, true)
+			else
+				self.spine_model:setAnimation(0, PlayerAction.action_2, true)
+			end
+			self.pass_mark:setVisible(false)
+		end
+	else
+		local configs = _model:getDungeonConfigByCid(self.cid)
+		local pos = cc.p(configs[self.pos][4].coordinate[1][1], configs[self.pos][4].coordinate[1][2])
+		self:setPosition(pos)
+		local res = PathTool.getResFrame("limit_training","limit_training_22")
+		self.img_bg:loadTexture(res, LOADTEXT_TYPE_PLIST)
+		self.img_bg:stopAllActions()
+		breatheShineAction4(self.img_bg)
+	end
+end
+
+function BraveRoadChapterItem:DeleteMe(  )
+	if self.spine_model ~= nil then
+		self.spine_model:removeFromParent() 
+		self.spine_model = nil		
+	end
+	self:removeAllChildren()
+    self:removeFromParent()
+end

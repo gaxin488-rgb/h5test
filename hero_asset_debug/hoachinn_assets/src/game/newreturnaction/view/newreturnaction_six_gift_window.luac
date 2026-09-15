@@ -1,0 +1,198 @@
+--******** 文件说明 ********
+-- 
+-- @description: 6元礼包主界面
+-- @DateTime:    2019-12-13 15:12:06
+-- *******************************
+NewReturnSixGiftPanel = NewReturnSixGiftPanel or BaseClass(BaseView)
+
+local controller = NewReturnActionController:getInstance()
+local model = controller:getModel()
+
+function NewReturnSixGiftPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "newreturnaction/newreturnaction_six_gift_window"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_bg_3"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_show_3"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_holiday_back_bg_3"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_holiday_back_bg_3_1"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_holiday_back_bg_3_2"), type = ResourcesType.single },
+    }
+    self.is_can_click = false
+end
+
+function NewReturnSixGiftPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.top_bg = self.main_container:getChildByName("top_bg")
+    self.tittle_img = self.main_container:getChildByName("tittle_img")
+    self.bottom_bg = self.main_container:getChildByName("bottom_bg")
+    self.num_img = self.main_container:getChildByName("num_img")
+    self.tip_img = self.main_container:getChildByName("tip_img")
+    self.item_panel = self.main_container:getChildByName("item_panel")
+    self.item_panel:setScrollBarEnabled(false)
+    self.surplus_bg = self.main_container:getChildByName("surplus_bg")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.old_txt = self.main_container:getChildByName("old_txt")
+    self.old_line = self.main_container:getChildByName("old_line")
+    self.btn_buy = self.main_container:getChildByName("btn_buy")
+    self.buy_txt = self.btn_buy:getChildByName("buy_txt")
+    self.limit_txt = self.main_container:getChildByName("limit_txt")
+    self.close_btn = self.main_container:getChildByName("close_btn")
+end
+
+function NewReturnSixGiftPanel:register_event()
+    registerButtonEventListener(self.background, function()
+        controller:openNewReturnSixGiftPanel(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openNewReturnSixGiftPanel(false)
+    end,true, 2)
+    registerButtonEventListener(self.btn_buy, function()
+        if self.is_can_click then
+            ActionController:getInstance():sender21016(self.six_cfg.charge_id)
+        else
+            message(TI18N("语言_c_233"))
+        end
+    end,true, 1)
+    if not self.open_server_charge_data then
+        self.open_server_charge_data = GlobalEvent:getInstance():Bind(ActionEvent.Is_Charge_Event,function(data)
+            if data and data.status and data.charge_id and self.six_cfg then
+                local charge_config = Config.ChargeData.data_charge_data[data.charge_id]
+                if charge_config and data.status == 1 and data.charge_id == self.six_cfg.charge_id then
+                    sdkOnPay(charge_config.val, 1, charge_config.id, charge_config.name, charge_config.name)
+                end
+            end
+        end)
+    end
+    self:addGlobalEvent(NewReturnActionEvent.Gift_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+    self:addGlobalEvent(NewReturnActionEvent.Base_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+end
+
+function NewReturnSixGiftPanel:openRootWnd()
+	controller:sender11502()
+
+    MonopolyController:getInstance():sender16811(ActionStorageBool2.BackSixGift)
+end
+
+function NewReturnSixGiftPanel:setData()
+    self.cycle_index = model:getNowPeriod()
+    if self.cycle_index == 0 then
+        controller:sender11500()
+        return
+    end
+    local cfg = Config.HolidayBackData.data_get_camp[self.cycle_index]
+    if cfg then
+        for k, v in pairs(cfg) do
+            if v.camp_id == NewReturnActionConstants.ReturnActionType.sixGift then
+                self.camp_cfg = v
+            end
+        end
+    end
+    if not self.camp_cfg then return end
+    self.other_res_list = self.camp_cfg.show_text
+    self.other_txt_list = self.camp_cfg.sys_text
+    local bottom_res = PathTool.getPlistImgForDownLoad("holiday_back",self.camp_cfg.panel_res,false)
+    loadSpriteTexture(self.bottom_bg, bottom_res, LOADTEXT_TYPE)
+    local top_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[1],false)
+    loadSpriteTexture(self.top_bg, top_res, LOADTEXT_TYPE)
+    local tittle_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[2],false)
+    loadSpriteTexture(self.tittle_img, tittle_res, LOADTEXT_TYPE)
+    local num_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[3],false)
+    loadSpriteTexture(self.num_img, num_res, LOADTEXT_TYPE)
+    self.bag_effect = createEffectSpine("E29006",cc.p(self.num_img:getContentSize().width*0.5,self.num_img:getContentSize().height*0.5),cc.p(0.5,0.5),true,PlayerAction.action)
+    self.num_img:addChild(self.bag_effect)
+    local tip_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[4],false)
+    loadSpriteTexture(self.tip_img, tip_res, LOADTEXT_TYPE)
+
+    self.start_time = model:getStartTime()
+    local time = self.start_time - GameNet:getInstance():getTime() + self.camp_cfg.max_day*86400
+    commonCountDownTime(self.surplus_time,time,{callback=function(time)
+        if time > 0 then 
+            self.is_can_click = true
+            self.surplus_time:setString(string_format("%s", TimeTool.GetTimeForFunction(time) ))
+        else
+            self.is_can_click = false
+            doStopAllActions(self.surplus_time)
+            self.surplus_time:setString("00:00:00")
+        end
+        local _w = math.max(300,self.surplus_txt:getContentSize().width+self.surplus_time:getContentSize().width+50)
+        self.surplus_bg:setContentSize(cc.size(_w,self.surplus_bg:getContentSize().height))
+        local _x = (720 - self.surplus_txt:getContentSize().width-self.surplus_time:getContentSize().width)/2 + self.surplus_txt:getContentSize().width
+        self.surplus_txt:setPositionX(_x)
+        self.surplus_time:setPositionX(_x)
+    end})
+    local cfg = Config.HolidayBackData.data_get_gift_6[self.cycle_index]
+    if cfg and cfg[1] then
+        self.six_cfg = cfg[1]
+    end
+    if self.six_cfg then
+        if not self.item_list then
+            local setting = {}
+            setting.scale = 0.8
+            setting.space_x = 10
+            setting.max_count = 4
+            setting.is_center = true
+            setting.show_effect_id2 = 263
+            self.item_list = commonShowSingleRowItemList(self.item_panel, self.item_list, self.six_cfg.reward, setting)
+        end
+        if GetMoneyNum(self.six_cfg,"val") == 0 then
+            self.old_txt:setVisible(false)
+            self.old_line:setVisible(false)
+            self.btn_buy:setPositionY(145)
+            self.limit_txt:setPositionY(91)
+        else
+            self.old_txt:setVisible(true)
+            self.old_line:setVisible(true)
+            self.old_txt:setString(string.format(TI18N("语言_c_4473"),GetMoneyNum(self.six_cfg,"val")))
+            self.old_line:setContentSize(cc.size(self.old_txt:getContentSize().width + 10,self.old_line:getContentSize().height))
+            self.btn_buy:setPositionY(125)
+            self.limit_txt:setPositionY(76)
+        end
+        self.charge_id = self.six_cfg.charge_id
+        self.charge_cfg = Config.ChargeData.data_charge_data[self.charge_id]
+        if not self.charge_cfg then return end
+        self.buy_txt:setString(string.format(TI18N("语言_c_4440"),GetMoneyNum(self.charge_cfg,"val")))
+        local num = 0
+        self.data = model:getChargeGiftForId(self.charge_id)
+        if self.data then
+            num = self.data.buy_count
+        end
+        local txt = ""
+        if self.charge_cfg.limit_buy_type == 1 then
+            txt = TI18N("语言_c_7591")
+        else
+            txt = TI18N("语言_c_6477")
+        end
+        self.limit_txt:setString(string.format(txt,num, self.six_cfg.limit_buy_num))
+        if num >= self.six_cfg.limit_buy_num then
+            setChildUnEnabled(true,self.btn_buy)
+            self.btn_buy:setTouchEnabled(false)
+        else
+            setChildUnEnabled(false,self.btn_buy)
+            self.btn_buy:setTouchEnabled(true)
+        end
+    end
+end
+
+function NewReturnSixGiftPanel:close_callback()
+    if self.open_server_charge_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.open_server_charge_data)
+        self.open_server_charge_data = nil
+    end
+    controller:openNewReturnSixGiftPanel(false)
+end
+

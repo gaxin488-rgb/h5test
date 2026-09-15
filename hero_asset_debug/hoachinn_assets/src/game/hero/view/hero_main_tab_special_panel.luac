@@ -1,0 +1,372 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      竖版伙伴天赋
+-- <br/> 2019年2月19日
+-- --------------------------------------------------------------------
+HeroMainTabSpecialPanel = class("HeroMainTabSpecialPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeroMainTabSpecialPanel:ctor(parent)  
+    self.parent = parent
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function HeroMainTabSpecialPanel:config()
+    self.show_model = false
+    -- self.size = cc.size(680,372.97)
+    -- self:setContentSize(self.size)
+    self.item_list = {}
+end
+
+function HeroMainTabSpecialPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_main_tab_special_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+    self.tab_panel = self.root_wnd:getChildByName("tab_panel")
+    self.type_bg = self.tab_panel:getChildByName("type_bg")
+    self.type_lock = self.tab_panel:getChildByName("type_lock")
+    self.type_lock:setVisible(false)
+    self.tip_bg = self.tab_panel:getChildByName("tip_bg")
+    self.tip_txt = self.tab_panel:getChildByName("tip_txt")
+    self.tip_img = self.tab_panel:getChildByName("tip_img")
+    self.tip_img:setVisible(false)
+    self.open_panel = self.tab_panel:getChildByName("open_panel")
+    for i = 1, 5 do
+        local node = self.tab_panel:getChildByName("node_"..i)
+        local item = SkillItem.new(true,true,true,0.87, true)
+        node:addChild(item)
+        node.item = item
+        self.item_list[i]= node
+    end
+
+    self.look_btn = self.tab_panel:getChildByName("look_btn")
+
+    self.ur_panel = self.root_wnd:getChildByName("ur_panel")
+    self.ur_panel:setVisible(false)
+    self.ur_label_go = self.ur_panel:getChildByName("label_go")
+    self.ur_label_go:setString("")
+    self.ur_label_lv = self.ur_panel:getChildByName("label_lv")
+    self.ur_label_lv:setString(TI18N("语言_c_5455"))
+    self.ur_label_lv:setScale(1)
+    self.ur_node =  self.root_wnd:getChildByName("ur_node")
+    -- local bg_res = PathTool.getPlistImgForDownLoad("bigbg/hero", "hero_reset_bg_1", false)
+    -- self.bg_load = loadImageTextureFromCDN(self.image_bg, bg_res, ResourcesType.single, self.bg_load)
+end
+
+function HeroMainTabSpecialPanel:updateExclusivePropItem()
+    if not Config.PartnerUrAwakenData then return end
+    if not self.hero_vo then return end
+    self:onClickExclusivePropItem()
+end
+function HeroMainTabSpecialPanel:onClickExclusivePropItem(is_lock)
+    if not self.hero_vo then return end
+    local data = {panel_type = HERO_SOUL_TYPE, hero_vo = self.hero_vo}
+    controller:openHeroUrAweakenPanel(true, data)
+end
+
+
+--事件
+function HeroMainTabSpecialPanel:registerEvents()
+    --详情
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type) 
+        local config = Config.PartnerSpecialData.data_const.help_sp_desc
+        if config then
+            local pos = sender:getTouchBeganPosition()
+            TipsManager:getInstance():showCommonTips(config.desc, pos)
+        end
+    end ,true, 1)
+    registerButtonEventListener(self.ur_panel, function(param,sender, event_type) 
+        -- self:updateExclusivePropItem()
+        self:onClickChangeBtn()
+    end ,true, 1)
+
+    registerButtonEventListener(self.open_panel, function(param,sender, event_type) 
+        if not model:getSpecialHeroOpne(self.hero_vo.partner_id) then
+            message(string.format(TI18N("语言_c_6739"),Config.PartnerSpecialData.data_const.potential_open.val))
+            return
+        end
+        
+        if not self.hero_vo:isLockByLocktype(HeroConst.LockType.eHeroSpecialLock) then
+            self.tip_img:setVisible(false)
+            if not self.lock_spine then
+                if self.is_ti then
+                    self.lock_spine = createEffectSpine("E56002",cc.p(self.open_panel:getContentSize().width*0.5,self.open_panel:getContentSize().height*0.5),cc.p(0.5,0.5),true,PlayerAction.action)
+                else
+                    self.lock_spine = createEffectSpine("E56001",cc.p(self.open_panel:getContentSize().width*0.5,self.open_panel:getContentSize().height*0.5),cc.p(0.5,0.5),true,PlayerAction.action)
+                end
+                self.open_panel:addChild(self.lock_spine)
+            end
+            self.lock_spine:setAnimation(0, PlayerAction.action, false)
+            local function eventFunc(event)
+                controller:sender11430(self.hero_vo.partner_id)
+                controller:openHeroSpecialPanel(true,self.hero_vo,MainuiConst.special_type.special)
+            end
+            self.lock_spine:registerSpineEventHandler(eventFunc, sp.EventType.ANIMATION_END)
+        else
+            controller:openHeroSpecialPanel(true,self.hero_vo,MainuiConst.special_type.special)
+        end
+    end ,true, 1)
+    if self.hero_data_update_event == nil then
+        self.hero_data_update_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Update, function(hero_vo)
+            if not hero_vo or not self.hero_vo then return end
+            if hero_vo.partner_id == self.hero_vo.partner_id then
+                self:setData(hero_vo,1,true)
+            end
+        end)
+    end
+    if self.hero_special_skill_event == nil then
+        self.hero_special_skill_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Special_Skill_Event, function(data)
+            if not data or not self.hero_vo then return end
+            for k,v in pairs(data.partner_ids) do
+                if v.partner_id == self.hero_vo.partner_id then
+                    self.sp_data = v
+                    self:updateData()
+                end
+            end
+        end)
+    end
+    if not self.hero_get_talent_event then
+        self.hero_get_talent_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_UR_Awaken_Update_Event, function()
+            if not self.hero_vo then return end
+            -- self:updateUrAweakInfo()
+        end)
+    end
+end
+
+--@hero_vo 英雄数据
+function HeroMainTabSpecialPanel:setData(hero_vo,type,_status)
+    self.hero_vo = hero_vo
+    local cfg = Config.PartnerData.data_partner_base[hero_vo.bid]
+    local status = false
+    if cfg.sp_skills and next(cfg.sp_skills) then
+        for _, v in ipairs(cfg.sp_skills) do
+            if Config.PartnerSpecialData.data_task_list[v] then
+                status = true
+            end
+        end
+    end
+    if status and not _status then
+        controller:sender11431({{partner_id = hero_vo.partner_id}})
+    else
+        self:updateData()
+    end
+    self:checkUrStatus()
+end
+--ur觉醒相关
+function HeroMainTabSpecialPanel:onClickChangeBtn()
+    self.show_model = not self.show_model
+    if self.show_model then -- 切换到UR觉醒
+        if not self.ur_window then
+            self.ur_window = HeroMainTabAwakePanel.new()
+            self.ur_window:setAnchorPoint(cc.p(0.5, 0))
+            self.ur_node:addChild(self.ur_window)
+        end
+        self.ur_window:setData(self.hero_vo)
+        self.ur_node:setVisible(true)
+        self.tab_panel:setVisible(false)
+    else
+        self.ur_node:setVisible(false)
+        self.tab_panel:setVisible(true)
+    end
+end
+
+-- function HeroMainTabSpecialPanel:updateUrAweakInfo()
+--     if self.hero_vo.star == 16 then
+--         local partner_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+--         if partner_cfg and partner_cfg.ur_awaken_id and partner_cfg.ur_awaken_id ~= 0 and partner_cfg.ur_awaken_show ~= 0 then
+--             local ur_awaken_id = partner_cfg.ur_awaken_id
+--             -- print("ur_awaken_id++++++++",ur_awaken_id)
+--             local max_level = model:getHeroAwakenMaxLev(ur_awaken_id) or 30
+--             local ur_lev = 0
+--             if self.hero_vo.ur_awaken and self.hero_vo.ur_awaken[1] then
+--                 ur_lev = self.hero_vo.ur_awaken[1].p_lev
+--             end
+--             self.ur_label_lv:setString(string.format(TI18N("语言_c_7240"),ur_lev,max_level))
+--             self.ur_label_go:setVisible(true)
+--         end
+--     end
+--     self:checkUrStatus()
+-- end
+
+function HeroMainTabSpecialPanel:checkUrStatus()
+    if self.hero_vo.star == 16 then
+        local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+        local featuresId = Config.PartnerUrAwakenData.data_constant.open_model.val
+        if not table.indexof(nohideIds,featuresId) then
+            self.ur_panel:setVisible(false)
+            return
+        end
+        local partner_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+        if partner_cfg and partner_cfg.ur_awaken_id and partner_cfg.ur_awaken_id ~= 0 and partner_cfg.ur_awaken_show ~= 0 then
+            self.ur_panel:setVisible(true)
+            -- addRedPointToNodeByStatus(self.open_panel,false)
+            self:onClickChangeBtn()
+        end
+    else
+        self.ur_panel:setVisible(false)
+
+    end
+end
+
+--sp觉醒
+function HeroMainTabSpecialPanel:updateData()
+    local key = getNorKey(self.hero_vo.bid, self.hero_vo.star)
+    local star_config = Config.PartnerData.data_partner_star(key)
+    if star_config == nil then return end
+
+    self.skill_data = {}
+    for k,v in pairs(star_config.skills) do
+        if v[1] ~= 1 then
+            self.skill_data[v[1]]={}
+            self.skill_data[v[1]].pos = v[1]
+            self.skill_data[v[1]].skill_bid = v[2]
+            self.skill_data[v[1]].type = 1
+        end
+    end
+    local key = getNorKey(self.hero_vo.type, self.hero_vo.break_id, self.hero_vo.break_lev)
+    local break_config = Config.PartnerData.data_partner_brach[key]
+    for i,skill in pairs(self.skill_data) do
+        local config = Config.SkillData.data_get_skill(skill.skill_bid)
+        if config then
+            --是否锁住
+            self.skill_data[i].is_lock = false
+            if skill.pos > break_config.skill_num  then
+                self.skill_data[i].is_lock = true
+            end
+        end
+    end
+    for k,v in pairs(self.hero_vo.skills) do
+        for key,value in pairs(self.skill_data) do
+            if value.pos == v.pos then
+                self.skill_data[v.pos].skill_bid = v.skill_bid
+            end
+        end
+    end
+    local hero_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    for k,v in pairs(hero_cfg.sp_skills) do
+        local sp_skill = Config.PartnerSpecialData.data_skill_base[v]
+        if sp_skill then
+            if Config.PartnerSpecialData.data_task_list[v] and self.sp_data and next(self.sp_data) then
+                local cfg = Config.PartnerSpecialData.data_task_list[v]
+                local skill_bid = 0
+                local cfg_list = {}
+                for k,v in pairs(cfg) do
+                    table.insert(cfg_list, v)
+                end
+                table.sort(cfg_list, function(a, b) return a.lev < b.lev end)
+                local list = {}
+                for k,v in pairs(self.sp_data.pos_list[sp_skill.pos].sp_quest_list) do
+                    list[v.id] = v
+                end
+                for k,v in ipairs(cfg_list) do
+                    if v.open == 0 and list[v.lev] and list[v.lev].finish == 2 then
+                        skill_bid = v.skill_bid
+                    end
+                end
+                if skill_bid > 0 then
+                    self.skill_data[sp_skill.pos].skill_bid = skill_bid
+                end
+            end
+            self.skill_data[sp_skill.pos].type = 2
+        end
+    end
+    for i = 2, 6 do
+        local list = self.skill_data[i]
+        if list then
+            local cfg = Config.SkillData.data_get_skill(list.skill_bid)
+            if cfg then
+                self.item_list[i-1].item:setData(cfg,{is_sp=true})
+                self.item_list[i-1].item:showUnEnabled(list.is_lock)
+                self.item_list[i-1].item:showLockIcon(list.type == 1,nil,nil,60,10)
+                local lev = cfg.level
+                if cfg.client_lev and cfg.client_lev>0 then
+                    lev = cfg.client_lev
+                end
+                if list.type == 1 then
+                    self.item_list[i-1].item:showName2(false)
+                else
+                    self.item_list[i-1].item:showName2(true,string.format(TI18N("+%s"),lev),cc.p(60,-10),22,true,cc.c3b(0xff,0xed,0xb7),PathTool.getResFrame("hero/special_hero","special_hero_004"),cc.size(75,28))
+                end
+            end
+        end
+    end
+    self.is_ti = hero_cfg.hurt_type == 2
+    if self.is_ti then
+        loadSpriteTexture(self.type_lock, PathTool.getResFrame("hero/special_hero", "special_hero_tai_003"), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(self.type_bg, PathTool.getPlistImgForDownLoad("hero", "special_hero_tai_bg",false), LOADTEXT_TYPE)
+    else
+        loadSpriteTexture(self.type_lock, PathTool.getResFrame("hero/special_hero", "special_hero_nin_003"), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(self.type_bg, PathTool.getPlistImgForDownLoad("hero", "special_hero_nin_bg",false), LOADTEXT_TYPE)
+    end
+    addRedPointToNodeByStatus(self.open_panel,false)
+    if not self.hero_vo:isLockByLocktype(HeroConst.LockType.eHeroSpecialLock) then
+        if self.is_ti then
+            loadSpriteTexture(self.tip_img, PathTool.getResFrame("hero/special_hero", "special_hero_tai_001"), LOADTEXT_TYPE_PLIST)
+        else
+            loadSpriteTexture(self.tip_img, PathTool.getResFrame("hero/special_hero", "special_hero_nin_001"), LOADTEXT_TYPE_PLIST)
+        end
+        self.type_lock:setVisible(false)
+        self.tip_txt:setString(TI18N("语言_c_1739"))
+        if model:getSpecialHeroOpne(self.hero_vo.partner_id) then
+            addRedPointToNodeByStatus(self.open_panel,true,10,10)
+        end
+    else
+        if self.is_ti then
+            loadSpriteTexture(self.tip_img, PathTool.getResFrame("hero/special_hero", "special_hero_tai_002"), LOADTEXT_TYPE_PLIST)
+        else
+            loadSpriteTexture(self.tip_img, PathTool.getResFrame("hero/special_hero", "special_hero_nin_002"), LOADTEXT_TYPE_PLIST)
+        end
+        self.type_lock:setVisible(true)
+        self.tip_txt:setString(TI18N("语言_c_295"))
+        if self.lock_spine then
+            self.lock_spine:removeFromParent()
+            self.lock_spine = nil
+        end
+    end
+    self.tip_img:setVisible(true)
+    moveTextBg(self.tip_txt,self.tip_bg,40,130)
+end
+
+
+function HeroMainTabSpecialPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+--移除
+function HeroMainTabSpecialPanel:DeleteMe()
+	if self.bg_load then 
+        self.bg_load:DeleteMe()
+        self.bg_load = nil
+    end
+    if self.lock_spine then
+        self.lock_spine:removeFromParent()
+        self.lock_spine = nil
+    end
+    if self.hero_data_update_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_update_event)
+        self.hero_data_update_event = nil
+    end
+    if self.hero_special_skill_event then
+        GlobalEvent:getInstance():UnBind(self.hero_special_skill_event)
+        self.hero_special_skill_event = nil
+    end
+    if self.hero_get_talent_event then
+        GlobalEvent:getInstance():UnBind(self.hero_get_talent_event)
+        self.hero_get_talent_event = nil
+    end
+    if self.ur_window then
+        self.ur_window:DeleteMe()
+        self.ur_window = nil
+    end
+end

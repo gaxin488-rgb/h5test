@@ -1,0 +1,219 @@
+-- --------------------------------------------------------------------
+-- 觉醒
+-- --------------------------------------------------------------------
+HeroMainTabAwakePanel = class("HeroMainTabAwakePanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeroMainTabAwakePanel:ctor(parent)  
+    self.parent = parent
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function HeroMainTabAwakePanel:config()
+    -- self.size = cc.size(680,372.97)
+    -- self:setContentSize(self.size)
+
+    --技能列表
+    self.skill_item_list = {}
+    self.base_list = {}
+end
+
+function HeroMainTabAwakePanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_main_tab_awake_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.root_wnd:setPositionY(-100)
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.tab_panel = self.root_wnd:getChildByName("tab_panel")
+    self.effect_Panel = self.tab_panel:getChildByName("effect")
+    self.Panel_1 = self.tab_panel:getChildByName("Panel_1")
+    self.label_go = self.Panel_1:getChildByName("label_go")
+    self.label_go:setString(TI18N("语言_c_1858"))
+    self.label_lv = self.Panel_1:getChildByName("label_lv")
+    self.label_lv:setString(TI18N("语言_role_wake_5"))
+    self.tips = self.tab_panel:getChildByName("tips")
+    setTextMaxWidth(self.tips, 160, -4)
+    self.tips:setString(TI18N("语言_c_4789"))
+    
+end
+
+--事件
+function HeroMainTabAwakePanel:registerEvents()
+    registerButtonEventListener(self.Panel_1, function(param,sender, event_type) 
+        self:updateExclusivePropItem()
+    end ,true, 1)
+ 
+-- 获取到天赋信息
+    if not self.hero_get_talent_event then
+        self.hero_get_talent_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_UR_Awaken_Update_Event, function()
+            if not self.hero_vo then return end
+            self:setData(self.hero_vo)
+        end)
+    end
+end
+
+-- 专属忍具
+function  HeroMainTabAwakePanel:updateExclusivePropItem()
+    if not Config.PartnerUrAwakenData then return end
+    if not self.hero_vo then return end
+    -- local h_cfg = Config.PartnerData.data_partner_base_fun(self.hero_vo.bid)
+    -- local data = {id = (self.hero_vo.hid == 0 and h_cfg.horcruxes or self.hero_vo.hid), lev = self.hero_vo.h_lev or 0, score_val = self.hero_vo.h_score or 1000}
+    -- -- if data.lev == 0 then
+    -- --     data.lev = 1
+    -- -- end
+    -- local limit_cfg = Config.PartnerUrAwakenData.data_const["entrance_lv"]
+    -- local horcruxes = h_cfg.horcruxes
+    -- local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("partner_soul_data")
+    -- if h_cfg.horcruxes_show == 0 and not table.indexof(nohideIds,horcruxes) then
+    -- else
+    --     if horcruxes and horcruxes ~= 0 and limit_cfg and limit_cfg.val <= role_vo.lev then
+    --         local unlock_star = Config.PartnerUrAwakenData.data_const["open_star_condition"].val
+    --         local unlock_tower = Config.PartnerUrAwakenData.data_const["open_tower_layers"].val
+    --         local now_tower = StartowerController:getInstance():getModel():getNowTowerId() or 0
+    --         local soul_base_cfg = Config.PartnerUrAwakenData.data_base_info[horcruxes]
+    --         if not soul_base_cfg then
+    --             return
+    --         end
+    --         local quality = 0
+    --         if soul_base_cfg.quality >= 0 and soul_base_cfg.quality <= 5 then
+    --             quality = soul_base_cfg.quality
+    --         end
+    --         local res_id = PathTool.getQualityBg(soul_base_cfg.quality)
+
+    --         local is_lock = (not ((self.hero_vo.star >= unlock_star) and (now_tower >= unlock_tower)))
+            self:onClickExclusivePropItem()
+        -- else
+        -- end
+    -- end
+end
+
+function HeroMainTabAwakePanel:onClickExclusivePropItem(is_lock)
+    if not self.hero_vo then return end
+    local data = {panel_type = HERO_SOUL_TYPE, hero_vo = self.hero_vo}
+    controller:openHeroUrAweakenPanel(true, data)
+end
+
+--@hero_vo 英雄数据
+--@show_model_type 显示模式 1:英雄模式  2:图鉴模式 定义参考 HeroConst.BagTab.eBagHero
+function HeroMainTabAwakePanel:setData(hero_vo)
+    if not hero_vo then return end
+    self.hero_vo = hero_vo
+    self.init_attr = {}
+    local partner_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    if partner_cfg and partner_cfg.ur_awaken_id and partner_cfg.ur_awaken_id ~= 0 and partner_cfg.ur_awaken_show ~= 0 then
+        local ur_awaken_id = partner_cfg.ur_awaken_id
+        print("ur_awaken_id...",ur_awaken_id)
+        local ur_cfg = Config.PartnerUrAwakenData.data_get_open_lv[ur_awaken_id]
+        local max_level = model:getHeroAwakenMaxLev(ur_awaken_id) or 30
+        if (ur_cfg and self.hero_vo.star >= ur_cfg.star) or (partner_cfg.score == 9 and self.hero_vo.star >= 16) then
+            local ur_lev = 0
+            if hero_vo.ur_awaken and hero_vo.ur_awaken[1] then
+                ur_lev = hero_vo.ur_awaken[1].p_lev
+            end
+            self.label_lv:setString(string.format(TI18N("语言_c_7240"),ur_lev,max_level))
+            self.label_go:setVisible(true)
+        else
+            local lock_str = string.format(TI18N("语言_c_3035"),ur_cfg.star) 
+            self.label_lv:setString(lock_str)
+            self.label_go:setVisible(false)
+        end
+
+        local lv_cfg = Config.PartnerUrAwakenData.data_lv_info[ur_awaken_id][1][max_level]
+        local max_attr = lv_cfg.attr
+        for i, v in pairs(max_attr) do
+            local attr_key = v[1]
+            local attr_id = Config.AttrData.data_key_to_id[attr_key]
+            local attr_value = 0
+            local obj = {attr_id=attr_id,attr_val=attr_value}
+            table.insert(self.init_attr, obj)
+        end
+    end
+
+    self:setAttrPanel()
+end
+
+function HeroMainTabAwakePanel:setAttrPanel()
+    local attr = {}
+    local _temp_attr = {}
+    if self.hero_vo.ur_awaken and self.hero_vo.ur_awaken[1] then
+        _temp_attr = self.hero_vo.ur_awaken[1].p_attr
+    end
+    if #_temp_attr == 0 then
+        attr = deepCopy(self.init_attr)
+    else
+        -- attr = deepCopy(self.init_attr)
+        for k, v in pairs(self.init_attr) do
+            local attr_id = v.attr_id
+            local attr_val = 0
+            for key, val in pairs(_temp_attr) do
+                local _attr_id = val.attr_id
+                local _attr_val = val.attr_val
+                if _attr_id == attr_id then
+                    attr_val = _attr_val
+                end
+            end
+            local obj = {attr_id=attr_id,attr_val=attr_val}
+            table.insert(attr, obj)
+        end
+    end
+
+    for k, v in pairs(self.base_list) do
+        v:setVisible(false)
+    end
+
+    for i,v in ipairs(attr) do
+        local attr_id = v.attr_id
+        local attr_val = v.attr_val
+
+        local attr_key = Config.AttrData.data_id_to_key[attr_id]
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+
+        if attr_name then
+            if not self.base_list[i] then 
+                self.base_list[i] = createRichLabel(21, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(0, 48), nil, nil, 380)
+                self.tab_panel:addChild(self.base_list[i],9)
+            end
+            self.base_list[i]:setVisible(true)
+
+            local label = self.base_list[i]
+            local _x = 185 + (i-1)%3 * 170
+            label:setPositionX(_x)
+            local _y = 441 - (math.ceil(i/3) - 1) * 36
+
+            label:setPositionY(_y)
+            local icon = PathTool.getAttrIconByStr(attr_key)
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+            local attr_str = string_format("<img src='%s' scale=1 />  <div fontcolor=#dbceb6> %s</div>", PathTool.getResFrame("common", icon), attr_val)
+            label:setString(attr_str)
+
+        end
+    end
+
+end
+
+function HeroMainTabAwakePanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+--移除
+function HeroMainTabAwakePanel:DeleteMe()
+    if self.hero_get_talent_event then
+        GlobalEvent:getInstance():UnBind(self.hero_get_talent_event)
+        self.hero_get_talent_event = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

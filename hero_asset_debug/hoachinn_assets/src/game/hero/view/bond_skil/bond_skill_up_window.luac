@@ -1,0 +1,908 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      羁绊技主界面 
+-- <br/>Create: 2019年7月31日
+--
+-- --------------------------------------------------------------------
+BondSkillUpWindow = BondSkillUpWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+--技能属性的位置
+local pos_list = {
+    [1] = cc.p(70,44),
+    [2] = cc.p(200,44),
+    [3] = cc.p(330,44),
+    [4] = cc.p(70,14),
+    [5] = cc.p(200,14),
+}
+
+function BondSkillUpWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.layout_name = "skill/bond_skill_up_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("bondskill", "bondskill"), type = ResourcesType.plist}
+    }
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.cost_list = {}
+    self.attr_list = {}
+    self.btn_type = 1 --1激活2升级
+    self.con_status = true --条件是否满足
+    self.cost_status = 0 --消耗是否满足
+    self.bond_atr_list = {}
+    self.hero_item_data_list = {}
+    self.hero_item_list = {}
+end
+
+function BondSkillUpWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    -- self:setBackgroundImg("hero_resonate_bg1")
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setZOrder(2)
+    -- self.main_container:setScale(display.getMaxScale())
+
+    self.info_panel = self.main_container:getChildByName("info_panel")
+    self.info_title = self.info_panel:getChildByName("info_title")
+    self.info_title:setString(TI18N("语言_c_6197"))
+    self.skill_panel = self.info_panel:getChildByName("skill_panel")
+    self.skill_name = self.skill_panel:getChildByName("skill_name")
+    self.eff_panel = self.info_panel:getChildByName("eff_panel")
+    self.base_panel = self.eff_panel:getChildByName("base_panel")
+    self.base_name = self.base_panel:getChildByName("base_name")
+    setTextMaxWidth(self.base_name,90,-4)
+    self.base_name:setString(TI18N("语言_c_6195"))
+    self.effect_panel = self.eff_panel:getChildByName("effect_panel")
+    self.eff_name = self.effect_panel:getChildByName("eff_name")
+    setTextMaxWidth(self.eff_name,90,-4)
+    self.eff_name:setString(TI18N("语言_c_6219"))
+    self.eff_desc = self.effect_panel:getChildByName("eff_desc")
+    self.eff_desc:setScrollBarEnabled(false)
+    self.con_panel = self.main_container:getChildByName("con_panel")
+    self.con_title = self.con_panel:getChildByName("con_title")
+    self.con_title:setString(TI18N("语言_c_6198"))
+    self.con_bg = self.con_panel:getChildByName("con_bg")
+    self.tip = createRichLabel(22,cc.c4b(0x7c,0x55,0x36,0xff),cc.p(0.5,0.5),cc.p(326,140),nil,nil,550)
+    self.tip:setHorizontalLayoutType(2)
+    self.main_container:addChild(self.tip)
+    self.cost_card_panel = self.main_container:getChildByName("cost_card_panel")
+    self.cost_card_bg = self.cost_card_panel:getChildByName("cost_card_bg")
+    self.cost_card_title = self.cost_card_panel:getChildByName("cost_card_title")
+    self.cost_panel = self.main_container:getChildByName("cost_panel")
+    self.cost_title = self.cost_panel:getChildByName("cost_title")
+    self.cost_title:setString(TI18N("语言_c_982"))
+    self.cost_list = self.cost_panel:getChildByName("cost_bg_1")
+    self.cost_list.icon = self.cost_list:getChildByName("cost_icon_1")
+    self.cost_list.txt = self.cost_list:getChildByName("cost_txt_1")
+    self.title_panel = self.main_container:getChildByName("title_panel")
+    self.Image_2 = self.title_panel:getChildByName("Image_2")
+    self.win_title = self.title_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6200"))
+    self.Image_2:setContentSize(cc.size(math.max(self.win_title:getContentSize().width+100,332),63))
+    self.close_btn = self.title_panel:getChildByName("close_btn")
+    self.btn_panel = self.main_container:getChildByName("btn_panel")
+    self.act_btn = self.btn_panel:getChildByName("act_btn")
+    self.act_txt = self.act_btn:getChildByName("label")
+    self.act_txt:setString(TI18N("语言_c_6185"))
+    self.up_btn = self.btn_panel:getChildByName("up_btn")
+    self.up_txt = self.up_btn:getChildByName("label")
+    self.up_txt:setString(TI18N("语言_c_6184"))
+    self.tip_panel = self.root_wnd:getChildByName("tip_panel")
+    self.tip_panel:setZOrder(3)
+    self.tip_panel:setVisible(false)
+    self.tip_bg = self.tip_panel:getChildByName("tip_bg")
+    self.atr_panel = self.tip_panel:getChildByName("atr_panel")
+    self.atr_panel:setScrollBarEnabled(false)
+
+end
+
+function BondSkillUpWindow:register_event()
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.act_btn, handler(self, self.onClickBtnAct) ,true, 2)
+    registerButtonEventListener(self.up_btn, handler(self, self.onClickBtnAct) ,true, 2)
+    
+    self.tip_panel:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.tip_panel:setVisible(false)
+        end
+    end)
+    --刷新数据
+    if not self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Bond_Skill_Event,function ( data )
+			if not data then return end
+            if self.bond_id == data.bsid then
+                local cfg = Config.PartnerBondSkillData.data_base_info[data.bsid]
+                if data.b_lev >= tableLen(cfg) then
+                    controller:openBondSkillUpWindow(false)
+                else
+                    self:setData()
+                end
+            end
+        end)
+    end
+    --添加英雄选择返回事件
+    if self.upgrade_star_select_event == nil then
+        self.upgrade_star_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function()
+            self:updateHeroItemInfo()
+        end)
+    end
+end
+function BondSkillUpWindow:onClickBtnAct()
+    if not self.con_status then
+        message(TI18N("语言_c_6201"))
+        return
+    end
+    if self.cost_status ~= 0 then
+        local cost_list = self.data.lev_up_cost[self.cost_status]
+        local item_id =cost_list[1]
+        local item_config = Config.ItemData.data_get_data(item_id)
+        BackpackController:getInstance():openTipsSource(true, item_config)
+        return
+    end
+
+    if self.hero_item_data_list and next(self.hero_item_data_list) ~= nil then
+        local hero_list = {}
+        local random_list = {}
+        local dic_item_expend = {}
+        for i,item in ipairs(self.hero_item_data_list) do
+            local count = 0
+            for k,v in pairs(item.dic_select_list) do
+                count = count + 1
+            end
+            if count < item.count then
+                message(TI18N("语言_c_3021"))
+                return
+            end
+            for k,v in pairs(item.dic_select_list) do
+                if v.is_hero_hun then --是否英魂 参考 HeroUpgradeStarSelectPanel:initHeroList(dic_other_selected) 里面的定义
+                    if v.good_vo then
+                        if dic_item_expend[v.good_vo.base_id] == nil then
+                            dic_item_expend[v.good_vo.base_id] = 1
+                        else
+                            dic_item_expend[v.good_vo.base_id] = dic_item_expend[v.good_vo.base_id] + 1
+                        end
+                    end
+                else
+                    local data = {}
+                    data.partner_id = k
+                    if item.bid == 0 then
+                        --随机卡
+                        table.insert(random_list, data)
+                    else
+                        --指定卡
+                        table.insert(hero_list, data)
+                    end
+                end
+            end
+        end
+
+        local item_list = {}
+        for item_id, num in pairs(dic_item_expend) do
+            local data = {}
+            data.item_id = item_id
+            data.num = num
+            table.insert(item_list, data)
+        end
+        if self.bond_id == model.bond_id and model.bond_id ~= 0 then
+            controller:sender11403(model.bond_par_id,self.bond_id,hero_list,random_list,item_list)
+        else
+            controller:sender11403(0,self.bond_id,hero_list,random_list,item_list)
+        end
+    end
+
+end
+function BondSkillUpWindow:onClickBtnClose()
+    controller:openBondSkillUpWindow(false)
+end
+
+function BondSkillUpWindow:openRootWnd(id)
+    self.bond_id = id
+    self.hero_vo = model:getHeroById(model.bond_par_id)
+    --查看预览
+    if not self.preview_btn then
+        self.preview_btn = createRichLabel(20,cc.c3b(0x0e,0xa8,0x0e),cc.p(1,0.5),cc.p(640,25))
+        self.btn_panel:addChild(self.preview_btn)
+    end
+    local res = PathTool.getResFrame("bondskill","bondskill_23",false,"bondskill")
+    self.preview_btn:setString(string.format(TI18N("语言_c_6190"),res))
+    self.preview_btn:addTouchLinkListener(function()
+        self:ClickPreviewBtn()
+    end, { "click", "href" })
+    self:setData()
+end
+function BondSkillUpWindow:setData()
+    self.as_data = model:getAsBondDataForId(self.bond_id)
+    local data = model:getBondDataForId(self.bond_id)
+    if not data then
+        self.data = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bond_id][1])
+        self.up_btn:setVisible(false)
+        self.act_btn:setVisible(true)
+        if self.as_data then
+            setChildUnEnabled(true,self.act_btn)
+            self.act_btn:setTouchEnabled(false)
+        else
+            setChildUnEnabled(false,self.act_btn)
+            self.act_btn:setTouchEnabled(true)
+        end
+        self.win_title:setString(TI18N("语言_c_6200"))
+        self.info_title:setString(TI18N("语言_c_6197"))
+        self.con_title:setString(TI18N("语言_c_6198"))
+        self.cost_card_title:setString(TI18N("语言_c_6199"))
+        self.base_name:setString(TI18N("语言_c_6218"))
+        self.eff_name:setString(TI18N("语言_c_6219"))
+    else
+        self.data = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bond_id][data.b_lev+1])
+        self.up_btn:setVisible(true)
+        if self.as_data and self.as_data.b_lev and data.b_lev < self.as_data.b_lev then
+            setChildUnEnabled(true,self.up_btn)
+            self.up_btn:setTouchEnabled(false)
+        else
+            setChildUnEnabled(false,self.up_btn)
+            self.up_btn:setTouchEnabled(true)
+        end
+        if not self.data then
+            self.data = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bond_id][data.b_lev])
+            self.up_btn:setVisible(false)
+        end
+        self.act_btn:setVisible(false)
+        self.win_title:setString(TI18N("语言_c_6203"))
+        self.info_title:setString(TI18N("语言_c_6204"))
+        self.con_title:setString(TI18N("语言_c_6205"))
+        self.cost_card_title:setString(TI18N("语言_c_6206"))
+        self.base_name:setString(TI18N("语言_c_6207"))
+        self.eff_name:setString(TI18N("语言_c_6208"))
+    end
+    self:setInfoPanel()
+    self:setConPanel()
+    self:setCostPanel()
+end
+function BondSkillUpWindow:setCostPanel()
+    if self.as_data and self.as_data.b_lev and self.data.lev <= self.as_data.b_lev then
+        self.cost_panel:setVisible(false)
+        self.tip:setVisible(true)
+        self.tip:setString(string.format(TI18N("语言_c_6315"), self.as_data.b_lev))
+    else
+        self.cost_panel:setVisible(true)
+        self.tip:setVisible(false)
+        self.cost_status = 0
+        local cost_list = self.data.lev_up_cost[1]
+        self.cost_list.icon:loadTexture(PathTool.getItemRes(cost_list[1]),LOADTEXT_TYPE)
+        local have_num = BackpackController:getInstance():getModel():getItemNumByBid(cost_list[1])
+        self.cost_list.txt:setString(string.format("%s/%s",MoneyTool.GetMoneyString(have_num,true),MoneyTool.GetMoneyString(cost_list[2],true)))
+        if have_num >= cost_list[2] then
+            self.cost_list.txt:setColor(cc.c3b(0x5c,0x27,0x05))
+        else
+            self.cost_status = 1
+            self.cost_list.txt:setColor(cc.c3b(0xff,0x15,0x15))
+        end
+        --红点条件list
+        local conditions_list = {}
+        local index = 1
+        for i,expend in ipairs(self.data.lev_up_expend2) do
+            self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3])
+            conditions_list[index] = {}
+            conditions_list[index][expend[1]] = {}
+            conditions_list[index][expend[1]][expend[2]] = expend[3]
+            index = index + 1
+        end
+        --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+        for i,expend in ipairs(self.data.lev_up_expend3) do
+            self.hero_item_data_list[index] = self:getHeroData(nil, expend[2], expend[3], expend[1])
+            conditions_list[index] = {}
+            conditions_list[index][expend[1]] = {}
+            conditions_list[index][expend[1]][expend[2]] = expend[3]
+            index = index + 1
+        end
+        for i,hero_vo in ipairs(self.hero_item_data_list) do
+            if self.hero_item_list[i] == nil then
+                self.hero_item_list[i] = HeroExhibitionItem.new(0.8, true)
+                self.hero_item_list[i]:setPosition( (i-0.5) * (HeroExhibitionItem.Width * 0.8 + 10) + 30 , 75)
+                self.hero_item_list[i]:addCallBack(function() self:_onClickItemData(i) end)
+                self.cost_card_panel:addChild(self.hero_item_list[i])
+            end
+            self.hero_item_list[i]:setVisible(true)
+            if hero_vo.bid == 0 then
+                --随机卡的头像id
+                local default_head_id = model:getRandomHeroHeadByQuality(hero_vo.star)
+                self.hero_item_list[i]:setData(hero_vo)
+                self.hero_item_list[i]:setDefaultHead(default_head_id)
+                self.hero_item_list[i]:setHeroName(true, string_format(TI18N("语言_c_3022"), hero_vo.star))
+            else
+                self.hero_item_list[i]:setData(hero_vo)
+                self.hero_item_list[i]:setHeroName(false)
+            end
+            
+            self.hero_item_list[i]:setHeadUnEnabled(true)
+        end
+        self:initHeroListByMatchInfo(conditions_list)
+        self:updateCentreHeroItemRedPoint()
+    end
+    
+end
+
+
+--初始化英雄列表匹配信息
+function BondSkillUpWindow:initHeroListByMatchInfo(conditions_list)
+    local hero_list = model:getHeroList()
+    self.conditions_hero_list = {}
+    for k,hero in pairs(hero_list) do
+        for i,conditions in ipairs(conditions_list) do
+            if self.conditions_hero_list[i] == nil then
+                self.conditions_hero_list[i] = {}
+            end
+
+            if self.hero_item_data_list[i].bid == 0 then
+                --表示随机卡 0表示全部阵营
+                if conditions[0] then
+                    if conditions[0][hero.star] then
+                        table.insert(self.conditions_hero_list[i], hero)
+                    end
+                else
+                    if conditions[hero.camp_type] and conditions[hero.camp_type][hero.star] ~= nil then
+                        table.insert(self.conditions_hero_list[i], hero)
+                    end
+                end
+            else
+                --指定卡
+                if conditions[hero.bid] and conditions[hero.bid][hero.star] then   -- 指定卡要剔除自己
+                    if self.hero_vo and self.hero_vo.partner_id ~= hero.partner_id then
+                        table.insert(self.conditions_hero_list[i], hero)
+                    end
+                end
+            end
+        end
+    end
+    --新加需求.自动填满指定定的位置的英雄
+    -- if self.hero_vo and self.hero_vo.red_point[HeroConst.RedPointType.eRPStar] then
+        self.dic_other_selected = {}
+        if self.hero_vo then
+            self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+        end
+        for i,v in ipairs(self.hero_item_data_list) do
+            --策划要求指定才需要填充 
+            if v.bid ~= 0 then
+                if self.conditions_hero_list[i] and #self.conditions_hero_list[i] > 0 then
+                    local sort_func = SortTools.tableCommonSorter({{"lev", false}, {"id", true}}) 
+                    table.sort(self.conditions_hero_list[i], sort_func)
+                    local count = 0
+                    for _,hero_vo in ipairs(self.conditions_hero_list[i]) do
+                        if self.dic_other_selected[hero_vo.id] == nil and not hero_vo:checkHeroLockTips(true, nil, true) then
+                            v.dic_select_list[hero_vo.id] = hero_vo
+                            count = count + 1
+                            if count >= v.count then
+                                break
+                            end
+                        end
+                    end
+                    if count < v.count then
+                        --说明不够..就不显示了
+                        v.dic_select_list = {}
+                    else
+                        for k,v in pairs(v.dic_select_list) do
+                            self.dic_other_selected[k] = v
+                        end
+                        v.lev = string.format("%s/%s", count, v.count)
+                        if self.hero_item_list[i] then
+                            self.hero_item_list[i].num_label:setString(v.lev)
+                            if count > 0 then
+                                self.hero_item_list[i]:setHeadUnEnabled(false)
+                            else
+                                self.hero_item_list[i]:setHeadUnEnabled(true)
+                            end
+                        end      
+                    end
+                end
+            end
+        end
+    -- end
+
+
+    local list = BackpackController:getInstance():getModel():getHeroHunList()
+    for k, good_vo in pairs(list) do
+        if good_vo.config then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+                if self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    local camp_type = good_vo.config.camp_type
+                    local star = good_vo.config.eqm_jie
+                    if conditions[camp_type] and conditions[camp_type][star] ~= nil then
+                        for j=1,good_vo.quantity do
+                            local data = {}
+                            data.id = -(j + camp_type * 10)
+                            data.partner_id = data.id
+                            data.good_vo = good_vo
+                            table.insert(self.conditions_hero_list[i], data)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+--计算中间item红点显示
+function BondSkillUpWindow:updateCentreHeroItemRedPoint()
+    if not self.conditions_hero_list then return end
+    if not self.dic_other_selected then return end
+    for i,item in ipairs(self.hero_item_list) do
+        --模拟的hero_vo数据
+        local hero_vo = self.hero_item_data_list[i]
+        local conditions_list =  self.conditions_hero_list[i] or {}
+        if hero_vo then
+            local count = 0
+            for k,v in pairs(hero_vo.dic_select_list) do
+                count = count + 1
+            end
+            --已经填满了就不显示红点了
+            if count < hero_vo.count then
+                --随机卡的 --指定卡 逻辑一样的
+                local num = hero_vo.count
+                for j,each_hero in ipairs(conditions_list) do
+                    --自已选的.和 别人没选的 都算数 
+                    if hero_vo.dic_select_list[each_hero.id] or self.dic_other_selected[each_hero.id] == nil then 
+                        if conditions_list[j] and conditions_list[j].is_in_form == 0 and conditions_list[j].is_lock == 0 then
+                            num = num -1
+                            if num == 0 then
+                                break
+                            end
+                        end
+                    end
+                    local dic_select = self.hero_item_data_list[i]
+                    local list = BackpackController:getInstance():getModel():getHeroHunList()
+                    if self.item_list == nil then
+                        self.item_list = {}
+                    end
+                    for _,v in pairs(list) do
+                        if v.config and (v.config.camp_type == each_hero.camp_type or 0) and v.config.eqm_jie ==hero_vo.star then
+                            for i=1, v.quantity do
+                                local hero_vo = {}
+                                hero_vo.id = -(i + v.config.camp_type * 10)  --因为英雄id是正序的..这里就负序
+                                hero_vo.partner_id = hero_vo.id
+                                hero_vo.is_hero_hun = true
+                                hero_vo.good_vo = v
+                                if dic_select[hero_vo.id] then
+                                    conditions_list[hero_vo.id] = hero_vo
+                                end
+                                table.insert(self.item_list, hero_vo)
+                            end
+                        end
+                    end
+                    for key, value in pairs(self.item_list) do
+                        if each_hero.id == value.id then 
+                            num = num -1
+                            if num == 0 then
+                                break
+                            end
+                        end
+                    end 
+
+                end
+                --说明数量够 显示红点
+                local status = (num <= 0) 
+                item:showRedPoint(status, 8, 8)
+
+            else
+                item:showRedPoint(false)
+            end
+        end
+    end
+end
+--点击材料数据
+function BondSkillUpWindow:_onClickItemData(index)
+    if not self.hero_item_data_list[index] then return end
+    self.hero_vo = model:getHeroById(model.bond_par_id)
+    if not self.hero_vo then return end
+    --标志点击了那个
+    self.hero_item_data_list[index].is_select = true
+    --被其他人选择的列表 [id] = hero_vo 模式
+    local dic_other_selected = {}
+    --把自己也过滤
+    dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    for i,item in ipairs(self.hero_item_data_list) do
+        if i ~= index then
+            for k,v in pairs(item.dic_select_list) do
+                dic_other_selected[k] = v
+            end
+        end
+    end
+
+    local setting = {}
+    if self.hero_item_data_list[index].bid == 0 and self.hero_item_data_list[index].star == 5 then
+        -- 表示随机卡
+        setting.self_mark_bid = self.hero_vo.bid
+    end
+
+    controller:openHeroUpgradeStarSelectPanel(true, self.hero_item_data_list[index], dic_other_selected, HeroConst.SelectHeroType.eUpgradeStar, setting)
+end
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function BondSkillUpWindow:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+--更新选中英雄信息
+function BondSkillUpWindow:updateHeroItemInfo()
+    if not self.hero_item_data_list then return end
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    for i,v in ipairs(self.hero_item_data_list) do
+        if v.is_select then
+            v.is_select = false
+            local count = 0
+            for k,vo in pairs(v.dic_select_list) do
+                count = count + 1
+                self.dic_other_selected[k] = vo
+            end
+            v.lev = string_format("%s/%s", count, v.count)
+            if self.hero_item_list[i] then
+                self.hero_item_list[i].num_label:setString(v.lev)
+                if count > 0 then
+                    self.hero_item_list[i]:setHeadUnEnabled(false)
+                else
+                    self.hero_item_list[i]:setHeadUnEnabled(true)
+                end
+            end
+        else
+            for k,vo in pairs(v.dic_select_list) do
+                self.dic_other_selected[k] = vo
+            end
+        end
+    end
+end
+function BondSkillUpWindow:setConPanel()
+    self.con_status = true
+    if not self.con_txt then
+        self.con_txt = createRichLabel(22,cc.c4b(0x7c,0x55,0x36,0xff),cc.p(0,0.5),cc.p(10,113),-4,nil,600)
+        self.con_panel:addChild(self.con_txt)
+    end
+    local list = {}
+    local limit = self.data.limit
+    for i = 1, tableLen(limit) do
+        table.insert(list,limit[i][2])
+        local status = true
+        if limit[i][1] =="evt_partner_star_up" then
+            local hero_vo = model:getTopLevHeroInfoByBidNoResona(self.data.partner_id)
+            if not hero_vo then
+                status = false
+            else
+                if hero_vo.star < limit[i][2] or hero_vo:isResonateHero() then
+                    status = false
+                end
+            end
+        elseif limit[i][1] =="evt_horcruxes_lev_up" then
+            local hero_list = model.hero_bid_list[self.data.partner_id]
+            if not hero_list then
+                status = false
+            else
+                local status2 = false
+                for k, v in pairs(hero_list) do
+                    if v.h_lev >= limit[i][2] then
+                        status2 = true
+                    end
+                end
+                if not status2 then
+                    status = false
+                end
+            end
+        end
+        local txt = ""
+        if status then
+            txt = TI18N("语言_c_6209")
+        else
+            self.con_status = false
+            txt = TI18N("语言_c_6210")
+        end
+        table.insert(list,txt)
+    end
+    local str = LangStringFormat(self.data.lev_up_desc,list)
+    local cfg = deepCopy(Config.PartnerBondSkillData.data_base_info[self.data.id][self.data.lev or 1])
+    local par_id = cfg.partner_id
+    local par_cfg = Config.PartnerData.data_partner_base[par_id]
+    local name = par_cfg.name
+    if tableLen(limit) == 1 then
+        str = string.format(str,name)
+    else
+        str = string.format(str,name,name)
+    end
+    self.con_txt:setString(str)
+end
+function BondSkillUpWindow:setInfoPanel()
+    local skill_cfg = Config.SkillData.data_get_skill(self.data.skill_ids[1])
+    self.skill_name:setString(skill_cfg.name)
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true,true,true,0.8, true)
+        self.skill_panel:addChild(self.skill_item)
+        self.skill_item:setPosition(cc.p(self.skill_panel:getContentSize().width*0.5,100))
+    end
+    self.skill_item:setData(skill_cfg)
+    self:setAttrPanel(self.data.attr_c)
+    if not self.skill_desc then
+        self.skill_desc = createRichLabel(20,cc.c4b(0x7c,0x55,0x36,0xff),cc.p(0,1),cc.p(0,10),0,nil,350)
+        self.eff_desc:addChild(self.skill_desc)
+    end
+    self.skill_desc:setString(skill_cfg.des)
+    local _h = math.max(self.skill_desc:getContentSize().height,self.eff_desc:getContentSize().height)
+    if _h > self.eff_desc:getContentSize().height then
+        self.eff_desc:setTouchEnabled(true)
+    else
+        self.eff_desc:setTouchEnabled(false)
+    end
+    self.eff_desc:setInnerContainerSize(cc.size(368,_h))
+    self.skill_desc:setPositionY(_h)
+end
+--设置属性
+function BondSkillUpWindow:setAttrPanel(data)
+    data = deepCopy(data)
+    local list = deepCopy(model:getBondDataForId(self.data.id))
+    if list and list.b_attr then
+        table.sort(list.b_attr,function(a,b) return a.pos < b.pos end)
+    end
+    for key, value in pairs(self.attr_list) do
+		if value and not tolua.isnull(value) and not tolua.isnull(self.base_panel) then
+			self.base_panel:removeChild(value)
+		end
+		value = nil
+	end
+    for i = 1, tableLen(data) do
+        if list and list.b_attr[i] then
+            data[i][1] = Config.AttrData.data_id_to_key[list.b_attr[i].attr_id]
+            data[i][2] = list.b_attr[i].attr_val
+        end
+    end
+    for i = 1, tableLen(data) do
+        local item = self:setAttrItem(data[i])
+        self.base_panel:addChild(item)
+        item:setPosition(pos_list[i])
+        self.attr_list[i] = item
+    end
+end
+function BondSkillUpWindow:setAttrItem(data)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 0.5))
+    item:setTouchEnabled(true)
+    local label = createRichLabel(20, cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0), cc.p(0, 0), -4, nil, 456)
+    item:addChild(label)
+    local icon = PathTool.getAttrIconByStr(data[1])
+    local is_per = PartnerCalculate.isShowPerByStr(data[1])
+    local num = deepCopy(data[2])
+    if is_per == true then
+        num = (data[2]*0.1).."%"
+    end
+    local attr_str = string.format("<img src='%s' scale=0.8 /><div fontcolor=#7c5536>   %s</div>", PathTool.getResFrame("common", icon), num)
+    label:setString(attr_str)
+    item:setContentSize(label:getContentSize())
+    item:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local txt = Config.AttrData.data_key_to_name[data[1]]
+            TipsManager:getInstance():showCommonTips(txt, sender:getTouchBeganPosition(),24,30,300,false,0,50,true)
+        end
+    end)
+    return item
+end
+--- 查看升级预览
+function BondSkillUpWindow:ClickPreviewBtn()
+    self.tip_panel:setVisible(true)
+    self:setAtrPanel(self.data)
+end
+
+function BondSkillUpWindow:setAtrPanel(data)
+    local _h = 20
+    if self.top_item then
+        if not tolua.isnull(self.top_item) and not tolua.isnull(self.atr_panel) then
+			self.tip_panel:removeChild(self.top_item)
+		end
+        self.top_item = nil
+    end
+    self.top_item = ccui.Layout:create()
+    self.top_item:setAnchorPoint(cc.p(0.5, 0))
+    self.top_item:setContentSize(cc.size(400,40))
+    local title = createLabel(24,cc.c3b(0xfe,0xee,0xba),nil,self.top_item:getContentSize().width*0.5,self.top_item:getContentSize().height-5,TI18N("语言_c_6364"),self.top_item,nil,cc.p(0.5,1))
+    local line = createImage(self.top_item,PathTool.getResFrame("common_2", "tips_8"),self.top_item:getContentSize().width*0.5,0,cc.p(0.5,0),true,nil,true)
+    line:setContentSize(cc.size(340,2))
+    self.tip_panel:addChild(self.top_item)
+    if not self.atr_panel.bg then
+        local bg = createImage(self.atr_panel,PathTool.getResFrame("common", "common_2040"),self.atr_panel:getContentSize().width*0.5,0,cc.p(0.5,1),true,nil,true)
+        bg:setCapInsets(cc.rect(10, 12, 2, 2))
+        bg:setVisible(false)
+        self.atr_panel.bg = bg
+    end
+    if not self.atr_panel.icon then
+        local txt_res = PathTool.getResFrame("bondskill","txt_cn_bondskill_2",false,"bondskill")
+        local icon = createImage(self.atr_panel.bg,txt_res,self.atr_panel:getContentSize().width-5,0,cc.p(1,1),true)
+        self.atr_panel.icon = icon
+    end
+    local bond_cfg = deepCopy(Config.PartnerBondSkillData.data_base_info[data.id])
+    -- if data.data then
+        self.atr_panel.bg:setVisible(false)
+    -- end
+    for key, value in pairs(self.bond_atr_list) do
+		if value and not tolua.isnull(value) and not tolua.isnull(self.atr_panel) then
+			self.atr_panel:removeChild(value)
+		end
+		value = nil
+	end
+    for i = 1, tableLen(bond_cfg) do
+        local is_line = i ~= tableLen(bond_cfg)
+        local is_this = false
+        if data.data and data.data.b_lev and data.data.b_lev - 1 == i then
+            is_this = true
+        elseif data.lev and data.lev - 1 == i then
+            is_this = true
+        end
+        local item = self:setAtrItem(bond_cfg[i],is_this,is_line)
+        self.atr_panel:addChild(item)
+        self.bond_atr_list[i] = item
+        _h = _h + item:getContentSize().height
+    end
+    self.atr_panel:setContentSize(cc.size(400,math.min(_h,500)))
+    self.atr_panel:setInnerContainerSize(cc.size(400,_h))
+    self.tip_bg:setContentSize(cc.size(405,math.min(_h,500)+15 + self.top_item:getContentSize().height))
+    self.tip_bg:setPositionY(640 + self.top_item:getContentSize().height*0.5)
+    local _y = self.atr_panel:getContentSize().height*0.5+self.atr_panel:getPositionY()
+    self.top_item:setPosition(cc.p(360,_y))
+    for i = 1, tableLen(self.bond_atr_list) do
+        self.bond_atr_list[i]:setPositionY(_h)
+        if (data.data and data.data.b_lev == i + 1) or (data.lev and data.lev == i + 1) then
+            self.atr_panel.bg:setContentSize(cc.size(400,self.bond_atr_list[i]:getContentSize().height+10))
+            self.atr_panel.bg:setPositionY(_h + 6)
+            self.atr_panel.bg:setVisible(true)
+            self.atr_panel.icon:setPositionY(self.bond_atr_list[i]:getContentSize().height-5)
+        end
+        _h = _h - self.bond_atr_list[i]:getContentSize().height
+    end
+end
+
+function BondSkillUpWindow:setAtrItem(data,is_this,is_line)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 1))
+    local _h = 10
+    local lv_txt = createLabel(22,cc.c3b(0xea,0xb5,0x50),nil,10,0,TI18N("语言_c_3191"),item,nil,cc.p(0,1))
+    local lv = createLabel(22,cc.c3b(0xfe,0xee,0xba),nil,10,0,data.lev,item,nil,cc.p(0,1))
+    lv:setPositionX(lv_txt:getPositionX() + lv_txt:getContentSize().width + 5)
+    _h = _h + lv_txt:getContentSize().height
+    local con_txt = createRichLabel(20,cc.c3b(0xff,0xee,0xd3),cc.p(0,1),cc.p(10,0),nil,nil,380)
+    item:addChild(con_txt)
+    local list = {}
+    for i = 1, tableLen(data.limit) do
+        table.insert(list,data.limit[i][2])
+        table.insert(list,"")
+    end
+    local par_id = data.partner_id
+    local par_cfg = Config.PartnerData.data_partner_base[par_id]
+    local name = par_cfg.name
+    local _str = LangStringFormat(data.lev_up_desc,list)
+    if tableLen(data.limit) == 1 then
+        _str = string.format(_str,name)
+    else
+        _str = string.format(_str,name,name)
+    end
+    local txt = string.format(TI18N("语言_c_6194"),_str)
+    con_txt:setString(txt)
+    _h = _h + con_txt:getContentSize().height
+    local atr_panel = ccui.Layout:create()
+    atr_panel:setAnchorPoint(cc.p(0, 1))
+    local atr_list = data.attr_c
+    local attr_list = model:getBondDataForId(self.data.id)
+    if attr_list then
+        -- atr_list = {}
+        for i = 1, tableLen(attr_list.b_attr) do
+            local list = attr_list.b_attr[i]
+            if list.pos <= data.lev then
+                local list_1 = {}
+                list_1[1] = Config.AttrData.data_id_to_key[list.attr_id]
+                list_1[2] = list.attr_val
+                atr_list[list.pos] = list_1
+            end
+        end
+    end
+    local atr_h = math.ceil(tableLen(atr_list)/2)*30
+    atr_panel:setContentSize(cc.size(400,atr_h))
+    local atr_txt = createLabel(20,cc.c3b(0xea,0xb5,0x50),nil,10,atr_h - 15,TI18N("语言_c_6195"),atr_panel,nil,cc.p(0,0.5))
+    for i = 1, tableLen(atr_list) do
+        local item = self:setAttrItem2(atr_list[i],is_this,is_line)
+        item:setAnchorPoint(cc.p(0, 1))
+        atr_panel:addChild(item)
+        local _x = (i-1)%2*150+90
+        local _y = (math.ceil(tableLen(atr_list)/2) - math.ceil(i/2) + 1 ) * 30
+        item:setPosition(cc.p(_x,_y))
+    end
+    _h = _h + atr_h
+    item:addChild(atr_panel)
+    local eff_txt = createRichLabel(20,cc.c3b(0xff,0xee,0xd3),cc.p(0,1),cc.p(10,0),nil,nil,380)
+    item:addChild(eff_txt)
+    local eff_str = string.format(TI18N("语言_c_6196"),Config.SkillData.data_get_skill(data.skill_ids[1]).des)
+    eff_txt:setString(eff_str)
+    _h = _h + eff_txt:getContentSize().height
+    local line = createImage(item,PathTool.getResFrame("common_2", "tips_8"),self.top_item:getContentSize().width*0.5,0,cc.p(0.5,0),true,nil,true)
+    line:setContentSize(cc.size(340,2))
+    line:setVisible(is_line)
+    item:setContentSize(cc.size(400,_h))
+    lv_txt:setPositionY(_h)
+    lv:setPositionY(_h)
+    _h = _h - lv_txt:getContentSize().height
+    con_txt:setPositionY(_h)
+    _h = _h - con_txt:getContentSize().height
+    atr_panel:setPositionY(_h)
+    _h = _h - atr_panel:getContentSize().height
+    eff_txt:setPositionY(_h)
+    line:setPositionY(0)
+    return item
+end
+function BondSkillUpWindow:setAttrItem2(data,is_this,is_line)
+    local id = data[1] or Config.AttrData.data_id_to_key[data.attr_id]
+    local val = data[2] or data.attr_val
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 0.5))
+    item:setTouchEnabled(true)
+    local label = createRichLabel(20, cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0), cc.p(0, 0), -4, nil, 456)
+    item:addChild(label)
+    local icon = PathTool.getAttrIconByStr(id)
+    local is_per = PartnerCalculate.isShowPerByStr(id)
+    local num = deepCopy(val)
+    if is_per == true then
+        num = (val*0.1).."%"
+    end
+    local attr_str = string.format("<img src='%s' scale=0.8 /><div fontcolor=#ffffff>   %s</div>", PathTool.getResFrame("common", icon), num)
+    if is_this then
+        attr_str = string.format("<img src='%s' scale=0.8 /><div fontcolor=#157E22>   %s</div>", PathTool.getResFrame("common", icon), num)
+    end
+    label:setString(attr_str)
+    item:setContentSize(label:getContentSize())
+    item:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local txt = Config.AttrData.data_key_to_name[id]
+            TipsManager:getInstance():showCommonTips(txt, sender:getTouchBeganPosition(),24,30,300,false,0,50,true)
+        end
+    end)
+    return item
+end
+function BondSkillUpWindow:close_callback()
+    if self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():UnBind(self.updateBond)
+        self.updateBond = nil
+    end
+    
+    if self.upgrade_star_select_event then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+    if self.hero_item_list then
+        for i,v in ipairs(self.hero_item_list) do
+             v:DeleteMe()
+        end
+        self.hero_item_list = nil
+    end
+    controller:openBondSkillUpWindow(false)
+end

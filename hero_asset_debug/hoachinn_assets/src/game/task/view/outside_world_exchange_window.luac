@@ -1,0 +1,429 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      异界之门兑换英雄
+-- Create: 2020-02-10
+-- --------------------------------------------------------------------
+
+OutsideWorldExchangeWindow = OutsideWorldExchangeWindow or BaseClass(BaseView)
+
+function OutsideWorldExchangeWindow:__init()
+	self.ctrl = TaskController:getInstance()
+	self.model = self.ctrl:getModel()
+    self.is_full_screen = true
+    self.win_type = WinType.Big  
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG  
+    self.layout_name = "task/outside_world_exchange_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("gate_otherworld","gate_otherworld"), type = ResourcesType.plist},
+    } 
+
+    self.day_list = {}
+    self.cur_index = nil
+	self.num_list = {}
+	self.exchangeNum = 0
+	self.ConsumeList = {}
+end
+
+function OutsideWorldExchangeWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container)
+	self.Sprite_1 = self.main_container:getChildByName("Sprite_1")
+	self.Panel_1 = self.main_container:getChildByName("Panel_1")
+	self.hero_icon = self.Panel_1:getChildByName("hero_icon")
+	self.desc_bg = self.main_container:getChildByName("desc_bg")
+	self.tips_sprite = self.main_container:getChildByName("tips_sprite")
+	self.get_btn = self.main_container:getChildByName("get_btn")
+	self.get_btn_txt = self.get_btn:getChildByName("label")
+	self.get_btn_txt:setString(TI18N("语言_c_1475"))
+	self.Panel_3 = self.main_container:getChildByName("Panel_3")
+	self.close_btn = self.main_container:getChildByName("close_btn")
+	self.bar_txt = self.main_container:getChildByName("bar_txt")
+	self.slider = self.main_container:getChildByName("slider")
+	self.slider:setTouchEnabled(false)
+	self.title_bg = self.main_container:getChildByName("title_bg")
+	self.name = self.main_container:getChildByName("name")
+	self.rule_btn = self.main_container:getChildByName("rule_btn")
+	self.name:setString(TI18N("语言_c_5180"))
+	self.title_bg:setContentSize(cc.size(self.name:getContentSize().width + 120,63))
+	self.tips = createLabel(20, cc.c4b(0xff,0xff,0xff,0xff), cc.c4b(0x00,0x00,0x00,0xff), 205, 35, nil, self.main_container, 2, cc.p(0,0.5))
+	self.tips:setString(transformTextToShort(TI18N("语言_c_5310"),20))
+	addEvt2showAllTextTips(self.tips,TI18N("语言_c_5310"),20)
+	self.title_tips = createRichLabel(24,cc.c3b(0xe6,0xc8,0x8d),cc.p(0.5,0.5),cc.p(335,678),nil,nil,650)
+	self.main_container:addChild(self.title_tips)
+	self:setData()
+end
+
+function OutsideWorldExchangeWindow:openRootWnd(data)
+	self.data = data
+	self:setData()
+	self:updateRed()
+end
+
+function OutsideWorldExchangeWindow:updateRed()
+	if not self.model:getBreakNewRed(self.data.period) then
+		local data = self.model:getBreakNewRedData()
+		if data then
+			local str = self.data.period
+			local msg = {}
+			if data.msg ~= "" then
+				msg = string.split(data.msg,",")
+			end
+			for i,v in pairs(msg) do
+				str = str..","..v
+			end
+			ActionController:getInstance():sender16809(ActionStorageBool.BreakNew,1,""..str)
+		end
+	end
+end
+
+function OutsideWorldExchangeWindow:setData( )
+	if not self.data then return end
+	self.cfg = deepCopy(Config.AlienWorldData.data_exchange[self.data.period])
+	if next(self.data.exc_move) and next(self.data.exc_size) then
+		local bg_res = PathTool.getPlistImgForDownLoad("herodraw/herodrawres",self.data.hero_body, false)
+		if self.hero_icon then
+			self.item_load = loadSpriteTextureFromCDN(self.hero_icon, bg_res, ResourcesType.single, self.item_load) 
+		end
+		self.hero_icon:setPosition(cc.p(418 + self.data.exc_move[1][1],207 + self.data.exc_move[1][2]))
+		self.hero_icon:setScaleX(self.data.exc_size[1][1]/100)
+		self.hero_icon:setScaleY(self.data.exc_size[1][2]/100)
+		self.hero_icon:setVisible(true)
+	else
+		self.hero_icon:setVisible(false)
+	end
+	self.title_tips:setString(TI18N(self.data.lv_txt))
+	self.desc_bg:setContentSize(cc.size(self.title_tips:getContentSize().width+70,self.desc_bg:getContentSize().height))
+	loadSpriteTexture(self.Sprite_1,string.format("resource/gate_otherworld/%s.png", self.data.exchange_bg[1]), LOADTEXT_TYPE)
+	loadSpriteTexture(self.tips_sprite,string.format("resource/gate_otherworld/%s.png", self.data.exchange_txt2[1]), LOADTEXT_TYPE)
+	table.sort(self.cfg, function(a, b) return a.id < b.id end )
+	for key, value in pairs(self.cfg) do
+		value.exc_num = self.data.exc_num
+		local list = {}
+		list.id = value.need[1][1]
+		list.num = value.need[1][2]
+		list.consume = 0
+		list.canExchange = true
+		table.insert(self.ConsumeList,value.id,list)
+	end
+	self.exchangeNum = 0
+	self.total_exchange = self.data.exc_num
+	self.bar_txt:setString(self.exchangeNum.."/"..self.total_exchange)
+	self.slider:setPercent(self.exchangeNum/self.total_exchange*100)
+	if not self.item_scrollview then
+		local scroll_view_size = self.Panel_3:getContentSize()
+		local setting = {
+			item_class = OutsideWorldExchangeItem,
+			start_x = 0,
+			space_x = 0,
+			start_y = 8,
+			space_y = 4,
+			item_width = 620,
+			item_height = 120,
+			row = 0,
+			col = 1
+		}
+		self.item_scrollview = CommonScrollViewLayout.new(self.Panel_3, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top,scroll_view_size, setting)
+		self.item_scrollview:setSwallowTouches(false)
+	end
+	self.item_scrollview:setData(self.cfg)
+	self:set_get()
+	
+	local id = self.data.reward[1][1]
+	local cfg = Config.PartnerData.data_partner_base[id]
+	local item_id = 0
+	if not cfg then
+		cfg = Config.ItemData.data_get_data(id)
+		item_id = cfg.id
+	else
+		item_id = cfg.item_id
+	end
+	local item = BackPackItem.new(false, true, false, 0.7, true, true)
+    self.main_container:addChild(item)
+    item:setPosition(cc.p(150,60))
+    item:setBaseData(item_id,self.data.reward[1][2])
+end
+function OutsideWorldExchangeWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, function()
+		self.ctrl:openOutsideWorldExchangeWindow(false)
+	end, true,2)
+	registerButtonEventListener(self.get_btn, function()
+		local list = {}
+		for key, value in pairs(self.num_list) do
+			if value ~= 0 then
+				local exchange_list = {}
+				exchange_list.id = key
+				exchange_list.num = value
+				table.insert(list,key,exchange_list)
+			end
+		end
+		self.ctrl:sender21727(self.data.period,list)	
+	end, true,2)
+	if not self.OutsideWorldExchangeNum  then
+        self.OutsideWorldExchangeNum = GlobalEvent:getInstance():Bind(ActionEvent.OutsideWorldExchangeNum,function (status,index,num)
+            if status then
+				self.exchangeNum = self.exchangeNum + 1
+			else
+				self.exchangeNum = self.exchangeNum - 1
+			end
+			self.slider:setPercent(self.exchangeNum/self.total_exchange*100)
+			self.bar_txt:setString(self.exchangeNum.."/"..self.total_exchange)
+			self.num_list[index] = num
+			self:set_get()
+			local cfg = self.cfg[index]
+			for key, value in pairs(self.ConsumeList) do
+				if value.id == cfg.need[1][1] then
+					if status then
+						local consume = value.consume + value.num
+						value.consume = consume
+					else
+						local consume = value.consume - value.num
+						value.consume = consume
+					end
+					local have_num = BackpackController:getInstance():getModel():getItemNumByBid(value.id)
+					if have_num <= value.consume or have_num - value.consume < value.num then
+						value.canExchange = false
+					else
+						value.canExchange = true
+					end
+				end
+			end
+			GlobalEvent:getInstance():Fire(ActionEvent.OutsideWorldExchangeNumValue,self.exchangeNum,self.ConsumeList)
+        end)
+    end
+	registerButtonEventListener(self.rule_btn, function(param,sender, event_type)
+		local txt = string.format(self.data.faq_txt,self.data.exc_num)
+		TipsManager:getInstance():showAdventureBuffTipsScroll(txt, sender:getTouchBeganPosition(),nil,nil,500,false,290)
+	end, true,2)
+end
+function OutsideWorldExchangeWindow:set_get()
+	if self.exchangeNum >= self.data.exc_num then
+		setChildUnEnabled(false,self.get_btn)
+		self.get_btn:setTouchEnabled(true)
+	else
+		setChildUnEnabled(true,self.get_btn)
+		self.get_btn:setTouchEnabled(false)
+	end
+end
+function OutsideWorldExchangeWindow:close_callback()
+	if self.OutsideWorldExchangeNum then
+        self.OutsideWorldExchangeNum = GlobalEvent:getInstance():UnBind(self.OutsideWorldExchangeNum)
+        self.OutsideWorldExchangeNum = nil
+    end
+	if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+	self.ctrl:openOutsideWorldExchangeWindow(false)
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      异界之门兑换单个
+-- Create: 2020-02-10
+-- --------------------------------------------------------------------
+OutsideWorldExchangeItem = class("OutsideWorldExchangeItem", function()
+    return ccui.Widget:create()
+end)
+
+function OutsideWorldExchangeItem:ctor()
+	self.ctrl = TaskController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+	self.status = 1
+	self.get_num = 0
+	self.exchange_num = 0
+	self.ConsumeList = {}
+	self.canExchange = true
+end
+
+function OutsideWorldExchangeItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_outside_world_exchange_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(620,120))
+    self:setAnchorPoint(0,0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setTouchEnabled(true)
+    self.main_container:setSwallowTouches(false)
+
+	self.Image_19 = self.main_container:getChildByName("Image_19")
+	-- self.hold = self.main_container:getChildByName("hold")
+	-- self.Consume = self.main_container:getChildByName("Consume")
+	self.Image_5 = self.main_container:getChildByName("Image_5")
+	self.level_less = self.main_container:getChildByName("level_less")
+	self.level_add = self.main_container:getChildByName("level_add")
+	self.level_num = self.main_container:getChildByName("level_num")
+end
+
+function OutsideWorldExchangeItem:clearTimeTicket()
+    if self.sequence_action then
+        self.level_add:stopActionByTag(1)
+        self.sequence_action = nil
+    end
+	if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end  
+function OutsideWorldExchangeItem:clearTimeTicket2()
+    if self.sequence_action2 then
+        self.level_less:stopActionByTag(1)
+        self.sequence_action2 = nil
+    end
+	if self.time_ticket2 ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket2)
+        self.time_ticket2 = nil
+    end
+end 
+--点击事件
+function OutsideWorldExchangeItem:startTimeTicket()
+    local _callback = function()
+		-- self.is_click_btn = true
+		if self.touchNum then
+			self:touchNum(true)
+		end
+	end
+	self.time_ticket = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+end
+function OutsideWorldExchangeItem:startTimeTicket2()
+    local _callback = function()
+		-- self.is_click_btn = true
+		self:touchNum(false)
+	end
+	self.time_ticket2 = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+end
+function OutsideWorldExchangeItem:register_event(  )
+	self.level_add:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        
+        if event_type == ccui.TouchEventType.began then
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function()
+                self:startTimeTicket()
+            end))
+            self.sequence_action = self.level_add:runAction(sequence_action)
+            self.sequence_action:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+			playButtonSound2()
+			self:touchNum(true)
+        end
+    end)
+	self.level_less:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        
+        if event_type == ccui.TouchEventType.began then
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function()
+                self:startTimeTicket2()
+            end))
+            self.sequence_action2 = self.level_less:runAction(sequence_action)
+            self.sequence_action2:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket2()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket2()
+			playButtonSound2()
+			self:touchNum(false)
+        end
+    end)
+	if not self.OutsideWorldExchangeNumValue  then
+        self.OutsideWorldExchangeNumValue = GlobalEvent:getInstance():Bind(ActionEvent.OutsideWorldExchangeNumValue,function(num,data)
+			self.exchange_num = num
+			self.ConsumeList = data
+			self:setLevelbtn()
+        end)
+    end
+end
+function OutsideWorldExchangeItem:touchNum( status )
+	if status then
+		self.get_num = self.get_num + 1
+	else
+		self.get_num = self.get_num - 1
+	end
+	self:setLevelbtn()
+	self.level_num:setString(self.get_num.."/"..self.Convertible)
+	local str = "<div fontcolor=#7C5536>%s</div><div fontcolor=#0EA80E> %s</div><div fontcolor=#7C5536> / %s</div>"
+	self.Consume:setString(string.format(str,TI18N("语言_c_1360"),self.get_num * self.have_id_num,self.have_num))
+	GlobalEvent:getInstance():Fire(ActionEvent.OutsideWorldExchangeNum, status, self.index, self.get_num)
+end
+function OutsideWorldExchangeItem:setLevelbtn()
+	if tableLen(self.ConsumeList) ~= 0 then
+		self.canExchange = self.ConsumeList[self.index].canExchange
+	end
+	if self.get_num >= self.max_num or self.exchange_num >= self.data.exc_num or not self.canExchange then
+		self:clearTimeTicket()
+        setChildUnEnabled(true,self.level_add)
+        self.level_add:setTouchEnabled(false)
+	else
+        setChildUnEnabled(false,self.level_add)
+        self.level_add:setTouchEnabled(true)
+	end
+	if self.get_num <= 0 then
+		self:clearTimeTicket2()
+        setChildUnEnabled(true,self.level_less)
+        self.level_less:setTouchEnabled(false)
+	else
+        setChildUnEnabled(false,self.level_less)
+        self.level_less:setTouchEnabled(true)
+	end
+end
+function OutsideWorldExchangeItem:setData(data)
+	self.data = data
+	self.index = data.id
+	self.Convertible = data.limit
+	self.have_id = data.need[1][1]
+	self.have_id_num = data.need[1][2]
+	self.have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.have_id)
+	self.max_num = math.floor(self.have_num / self.have_id_num)
+	self.max_num = math.min(self.max_num,self.Convertible)
+	-- self.hold:setString(TI18N("语言_c_1060")..self.have_num)
+	self.Consume = createRichLabel(24,cc.c4b(0xff,0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(480,86),nil,nil,600)
+	self.main_container:addChild(self.Consume)
+	local str = "<div fontcolor=#7C5536>%s</div><div fontcolor=#0EA80E> %s</div><div fontcolor=#7C5536> / %s</div>"
+	self.Consume:setString(string.format(str,TI18N("语言_c_1360"),"0",self.have_num))
+	self.own_item = BackPackItem.new(false, true, false, 0.8, true, true)
+	self.main_container:addChild(self.own_item)
+	self.own_item:setPosition(cc.p(80,60))
+	self.own_item:setData(data.need[1])
+
+	self.get_item = BackPackItem.new(false, true, false, 0.8, true, true)
+	self.main_container:addChild(self.get_item)
+	self.get_item:setPosition(cc.p(250,60))
+	self.get_item:setData(data.reward[1])
+
+	self.level_num:setString(self.get_num.."/"..self.Convertible)
+
+	self.Image_5:setVisible(self.Convertible ~= 0)
+	self.level_less:setVisible(self.Convertible ~= 0)
+	self.level_add:setVisible(self.Convertible ~= 0)
+	self.level_num:setVisible(self.Convertible ~= 0)
+	self:setLevelbtn()
+end
+
+
+function OutsideWorldExchangeItem:DeleteMe()
+	if self.OutsideWorldExchangeNumValue then
+        self.OutsideWorldExchangeNumValue = GlobalEvent:getInstance():UnBind(self.OutsideWorldExchangeNumValue)
+        self.OutsideWorldExchangeNumValue = nil
+    end
+	self:clearTimeTicket()
+	self:clearTimeTicket2()
+end

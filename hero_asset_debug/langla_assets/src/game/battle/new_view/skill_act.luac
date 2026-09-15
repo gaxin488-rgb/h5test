@@ -1,0 +1,1618 @@
+-- --------------------------------------------------------------------
+-- 
+-- 
+-- @author: mengjiabin@syg.com(必填, 创建模块的人员)
+-- @editor: mengjiabin@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+-- [文件功能:技能动作基础类具体实现]
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+-- BATTLE_SCREENWIDTH = 720
+-- BATTLE_SCREENHEIGHT = 460
+GIRD_POS_OFFSET = 9
+-- 左边的站位格子
+Pos2GridLeft = {
+	{x = 27 + 2, y = 15 - 7 - 1}, {x = 28 + 2, y =21 - 7 + 0.5}, {x = 29 + 2, y = 27 - 7 + 2}
+	,{x = 17 + 1, y = 15 - 7 - 1}, {x = 18 + 1, y = 21 - 7 + 0.5}, {x = 19 + 1, y = 27 - 7 + 2}
+	,{x = 7, y = 15 - 7 - 1}, {x = 8, y = 21 - 7 + 0.5}, {x = 9, y = 27 - 7 + 2}
+    ,{x = 15, y = 43 - 7 + 3}
+    ,{x = 11, y = 39 - 7 + 3}
+}
+-- 右边的站位格子
+Pos2GridRight = {
+	 {x = 53 - 2, y = 15 - 7 - 1},{x = 52 - 2, y = 21 - 7 + 0.5},{x = 51 - 2, y = 27 - 7 + 2}
+	, {x = 63 - 1, y = 15 - 7 - 1}, {x = 62 - 1, y = 21 - 7 + 0.5}, {x = 61 - 1, y = 27 - 7 + 2}
+	, {x = 73, y = 15 - 7 - 1}, {x = 72, y = 21 - 7 + 0.5}, {x = 71, y = 27 - 7 + 2}
+    , {x = 65, y = 43 - 7 + 3}
+    , {x = 69, y = 39 - 7 + 3}
+}
+
+NormalPos2GridLeft = {
+	{x = 27 + 2, y = 15 - 7 - 1 + 2}, {x = 28 + 2, y =21 - 7 + 0.5 + 2}, {x = 29 + 2, y = 27 - 7 + 2 + 2}
+	,{x = 17 + 1, y = 15 - 7 - 1 + 2}, {x = 18 + 1, y = 21 - 7 + 0.5 + 2}, {x = 19 + 1, y = 27 - 7 + 2 + 2}
+	,{x = 7, y = 15 - 7 - 1 + 2}, {x = 8, y = 21 - 7 + 0.5 + 2}, {x = 9, y = 27 - 7 + 2 + 2}
+    ,{x = 15, y = 43 - 7 + 3}
+    ,{x = 11, y = 39 - 7 + 3}
+}
+
+NormalPosGridRight ={
+	{ x = 42 + 10, y = 15  - 7 - 1 + 2}, { x = 42 + 10, y = 21  - 7 + 0.5 + 2}, { x = 42 + 10, y = 27  - 7 + 2 + 2}
+	, { x = 42 + 10, y = 15  - 7 - 1 + 2}, { x = 42 + 10, y = 21  - 7 + 0.5 + 2}, { x = 42 + 10, y = 27  - 7 + 2 + 2}
+	, { x = 42 + 10, y = 15  - 7 - 1 + 2}, { x = 42 + 10, y = 21  - 7 + 0.5 + 2}, { x = 42 + 10, y = 27  - 7 + 2 + 2}
+    , {x = 42 + 10, y = 43 - 7}
+}
+
+--战斗人物层级
+BattleRoleZorder = {
+	[1] = {
+		998,995,992,999,996,993,997,994,991,990,989
+	},
+	[2] = {
+		998,995,992,999,996,993,997,994,991,990,989
+	}
+}
+
+pos_to_col = {
+	[1]=1,
+	[2]=2,
+	[3]=3,
+	[4]=1,
+	[5]=2,
+	[6]=3,
+	[7]=1,
+	[8]=2,
+	[9]=3
+}
+
+SkillAct = SkillAct or {}
+
+
+-- FX ON/OFF: persisted battle-effect switch
+local BATTLE_EFFECT_DISABLED_KEY = "battle_effect_disabled"
+
+function SkillAct.isBattleEffectEnabled()
+	return not cc.UserDefault:getInstance():getBoolForKey(BATTLE_EFFECT_DISABLED_KEY)
+end
+
+function SkillAct.setBattleEffectEnabled(enabled)
+	local user_default = cc.UserDefault:getInstance()
+	user_default:setBoolForKey(BATTLE_EFFECT_DISABLED_KEY, not enabled)
+	user_default:flush()
+	-- Cancel/obsolete pending FX preload work when switching effects off.
+	if not enabled then
+		SkillAct.spine_preload_generation = (SkillAct.spine_preload_generation or 0) + 1
+		SkillAct.spine_preload_pending = {}
+	end
+end
+
+
+function SkillAct.newPos2Gird(type, pos, is_left, group)
+	if pos == 0 then
+		message(TI18N("语言_c_4273"))
+	end
+    if pos == 31 or pos == 32 then
+        pos = 10
+    elseif pos == 41 or pos == 42 then
+    	pos = 11
+	elseif group == 2 then --如果是敌方阵型，这里需要减掉5
+		pos =(pos - GIRD_POS_OFFSET) or 1
+	else
+		pos = pos or 1
+	end
+	pos = math.max(1, pos)
+	if is_left then
+		if BattleController:getInstance():getIsNoramalBattle() then
+			return NormalPos2GridLeft[pos]
+		else
+			return Pos2GridLeft[pos]
+		end
+	else 
+		if BattleController:getInstance():getIsNoramalBattle() then
+			return NormalPosGridRight[pos]
+		else
+			return Pos2GridRight[pos]
+		end
+	end
+end
+
+function gridSizeX()
+	local max_grid = 80
+	return SCREEN_WIDTH / max_grid --* display.getMaxScale()
+end
+function gridSizeY()
+	local max_grid = 80
+	return SCREEN_HEIGHT / max_grid --* display.getMaxScale()
+end
+
+function gridPosToScreenPos(pos)
+	return cc.p(pos.x * gridSizeX(), pos.y * gridSizeY())
+end
+function screenPosToGridPos(pos)
+	return cc.p(pos.x / gridSizeX(), pos.y / gridSizeY())
+end
+--普通结束回调
+function SkillAct.normalFinish(attacker)
+	return cc.CallFunc:create(function()
+		BattleController:getInstance():getModel():actFinish(attacker)
+	end)
+end
+--普通开始回调
+function SkillAct.normalStart(attacker)
+	return cc.CallFunc:create(function()
+		BattleController:getInstance():getModel():actStart(attacker)
+	end)
+end
+--添加延迟
+function SkillAct.addDelay(attacker, delay_time, act, next_delay_time)
+	if delay_time == 0 or delay_time == nil then
+		if next_delay_time == 0 or next_delay_time == nil then
+			return cc.Sequence:create(SkillAct.normalStart(attacker), act, SkillAct.normalFinish(attacker)) 
+		else
+			return cc.Sequence:create(SkillAct.normalStart(attacker), act, cc.DelayTime:create(next_delay_time / 30), SkillAct.normalFinish(attacker)) 
+		end
+	else
+		if next_delay_time == 0 or next_delay_time == nil then
+			return cc.Sequence:create(SkillAct.normalStart(attacker), cc.DelayTime:create(delay_time / 30), act, SkillAct.normalFinish(attacker))
+		else
+			return cc.Sequence:create(SkillAct.normalStart(attacker), cc.DelayTime:create(delay_time / 30), act, cc.DelayTime:create(next_delay_time / 30), SkillAct.normalFinish(attacker))
+		end
+	end
+end
+--通用延迟
+function SkillAct.dt(time)
+	return cc.DelayTime:create(time / display.DEFAULT_FPS * 2)
+end
+--偏移角度
+function SkillAct.changeRotation(target, pos)
+	local selfpos = cc.p(target:getPosition())
+	local p = {}
+	p.x = selfpos.x - pos.x
+	p.y = selfpos.y - pos.y
+	local radian = math.atan(p.y / p.x)
+	local degree = -(radian *(180 / math.pi))
+	target:setRotation(degree)
+end
+--移动
+function SkillAct.move(attacker, spine_renderer, action_name, target_pos, move_time, direct, is_reverse, is_jump, is_jump_delay)
+	local start_fun = cc.CallFunc:create(function()
+	end)
+
+	local end_fun = cc.CallFunc:create(function()
+	end)
+
+	if not spine_renderer.is_die and BattleController:getInstance():getModel():getBuffTag(attacker.pos) then --由于受伤动作独立,这里在跑动之前先暂停可能在播放的受击后移动作，防止移动位移不对
+    	doStopAllActions(spine_renderer.root)
+	end
+	local move = cc.MoveTo:create(move_time / display.DEFAULT_FPS, target_pos)
+	local act = cc.EaseExponentialOut:create(move)
+	if is_jump then
+		return cc.Sequence:create(start_fun, cc.DelayTime:create(is_jump_delay / display.DEFAULT_FPS), act, end_fun)
+	else
+		return cc.Sequence:create(start_fun,cc.Spawn:create(act, start_fun), end_fun)
+	end
+end
+
+--移动过去
+function SkillAct.MoveTo(attacker, spine_renderer, action_name, direct, target_pos, delay_time, move_time, is_reverse, is_jump, is_jump_delay)
+	-- 如果这个时候处于受击,则不要马上移动,会出现乱跑
+	-- if attacker.play_hurt_ing == true then
+	-- 	if delay_time == nil or delay_time == 0 then		-- 还在受击中的时候 延迟才做动作 要不又问题
+	-- 		delay_time = 20
+	-- 	else
+	-- 		delay_time = delay_time * 2
+	-- 	end
+	-- end
+	return SkillAct.addDelay(attacker, delay_time, SkillAct.move(attacker, spine_renderer, action_name, target_pos, move_time, direct, is_reverse, is_jump, is_jump_delay))
+end
+
+-- 移动回来
+function SkillAct.moveBack(attacker, spine_renderer, action_name, direct, target_pos, delay_time, move_time, is_reverse, is_jump, is_jump_delay)
+	return SkillAct.addDelay(attacker, delay_time, SkillAct.move(attacker, spine_renderer, action_name, target_pos, move_time, direct, is_reverse, is_jump, is_jump_delay))
+end
+
+-- 抖屏
+function SkillAct.shakeScreen(attacker, delay_time, shake_bid)
+	return SkillAct.addDelay(attacker, delay_time, cc.CallFunc:create(
+	function()
+		BattleController:getInstance():getModel():getBattleScene():shakeScreen(shake_bid)
+	end
+	))
+end
+
+--普通动作攻击
+function SkillAct.attack(attacker, delay_time, anima_name, hit_callback, start_callback, is_reverse, attack_func, anima_res)
+	BattleController:getInstance():printLeeLog("SkillAct attack ", attacker.object_name, anima_name, anima_res)
+	local startfun = start_callback and cc.CallFunc:create(start_callback) or nil
+	
+	BattleController:getInstance():getModel():actStart(attacker)
+	attacker.spine_renderer.is_attack = anima_name
+
+	local sound_id = attacker.shout_trick
+	if sound_id ~= nil and sound_id ~= "" then
+		local normalFight_voice = Config.PartnerData.data_partner_const_fun("normalFight_voice") 
+		if normalFight_voice and normalFight_voice.val == 1 then--not self.battle_controller:getIsNoramalBattle() then 
+			AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.BATTLE, sound_id, false)
+		end
+	end
+	if startfun == nil then
+		return SkillAct.addDelay(attacker, delay_time, cc.Sequence:create(SkillAct.setAnimationWithEvent(attacker, anima_name, hit_callback, attacker.spine_renderer, false, is_reverse, attack_func, anima_res)))
+	else
+		return SkillAct.addDelay(attacker, delay_time, cc.Sequence:create(startfun, SkillAct.setAnimationWithEvent(attacker, anima_name, hit_callback, attacker.spine_renderer, false, is_reverse, attack_func, anima_res)))
+	end
+end
+
+--没动作的攻击  return SkillAct.noActAttack(attacker, delay_time, hit_callback, start_callback, is_reverse) 
+function SkillAct.noActAttack(attacker, delay_time, hit_callback, start_callback, next_delay_time)
+	local startfun = start_callback and cc.CallFunc:create(start_callback) or nil
+
+	BattleController:getInstance():getModel():actStart(attacker)
+	attacker.spine_renderer.is_no_attack = TRUE
+
+	if startfun == nil then
+		return SkillAct.addDelay(attacker, delay_time, cc.Sequence:create(SkillAct.setNotAnimationWithEvent(attacker, hit_callback, attacker.spine_renderer)), next_delay_time) 
+	else
+		return SkillAct.addDelay(attacker, delay_time, cc.Sequence:create(startfun, SkillAct.setNotAnimationWithEvent(attacker, hit_callback, attacker.spine_renderer)), next_delay_time)
+	end
+end
+
+--设置动作伴随事件监听
+function SkillAct.setNotAnimationWithEvent(attacker, hit_callback, spine_renderer)
+	return cc.CallFunc:create(function()
+		if hit_callback then
+			hit_callback()
+			spine_renderer.is_no_attack = nil
+			BattleController:getInstance():getModel():actFinish(attacker)        -- 通知动作事件结束
+		end
+	end)
+end 
+
+--准备动作函数
+function SkillAct.ready(attacker, spine_renderer, action_name, direct)
+	-- local startfun = cc.CallFunc:create(function()
+	-- 	if action_name ~= "" and action_name ~= nil and not spine_renderer.in_animation then
+	-- 		SkillAct.setAnimation(spine_renderer, action_name)
+	-- 	end
+	-- end)
+	-- return SkillAct.addDelay(attacker, 0, cc.Sequence:create(startfun, SkillAct.setAnimationWithEvent(attacker, nil, nil, attacker.spine_renderer, false, false)))
+end
+
+--添加动作计时受击
+function SkillAct.aid_hurt(attacker, spine_renderer, target, hurt_action)
+    local callback = function(spine_tmp)
+        spine_renderer:runAction(cc.Sequence:create(
+            cc.DelayTime:create(0.3),
+			cc.CallFunc:create(function()
+				if not spine_renderer.is_die then
+					SkillAct.setAnimation(spine_renderer, spine_renderer.stand, true)
+				end
+				spine_renderer.in_act = false
+				spine_renderer:reverse(spine_renderer.obj_type)
+				spine_renderer:setPosByGrid(spine_renderer.grid_pos_back)
+
+				-- 援护
+				BattleController:getInstance():getModel():actFinish(attacker) 
+			end))) 
+    end
+    spine_renderer:runAction(
+        cc.Sequence:create(
+            cc.CallFunc:create(function()
+                SkillAct.setAnimation(spine_renderer, hurt_action, false, callback)
+            end)
+        )
+    )
+end
+
+-- 黑幕
+function SkillAct.blackScreen(attacker, delay_time, time, begin_fun, end_fun)
+	if not SkillAct.isBattleEffectEnabled() then
+		return SkillAct.dt(delay_time)
+	end
+	local act = cc.Sequence:create(cc.CallFunc:create(begin_fun), cc.DelayTime:create(time / display.DEFAULT_FPS), cc.CallFunc:create(end_fun))
+	return cc.Sequence:create(SkillAct.dt(delay_time), act)
+end
+
+function SkillAct.shadow(attacker, delay_time, time, begin_fun, end_fun)
+	if not SkillAct.isBattleEffectEnabled() then
+		return SkillAct.dt(delay_time)
+	end
+	local act = cc.Sequence:create(cc.CallFunc:create(begin_fun), cc.DelayTime:create(time / display.DEFAULT_FPS), cc.CallFunc:create(end_fun))
+	return SkillAct.addDelay(attacker, delay_time, act)
+end
+
+
+-- 隐身
+function SkillAct.hide(attacker, delay_time)
+	return SkillAct.addDelay(attacker, delay_time, cc.Hide:create())
+end
+-- 显示
+function SkillAct.show(attacker, delay_time)
+	return SkillAct.addDelay(attacker, delay_time, cc.Show:create())
+end
+
+function SkillAct.showUI(attacker, delay_time)
+	local start_fun = cc.CallFunc:create(function()
+		attacker.spine_renderer:showHpRoot(true)
+	end)
+	return SkillAct.addDelay(attacker, delay_time, cc.Sequence:create(start_fun))
+end
+
+function SkillAct.hideUI(attacker, delay_time)
+	local start_fun = cc.CallFunc:create(function()
+		attacker.spine_renderer:showHpRoot(false)
+	end)
+	return SkillAct.addDelay(attacker, delay_time, cc.Sequence:create(start_fun))
+end
+
+-- 跳回来
+function SkillAct.jump(attacker, delay_time, jump_time, target_pos, height, times)	
+	return SkillAct.addDelay(attacker, delay_time, cc.JumpTo:create(jump_time * 2 / display.DEFAULT_FPS, target_pos, height, times))
+end
+
+-- 清除所有持续特效
+function SkillAct.clearAllEffect(spine_renderer)
+	if spine_renderer then
+		if not 	spine_renderer.clear_count then
+			spine_renderer.clear_count = 0
+		end
+		if spine_renderer.effect_list then
+			if (spine_renderer.effect_list or {}) ~= nil then
+				for k, v in pairs(spine_renderer.effect_list or {}) do
+					if v then
+						spine_renderer.clear_count = spine_renderer.clear_count + 1
+						for i,effect in pairs(v) do
+							if effect.object then
+								effect.object:release(true)
+							end
+						end
+					end
+				end 
+				if 	spine_renderer.clear_count >= tableLen(spine_renderer.effect_list or {}) then
+					spine_renderer.effect_list = nil
+					spine_renderer.clear_count = 0
+				end
+			end
+		end
+	end
+end
+--删除身上特效
+function SkillAct.clearEffect(target, buff_id)
+	local spine_renderer = target.spine_renderer
+	local config = Config.SkillData.data_get_buff[buff_id]
+	if spine_renderer == nil or config == nil then return end
+
+	local effect_config = Config.SkillData.data_get_effect_data[config.res]
+	if effect_config == nil then return end
+
+	-- 要根据当前时装做转换
+	local fashion_id = target:getFashionId()
+	if fashion_id ~= 0 then
+		local buff_skin_config = Config.PartnerSkinData.data_bufftospine[getNorKey(fashion_id, buff_id)]
+		if buff_skin_config and buff_skin_config.effect_bid and buff_skin_config.effect_bid ~= 0 then
+			effect_config = Config.SkillData.data_get_effect_data[buff_skin_config.effect_bid]
+		end
+	end
+
+	if next(spine_renderer.effect_list or {}) ~= nil then
+		if next(spine_renderer.effect_list[effect_config.res_up] or {}) ~= nil and spine_renderer.effect_list[effect_config.res_up] then
+			local action_name = PlayerAction.action
+			if effect_config.up_action_name ~= "" then
+				action_name = effect_config.up_action_name
+			else
+				action_name = PlayerAction.action
+			end 
+
+			if spine_renderer.effect_list[effect_config.res_up][action_name] ~= nil then
+				spine_renderer.effect_list[effect_config.res_up][action_name].num = spine_renderer.effect_list[effect_config.res_up][action_name].num - 1
+				local res_up_need_clear = true
+				for k, v in pairs(spine_renderer.effect_list[effect_config.res_up]) do
+					if v.num ~= 0 then
+						res_up_need_clear = false
+						break
+					end
+				end
+				if res_up_need_clear == true then
+					for k, v in pairs(spine_renderer.effect_list[effect_config.res_up]) do
+						if v.object then
+							v.object:release(true)
+						end
+					end
+					spine_renderer.effect_list[effect_config.res_up] = nil
+				end 
+			end
+		end
+	end
+	if next(spine_renderer.effect_list or {}) ~= nil then
+		if next(spine_renderer.effect_list[effect_config.res_down] or {}) ~= nil and spine_renderer.effect_list[effect_config.res_down] then
+			local action_name = PlayerAction.action
+			if  effect_config.down_action_name ~= "" then
+				action_name = effect_config.down_action_name
+			else
+				action_name = PlayerAction.action
+			end 
+			if spine_renderer.effect_list[effect_config.res_down][action_name] ~= nil then
+				spine_renderer.effect_list[effect_config.res_down][action_name].num = spine_renderer.effect_list[effect_config.res_down][action_name].num - 1
+				local down_need_clear = true
+				for k, v in pairs(spine_renderer.effect_list[effect_config.res_down]) do
+					if v.num ~= 0 then
+						down_need_clear = false
+						break
+					end
+				end
+				if down_need_clear == true then
+					for k, v in pairs(spine_renderer.effect_list[effect_config.res_down]) do
+						if v.object then
+							v.object:release(true)
+						end
+					end
+					spine_renderer.effect_list[effect_config.res_down] = nil
+				end 
+			end
+		end
+	end
+end
+
+--人物受击特效播放
+function SkillAct.effectHitUser(attacker, delay_time, spine_renderer, effect_name, reverse, is_release, height, x_fix, scale_, alpha, h_scale, callback, bid, is_spec)	
+	local zoredr_offset = {99, -99}
+	local effect = {}
+	if not spine_renderer.effect_list then
+		spine_renderer.effect_list = {}
+	end
+	local effect_config = Config.SkillData.data_get_effect_data[bid]
+	for i, v in ipairs(effect_name) do
+		if effect_name[i] and effect_name[i] ~= "" then
+			if spine_renderer.effect_list[effect_name[i]] == nil then
+				spine_renderer.effect_list[effect_name[i]] = {}
+			end
+			local action_name = PlayerAction.action
+			if effect_config then
+				if i == 1 then 		-- 上层特效
+					if effect_config.up_action_name ~= "" then
+						action_name = effect_config.up_action_name
+					end
+				elseif i == 2 then 	-- 下层特效
+					if effect_config.down_action_name ~= "" then
+						action_name = effect_config.down_action_name
+					end
+				end
+			end
+
+			if spine_renderer.effect_list[effect_name[i]][action_name] == nil then
+				spine_renderer.effect_list[effect_name[i]][action_name] = {num = 1 ,object = nil}
+				local pos
+				local parent = spine_renderer.bottom_effect_root
+				if i == 1 then		-- 上层特效
+					pos = cc.p(x_fix, height)
+					parent = spine_renderer.top_effect_root
+				else				-- 下层特效
+					pos = cc.p(x_fix, 0)
+				end
+				local start_fun = cc.CallFunc:create(function()
+					if callback then
+						callback()
+					end
+				end)
+				if tolua.isnull(spine_renderer.root) then return end
+				-- local parent = spine_renderer.bottom_effect_root
+				-- local effect_zorder = spine_renderer.spine_root:getLocalZOrder() + zoredr_offset[i]
+				local scale = scale_
+
+				if action_name ~= "" then
+					effect[i] = SpineRenderer.New(pos, effect_name[i], scale, false, action_name)
+					effect[i]:reverse(reverse)
+					effect[i].spine_root:setAnchorPoint(cc.p(1, 0))
+					effect[i].bid = bid
+					effect[i]:addToLayer(parent, 1)
+					spine_renderer.effect_list[effect_name[i]][action_name].object = effect[i]
+					local finish_callback = function()
+						if is_release == TRUE then
+							if next(spine_renderer.effect_list or  {}) ~= nil then
+								if spine_renderer.effect_list[effect_name[i]] then
+									if spine_renderer.effect_list[effect_name[i]][action_name] ~= nil then
+										spine_renderer.effect_list[effect_name[i]][action_name].num = spine_renderer.effect_list[effect_name[i]][action_name].num - 1
+										if spine_renderer.effect_list[effect_name[i]][action_name].num == 0 then
+											spine_renderer.effect_list[effect_name[i]][action_name].object:release(true)
+											spine_renderer.effect_list[effect_name[i]][action_name] = nil
+										end
+									end
+								end
+							end
+						end
+					end
+					local act = SkillAct.setAnimaWithEventFinish(attacker, action_name, nil, finish_callback, effect[i], is_release ~= TRUE)
+					effect[i]:runAction(cc.Sequence:create(cc.DelayTime:create(delay_time / display.DEFAULT_FPS * 2), start_fun, act))
+				end 
+			else
+				-- spine_renderer.effect_list[effect_name[i]][action_name].num = spine_renderer.effect_list[effect_name[i]][action_name].num + 1 
+			end
+		end
+	end 
+end
+
+--人物死亡特效播放（暂时是统一的）
+function SkillAct.effectDiedUser(attacker, effect_name, pos)
+	local effect = nil
+	local pos = pos
+	local screen_pos = gridPosToScreenPos(attacker.grid_pos)
+	pos = screen_pos
+	local layer = BattleController:getInstance():getCtrlBattleScene().effect_layer_1
+	local zoredr_offset = 1
+	local effect_name = effect_name or "E532200"
+	local action_name = PlayerAction.action
+	AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.BATTLE, "b_battle_die", false)
+	if not SkillAct.isBattleEffectEnabled() then return end
+	BattleController:getInstance():printLeeLog("SkillAct effectDiedUser ", attacker.object_name, vardump(pos))
+	effect = SpineRenderer.New(pos, effect_name, 1, false, action_name)
+	effect:reverse(attacker.obj_type)
+	effect:addToLayer(layer, zoredr_offset)
+	local finish_callback = function(renderer)
+		effect:release(true, 0)
+	end
+	local start_fun = nil
+	local act = SkillAct.setAnimaWithEventFinish(attacker, action_name, start_fun, finish_callback, effect, false)
+	effect:runAction(act)
+end
+
+--挂在人物身上的特效
+function SkillAct.effectSpineUser(attacker, delay_time, spine_renderer, effect_name, reverse, is_release, height, x_fix, scale_, alpha, h_scale, callback, buff_bid, effect_bid)
+	local zoredr_offset = {99, -999}
+	local effect = {}
+	local temp_bid = buff_bid 
+	if effect_bid ~= nil and effect_bid ~= 0 then
+		temp_bid = effect_bid
+	end
+	if not attacker or not attacker.spine_renderer or not attacker.spine_renderer.root or tolua.isnull(attacker.spine_renderer.root) then
+		return 
+	end
+	if not spine_renderer.effect_list then
+		spine_renderer.effect_list = {}
+	end
+	local is_fornt = false
+	for i, v in pairs(effect_name) do
+		if effect_name[i] and effect_name[i] ~= "" then
+			if spine_renderer.effect_list[effect_name[i]] == nil then
+				spine_renderer.effect_list[effect_name[i]] = {}
+			end
+			local action_name = PlayerAction.action
+			local temp_config = Config.SkillData.data_get_effect_data[temp_bid]
+			if temp_config then
+				if i == 1 then
+					if temp_config.up_action_name ~= "" then
+						action_name = temp_config.up_action_name
+					end
+				elseif i == 2 then
+					if temp_config.down_action_name ~= "" then
+						action_name = temp_config.down_action_name
+					end
+				end
+			end
+			if spine_renderer.effect_list[effect_name[i]][action_name] == nil then
+				spine_renderer.effect_list[effect_name[i]][action_name] = {num = 1 ,object = nil}
+				local pos
+				local parent = spine_renderer.bottom_effect_root
+				if i == 1 then
+					pos = cc.p(x_fix, height)
+					parent = spine_renderer.top_effect_root
+				else    -- 下层特效不改变高度
+					pos = cc.p(x_fix, 0)
+					is_fornt = true
+				end
+				local start_fun = cc.CallFunc:create(function()
+					if callback then
+						callback()
+					end
+				end)
+				if tolua.isnull(spine_renderer.root) then return end
+				-- local parent = spine_renderer.effect_root
+				-- local effect_zorder = spine_renderer.spine_root:getLocalZOrder() + zoredr_offset[i]
+				local scale = scale_
+
+				-- 设置单位的层级
+				if attacker and attacker.object_type ~= BattleObjectType.Elfin and attacker.spine_renderer and not tolua.isnull(attacker.spine_renderer.root) then
+					local spine_zorder = spine_renderer.root:getLocalZOrder() + zoredr_offset[i]
+					if temp_config and temp_config.is_fornt == TRUE then
+						spine_zorder = attacker.spine_renderer.root:getLocalZOrder() - 999
+						is_fornt = true
+					end
+					if is_fornt == false then
+						attacker.spine_renderer.root:setLocalZOrder(spine_zorder)
+					end
+				end
+				
+				effect[i] = SpineRenderer.New(pos, effect_name[i], scale, false, action_name)
+				effect[i]:reverse(reverse)
+				effect[i].spine_root:setAnchorPoint(cc.p(1, 0))
+				effect[i]:addToLayer(parent, 1)
+
+				--如果是buff效果 做标记
+				if buff_bid and buff_bid ~= 0 and effect[i].setName then
+					effect[i]:setName("BUFF_"..buff_bid)
+				end
+
+				spine_renderer.effect_list[effect_name[i]][action_name].object = effect[i]
+				local finish_callback = function()
+					if is_release == TRUE then
+						if next(spine_renderer.effect_list or  {}) ~= nil then
+							if spine_renderer.effect_list[effect_name[i]] ~= nil then
+								if spine_renderer.effect_list[effect_name[i]][action_name] ~= nil then
+									spine_renderer.effect_list[effect_name[i]][action_name].num  = spine_renderer.effect_list[effect_name[i]][action_name].num - 1
+									if spine_renderer.effect_list[effect_name[i]][action_name].num == 0 then
+										spine_renderer.effect_list[effect_name[i]][action_name].object:release(true)
+										spine_renderer.effect_list[effect_name[i]][action_name] = nil
+									end
+								end
+							end
+						end
+					end
+				end
+				local act = SkillAct.setAnimaWithEventFinish(attacker, action_name, nil, finish_callback, effect[i],is_release ~= TRUE)--
+				effect[i]:runAction(cc.Sequence:create(cc.DelayTime:create(delay_time / display.DEFAULT_FPS * 2), start_fun, act))
+			else
+				spine_renderer.effect_list[effect_name[i]][action_name].num = spine_renderer.effect_list[effect_name[i]][action_name].num + 1 
+			end
+		end
+	end 
+end
+
+-- 范围特效
+function SkillAct.effectArea(attacker, effect_name, reverse, is_release, pos, hit_callback, bid, is_effect_play, group, play_type)
+	if is_effect_play == nil then
+		is_effect_play = true
+	end
+	local layer = {BattleController:getInstance():getCtrlBattleScene().effect_layer_1,BattleController:getInstance():getCtrlBattleScene().effect_layer_2}
+	local zoredr_offset = {2, - 2}
+	local effect = {}
+	local action_name_list = {}
+	local is_play_effect = false
+	local effect_config = Config.SkillData.data_get_effect_data[bid]
+	for i,v in ipairs(effect_name) do
+		if effect_name[i] and effect_name[i] ~= "" then
+			local action_name = PlayerAction.action
+			if effect_config then
+				if i == 1 then
+					if effect_config.up_action_name ~= "" then
+						action_name = effect_config.up_action_name
+					end
+				elseif i == 2 then
+					if effect_config.down_action_name ~= "" then
+						action_name = effect_config.down_action_name
+					end
+				end
+			end
+			effect[i] = SpineRenderer.New(pos, effect_name[i], 1, false, action_name)
+			effect[i]:reverse(reverse)
+			effect[i]:addToLayer(layer[i], zoredr_offset[i])
+			
+			-- 现在这种情况之后存在场景buff特效的
+			if is_release == FALSE then
+				group = group or attacker.group
+				BattleController:getInstance():getModel():addSceneBuffEffect(group, bid, effect_name[i], effect[i], action_name)
+			end
+
+			local finish_callback = function(renderer)
+				if is_release == TRUE then
+					effect[i]:release(true, attacker.play_stand)
+					attacker.in_area_effect = nil
+				end
+				if is_effect_play == true then
+					BattleController:getInstance():getModel():actFinish(attacker)
+				end
+			end
+			if is_effect_play == true then
+				BattleController:getInstance():getModel():actStart(attacker)
+			end
+			local start_fun
+			if not is_play_effect then
+				start_fun = function()
+					if hit_callback then
+						hit_callback()
+					end
+				end
+			else
+				start_fun = nil
+			end
+			local act = SkillAct.setAnimaWithEventFinish(attacker, action_name, start_fun, finish_callback, effect[i], is_release == FALSE)
+			is_play_effect = true
+			effect[i]:runAction(act)
+			if is_effect_play == true then
+				attacker.in_area_effect = true
+			end
+		end
+	end
+end
+
+--躲闪,暂时没有用了
+function SkillAct.miss(attacker, spine_renderer, target_pos)
+	if spine_renderer.in_act then return end
+	BattleController:getInstance():getModel():actStart(attacker)
+	spine_renderer.in_act = true
+	local now_position = cc.p(spine_renderer.root:getPosition())
+	local back_time = 0.3
+	local return_time = 0.3
+	local delay_time = 0
+	spine_renderer:runAction(cc.Sequence:create(
+	cc.Spawn:create(SkillAct.fadeOut(attacker, spine_renderer, 0, back_time * display.DEFAULT_FPS / 2), cc.MoveTo:create(back_time, target_pos)),
+	cc.DelayTime:create(delay_time),
+	cc.Spawn:create(SkillAct.fadeIn(attacker, spine_renderer, 0, return_time * display.DEFAULT_FPS / 2), cc.MoveTo:create(return_time, now_position)),
+	cc.CallFunc:create(function()
+		SkillAct.setAnimation(spine_renderer, spine_renderer.stand, true)
+		spine_renderer.in_act = false
+		BattleController:getInstance():getModel():actFinish(attacker)
+	end)))
+end
+
+--播放护盾吸收
+function SkillAct.playBuffAbsorbHurt(attacker, absorb_val)
+	if attacker == nil or attacker.spine_renderer == nil or tolua.isnull(attacker.spine_renderer.root) then return end
+	local role_height = attacker.spine_renderer.role_height / 2
+	local parent_layer = ViewManager:getInstance():getLayerByTag(ViewMgrTag.EFFECT_TAG) 
+    local sp = createSprite(PathTool.getResFrame("battle_num", "txt_cn_battle_xishou"), 0, 0, parent_layer, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST,99)
+    sp:setCascadeOpacityEnabled(true)
+
+    -- 做一个延迟飘
+    if attacker.absorb_hurt_delay == nil then
+    	attacker.absorb_hurt_delay = 0
+    end
+	local delay_time = (attacker.absorb_hurt_delay % 3) * 0.3
+	local delay = cc.DelayTime:create(delay_time)
+	attacker.absorb_hurt_delay = attacker.absorb_hurt_delay + 1
+
+	local tips  = SkillAct.getBmpFont(absorb_val, 25)
+	tips:setAnchorPoint(cc.p(0, 0.5))
+	tips:setPosition(cc.p(88, 42))
+	sp:addChild(tips)
+    sp:setOpacity(100)
+    sp:setVisible(false)
+
+	local world_pos = attacker.spine_renderer.root:convertToWorldSpace(cc.p(0, 0))
+	local node_pos = parent_layer:convertToNodeSpace(world_pos) 
+	sp:setPosition(node_pos.x,node_pos.y + role_height)
+    sp:runAction(cc.Sequence:create(
+        cc.DelayTime:create(0.3),
+        cc.CallFunc:create(function()
+        	sp:setVisible(true)
+    	end),
+    	delay,
+        cc.Spawn:create(cc.MoveTo:create(0.4, cc.p(node_pos.x, sp:getPositionY() + 50)), cc.FadeIn:create(0.4)),
+        cc.Spawn:create(cc.FadeTo:create(1.1, 100), cc.MoveTo:create(1.1, cc.p(node_pos.x, sp:getPositionY()+ 75))),
+        cc.FadeOut:create(0.2),
+        cc.CallFunc:create(function ()
+			if tips then
+				tips:DeleteMe()
+				tips = nil
+			end
+		end),
+		cc.RemoveSelf:create()
+    ))
+end
+
+--播放伤害数字
+function SkillAct.playDmgMessage(attacker, chg, dmg_type, is_buff, camp_restrain)
+	if not attacker or not attacker.spine_renderer then return end
+	if attacker.hurt_delay == nil then
+		attacker.hurt_delay = 0
+	end
+	local hit_num = attacker.hurt_delay % 3
+	local delay_time = hit_num == 0 and attacker.hurt_delay % 3 / 6 or 0
+	-- local delay_time = (attacker.hurt_delay % 3) * 0.1
+	local delay = cc.DelayTime:create(delay_time)
+	attacker.hurt_delay = attacker.hurt_delay + 1
+
+	if chg == 0 or chg == nil then return end     -- 不扣血不处理
+	local ui_dmg_num = nil
+	local num = nil
+	local function deleteDmgNum()
+		if ui_dmg_num ~= nil then
+			if ui_dmg_num.num ~= nil then
+				ui_dmg_num.num:setVisible(false)
+				ui_dmg_num.num:DeleteMe()
+			end
+			ui_dmg_num:setVisible(false)
+			ui_dmg_num:removeAllChildren()
+			ui_dmg_num:removeFromParent()
+			ui_dmg_num = nil
+		end
+		if attacker.last_msg == ui_dmg_num then
+			attacker.last_msg = nil
+		end
+	end
+	if tolua.isnull(attacker.spine_renderer.root) then return end
+	local role_pos_x = cc.p(attacker.spine_renderer.root:getPosition())
+
+	local final_scale = 1
+	if dmg_type == 2 then
+		ui_dmg_num = ccui.Widget:create()
+		local baoji = createSprite(PathTool.getResFrame("battle_num", "txt_cn_battle_baoji"), 85, 10, ui_dmg_num, cc.p(1, 0.5))
+		baoji:setPosition(60, 70)
+		local baojisize = baoji:getContentSize()
+		num = SkillAct.getBmpFont(chg, 7)
+		num:setAnchorPoint(cc.p(0, 0))
+		num:setPosition(cc.p(62, 75))
+		ui_dmg_num:addChild(num)
+		ui_dmg_num.num = num
+		ui_dmg_num.scale = 0.5
+		ui_dmg_num.width = baojisize.width + num:getContentSize().width / 4
+		if attacker.group == BattleGroupTypeConf.TYPE_GROUP_ROLE then
+			ui_dmg_num.x_fix = 30
+		end
+		final_scale = 1
+	elseif chg < 0 and dmg_type ~= 2 then
+		ui_dmg_num = ccui.Widget:create()
+		if is_buff == true then								-- debuff类的
+			num = SkillAct.getBmpFont(chg, 24)
+		elseif camp_restrain and camp_restrain == 1 then	-- 阵营克制
+			num = SkillAct.getBmpFont(chg, 27)
+		else
+			num = SkillAct.getBmpFont(chg, 4)				-- 普通伤害
+		end
+		num:setAnchorPoint(cc.p(0.5, 0))
+		num:setPosition(cc.p(105, 45))
+		ui_dmg_num:addChild(num)
+		ui_dmg_num.num = num
+	else													-- 治疗
+		ui_dmg_num = ccui.Widget:create()
+		num = SkillAct.getBmpFont(chg, 2)
+		num:setAnchorPoint(cc.p(0.5,0))
+		num:setPosition(cc.p(105, 45))
+		ui_dmg_num:addChild(num)
+		ui_dmg_num.num = num
+	end
+	
+	if ui_dmg_num then
+		ui_dmg_num.x_fix = ui_dmg_num.x_fix or 0
+		local parent_layer = ViewManager:getInstance():getLayerByTag(ViewMgrTag.EFFECT_TAG) 
+		local world_pos = attacker.spine_renderer.root:convertToWorldSpace(cc.p(0,0))
+		local node_pos = parent_layer:convertToNodeSpace(world_pos)
+		local _x = node_pos.x + ui_dmg_num.x_fix - 90
+		local _y = node_pos.y + attacker.spine_renderer.role_height + (attacker.dmg_index or 0) * 15 + (attacker.dmg_aid_y_offset or 0) 
+		ui_dmg_num:setPosition(_x, _y)
+		parent_layer:addChild(ui_dmg_num, 10)
+		ui_dmg_num:setVisible(false)
+		
+		local ctrl = BattleController:getInstance()
+		local hide = cc.FadeOut:create(ctrl:getActTime("hurt_num_hide_time") / display.DEFAULT_FPS)
+		local show = cc.Show:create()
+		local move = cc.MoveBy:create(ctrl:getActTime("hurt_num_move_time") / display.DEFAULT_FPS, cc.p(0, ctrl:getActTime("hurt_num_move_distance")))
+		local scale_all = ui_dmg_num.num.scale
+		local bigger = cc.ScaleTo:create(ctrl:getActTime("hurt_num_scale_time1") / display.DEFAULT_FPS, ctrl:getActTime("hurt_num_bigger") * scale_all)
+		local bigger2 = cc.ScaleTo:create(ctrl:getActTime("hurt_num_scale_time2") / display.DEFAULT_FPS, ctrl:getActTime("hurt_num_bigger2"))
+		local smaller = cc.ScaleTo:create(ctrl:getActTime("hurt_num_scale_time3") / display.DEFAULT_FPS, ctrl:getActTime("hurt_num_smaller"))
+		local bigger3 = cc.ScaleTo:create(ctrl:getActTime("hurt_num_scale_time4") / display.DEFAULT_FPS, ctrl:getActTime("hurt_num_bigger3"))
+		local delay2 = cc.DelayTime:create(ctrl:getActTime("hurt_num_delay_time") / display.DEFAULT_FPS)
+		local change = cc.Sequence:create(bigger, bigger2, smaller, bigger3, delay2, cc.Spawn:create(move,hide))
+		ui_dmg_num:runAction(cc.Sequence:create(delay, show, change, cc.CallFunc:create(deleteDmgNum))) --
+	end
+end
+
+function SkillAct.fadeOut(attacker, spine_renderer, delay_time, time)
+	time = time * 2 / display.DEFAULT_FPS  
+	local act = cc.CallFunc:create(function()
+		spine_renderer:runAction(cc.FadeOut:create(time))
+	end)
+	return SkillAct.addDelay(attacker, delay_time, act)
+end
+
+function SkillAct.fadeIn(attacker, spine_renderer, delay_time, time)
+	time = time * 2 / display.DEFAULT_FPS 
+	local act = cc.CallFunc:create(function()
+		spine_renderer:runAction(cc.FadeIn:create(time))
+	end)
+	return SkillAct.addDelay(attacker, delay_time, act)
+end
+
+function SkillAct.leftRight(time, times, distance)
+	time = time or 1
+	times = times or 1
+	distance = distance or 10
+	local one_time = time / times
+	local act_list = {}
+	for i = 1, times do
+		table.insert(act_list, cc.Sequence:create(cc.MoveBy:create(one_time / 2, cc.p(distance / 2, 0)), cc.MoveBy:create(one_time / 2, cc.p(- distance / 2, 0))))
+	end
+	return cc.Sequence:create(unpack(act_list))
+end
+
+-- 受伤动作
+function SkillAct.hurt(attacker, spine_renderer, target, hurt_action, play_effect, had_play)
+	if target and target.play_hurt_ing == true then return end		-- 如果在受击中 就不要继续播放受击动作了,避免混乱
+	target.play_hurt_ing = true
+
+	if play_effect == nil then
+		play_effect = true
+	end
+	if not tolua.isnull(attacker.spine_renderer.root) and not tolua.isnull(spine_renderer.root) then
+		local back_time = 0.02 					--过去时间
+		local return_time = 0.05 				--回来时间
+		local delay_time = 0.2  				--保持时间
+		local off_width = 18 * target.obj_type 	-- X方向的偏移
+
+		spine_renderer.in_hurt_act = true
+		if spine_renderer.res then --and not spine_renderer.is_change_status
+			local res = spine_renderer.res
+			if spine_renderer.is_change_status == true and spine_renderer.buff_spine then
+				res = spine_renderer.buff_spine
+			end
+			if not tolua.isnull(spine_renderer.spine) then
+				spine_renderer.spine:runAction(cc.RemoveSelf:create(true))
+			end
+			local spine_tmp = nil
+			spine_tmp = createSpineByName(res, hurt_action)
+			spine_renderer.spine = spine_tmp
+			spine_renderer:setActionName(hurt_action)
+			spine_renderer:reverse(spine_renderer.obj_type)
+			spine_renderer:addChild(spine_tmp)
+		end
+		--播放受击音效
+		-- print("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*  start", play_effect, had_play)
+		local sound_id = attacker.hit_sound or ""
+		if play_effect == true then
+			-- print("-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-* ", sound_id)
+			if sound_id ~= "" then
+				local normalFight_voice = Config.PartnerData.data_partner_const_fun("normalFight_voice") 
+				if normalFight_voice and normalFight_voice.val == 1 then--not self.battle_controller:getIsNoramalBattle() then 
+					AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.BATTLE, sound_id, false)
+				end
+			end
+		else
+			if not had_play then
+				local normalFight_voice = Config.PartnerData.data_partner_const_fun("normalFight_voice") 
+				if normalFight_voice and normalFight_voice.val == 1 then--not self.battle_controller:getIsNoramalBattle() then
+					local voice_cfg = Config.PartnerData.data_partner_const_fun("common_shield_voice")
+					if voice_cfg and voice_cfg.val ~= 0 and voice_cfg.val ~= "" then
+						sound_id = voice_cfg.val
+					end
+					AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.BATTLE, sound_id, false)
+				end
+			end
+		end
+
+		local function animationCompleteFunc(event)
+			-- 受击之后马上设置站立有问题.因为可能存在受击的过程中,触发了反击...
+			if not BattleController:getInstance():getIsNoramalBattle() then
+				SkillAct.setAnimation(spine_renderer, spine_renderer.stand, true, nil, nil, target)
+			end
+			spine_renderer.in_hurt_act = false
+		end
+		spine_renderer.spine:registerSpineEventHandler(animationCompleteFunc, sp.EventType.ANIMATION_COMPLETE)
+		spine_renderer:runAction(cc.Sequence:create(cc.CallFunc:create(function()
+			if spine_renderer.in_hurt_act == true then
+				if spine_renderer.spine then
+					spine_renderer.spine:setAnimation(0, hurt_action, false)
+					spine_renderer.spine:setToSetupPose()
+				end
+			end
+		end),
+		cc.MoveBy:create(back_time, cc.p(-off_width, 0)),
+		cc.DelayTime:create(delay_time),
+		cc.MoveBy:create(return_time, cc.p(off_width, 0)),
+		cc.CallFunc:create(function()
+			target.is_hurt_play = false
+			target.play_hurt_ing = false
+		end)))
+	end
+end
+
+--设置动作伴随事件监听
+function SkillAct.setAnimationWithEvent(attacker, anima_name, hit_callback, spine_renderer, is_loop, is_reverse, attack_func, anima_res)
+	return cc.CallFunc:create(function()
+		local function animationEventFunc(event)
+			BattleController:getInstance():printLeeLog("SkillAct setAnimationWithEvent animationEventFunc event ", attacker.object_name, event.eventData.name,attacker.group)
+			if(event.eventData.name == "hit" or event.eventData.name == "Hit" or event.eventData.name == "HIT") and spine_renderer.hit_time < spine_renderer.hit_num and hit_callback ~= nil then
+				hit_callback()
+				spine_renderer.hit_time = spine_renderer.hit_time + 1
+			elseif spine_renderer.is_attack == anima_name and (event.eventData.name == "back" or event.eventData.name == "Back" or event.eventData.name == "BACK" ) then
+				local is_move_map = attacker.is_move_map or 0
+				local play_order_anime_res = attacker.anime_res
+				if is_move_map == FALSE then
+					local spine_res = attacker.spine_renderer.res
+					if attacker.spine_renderer.buff_spine then  -- 如果变身了,就用变身的动作
+						spine_res = attacker.spine_renderer.buff_spine
+					end
+					local config = Config.BattleActData.data_info[spine_res] or Config.BattleActData.data_info[0]
+					if config then
+						local anima_res_config = config[play_order_anime_res] or Config.BattleActData.data_info[0]["action1"]
+						if anima_res_config then
+							local temp_config = anima_res_config[attacker.spine_renderer.anima_name] or anima_res_config["action1"]
+							if temp_config == nil  then
+								temp_config = Config.BattleActData.data_info[0]["action1"]["action1"]
+							end
+							if temp_config then
+								BattleController:getInstance():getModel():moveBack(attacker, temp_config.back_delay_time, temp_config.back_move_time, temp_config.back_model_x, nil, nil, nil, nil, temp_config.is_move_map)
+							end
+						end
+					end
+				end
+				spine_renderer.is_attack = nil
+			elseif event.eventData.name == "attack" then
+				if attacker.in_area_effect then
+					spine_renderer.is_area_attack = true
+					spine_renderer.hit_time = spine_renderer.hit_time + 1
+					-- 这里理论上不可能存在,看遍了所有的都是一样的spine_renderer ~= attacker.spine_renderer 
+			 		if attacker.in_area_effect and spine_renderer ~= attacker.spine_renderer then
+						attacker.area_hit_time = spine_renderer.hit_time
+					end
+					BattleController:getInstance():getModel():areaHurt(attacker)
+				else
+					if attack_func then
+						attack_func()
+					end
+				end
+				BattleController:getInstance():getModel():attackPoint(attacker, anima_name)
+			elseif event.eventData.name == "hit_none" then --无瓢字有受击动作
+				BattleController:getInstance():getModel():actHurt(attacker)
+			elseif event.eventData.name == "hit_big" then --无动作有受击特效
+				BattleController:getInstance():getModel():actHurt(attacker,true)
+ 			elseif event.eventData.name == "ready" then --准备动作
+				BattleController:getInstance():getModel():attackReady(attacker)
+			elseif event.eventData.name == "shake_point" then
+				if attacker.shake_id ~= 0 and attacker.shake_id ~= nil then
+					BattleController:getInstance():getModel():playShakeScreen(attacker.shake_id)
+				end
+			elseif event.eventData.name == "move" then
+				local is_move_map = attacker.is_move_map or FALSE 
+				local play_order_anime_res = attacker.anime_res
+				if is_move_map == FALSE then
+					local spine_res = attacker.spine_renderer.res
+					if attacker.spine_renderer.buff_spine then
+						spine_res = attacker.spine_renderer.buff_spine
+					end
+					local config = Config.BattleActData.data_info[spine_res] or Config.BattleActData.data_info[0]
+					if config then
+						local anima_res_config = config[play_order_anime_res] or Config.BattleActData.data_info[0]["action1"]
+						if anima_res_config then
+							local temp_config = anima_res_config[attacker.spine_renderer.anima_name] or anima_res_config["action1"]
+							if temp_config == nil  then
+						 		temp_config = Config.BattleActData.data_info[0]["action1"]["action1"]
+							end
+							if temp_config then
+								if temp_config.shadow_time ~= 0 and  temp_config.shadow_time ~= nil then
+									BattleController:getInstance():getModel():shadow2(attacker,temp_config.shadow_time,play_order_anime_res,attacker.spine_renderer.anima_name)
+								end
+								if temp_config.is_move_area == TRUE then --是否移动到区域
+									BattleController:getInstance():getModel():moveToArea(attacker, temp_config.move_delay_time, temp_config.move_time, temp_config.move_model_x, temp_config.move_model_y,nil,nil,nil,temp_config.is_move_map,temp_config.is_reverse)
+								else
+									BattleController:getInstance():getModel():moveTo(attacker, temp_config.move_delay_time, temp_config.move_time, temp_config.move_model_x,temp_config.move_model_y, nil, nil, nil, nil, temp_config.is_move_map,temp_config.is_reverse, temp_config.is_col_act)
+								end
+							end
+						end
+					end
+				end
+			elseif string.find(event.eventData.name, "hit_num") then
+				local hit_num = tonumber(string.sub(event.eventData.name, 8))
+				if hit_num and hit_num > 1 then
+					spine_renderer.hit_num = hit_num
+					if attacker.in_area_effect and spine_renderer ~= attacker.spine_renderer then
+						attacker.area_hit_num = hit_num
+					end
+					BattleController:getInstance():getModel():calcMagicHurt(attacker)        -- 计算伤害
+				end
+			end
+		end
+		local function animationCompleteFunc(event)
+			if event.animation == anima_name then
+				if spine_renderer.hit_time < spine_renderer.hit_num and hit_callback ~= nil then
+					hit_callback()
+					spine_renderer.hit_time = spine_renderer.hit_time + 1
+					if attacker.in_area_effect and spine_renderer ~= attacker.spine_renderer then
+						attacker.area_hit_time = spine_renderer.hit_time
+					end
+				end
+				-- if (spine_renderer.is_area_attack and attacker.play_stand == 1) then --目前只是群攻动作播放完回到站立动作
+				if attacker.play_stand == 1 then
+					SkillAct.setAnimation(spine_renderer, spine_renderer.stand, true) 
+				end
+				spine_renderer.is_area_attack = nil
+				-- 这里延迟一下因为可能存在moveback 这个时候要是还没出发moveback,直接结束会造成播报错乱
+				delayOnce(function()
+					BattleController:getInstance():getModel():actFinish(attacker)        -- 通知动作事件结束
+				end, 0.1)
+
+                attacker.spine_renderer:showHallowsState(true)
+				spine_renderer.in_animation = false
+				attacker:reTryChangeSpine()
+			end
+		end
+		local callback = function(spine)
+			spine_renderer.hit_time = 0
+            spine_renderer.hit_num = math.max(1, attacker.split_hurt or 1)
+            spine_renderer.split_hurt = math.max(1, attacker.split_hurt or 1)
+			
+			spine_renderer.current_anime = anima_name
+			spine_renderer.in_animation = true
+			if is_reverse then
+			    spine_renderer:reverse(-spine_renderer.obj_type)
+			end
+			spine:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_EVENT)
+			spine:registerSpineEventHandler(animationCompleteFunc, sp.EventType.ANIMATION_COMPLETE)
+		end
+		SkillAct.setAnimation(spine_renderer, anima_name, is_loop, callback, anima_res, attacker)
+	end)
+end
+
+-- 设置动作
+function SkillAct.setAnimation(spine_renderer, anima_name, is_loop, callback, anima_res, attacker)
+	local last_action_name = spine_renderer:getActionName()
+	local last_action_res = spine_renderer:getActionRes()
+	if anima_name and string.find(anima_name, "E") == nil and last_action_res ~= anima_res then
+		if spine_renderer.res and spine_renderer.res ~= "" then
+			local res = spine_renderer.res
+			if spine_renderer.is_change_status and spine_renderer.buff_spine then	-- 这个是变身buff
+				res = spine_renderer.buff_spine 
+			end
+			local spine_tmp = nil
+			spine_tmp = createArmature(res, (anima_res or anima_name))
+			if not tolua.isnull(spine_renderer.spine) then
+				spine_renderer.spine:runAction(cc.RemoveSelf:create(true))
+			end
+			spine_renderer.spine = spine_tmp
+			spine_renderer:setActionName(anima_name, anima_res)
+			spine_renderer:reverse(spine_renderer.obj_type)
+			if not tolua.isnull(spine_tmp) ~= nil and spine_tmp then
+				spine_renderer:addChild(spine_tmp)
+			end
+		end
+	end
+
+	spine_renderer.anima_name = anima_name
+	if spine_renderer.spine then
+		spine_renderer.spine:setAnimation(0, anima_name, is_loop)
+		spine_renderer.spine:setToSetupPose()
+	end
+
+	if callback then
+		callback(spine_renderer.spine)
+	end
+end
+
+
+function SkillAct.flyEffect(attacker,spine_renderer,bid,effect_name,target_pos,move_time,delay_time,start_height)
+	return cc.Sequence:create(
+		SkillAct.dt(delay_time / display.DEFAULT_FPS), cc.CallFunc:create(function()
+			BattleController:getInstance():getModel():actStart(attacker)
+			local action_name = PlayerAction.action
+			local effect_config = Config.SkillData.data_get_effect_data[bid]
+			if effect_config and effect_config.up_action_name ~= "" then
+				action_name = effect_config.up_action_name
+			end
+			local item = SpineRenderer.New(cc.p(0, 0), effect_name, nil, false, action_name)
+			item:reverse(attacker.obj_type)
+			local parent, zorder = spine_renderer.root:getParent(), spine_renderer.root:getLocalZOrder()
+			item:addToLayer(parent, zorder)
+			--if shadow_data then
+				local is_shadow = FALSE
+				local shadow_num =4      -- 影子个数
+				local speed_cut = 0.07     -- 影子速度削减
+				local shadow_opacity =  40--影子透明度消减
+				local shadow_offset = 40
+				item.shadow_data = {num = shadow_num, speed = speed_cut, shadow_opacity = shadow_opacity, shadow_offset = shadow_offset}
+			--end
+			
+			local start_fun = cc.CallFunc:create(function()
+				local pos_start = cc.p(spine_renderer.root:getPosition())
+				pos_start.y = pos_start.y + start_height
+				pos_start.x = pos_start.x
+				item.root:setPosition(pos_start)
+				if is_shadow == TRUE then
+					SkillAct.createItemShadow(item, effect_name, action_name,zorder)
+				end
+			end)
+			local finish_fun = cc.CallFunc:create(function()
+				item:release()
+				BattleController:getInstance():getModel():actFinish(attacker)
+			end)
+			SkillAct.setAnimation(item, action_name, true)
+			local move_time = move_time
+			local move_to = cc.MoveTo:create(move_time / display.DEFAULT_FPS, target_pos)
+			local setZorder = cc.CallFunc:create(function()
+				item.root:setLocalZOrder(SCREEN_HEIGHT + target_pos.y + 999)
+			end) 
+			local act_move = cc.Sequence:create(setZorder, move_to)
+			item:runAction(cc.Sequence:create(start_fun,act_move,finish_fun))
+	end))
+end
+
+function SkillAct.flyItem(attacker, spine_renderer, reverse, target_pos, time_arg, effect_name, is_back, hit_callback, start_height, tail_effect, scale, is_offset_angle, bid, x_fix, y_fix, is_shadow, shadow_data)	
+	return cc.Sequence:create(
+		SkillAct.dt(time_arg.delay_time / display.DEFAULT_FPS), cc.CallFunc:create(function()
+		BattleController:getInstance():getModel():actStart(attacker)
+		if effect_name ~= "" then
+			local action_name = PlayerAction.action
+			local effect_config = Config.SkillData.data_get_effect_data[bid]
+			if effect_config and effect_config.up_action_name ~= "" then
+				action_name = effect_config.up_action_name
+			end
+
+			--local  item_effect = nil
+			local item = SpineRenderer.New(cc.p(0, 0), effect_name, scale, false, action_name)
+			item:reverse(reverse)
+			local parent, zorder = spine_renderer.root:getParent(), spine_renderer.root:getLocalZOrder()
+			item:addToLayer(parent, zorder)
+			if shadow_data then
+				local is_shadow = is_shadow or FALSE
+				local shadow_num = shadow_data.shadow_num or 4      -- 影子个数
+				local speed_cut = shadow_data.speed_cut or 0.07     -- 影子速度削减
+				local shadow_opacity = shadow_data.opacity or 40--影子透明度消减
+				local shadow_offset =(shadow_data.shadow_offset or 40)
+				item.shadow_data = {num = shadow_num, speed = speed_cut, shadow_opacity = shadow_opacity, shadow_offset = shadow_offset}
+			end			
+			local start_fun = cc.CallFunc:create(function()
+				local pos_start = cc.p(spine_renderer.root:getPosition())
+				pos_start.y = pos_start.y + start_height
+				pos_start.x = pos_start.x
+				item.root:setPosition(pos_start)
+				attacker.in_area_effect = true
+				if is_shadow == TRUE then
+					SkillAct.createItemShadow(item, effect_name, action_name,zorder,reverse)
+				end
+			end)
+			local hit_fun = hit_callback and cc.CallFunc:create(hit_callback) or nil
+			local finish_fun = cc.CallFunc:create(function()
+				item:release()
+				BattleController:getInstance():getModel():actFinish(attacker)
+				attacker.in_area_effect = nil
+			end)
+			SkillAct.setAnimation(item, action_name, true)
+			local move_act, move_particle
+			local act_list = {}
+			local temp_x_fix = x_fix or 0
+			local temp_y_fix = y_fix or 0
+			for key, pos in pairs(target_pos) do
+				local temp_pos_start = cc.p(spine_renderer.root:getPosition())
+				temp_pos_start.y = temp_pos_start.y + temp_y_fix
+				local y_offset =(pos.y - temp_pos_start.y) * math.abs(temp_x_fix) /(pos.x - temp_pos_start.x) * attacker.obj_type
+				
+				local pos_temp = cc.p(pos.x + temp_x_fix, pos.y - y_offset)
+				local move_time = time_arg.time_all * time_arg.time_list[key + 1] / time_arg.time_list[1]
+				local move_to = cc.MoveTo:create(move_time / display.DEFAULT_FPS, pos_temp)
+
+				local setZorder = cc.CallFunc:create(function()
+					item.root:setLocalZOrder(SCREEN_HEIGHT + pos.y + 999)
+					SkillAct.changeRotation(item.root, pos_temp, reverse)
+				end)
+				table.insert(act_list, cc.Sequence:create(setZorder, move_to, hit_fun))
+			end
+			
+			if #act_list ~= 0 then
+				move_act = cc.Sequence:create(unpack(act_list))
+			end
+			local move_back
+			if is_back == TRUE then
+				local pos_back = cc.p(spine_renderer.root:getPosition())
+				local move_time = time_arg.time_all * time_arg.time_list[#target_pos + 2] / time_arg.time_list[1]
+				pos_back.y = pos_back.y + start_height
+				move_back = cc.MoveTo:create(move_time / display.DEFAULT_FPS, pos_back)
+			end
+			item:runAction(cc.Sequence:create(start_fun, move_act, move_back, finish_fun))
+		end
+	end))
+end
+
+
+-- 创建残影
+function SkillAct.createItemShadow(spine_renderer, res, action_name, zorder, obj_type)
+	if not spine_renderer.shadow_data then return end
+	if spine_renderer.shadow_list == nil then
+		spine_renderer.shadow_list = {}
+		for i = 1, spine_renderer.shadow_data.num do
+			local spine_widght = ccui.Widget:create()
+			spine_widght:setContentSize(cc.size(200,100))
+			spine_widght:setAnchorPoint(cc.p(0,0))
+			local one_shadow = createSpineByName(res)
+			one_shadow:setTimeScale(1 - i * spine_renderer.shadow_data.speed)
+			one_shadow:setAnchorPoint(cc.p(0, 0.5))
+			one_shadow:setScaleX(obj_type)
+			one_shadow:setOpacity(255 - i * spine_renderer.shadow_data.shadow_opacity)
+		
+			one_shadow:setAnimation(0, action_name, true)
+			one_shadow:setToSetupPose()
+			spine_widght:addChild(one_shadow)
+			spine_widght:setScale((1 -((i - 1) * 0.1)))
+			spine_widght:setPositionX(- (i-1) * spine_renderer.shadow_data.shadow_offset * obj_type)
+			spine_renderer:addChild(spine_widght, zorder - i)
+			table.insert(spine_renderer.shadow_list, one_shadow)
+		end
+	else    -- 已经有残影
+		for _, one_shadow in pairs(spine_renderer.shadow_list) do
+			one_shadow:setVisible(true)
+			one_shadow:setAnimation(0, action_name, true)
+			one_shadow:setToSetupPose()
+		end
+	end
+end
+
+
+-- 创建残影
+function SkillAct.createShadow(spine_renderer, anima_name, action_name)
+	if not spine_renderer.role_shadow_data then return end
+	if spine_renderer.role_shadow_list == nil then
+		spine_renderer.role_shadow_list = {}
+		for i = 1, spine_renderer.role_shadow_data.num do
+			local spine_widght = ccui.Widget:create()
+			spine_widght:setContentSize(cc.size(200,100))
+			spine_widght:setAnchorPoint(cc.p(0,0))
+			local one_shadow = createSpineByName(spine_renderer.res, anima_name)
+			setChildUnEnabled(true,one_shadow,Config.ColorData.data_color4[1])
+			one_shadow:setAnchorPoint(cc.p(0, 0.5))
+			one_shadow:setScaleX(spine_renderer.obj_type)
+			local alpha = 0 
+			if type(spine_renderer.role_shadow_data.alpha) == "table" then
+				alpha = spine_renderer.role_shadow_data.alpha[i]
+			else
+				alpha = 255 - i * spine_renderer.role_shadow_data.alpha
+			end
+			one_shadow:setOpacity(alpha)
+			one_shadow:setAnimation(0, action_name, true)
+			one_shadow:setToSetupPose()
+			spine_widght:addChild(one_shadow)
+			if spine_renderer.role_shadow_data.is_stand == TRUE then				
+				spine_widght:setPosition(spine_renderer.root:getPosition())
+			else
+				local is_fix_temp = 0
+				if type(spine_renderer.role_shadow_data.is_fix) == "table" then
+					is_fix_temp = spine_renderer.role_shadow_data.is_fix[i]
+				else
+					is_fix_temp = spine_renderer.role_shadow_data.is_fix 
+				end
+				
+				spine_widght:setPositionX(-is_fix_temp * spine_renderer.obj_type)
+			end
+			spine_renderer.root:addChild(spine_widght,spine_renderer.root:getLocalZOrder() - 999)
+			table.insert(spine_renderer.role_shadow_list, one_shadow)
+		end
+	else    -- 已经有残影
+		for _, one_shadow in pairs(spine_renderer.role_shadow_list) do
+			one_shadow:setVisible(true)
+			one_shadow:setAnimation(0, action_name, true)
+			one_shadow:setToSetupPose()
+		end
+	end
+end
+
+function SkillAct.setAnimaWithEventFinish(attacker, anima_name, hit_callback, finish_callback, spine_renderer, is_loop)
+	return cc.CallFunc:create(function()
+		local function animationCompleteFunc(event)
+			if spine_renderer.hit_time < spine_renderer.hit_num and hit_callback ~= nil then
+				hit_callback()
+				spine_renderer.hit_time = spine_renderer.hit_time + 1
+				if attacker.in_area_effect and spine_renderer ~= attacker.spine_renderer then
+					attacker.area_hit_time = spine_renderer.hit_time
+				end
+			end
+			BattleController:getInstance():printLeeLog("SkillAct setAnimaWithEventFinish animationCompleteFunc", attacker.object_name, event.animation, anima_name, spine_renderer.body_spine_name,attacker.group)
+			if event.animation == anima_name then
+				if finish_callback ~= nil then
+					finish_callback(spine_renderer)
+				end
+			end
+		end
+		spine_renderer.spine:registerSpineEventHandler(animationCompleteFunc, sp.EventType.ANIMATION_COMPLETE)
+		if hit_callback then
+			local function animationEventFunc(event)
+				BattleController:getInstance():printLeeLog("SkillAct setAnimaWithEventFinish event", attacker.object_name, event.eventData.name, spine_renderer.body_spine_name)
+				if(event.eventData.name == "hit" or event.eventData.name == "Hit" or event.eventData.name == "HIT") and spine_renderer.hit_time < spine_renderer.hit_num and hit_callback ~= nil then
+					hit_callback()
+					spine_renderer.hit_time = spine_renderer.hit_time + 1
+					if attacker.in_area_effect and spine_renderer ~= attacker.spine_renderer then
+						attacker.area_hit_time = spine_renderer.hit_time
+					end
+				elseif string.find(event.eventData.name, "hit_num") then
+					local hit_num = tonumber(string.sub(event.eventData.name, 8))
+					if hit_num and hit_num > 1 then
+						spine_renderer.hit_num = hit_num
+						if attacker.in_area_effect and spine_renderer ~= attacker.spine_renderer then
+							attacker.area_hit_num = hit_num
+						end
+						BattleController:getInstance():getModel():calcMagicHurt(attacker)        -- 计算伤害
+					end
+				elseif event.eventData.name == "shake_point" then
+					if attacker.shake_id ~= 0 and attacker.shake_id ~= nil then
+						BattleController:getInstance():getModel():playShakeScreen(attacker.shake_id)
+					end
+				elseif event.eventData.name == "hit_none" then
+					BattleController:getInstance():getModel():actHurt(attacker)
+				elseif event.eventData.name == "hit_big" then --提示播放受击特效
+					BattleController:getInstance():getModel():actHurt(attacker,true)
+				end
+			end
+			spine_renderer.spine:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_EVENT)
+		end
+		spine_renderer.hit_time = 0
+		spine_renderer.hit_num = 1
+		spine_renderer.spine:setAnimation(0, anima_name, is_loop)
+	end)
+end
+
+-- bool 标示是否要加上 + 或者 -
+-- Compact large battle numbers so floating damage stays readable.
+-- Examples:
+--   3,076,429  -> 3.07M
+--   25,424,556 -> 25.4M
+-- Values are truncated (not rounded) to avoid showing a number larger than the real damage.
+-- Decimal point is NOT sent to CommonNum because some battle_num atlases do not contain typeX_point.
+local function compactBattleNumber(value)
+	local abs_value = math.abs(value or 0)
+	local suffix = nil
+	local unit = 1
+	local decimals = 0
+
+	if abs_value >= 1000000000 then
+		suffix = "B"
+		unit = 1000000000
+	elseif abs_value >= 1000000 then
+		suffix = "M"
+		unit = 1000000
+	else
+		return tostring(math.floor(abs_value)), nil, nil
+	end
+
+	local scaled = abs_value / unit
+	if scaled < 10 then
+		decimals = 2
+	elseif scaled < 100 then
+		decimals = 1
+	else
+		decimals = 0
+	end
+
+	local factor = 10 ^ decimals
+	local truncated = math.floor(scaled * factor)
+	local integer_part = math.floor(truncated / factor)
+	local fraction_text = nil
+
+	if decimals > 0 then
+		local fraction_value = truncated % factor
+		local fmt = "%0" .. tostring(decimals) .. "d"
+		fraction_text = string.format(fmt, fraction_value)
+		-- 25.40M -> 25.4M, 3.00M -> 3M
+		fraction_text = string.gsub(fraction_text, "0+$", "")
+		if fraction_text == "" then
+			fraction_text = nil
+		end
+	end
+
+	return tostring(integer_part), fraction_text, suffix
+end
+
+local function getBattleCompactSuffixColor(type_)
+	if type_ == 2 then
+		return cc.c4b(0x63, 0xff, 0x67, 0xff) -- heal
+	elseif type_ == 4 or type_ == 7 or type_ == 27 then
+		return cc.c4b(0xff, 0xa1, 0x00, 0xff) -- normal/crit/restrain damage
+	elseif type_ == 24 or type_ == 25 then
+		return cc.c4b(0xff, 0xee, 0xd0, 0xff) -- buff/absorb style
+	end
+	return cc.c4b(0xff, 0xff, 0xff, 0xff)
+end
+
+function SkillAct.getBmpFont(num, type_,is_round)
+	type_ = type_ or 1
+	local scale = 0.5
+	local integer_text, fraction_text, suffix = compactBattleNumber(num)
+	local is_compact = suffix ~= nil
+	local font = CommonNum.new(type_, nil, 0, 1, cc.p(0, 0))
+
+	-- Only the integer part goes through CommonNum. This prevents missing typeX_point
+	-- from being rendered as "?" on battle_num atlases that have no decimal glyph.
+	if type_ ~= 7 and not is_round then
+		if num < 0 then
+			font:setNum(integer_text, false)
+		else
+			font:setNum(integer_text, true)
+		end
+	else
+		font:setNum(integer_text)
+	end
+
+	if is_compact then
+		local color = getBattleCompactSuffixColor(type_)
+		local outline = cc.c4b(0x45, 0x20, 0x08, 0xff)
+
+		local function buildCompactTail()
+			if tolua.isnull(font) or font.compact_tail_built then return end
+			local base_size = font:getContentSize()
+			-- When battle_num is still loading, wait for CommonNum's completion callback.
+			if base_size.width <= 0 or base_size.height <= 0 then return end
+
+			font.compact_tail_built = true
+			local x = base_size.width
+
+			if fraction_text ~= nil then
+				-- The dot is a normal label, so CommonNum never attempts to load typeX_point.
+				-- CommonNum's digit sprites are vertically centered around local y = 0,
+				-- therefore the dot and suffix must also use y = 0 (not height / 2).
+				-- Fine spacing: move the decimal point 1 px left so it sits in its own slot
+				-- instead of visually touching the first fractional digit.
+				local dot_label = createLabel(24, color, outline, x - 1, 0, ".", font, 2, cc.p(0, 0.5))
+				font.compact_dot_label = dot_label
+				local dot_size = dot_label:getContentSize()
+				x = x + math.max(5, dot_size.width * 0.55)
+
+				-- Fraction digits keep the original battle bitmap style.
+				-- IMPORTANT: use bottom-left anchor on the nested CommonNum.
+				-- Its own digit sprites use anchor (0, 0.5) at local y=0, just like the
+				-- integer sprites. With widget anchor y=0.5, Cocos offsets the nested
+				-- widget down by half its content height, which makes decimals visibly sag.
+				local fraction_font = CommonNum.new(type_, font, fraction_text, 1, cc.p(0, 0))
+				-- Move the fractional digits 1 px right to open a clean gap after the dot.
+				local fraction_x = x + 1
+				fraction_font:setPosition(cc.p(fraction_x, 0))
+				font.compact_fraction_font = fraction_font
+				local fraction_size = fraction_font:getContentSize()
+				x = fraction_x + fraction_size.width + 1
+			end
+
+			-- M/B is centered on the same local y = 0 line as the bitmap digits.
+			-- A slightly smaller font keeps the compact number from becoming wider than necessary.
+			local suffix_label = createLabel(28, color, outline, x, 0, suffix, font, 2, cc.p(0, 0.5))
+			font.compact_suffix_label = suffix_label
+			local suffix_size = suffix_label:getContentSize()
+
+			font:setContentSize(cc.size(x + suffix_size.width + 2, base_size.height))
+		end
+
+		-- If battle_num is already resident this succeeds immediately; otherwise the callback
+		-- runs after CommonNum has built the integer bitmap.
+		if font.setCallBack then
+			font:setCallBack(buildCompactTail)
+		end
+		buildCompactTail()
+
+		-- Slightly reduce only large compact values for a cleaner battle view.
+		scale = 0.46
+	end
+
+	font.scale = scale
+	return font
+end
+
+--==============================--
+--desc:预加载模型和动作
+--time:2019-01-07 06:50:46
+--@spine_name:
+--@action_name:
+--@return 
+--==============================--
+function SkillAct.addSpine(spine_name, action_name)
+	if not SkillAct.isBattleEffectEnabled() then return end
+	if type(spine_name) == "string" and spine_name ~= "" then
+		local battle_model = BattleController:getInstance():getModel() 
+		local json_path, atlas_path, png, prefix = PathTool.getSpineByName(spine_name, action_name)
+		local list = {}
+		for i=2,4 do
+			local spine_png = string_format("spine/%s/%s%s.png", spine_name, action_name or "action", i)
+			local spine_skel = string_format("spine/%s/%s%s.skel", spine_name, action_name or "action", i)
+			if PathTool.isFileExist(spine_png) and not PathTool.isFileExist(spine_skel) then
+				list[#list + 1] = spine_png
+			end
+		end
+		local is_load = battle_model:resLoadStart(png)
+		if display.isPrefixExist(prefix) then
+			battle_model:setRes(png)
+		elseif is_load then
+			QueueManager:getInstance():add(spine_name, "SkillAct", function()
+				local pixelformal = getPixelFormat(spine_name) 
+				cc.Director:getInstance():getTextureCache():addImageAsync(png, function()
+					battle_model:resLoadFinish(png)
+				end, pixelformal)
+				for i,v in ipairs(list) do
+					local is_load_o = battle_model:resLoadStart(v)
+					if is_load_o then
+						QueueManager:getInstance():add(spine_name, "SkillAct", function()
+							cc.Director:getInstance():getTextureCache():addImageAsync(v, function()
+								battle_model:resLoadFinish(v)
+							end, pixelformal)
+						end)
+					end
+				end
+			end)
+		end
+	elseif type(spine_name) == "table" then
+		for _, name in pairs(spine_name) do
+			SkillAct.addSpine(name)
+		end
+	end
+end
+
+function SkillAct.clearSpine()
+	QueueManager:getInstance():remove("SkillAct") 
+end

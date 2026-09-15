@@ -1,0 +1,221 @@
+-- --------------------------------------------------------------------
+-- 附魂选择
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+HeroHolyEquipAttachSelectPop = HeroHolyEquipAttachSelectPop or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function HeroHolyEquipAttachSelectPop:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/hero_holy_equip_attach_select_pop"
+    self.res_list = {
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.cloth_type = 1
+    self.click_base_id = 0
+end
+
+function HeroHolyEquipAttachSelectPop:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.title_panel = self.main_panel:getChildByName("title_panel")
+    self.close_btn = self.title_panel:getChildByName("close_btn")
+    self.imgTitleBg = self.title_panel:getChildByName("imgTitleBg")
+    self.title = self.title_panel:getChildByName("title")
+    self.title:setString(TI18N("语言_c_7458"))
+    autoSizeTitleBg(self.title,self.imgTitleBg,120,332)
+    self.show_panel = self.main_panel:getChildByName("show_panel")
+    self.show_tip = self.show_panel:getChildByName("show_tip")
+    setTextMaxWidth(self.show_tip,550,-10)
+    self.show_tip:setChangeScaleOffWidth(20)
+    self.show_tip:setString(TI18N("语言_c_7449"))
+    self.equip_panel = self.main_panel:getChildByName("equip_panel")
+    local scroll_view_size = self.equip_panel:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 22, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 11, -- y方向的间隔 , 
+        item_width = BackPackItem.Width, -- 单元的尺寸width
+        item_height = BackPackItem.Height, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 4, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+    }
+    self.scroll_view = CommonScrollViewSingleLayout.new(self.equip_panel, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.scroll_view:setSwallowTouches(true)
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.createCell), ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+
+    self.attachBtn = self.main_panel:getChildByName("attachBtn")
+    self.attachLabel = self.attachBtn:getChildByName("attachLabel")
+    self.attachLabel:setString(TI18N("语言_c_d_136"))
+    self.star_item = self.root_wnd:getChildByName("star")
+end
+
+function HeroHolyEquipAttachSelectPop:register_event()
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 1) 
+    registerButtonEventListener(self.background, function() self:onClickCloseBtn() end ,false, 0) 
+    registerButtonEventListener(self.attachBtn, function()
+        local send_id = 0
+        if self.click_base_id ~= 0 and self.click_cell then
+            local cell_data = self.click_cell:getData()
+            send_id = cell_data.id
+        end
+        if send_id == 0 then
+            if self.cloth_data and next(self.cloth_data) ~=nil then
+                controller:sender11415(self.partnerId,self.cloth_data.id,0)
+            else
+                self:onClickCloseBtn()
+            end
+        else
+            if self.cloth_data and next(self.cloth_data) ~=nil then
+                if self.cloth_data.id == send_id then
+                    self:onClickCloseBtn()
+                    return
+                end
+            end
+            controller:sender11415(self.partnerId,send_id,1)
+        end
+    end ,true, 0)
+end
+
+--关闭
+function HeroHolyEquipAttachSelectPop:onClickCloseBtn()
+    controller:openHeroHolyEquipAttachSelectPop(false)
+end
+
+
+function HeroHolyEquipAttachSelectPop:openRootWnd(partnerId, itemType)
+	if not partnerId or not itemType then
+		return
+	end
+	self.partnerId = partnerId
+	self.itemType = itemType
+    self:updateShowPanel()
+    self:updateEquipPanel()
+end
+function HeroHolyEquipAttachSelectPop:updateShowPanel()
+    self.rate_cfg = Config.PartnerHolyEqmData.data_const["star_rate"].val
+    self.show_list = {}
+    local start_x = 81
+    local space_x = (454-81)/(#self.rate_cfg-1)
+    for i=1,#self.rate_cfg do
+        local star = self.star_item:clone()
+        star.star_txt = star:getChildByName("star_txt")
+        star.star_value = star:getChildByName("star_value")
+        star.star_txt:setString(self.rate_cfg[i][1].." ")
+        star.star_value:setString(self.rate_cfg[i][2].."%")
+        table.insert(self.show_list,star)
+        self.show_panel:addChild(star)
+        star:setPosition(cc.p(start_x + (i-1)*space_x,28))
+    end
+end
+function HeroHolyEquipAttachSelectPop:initEquipData()
+    local click_pos = self.itemType or BackPackConst.item_type.GOD_EARRING
+    --有穿戴的要创建穿戴的
+    local show_list = {}
+    self.cloth_data = model:getHolyAttachEquipByPartnerIdAndTp(self.partnerId, self.itemType)
+    if self.cloth_data and next(self.cloth_data) ~=nil then
+        self.cloth_data.sort = 1
+        table.insert(show_list, self.cloth_data)
+    end
+
+    --背包的装备
+    local list = BackpackController:getInstance():getModel():getBagItemList(BackPackConst.Bag_Code.EQUIPS) or {}
+    for i,v in pairs(list) do
+        if v and v.config and v.config.type then
+            if click_pos == v.config.type then
+                local base_cfg = Config.PartnerHolyEqmData.data_base_info(v.base_id) or {}
+                if base_cfg and base_cfg.append_attr_rate and base_cfg.append_attr_rate ~= 0 then
+                    v.sort = 0
+                    table.insert(show_list, v)
+                end
+
+            end
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"eqm_star", true},{"step", true}, {"base_id", true}})
+    table.sort(show_list, sort_func)
+    return show_list
+end
+
+function HeroHolyEquipAttachSelectPop:updateEquipPanel()
+    if self.list_list == nil then
+        self.list_list = self:initEquipData()
+    end
+    if self.click_base_id == 0 and self.cloth_data then
+        self.click_base_id = self.cloth_data.id
+    end
+    self.scroll_view:reloadData()
+end
+function HeroHolyEquipAttachSelectPop:onCellTouched(cell)
+    if self.click_cell then
+        self.click_cell:setCommonStatus(false)
+    end
+    self.click_cell = cell
+    local cell_data = cell:getData()
+    if self.click_base_id == cell_data.id then
+        self.click_base_id = 0
+    else
+        self.click_base_id = cell_data.id
+    end
+    if cell_data.id == self.click_base_id then
+        cell:setCommonStatus(true)
+    else
+        cell:setCommonStatus(false)
+    end
+end
+function HeroHolyEquipAttachSelectPop:createCell()
+    local cell = BackPackItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    cell:addLongTimeTouchCallback(function()
+        controller:openEquipTips(true, cell:getData())
+    end)
+    return cell
+end
+function HeroHolyEquipAttachSelectPop:numberOfCells()
+    if not self.list_list then
+        return 0
+    end
+    return #self.list_list
+end
+function HeroHolyEquipAttachSelectPop:updateCellByIndex(cell, index)
+    if not self.list_list then
+        return
+    end
+    local cell_data = self.list_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+    if cell_data.id == self.click_base_id then
+        cell:setCommonStatus(true)
+        if not self.click_cell then
+            self.click_cell = cell
+        end
+    else
+        cell:setCommonStatus(false)
+    end
+end
+function HeroHolyEquipAttachSelectPop:close_callback()
+	if self.scroll_view then
+		self.scroll_view:DeleteMe()
+		self.scroll_view = nil
+	end
+    controller:openHeroHolyEquipAttachSelectPop(false)
+end

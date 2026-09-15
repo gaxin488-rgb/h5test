@@ -1,0 +1,372 @@
+-- --------------------------------------------------------------------
+-- 
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      争霸赛排行榜数据
+-- <br/>Create: 2020-03-19
+-- --------------------------------------------------------------------
+OverlordRankPanel = class("OverlordRankPanel",function()
+    return ccui.Layout:create()
+end)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel() 
+
+function OverlordRankPanel:ctor(index)
+    self.look_index = index or 1
+    self.is_init = true
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/overlord_rank_panel"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    self.scroll_container = self.root_wnd:getChildByName("scroll_container")
+    self.empty_bg = self.scroll_container:getChildByName("empty_bg")
+    self.empty_bg:setVisible(false)
+    loadSpriteTexture(self.empty_bg, PathTool.getPlistImgForDownLoad("bigbg", "bigbg_3"), LOADTEXT_TYPE)
+    self.desc_label = self.empty_bg:getChildByName("desc_label")
+    self.desc_label:setPositionX(self.empty_bg:getContentSize().width / 2)
+    self.desc_label:setPositionY(-20)
+    self.desc_label:setString(TI18N("语言_c_1067"))
+    
+    local size = cc.size(self.scroll_container:getContentSize().width, self.scroll_container:getContentSize().height)
+    local setting = {
+        item_class = OverlordRankItem,
+        start_x = 0,
+        space_x = 0,
+        start_y = 0,
+        space_y = 2,
+        item_width = 600,
+        item_height = 135,
+        row = 0,
+        col = 1,
+        need_dynamic = true
+    }
+    
+    self.scroll_view = CommonScrollViewSingleLayout.new(self.scroll_container,  cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, setting)
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+
+
+    local my_container = self.root_wnd:getChildByName("my_container")
+    local my_rank_title = my_container:getChildByName("my_rank_title")
+    my_rank_title:setString(TI18N("语言_c_258"))
+    self.root_wnd:getChildByName("title_1"):setString(TI18N("语言_c_255"))
+    local title_2 = self.root_wnd:getChildByName("title_2")
+    setTextMaxWidth(title_2,260,-10)
+    title_2:setString(TI18N("语言_c_1879"))
+    local title_3 = self.root_wnd:getChildByName("title_3")
+    setTextMaxWidth(title_3,200,-10)
+    title_3:setString(TI18N("语言_c_6655"))
+    
+    self.rank_img = my_container:getChildByName("rank_img")
+    self.rank_img:setVisible(false)
+
+    self.score_num = my_container:getChildByName("score_num")
+
+    self.role_name = my_container:getChildByName("role_name")
+    self.role_power = my_container:getChildByName("role_power")
+    self.power_bg = my_container:getChildByName("Image_1")
+    self.no_rank = my_container:getChildByName("no_rank")
+    setTextMaxWidth(self.no_rank,84)
+    self.no_rank:setString(TI18N("语言_c_285"))
+    self.no_rank:setVisible(false)
+    
+
+    self.role_head = PlayerHead.new(PlayerHead.type.circle)
+    self.role_head:setHeadLayerScale(0.9)
+    self.role_head:setPosition(150, 76)
+    self.role_head:setLev(99)
+    self.role_head:setTouchEnabled(true)
+    self.role_head:addCallBack( function()
+        local role_vo = RoleController:getInstance():getRoleVo()
+        if role_vo and role_vo.srv_id and role_vo.rid then
+            FriendController:getInstance():openFriendCheckPanel(true, {srv_id = role_vo.srv_id, rid = role_vo.rid})
+        end
+    end,false)
+    my_container:addChild(self.role_head)
+
+    self.my_container = my_container
+
+    self:registerEvent()
+    self:addToParent()
+end
+
+
+--创建cell
+--@width 是setting.item_width
+--@height 是setting.item_height
+function OverlordRankPanel:createNewCell()
+    local cell = OverlordRankItem.new()
+    return cell
+end
+
+--获取数据数量
+function OverlordRankPanel:numberOfCells()
+    if not self.rank_list then
+        return 0
+    end
+    return #self.rank_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function OverlordRankPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.rank_list[index]
+    if not cell_data then
+        return
+    end
+    local time_desc = cell:setData(cell_data)
+end
+
+function OverlordRankPanel:registerEvent()
+    if self.update_over_rank_list == nil then
+        self.update_over_rank_list = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverRankList, function(data)
+			if not data then return end
+            local list = {}
+            if data and data.group_rank_list and data.group_rank_list[1] and data.group_rank_list[1].rank_list then
+                self:updateRankList(data.group_rank_list[1].rank_list)
+            end
+        end)
+    end
+end
+
+function OverlordRankPanel:setVisibleStatus(status)
+    self:setVisible(status)
+end
+
+function OverlordRankPanel:addToParent()
+    -- 窗体打开只请求一次，不是标签显示
+    if self.is_init == true then
+        controller:sender14525(self.look_index)
+        self.is_init = false
+    end
+end
+
+
+function OverlordRankPanel:updateRankList(data)
+    --print(vardump(data))
+    local role_vo = RoleController:getInstance():getRoleVo()
+    local list = {}
+    for k, v in pairs(data) do
+        if v.rid == role_vo.rid and v.srv_id == role_vo.srv_id then
+            list = v
+        end
+    end
+    if data and role_vo then
+        self.role_name:setString(role_vo.name)
+        if list.power then
+            self.role_power:setString(MoneyTool.moneyFormat(list.power))
+        else
+            self.role_power:setString(MoneyTool.moneyFormat(role_vo.power))
+        end
+        local width = self.role_power:getContentSize().width + 75
+        local height = self.power_bg:getContentSize().height
+        self.power_bg:setContentSize(cc.size(width, height))
+        if list.rank_champion then
+            self.no_rank:setVisible(false)
+            if list.rank_champion > 0 and list.rank_champion <= 3 then
+                if self.rank_num ~= nil then
+                    self.rank_num:setVisible(false)
+                end
+                local res_id = PathTool.getResFrame("common", string.format("common_200%s", list.rank_champion))
+                if self.rank_res_id ~= res_id then
+                    self.rank_res_id  = res_id
+                    loadSpriteTexture(self.rank_img, res_id, LOADTEXT_TYPE_PLIST)
+                end
+                self.rank_img:setVisible(true)
+            else
+                if self.rank_num == nil then
+                    self.rank_num = CommonNum.new(1, self.my_container, 1, -2, cc.p(0.5, 0.5))
+                    self.rank_num:setPosition(48,90)
+                end
+                self.rank_num:setVisible(true)
+                self.rank_num:setNum(list.rank_champion)
+                self.rank_img:setVisible(false)
+            end
+        else
+            self.rank_img:setVisible(false)
+            self.no_rank:setVisible(true)
+        end
+        local msg = list.win_num or 0
+        self.score_num:setString(msg)
+
+        self.role_head:setHeadRes(role_vo.face_id, false, LOADTEXT_TYPE, role_vo.face_file, role_vo.face_update_time)
+        self.role_head:setLev(role_vo.lev)
+        self.role_head:showWarldBullyRegion(model:getnation(),0.8,cc.p(55,15))
+        local avatar_bid = role_vo.avatar_bid
+        local vo = Config.AvatarData.data_avatar[avatar_bid]
+        if vo then
+            local res_id = vo.res_id or 1
+            local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+            self.role_head:showBg(res, nil, false, vo.offy)
+        end
+
+        self.rank_list = {}
+        if data ~= nil and next(data) ~= nil then
+            self.rank_list = data
+            self.empty_bg:setVisible(false)
+        else
+            self.empty_bg:setVisible(true)
+        end
+        table.sort(self.rank_list, SortTools.KeyLowerSorter("rank_champion"))
+        self.scroll_view:reloadData()
+    end
+end
+
+
+function OverlordRankPanel:DeleteMe()
+    if self.update_over_rank_list ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_over_rank_list)
+        self.update_over_rank_list = nil
+    end
+
+    if self.role_head then
+        self.role_head:DeleteMe()
+        self.role_head = nil
+    end
+
+    if self.rank_num then
+        self.rank_num:DeleteMe()
+        self.rank_num = nil
+    end
+    if self.scroll_view then
+        self.scroll_view:DeleteMe()
+        self.scroll_view = nil
+    end
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      多人竞技场排行榜单元
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+OverlordRankItem = class("OverlordRankItem",function()
+    return ccui.Layout:create()
+end)
+
+function OverlordRankItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/overlord_rank_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    self.rank_img = container:getChildByName("rank_img")
+    self.role_name = container:getChildByName("role_name")
+    self.role_power = container:getChildByName("role_power")
+    self.power_bg = container:getChildByName("Image_1")
+    self.score_num = container:getChildByName("score_num")
+    
+    self.role_head = PlayerHead.new(PlayerHead.type.circle)
+    self.role_head:setHeadLayerScale(0.8)
+    self.role_head:setPosition(150, 65)
+    self.role_head:setTouchEnabled(true)
+    container:addChild(self.role_head)
+    self.role_head:setLev(99)
+    self.role_head:addCallBack( function()
+        if self.data ~= nil then
+            if self.data and self.data.srv_id and self.data.rid then 
+                FriendController:getInstance():openFriendCheckPanel(true, {srv_id = self.data.srv_id, rid = self.data.rid})
+            end
+        end
+    end,false)
+
+    self.container = container
+
+    self:registerEvent()
+end
+
+function OverlordRankItem:registerEvent()
+end
+
+function OverlordRankItem:addCallBack(call_back)
+    self.call_back = call_back
+end
+function OverlordRankItem:setData(data)
+    if data then
+        self.data = data
+        local server_name = getServerName(self.data.srv_id)
+		local str
+		if server_name and server_name ~= "" then
+			str = string.format("[%s]%s",server_name,self.data.name)
+		else
+			str = string.format("%s",self.data.name)
+		end
+		self.role_name:setString(str)
+
+        self.role_power:setString(MoneyTool.moneyFormat(data.power))
+        local width = self.role_power:getContentSize().width + 75
+        local height = self.power_bg:getContentSize().height
+        self.power_bg:setContentSize(cc.size(width,height))
+        self.role_head:setHeadRes(data.face_id, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+        self.role_head:setLev(data.lev)
+        local avatar_bid = data.avatar_bid 
+        local vo = Config.AvatarData.data_avatar[avatar_bid]
+        if vo then
+            local res_id = vo.res_id or 1
+            local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+            self.role_head:showBg(res, nil, false, vo.offy)
+        end
+
+        self.role_head:showWarldBullyRegion(data.nation,0.8,cc.p(54,7))
+        if data.rank_champion <= 3 then
+            if self.rank_num ~= nil then
+                self.rank_num:setVisible(false)
+            end
+            if data.rank_champion == 0 then
+                self.rank_img:setVisible(false)
+            else
+                local res_id = PathTool.getResFrame("common", string.format("common_200%s", data.rank_champion))
+                if self.rank_res_id ~= res_id then
+                    self.rank_res_id = res_id
+                    loadSpriteTexture(self.rank_img, res_id, LOADTEXT_TYPE_PLIST)
+                end
+                self.rank_img:setVisible(true)
+            end
+        else
+            if self.rank_num == nil then
+                self.rank_num = CommonNum.new(1, self.container, 1, -2, cc.p(0.5, 0.5))
+                self.rank_num:setPosition(43, 80)
+            end
+            self.rank_num:setVisible(true)
+            self.rank_num:setNum(data.rank_champion)
+            self.rank_img:setVisible(false)
+        end
+
+        local msg = data.win_num or 0
+
+        self.score_num:setString(msg)        
+    end
+end
+
+function OverlordRankItem:DeleteMe()
+
+    if self.role_head then
+        self.role_head:DeleteMe()
+        self.role_head = nil
+    end
+    
+    if self.rank_num ~= nil then
+        self.rank_num:DeleteMe()
+        self.rank_num = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

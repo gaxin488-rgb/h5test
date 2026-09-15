@@ -1,0 +1,265 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-21 19:25:06
+-- @description    : 
+		-- 精灵融合界面
+---------------------------------
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+
+ElfinOrderWindow = ElfinOrderWindow or BaseClass(BaseView)
+
+function ElfinOrderWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.now_order = nil
+	self.layout_name = "elfin/elfin_order_window"
+	self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("pet","pet"), type = ResourcesType.plist},
+    }
+end
+
+function ElfinOrderWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	self.container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(self.container, 1)
+	self.image_bg = self.container:getChildByName("image_bg")
+	self.win_title = self.container:getChildByName("win_title")
+	self.win_title:setString(TI18N("语言_c_5915"))
+	self.btn_close = self.container:getChildByName("btn_close")
+	self.now_skill_name = self.container:getChildByName("now_skill_name")
+	setTextSpacing(self.now_skill_name,-8)
+	self.now_skill_stage = self.container:getChildByName("now_skill_stage")
+	self.next_sprite = self.container:getChildByName("next_sprite")
+	self.next_skill_stage = self.container:getChildByName("next_skill_stage")
+	self.order_panel = self.container:getChildByName("order_panel")
+	self.pet_node = self.order_panel:getChildByName("pet_node")
+	self.pet_bg = self.order_panel:getChildByName("pet_bg")
+	self.pat_name_bg = self.order_panel:getChildByName("pat_name_bg")
+	self.pat_name = self.order_panel:getChildByName("pat_name")
+	self.max_tip = self.container:getChildByName("max_tip")
+	self.max_tip:setString(TI18N("语言_c_5900"))
+	self.max_tip:setVisible(false)
+	self.tip = self.container:getChildByName("tip")
+	self.tip:setString(TI18N("语言_c_5916"))
+	setTextMaxWidth(self.tip,100)
+	self.item_scroll = self.container:getChildByName("item_scroll")
+	self.item_scroll:setScrollBarEnabled(false)
+	self.tip_skill = self.container:getChildByName("tip_skill")
+	self.tip_skill:setString(TI18N("语言_c_5898"))
+	setTextMaxWidth(self.tip_skill,100)
+	self.upgrade_btn = self.container:getChildByName("upgrade_btn")
+	self.upgrade_btn_txt = self.upgrade_btn:getChildByName("label")
+	self.upgrade_btn_txt:setString(TI18N("语言_c_5915"))
+	self.go_btn = self.container:getChildByName("go_btn")
+	self.go_btn_txt = self.go_btn:getChildByName("label")
+	self.go_btn_txt:setString(TI18N("语言_c_1966"))
+end
+
+function ElfinOrderWindow:register_event(  )
+	registerButtonEventListener(self.btn_close, function (  )
+		self:closeSelf()
+	end, true, 2)
+	registerButtonEventListener(self.background, function (  )
+		self:closeSelf()
+	end, true, 2)
+	registerButtonEventListener(self.upgrade_btn, function (  )
+		if not self.next_step_cfg then
+			self:closeSelf()
+			_controller:openElfinCompoundWindow(true, self.elfin_bid, self.elfin_pos, self.elfin_order)
+		else
+			if self.next_step_cfg and self.next_step_cfg.expend then
+				local list = self.next_step_cfg.expend
+				for key, value in pairs(list) do
+					local item_bid = value[1]
+					local num = value[2]
+					local have_num = BackpackController:getInstance():getModel():getItemNumByBid(item_bid)
+					if num > have_num then
+						local item_config = Config.ItemData.data_get_data(item_bid)
+						BackpackController:getInstance():openTipsSource(true, item_config)
+						return
+					end
+				end
+				_controller:send26515(self.elfin_bid, self.elfin_pos)
+			end
+		end
+	end, true, 2)
+	registerButtonEventListener(self.go_btn, function (  )
+		self:closeSelf()
+		local setting = {}
+		setting.elfin_pos = self.elfin_pos
+		if self.elfin_bid ~= 0 then
+			setting.elfin_bid = self.elfin_bid
+		end
+		setting.elfin_order = self.elfin_order
+		_controller:openElfinChooseWindow(true, setting)
+	end, true, 2)
+	if self.elfin_up_duan_true_event == nil then
+		self.elfin_up_duan_true_event = GlobalEvent:getInstance():Bind(ElfinEvent.Elfin_Up_Duan_True_Event, function(data)
+			self.elfin_order = self.elfin_order + 1
+			self:setData()
+		end)
+	end
+end
+
+function ElfinOrderWindow:closeSelf(  )
+	_controller:openElfinOrderWindow(false)
+end
+function ElfinOrderWindow:openRootWnd(elfin_bid, elfin_pos, elfin_order)
+	self.elfin_pos = elfin_pos or 0
+	self.elfin_bid = elfin_bid
+	self.elfin_order = elfin_order
+	self:setData()
+end
+function ElfinOrderWindow:setData()
+	local cfg = Config.SpriteData.data_elfin_data(self.elfin_bid)
+	local str = self.elfin_bid.."_"..self.elfin_order
+	-- self.step_cfg = Config.SpriteData.data_elfin_dan(str)
+	self.spine_cfg = Config.SpriteData.data_elfin_dan_icon[self.elfin_bid]
+	if not self.spine_cfg then return end
+	if self.elfin_pos == 0 then
+		self.go_btn:setVisible(false)
+		self.upgrade_btn:setPositionX(340)
+	end
+	local str = self.elfin_bid.."_"..self.elfin_order
+	self.now_step_cfg = Config.SpriteData.data_elfin_dan(str)
+	local str = self.elfin_bid.."_"..self.elfin_order+1
+	self.next_step_cfg = Config.SpriteData.data_elfin_dan(str)
+	local effect_id = cfg.effect_id or "E70001"
+	if not self.elfin_spine then
+		local offset_y = tonumber(cfg.offset_y) or 0
+		self.elfin_spine = createEffectSpine( effect_id, cc.p(0, 0), cc.p(0.5, 0), true, PlayerAction.stand )
+		self.pet_node:addChild(self.elfin_spine)
+		if self.spine_cfg then
+			self.elfin_spine:setPositionX(self.spine_cfg.offset_dan[1][1])
+			self.elfin_spine:setPositionY(self.spine_cfg.offset_dan[1][2])
+			self.elfin_spine:setScale(tonumber(self.spine_cfg.scale_dan))
+		end
+	end
+	local item_cfg = Config.ItemData.data_get_data(self.elfin_bid)
+	self.item_cfg = item_cfg
+	self.pat_name:setString(item_cfg.name)
+
+	if self.elfin_order == 0 then
+		local skill_cfg = Config.SkillData.data_get_skill(cfg.skill)
+		self.now_skill_name:setString(skill_cfg.name.."\n"..string.format(TI18N("语言_c_4520"),skill_cfg.level))
+		self.now_skill_stage:setString("")
+		if not self.now_skill then
+			self.now_skill = SkillItem.new(true,true,true,0.8,true,false,true)
+			self.container:addChild(self.now_skill)
+		end
+		self.now_skill:setData(skill_cfg)
+		self.now_skill:setSkillLevel(0)
+		self.now_skill:setVisible(true)
+		self.now_skill:setPosition(cc.p(257,160))
+	else
+		local cfg = Config.SkillData.data_get_skill(self.now_step_cfg.skill)
+		self.now_skill_name:setString(cfg.name.."\n"..string.format(TI18N("语言_c_4712"),self.item_cfg.eqm_jie))
+		self.now_skill_stage:setString(string.format(TI18N("语言_c_5873"),StringUtil.numToRoman(self.elfin_order)))
+		if not self.now_skill then
+			self.now_skill = SkillItem.new(true,true,true,0.8,true,false,true)
+			self.container:addChild(self.now_skill)
+		end
+		self.now_skill:setData(cfg)
+		self.now_skill:setSkillLevel(self.elfin_order)
+		self.now_skill:setVisible(true)
+		self.now_skill:setPosition(cc.p(257,160))
+	end
+
+
+	if not self.next_step_cfg then
+		self.next_skill_stage:setVisible(false)
+		self.next_sprite:setVisible(false)
+		if not tolua.isnull(self.next_skill) then
+			self.next_skill:setVisible(false)
+		end
+	else
+		self.next_skill_stage:setVisible(true)
+		self.next_sprite:setVisible(true)
+		local cfg = Config.SkillData.data_get_skill(self.next_step_cfg.skill)
+		self.next_skill_stage:setString(string.format(TI18N("语言_c_5873"),StringUtil.numToRoman(self.elfin_order+1)))
+		if not self.next_skill then
+			self.next_skill = SkillItem.new(true,true,true,0.8,true,false,true)
+			self.container:addChild(self.next_skill)
+		end
+		self.next_skill:setData(cfg)
+		self.next_skill:setSkillLevel(self.elfin_order+1)
+		self.next_skill:setVisible(true)
+		self.next_skill:setPosition(cc.p(500,160))
+	end
+	if self.elfin_order > 0 then
+		if not tolua.isnull(self.order_panel) and self.now_order == nil then
+			self.now_order = createEffectSpine("E56000",cc.p(0,0),cc.p(0.5,0.5),false,"action"..self.elfin_order)
+			self.pet_bg:addChild(self.now_order)
+		else
+			self.now_order:setAnimation(0, "action"..self.elfin_order, false)
+		end
+	else
+		if self.now_order then
+            self.now_order:clearTracks()
+            self.now_order:removeFromParent()
+            self.now_order = nil
+        end
+	end
+	if self.next_step_cfg then
+		local _w = math.max(tableLen(self.next_step_cfg.expend) * 210,self.item_scroll:getContentSize().width)
+		self.item_scroll:setInnerContainerSize(cc.size(_w,85))
+		self.item_scroll:removeAllChildren()
+		for key, value in pairs(self.next_step_cfg.expend) do
+			local item = self:setMaterialItem(value)
+			self.item_scroll:addChild(item)
+			item:setPosition(cc.p((key - 1) * 210,0))
+		end
+		self.now_skill_stage:setPositionX(260)
+		self.now_skill_name:setPosition(cc.p(380,197))
+		self.now_skill:setPositionX(260)
+		self.tip:setVisible(true)
+		self.max_tip:setVisible(false)
+	else
+		self.item_scroll:removeAllChildren()
+		self.upgrade_btn_txt:setString(TI18N("语言_c_5899"))
+		self.now_skill_name:setPosition(cc.p(340,205))
+		self.now_skill_stage:setPositionX(340)
+		self.now_skill:setPositionX(340)
+		self.tip:setVisible(false)
+		self.max_tip:setVisible(true)
+	end
+end
+function ElfinOrderWindow:setMaterialItem(data)
+	local panel = ccui.Widget:create()
+    panel:setContentSize(cc.size(210, 85))
+    panel:setAnchorPoint(cc.p(0,0))
+	local item = BackPackItem.new(false, true, false, 0.7, nil, true)
+	item:setTouchEnabled(true)
+    item:setBaseData(data[1],1, true)
+	panel:addChild(item)
+	item:setPosition(cc.p(42,42))
+	local cfg = Config.ItemData.data_get_data(data[1])
+	local item_name = createLabel(20,cc.c3b(0x5c,0x27,0x05),nil,95,42,cfg.name,panel,nil,cc.p(0,0))
+	item_name:setWidth(100)
+	item_name:setLineSpacing(-4)
+	local res = PathTool.getResFrame("common", "common_1095")
+	local num_bg = createImage(panel,res,95,0,cc.p(0,0),true,nil,true)
+	num_bg:setContentSize(cc.size(100,32))
+	local have_num = BackpackController:getInstance():getModel():getItemNumByBid(data[1])
+	local num_txt = createLabel(20,cc.c3b(0x5c,0x27,0x05),nil,141,16,"",panel,nil,cc.p(0.5,0.5))
+	num_txt:setString(string.format("%s/%s", MoneyTool.GetMoneyString(have_num, false), MoneyTool.GetMoneyString(data[2], false)))
+	if have_num >= data[2] then
+		num_txt:setTextColor(cc.c3b(255, 246, 228))
+	else
+		num_txt:setTextColor(cc.c3b(255, 93, 93))
+	end
+    return panel
+end
+function ElfinOrderWindow:close_callback(  )
+	if self.elfin_up_duan_true_event then
+        GlobalEvent:getInstance():UnBind(self.elfin_up_duan_true_event)
+        self.elfin_up_duan_true_event = nil
+    end
+end

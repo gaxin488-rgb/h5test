@@ -1,0 +1,361 @@
+-- --------------------------------------------------------------------
+-- --------------------------------------------------------------------
+KeyinDetailPanel = KeyinDetailPanel or BaseClass(BaseView)
+
+local controller = KeyinController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+local tyep_bgres = {
+    [2] = "fa",
+    [3] = "wu",
+    [4] = "rou",
+    [5] = "fu",
+}
+
+function KeyinDetailPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.strength_attr_list = {}
+    self.strength_effect_list = {}
+    self.skill_item_list = {}
+    self.is_can_up = true
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("engraved", "engraved"), type = ResourcesType.plist}
+	}
+    self.layout_name = "keyin/keyin_detail"
+end
+
+function KeyinDetailPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.mainContainer = self.root_wnd:getChildByName("main_container")
+    self.close_btn = self.mainContainer:getChildByName("close_btn")
+    self:playEnterAnimatianByObj(self.mainContainer , 1)
+    self.item = self.root_wnd:getChildByName("item")
+
+    self.up_panel = self.mainContainer:getChildByName("up_panel") 
+    local name_bg = self.up_panel:getChildByName("name_bg")
+    self.keyin_icon = name_bg:getChildByName("keyin_icon")
+
+    self.img_title = self.up_panel:getChildByName("img_title")
+    self.title = self.up_panel:getChildByName("title")
+    self.title:setString("")
+    moveTextBg(self.title,self.img_title,80,250)
+
+    local tips = self.up_panel:getChildByName("tips")
+    tips:setString(TI18N("语言_c_836"))
+    local left_tips_icon = self.up_panel:getChildByName("left_tips_icon")
+    local right_tips_icon = self.up_panel:getChildByName("right_tips_icon")
+    setLeftRightImg(left_tips_icon, tips, right_tips_icon, 20)
+    self.item_list = self.up_panel:getChildByName("plan_list")
+    self.scroller_view = createScrollView(self.item_list:getContentSize().width, self.item_list:getContentSize().height, 0, 0, self.item_list, ccui.ScrollViewDir.vertical)
+
+    local tips_0 = self.up_panel:getChildByName("tips_0")
+    tips_0:setString(TI18N("语言_c_2287"))
+    local left_tips_icon_0 = self.up_panel:getChildByName("left_tips_icon_0")
+    local right_tips_icon_0 = self.up_panel:getChildByName("right_tips_icon_0")
+    setLeftRightImg(left_tips_icon_0, tips_0, right_tips_icon_0, 20)
+    self.skill_list = self.up_panel:getChildByName("skill_list")
+
+    local scroll_view_size = self.skill_list:getContentSize()
+    self.skill_scroller_view = createScrollView(scroll_view_size.width, scroll_view_size.height, 0, 0, self.skill_list, ccui.ScrollViewDir.vertical)
+end
+
+function KeyinDetailPanel:createNewCell(width, height)
+    local cell = KeyinSkillItemItem.new()
+    return cell
+end
+function KeyinDetailPanel:numberOfCells()
+    if not self.cell_data_list then
+        return 0
+    end
+    return #self.cell_data_list
+end
+function KeyinDetailPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.cell_data_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setExtralData(self.total_lv)
+    cell:setData(cell_data)
+end
+
+function KeyinDetailPanel:register_event()
+    registerButtonEventListener(self.background, function() self:_onClickBtnClose() end ,false, 2)
+    registerButtonEventListener(self.close_btn, function() self:_onClickBtnClose() end ,true, 2)
+end
+
+function KeyinDetailPanel:_onClickBtnClose()
+    controller:openKeyinPreviewPanel(false)
+end
+
+function KeyinDetailPanel:openRootWnd(hero_vo)
+    self.hero_vo = hero_vo
+
+    local partner_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    self.engraved_id = partner_cfg.engraved_id
+    self.total_lv = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+
+    local hero_type = partner_cfg.type
+    local bg_id = "engraved_pic_"..tyep_bgres[hero_type].."_01"
+    loadSpriteTexture(self.keyin_icon, PathTool.getResFrame("engraved", bg_id), LOADTEXT_TYPE_PLIST)
+
+    self:setUpStatus()
+    self:setSkillInfo()
+end
+
+--设置技能信息
+function KeyinDetailPanel:setSkillInfo()
+    local cfg = Config.PartnerEngravedData.data_get_skill 
+    local list = {}
+    for k, v in pairs(cfg) do
+        if v.id == self.hero_vo.bid then
+            table.insert(list,v)
+        end
+    end
+    local sort_fun = SortTools.tableLowerSorter({"total_lv"})
+    table.sort(list, sort_fun)
+    self.cell_data_list = list
+    
+    local total_height = 0
+    for i, v in ipairs(list) do
+        if not self.skill_item_list[i] then
+            local cell = self:createNewCell()
+            self.skill_scroller_view:addChild(cell)
+            self.skill_item_list[i] = cell
+        end
+        self:updateCellByIndex(self.skill_item_list[i],i)
+        local item_size = self.skill_item_list[i]:getHereItemSize()
+        total_height = total_height + item_size.height + 5
+    end
+    self.skill_scroller_view:setInnerContainerSize(cc.size(630,total_height))
+    local _height = total_height
+    for k, v in pairs(self.skill_item_list) do
+        v:setPositionX(315)
+        v:setPositionY(_height)
+        local item_size = v:getHereItemSize()
+        _height = _height - item_size.height - 5
+    end
+end
+
+--设置强化状态
+function KeyinDetailPanel:setUpStatus()
+    local cfg = Config.PartnerEngravedData.data_lv_info[self.engraved_id]
+    local full_attr_list ={}
+    --总的属性
+    for k, v in pairs(cfg) do
+        local pos = k
+        local data = v
+        local max_data = data[#data]
+        local attr = max_data.attr
+        for key, val in ipairs(attr) do
+            local attr_key = val[1]
+            local attr_id = Config.AttrData.data_key_to_id[attr_key] or Config.AttrExtraData.data_key_to_id[attr_key]
+            local attr_num = val[2]
+            if full_attr_list[attr_id] then
+                full_attr_list[attr_id] = attr_num + full_attr_list[attr_id]
+            else
+                full_attr_list[attr_id] = attr_num
+            end
+        end
+    end
+    local _full_attr_list = {}
+    for k, v in pairs(full_attr_list) do
+        table.insert(_full_attr_list, {id=k,num=v})
+    end
+    local function sortFunc( objA, objB )
+        return objA.id < objB.id
+    end
+    table.sort(_full_attr_list, sortFunc)
+
+    --已激活的属性
+    local act_attr_list = {}
+    local keyin_data = model:getKiyinDataById(self.hero_vo.partner_id)
+    local basc_cfg = Config.PartnerEngravedData.data_base_info[self.engraved_id][1]
+    local max_lv = model:getAllLevById(self.engraved_id)
+    local total_lv = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+
+    self.title:setString(basc_cfg.name.." ("..total_lv.."/"..max_lv..")")
+    moveTextBg(self.title,self.img_title,80,250)
+
+    if keyin_data then
+        local engraved = keyin_data.engraved
+        for k, v in pairs(engraved) do
+            local pos = v.p_type
+            local lv = v.p_lev
+            local data = cfg[pos][lv]
+            local attr = data.attr
+            for key, val in ipairs(attr) do
+                local attr_key = val[1]
+                local attr_num = val[2]
+                local attr_id = Config.AttrData.data_key_to_id[attr_key] or Config.AttrExtraData.data_key_to_id[attr_key]
+                if act_attr_list[attr_id] then
+                    act_attr_list[attr_id] = attr_num + act_attr_list[attr_id]
+                else
+                    act_attr_list[attr_id] = attr_num
+                end
+            end
+        end
+    end
+
+    local num = tableLen(full_attr_list)
+    local total_height = 50 * math.ceil(num/2)
+    local scroller_height = math.max(total_height, 165) 
+    self.scroller_view:setInnerContainerSize(cc.size(630, scroller_height))
+    local index = 1
+    for k, v in pairs(_full_attr_list) do
+        local data = v
+        if self.strength_effect_list[index] == nil then
+            self.strength_effect_list[index] = self:createStrengthEffectItem(self.scroller_view)
+        end
+        local res, attr_name, attr_val = commonGetAttrInfoByIDValue(v.id, v.num)
+        self.strength_effect_list[index].attr_name:setString(attr_name)
+        self.strength_effect_list[index].icon:loadTexture(res, LOADTEXT_TYPE_PLIST)
+        local act_attr = act_attr_list[v.id] or 0
+        local _res, _attr_name, _attr_val = commonGetAttrInfoByIDValue(v.id, act_attr)
+        local str = "<div fontcolor=#249003>+%s</div><div fontcolor=#7C5536>/%s</div>"
+        self.strength_effect_list[index].attr_val:setString(string.format(str, _attr_val or 0,attr_val))
+
+        local _x = 163 + (296 + 8)* ((index-1) % 2)
+		local _y = scroller_height - math.floor((index-1)/2)*50
+        self.strength_effect_list[index].layer:setPositionX(_x)
+        self.strength_effect_list[index].layer:setPositionY(_y)
+        index = 1 + index
+    end
+end
+
+function KeyinDetailPanel:createStrengthEffectItem(parent)
+    local item = {}
+	local layer = ccui.Layout:create()
+    layer:setAnchorPoint(cc.p(0.5, 1))
+    layer:setContentSize(cc.size(296,40))
+    parent:addChild(layer)
+
+	local skill_item = self.item:clone()
+    layer:addChild(skill_item)
+    skill_item:setPositionX(148)
+    skill_item:setPositionY(20)
+
+    local bg = skill_item:getChildByName("bg")
+    local attr_name = skill_item:getChildByName("attr_name")
+    local attr_val = skill_item:getChildByName("attr_val")
+    local attr_num = createRichLabel(22, cc.c4b(0x7c, 0x55, 0x36, 0xff),cc.p(1, 0.5), cc.p(280, 20))
+    skill_item:addChild(attr_num)
+
+    item.layer = layer
+    item.icon = bg
+    item.attr_name = attr_name
+    item.attr_val = attr_num
+    return item
+end
+
+function KeyinDetailPanel:close_callback()
+    if self.scroller_view then
+        self.scroller_view:removeAllChildren()
+        self.scroller_view:removeFromParent()
+    end
+    controller:openKeyinPreviewPanel(false)
+end
+
+
+
+
+KeyinSkillItemItem = class("KeyinSkillItemItem", function() 
+	return ccui.Layout:create()
+end)
+
+function KeyinSkillItemItem:ctor(click, scale, effect, is_show_tips, swallow_touch)
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("keyin/keyin_skill_item_0"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 1))
+	self:setContentSize(self.size)
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+
+	self.main_container = self.root_wnd:getChildByName("main_panel")
+    self.skill_bg = self.main_container:getChildByName("skill_bg")
+	self.item_node = self.main_container:getChildByName("Node_1")
+	self.bg = self.main_container:getChildByName("bg")
+    self.skill_name = self.main_container:getChildByName("skill_name")
+	-- self.skill_desc = self.main_container:getChildByName("skill_desc")
+    -- self.scroll_view = self.main_container:getChildByName("scroll_view")
+    -- self.scroll_view:setScrollBarEnabled(false)
+    -- self.scroll_view:setSwallowTouches(false)
+    -- self.scroll_size = self.scroll_view:getContentSize()--68452A
+    self.skill_desc = createRichLabel(22, cc.c4b(0x7a,0x58,0x32,255), cc.p(0, 1), cc.p(122, 64), -4, nil, 470) 
+    self.main_container:addChild(self.skill_desc)
+
+    if not self.skill_icon then
+        self.item_icon = createSprite(nil,  0, 0, self.item_node, cc.p(0.5,0.5), LOADTEXT_TYPE, 0)
+        self.item_icon:setCascadeOpacityEnabled(true)
+        self.item_icon:setScale(0.8)
+    end
+
+	self:registerEvent()
+end
+
+function KeyinSkillItemItem:addCallBack(callback)
+	self.callback = callback
+end
+
+function KeyinSkillItemItem:setExtralData(lv)
+	self.total_lev = lv
+end
+
+function KeyinSkillItemItem:setData(data)
+	self.data = data
+    local lock_status = false
+    local skill_id
+    -- ["30511_250"] = {id=30511, total_lv=250, unlock={{0,{522405,522821}}}, skill_order={}},
+    local unlock = data.unlock
+    local skill_id_list = unlock[#unlock][3]
+    skill_id = skill_id_list[1]
+    local config = Config.SkillData.data_get_skill(skill_id)
+    local res = self.data.skill_icon
+    if res == "" then
+        res = config.icon
+    end
+    local skill_icon = PathTool.getSkillRes(res, false)
+    loadSpriteTexture(self.item_icon, skill_icon, LOADTEXT_TYPE)
+    self.skill_name:setString(config.name)
+    local _str = self.data.skill_desc
+    if _str == "" then
+        _str = config.des
+    end
+    self.skill_desc:setString(_str)
+
+    local label_siez = self.skill_desc:getContentSize()
+    if label_siez.height > 60 then
+        local name_height = self.skill_name:getContentSize().height
+        local total_height = name_height + label_siez.height + 20 + 5
+        self:setContentSize(cc.size(self.size.width, total_height))
+        self.main_container:setContentSize(cc.size(self.size.width, total_height))
+        self.bg:setContentSize(cc.size(self.size.width, total_height))
+        self.main_container:setPositionY(total_height/2)
+        self.bg:setPositionY(total_height/2)
+        self.skill_name:setPositionY(total_height - 10)
+        self.skill_desc:setPositionY(total_height - 10 - name_height - 5)
+        self.item_node:setPositionY(total_height/2)
+        self.skill_bg:setPositionY(total_height/2)
+    end
+end
+
+function KeyinSkillItemItem:getHereItemSize()
+    return self.main_container:getContentSize()
+end
+
+function KeyinSkillItemItem:registerEvent()
+end
+
+function KeyinSkillItemItem:DeleteMe()
+	self:removeAllChildren()
+    self:removeFromParent()
+end

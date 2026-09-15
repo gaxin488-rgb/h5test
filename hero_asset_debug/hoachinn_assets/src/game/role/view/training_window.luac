@@ -1,0 +1,1163 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      小助手
+-- <br/>Create: 2018-05-15
+-- --------------------------------------------------------------------
+TrainingWindow = TrainingWindow or BaseClass(BaseView)
+
+local controller = RoleController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function TrainingWindow:__init()
+    self.is_full_screen = false
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big
+    self.layout_name = "roleinfo/training_window"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("face","face"), type = ResourcesType.plist },
+    }
+    self.btn_index = 0
+    -- 到时间显示的索引
+    self.time_show_index = 0
+    self.item_height = 134
+    self.cacheList = {} --对象池
+    self.cacheMaxSize = 0 --最大池数
+    model:getTrainingStatus()
+end
+
+function TrainingWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+	self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 1)
+    self.scrollCon = self.main_container:getChildByName("scrollCon")
+    self.scrollCon_1 = self.main_container:getChildByName("scrollCon_1")
+    self.scrollCon:setVisible(false)
+    self.scrollCon_1:setVisible(false)
+    self.btn_panel = self.main_container:getChildByName("btn_panel")
+    self.training_panel = self.main_container:getChildByName("training_panel")
+    self.prompt_container_effect_size = self.training_panel:getContentSize()
+    self.rule_btn = self.main_container:getChildByName("rule_btn")
+    self.confirm_btn = self.main_container:getChildByName("confirm_btn")
+    self.confirm_txt = self.confirm_btn:getChildByName("confirm_txt")
+    self.confirm_txt:setString(TI18N("语言_c_7414"))
+    setTextSpacing(self.confirm_txt,-8)
+    self.tab_btn = self.root_wnd:getChildByName("tab_btn") -- 用于拷贝事件的list
+end
+
+function TrainingWindow:openRootWnd()
+    self:createTraining()
+    self:createBtnPanel()
+    self:onClickBtn(1)
+end
+--创建秘书形象
+function TrainingWindow:createTraining()
+    local id = RoleController:getInstance():getModel():getMainDecorateNowUse()
+    
+    if id ~= 0 then
+        self.training_panel:setVisible(true)
+        if id ~= 0 then
+            if self.show_PromptEffect then 
+                self.show_PromptEffect:clearTracks()
+                self.show_PromptEffect:removeFromParent()
+                self.show_PromptEffect = nil
+            end
+            if self.show_PromptEffect_img then
+                self.show_PromptEffect_img:setVisible(false)
+            end
+        end
+        local spine_name = PathTool.getEffectRes(160)
+        local _x = self.prompt_container_effect_size.width/2
+        local _y = 0
+        local _scale = 1
+        local cfg = Config.TrainingCampData.data_get_sec[id]
+        if cfg then
+            spine_name = cfg.spine
+            _x = _x + cfg.assistant_offset[1][2]
+            _y = _y + cfg.assistant_offset[1][3]
+            _scale = cfg.assistant_offset[1][1]
+        end
+        if cfg.resource == 0 then
+            if not self.show_PromptEffect then
+                self.show_PromptEffect = createEffectSpine(spine_name,cc.p(0,0),cc.p(0.5, 0),true,cfg.static_model)
+                self.training_panel:addChild(self.show_PromptEffect, 1)
+                self.is_can_click_tip = true
+            else
+                self.show_PromptEffect:setToSetupPose()
+            end
+            self.show_PromptEffect:setScale(_scale)
+            self.show_PromptEffect:setAnchorPoint(cc.p(0.5,0.5))
+            self.show_PromptEffect:setPosition(cc.p(_x, _y))
+            self.show_PromptEffect:setAnimation(0, cfg.static_model, true)
+        else
+            if not self.show_PromptEffect_img then
+                self.show_PromptEffect_img = createSprite(PathTool.getResFrame("trainingcamp",spine_name), 0, 0, self.training_panel, cc.p(0.5, 0))
+            end
+            self.show_PromptEffect_img:setVisible(true)
+            self.show_PromptEffect_img:setScale(_scale)
+            self.show_PromptEffect_img:setPosition(cc.p(_x,_y))
+        end
+        
+    else
+        if self.show_PromptEffect then 
+            self.show_PromptEffect:removeFromParent()
+            self.show_PromptEffect = nil
+        end
+        if self.show_PromptEffect_img then
+            self.show_PromptEffect_img:setVisible(false)
+        end
+        self.training_panel:setVisible(false)
+    end
+end
+--创建页签
+function TrainingWindow:createBtnPanel()
+    self.btn_list = {}
+    self.btn_cfg_list = Config.TrainingCampData.data_assi_tab_info_list
+
+    for i=1,#self.btn_cfg_list do
+        local item = self.tab_btn:clone()
+        self.btn_panel:addChild(item)
+        item:setPosition(cc.p(61+126*(i-1),28))
+        self.btn_list[i] = item
+        item.normal_img = item:getChildByName("normal_img")
+        item.select_img = item:getChildByName("select_img")
+        item.label = item:getChildByName("label")
+        setTextSpacing(item.label,-8)
+        -- item.label:setChangeScaleOffWidth(20)
+        item.label:setString(self.btn_cfg_list[i][1].tab_name)
+        local _w = item.label:getContentSize().width
+        local _scale = (item:getContentSize().width-20)/_w
+        if _scale < 1 then
+            item.label:setScale(_scale)
+        else
+            item.label:setScale(1)
+        end
+        item.index = i
+        registerButtonEventListener(item, function()
+            self:onClickBtn(item.index)
+        end, true)
+    end
+end
+function TrainingWindow:onClickBtn(index)
+    if index == self.btn_index then return end
+    if index == RoleConst.training_page_index.guild then
+        local cfg = Config.FunctionData.data_base[MainuiConst.btn_index.guild]
+        if not MainuiController:getInstance():checkIsOpenByActivate(cfg.activate) then
+            message(cfg.desc)
+            return
+        end
+    elseif index == RoleConst.training_page_index.elfin then
+        if not ElfinController:getInstance():getModel():checkElfinIsOpen() then
+            return
+        end
+    elseif index == RoleConst.training_page_index.dailyCopy then
+        local cfg = Config.DailyplayData.data_exerciseactivity[2]
+        for i,v in pairs(cfg) do
+            if v.id == 1 then
+                if not MainuiController:getInstance():checkIsOpenByActivate(v.activate) then
+                    message(v.lock_desc)
+                    return
+                end
+            end
+        end
+    end
+    self.btn_index = index
+    for i,v in pairs(self.btn_list) do
+        if v.index == self.btn_index then
+            v.normal_img:setVisible(false)
+            v.select_img:setVisible(true)
+            v.label:setTextColor(cc.c4b(0xff,0xf9,0xae,0xff))
+			v.label:enableOutline(cc.c4b(0x7d,0x0f,0x00,0xff),2)
+        else
+            v.normal_img:setVisible(true)
+            v.select_img:setVisible(false)
+            v.label:setTextColor(cc.c4b(0xd2,0xc0,0x98,0xff))
+			v.label:enableOutline(cc.c4b(0x5e,0x41,0x2f,0xff),2)
+        end
+    end
+    if self.btn_index == RoleConst.training_page_index.elfin then
+        self.scrollCon:setVisible(true)
+        self.scrollCon_1:setVisible(false)
+        if not self.elfin_panel then
+            self.elfin_panel = TrainingElfinWindow.new(self.btn_cfg_list[self.btn_index])
+            self.scrollCon:addChild(self.elfin_panel)
+        end
+        self.elfin_panel:setVisible(true)
+        if self.shop_panel then
+            self.shop_panel:setVisible(false)
+        end
+    elseif self.btn_index == RoleConst.training_page_index.shop then
+        self.scrollCon:setVisible(true)
+        self.scrollCon_1:setVisible(false)
+        if not self.shop_panel then
+            self.shop_panel = TrainingShopWindow.new(self.btn_cfg_list[self.btn_index])
+            self.scrollCon:addChild(self.shop_panel)
+        end
+        self.shop_panel:setVisible(true)
+        if self.elfin_panel then
+            self.elfin_panel:setVisible(false)
+        end
+    else
+        self.scrollCon:setVisible(false)
+        self.scrollCon_1:setVisible(true)
+        self:updateTrainingScroll()
+    end
+end
+--刷新滑动列表
+function TrainingWindow:updateTrainingScroll()
+    if not self.list_view then
+        local size = self.scrollCon_1:getContentSize()
+        --方法里面定义了 self.list_view
+        self:createLibraryScrollView(size, size.width * 0.5, size.height * 0.5)
+    end
+
+    local list = self.btn_cfg_list[self.btn_index]
+    table.sort(list,function(a,b) return a.tab_sort_id < b.tab_sort_id end)
+    local _h = 0
+    for i=1,#list do
+        local data = list[i]
+        if data.func_type == RoleConst.training_index.frequency then
+            _h = _h + 183
+            data._h = 183
+        else
+            _h = _h + 134
+            data._h = 134
+        end
+    end
+    self.max_h = math.max(self.scrollCon_1:getContentSize().height,_h)
+    local _max_h = self.max_h
+    for i=1,#list do
+        local data = list[i]
+        data.x = 292
+        data.y = _max_h
+        _max_h = _max_h - data._h
+    end
+    self.list_view:stopAutoScroll()
+    -- self:updateCareerUI(title_pos_list, _h, 292)
+    self:reloadData(self.max_h)
+    self:checkOverShowByVertical()
+end
+--获取数据数量
+function TrainingWindow:numberOfCells()
+    return #self.btn_cfg_list[self.btn_index]
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function TrainingWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.btn_cfg_list[self.btn_index][index]
+    if cell_data then
+        cell:setVisible(true)
+        cell:setData(cell_data)
+    else
+        cell:setVisible(false)
+    end
+end
+
+--------------------------------开始-------------------------  
+--内内部写一个无限的scrollview 
+function TrainingWindow:createLibraryScrollView(size, x, y)
+    self.scrollview_size = size
+    self.list_view = createScrollView(size.width, size.height, x, y, self.scrollCon_1, ScrollViewDir.vertical) 
+    self.list_view:setAnchorPoint(cc.p(0.5, 0.5))
+    self.scrollview_container = self.list_view:getInnerContainer() 
+
+    self.cacheMaxSize = math.ceil(size.height / self.item_height) + 1
+    self.list_view:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            self:checkOverShowByVertical()
+        end
+    end)
+end
+--==============================--
+--desc:竖直方向的监测判断
+--time:2018-07-20 03:11:13
+--@return 
+--==============================--
+function TrainingWindow:checkOverShowByVertical()
+    if not self.cellList then return end
+    local container_y = self.scrollview_container:getPositionY()
+    --计算 视图的上部分和下部分在self.container 的位置
+    local bot = -container_y
+    local top = self.scrollview_size.height + bot
+    local col_count = #self.cellList
+    --下面因为 self.cellList 是一维数组 所以要换成二维来算
+    --活跃cell开始行数
+    local activeCellStartRow = 1
+    for i=1, col_count do
+        local index = 1 + (i-1)
+        local cell = self.cellList[index]
+        activeCellStartRow = i
+        if cell and cell.y - self.item_height * 0.5 <= top then
+            break
+        end
+    end
+    --活跃cell结束行数
+    local activeCellEndRow = col_count
+    if bot > 0 then
+        for i = activeCellStartRow, col_count do
+            local index = 1 + (i-1)
+            local cell = self.cellList[index]
+            if cell and cell.y + self.item_height * 0.5 < bot then
+                activeCellEndRow = i - 1
+                break
+            end
+        end
+    end
+    local max_count = self:numberOfCells()
+    for i=1, col_count do
+        if i >= activeCellStartRow and i <= activeCellEndRow then
+            local index = (i-1)
+            if not self.activeCellIdx[index] then
+                if index <= max_count then
+                    self:updateCellAtIndex(index)
+                    self.activeCellIdx[index] = true
+                end
+            end
+        else
+            local index = (i-1)
+            if index <= max_count then
+                self.activeCellIdx[index] = false
+            end
+        end
+    end
+end
+
+function TrainingWindow:reloadData(container_height)
+    self.cellList = {}
+    self.activeCellIdx = {}
+    for k, v in ipairs(self.cacheList) do
+        --相当于隐藏
+        v:setPositionX(-10000)
+    end
+    
+    local container_height = math.max(container_height, self.scrollview_size.height)
+    self.container_size = cc.size(self.scrollview_size.width, container_height)
+    self.list_view:setInnerContainerSize(self.container_size)
+    local number = self:numberOfCells()
+    local setting = {
+        text=TI18N("语言_c_6217"),
+        pos=cc.p(330,530),
+    }
+    commonShowEmptyIcon(self.scrollCon_1,number == 0,setting)
+    if number == 0 then
+        return
+    end
+
+    for i = 1, number do
+        local data = self.btn_cfg_list[self.btn_index][i]
+        if data ~= nil then
+            local cell = nil 
+            if i <= self.time_show_index then
+                cell = self:getCacheCellByIndex(i)
+            end
+            local count = #self.cellList
+            local x = data.x
+            local y = data.y
+            local cellData = {cell = cell, x = x, y = y}
+            table.insert(self.cellList, cellData)
+        end
+    end
+    
+    local maxRefreshNum = self.cacheMaxSize - 1
+    local refreshNum = number < maxRefreshNum and number or maxRefreshNum
+    for i = 1, refreshNum do
+        local index = i
+        delayRun(self.list_view,index / display.DEFAULT_FPS,function ()
+            if self.time_show_index < index then
+                self.time_show_index = index
+            end
+            self:updateCellAtIndex(index)
+            if self.time_show_index == refreshNum then
+                self.time_show_index = 9999
+            end
+        end)
+        self.activeCellIdx[i] = true
+    end
+end
+
+--获得格子下标对应的缓存itemCell
+function TrainingWindow:getCacheCellByIndex(index)
+    local cacheIndex = (index - 1) % self.cacheMaxSize + 1
+    if not self.cacheList[cacheIndex] then
+        local newCell = TrainingItem.new()
+        newCell:setAnchorPoint(cc.p(0.5, 1))
+        newCell:setPositionX(-10000)--隐藏
+        self.cacheList[cacheIndex] = newCell
+        self.list_view:addChild(newCell, 2)
+        return newCell
+    else
+        return self.cacheList[cacheIndex]
+    end
+end
+
+--更新格子，并记为活跃
+function TrainingWindow:updateCellAtIndex(index)
+    if index > self.time_show_index then
+        return
+    end
+    if not self.cellList[index] then return end
+    local cellData = self.cellList[index]
+    if cellData.cell == nil then
+        cellData.cell = self:getCacheCellByIndex(index)
+    end
+    cellData.cell:setPosition(cellData.x, cellData.y)
+    self:updateCellByIndex(cellData.cell, index)
+end
+
+
+--------------------------scrollview结束-------------------------
+function TrainingWindow:register_event()
+    self.background:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            controller:openTrainingWindow(false)
+        end
+    end)
+    self.confirm_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(self.confirm_btn, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local list = model:getTrainingStatusList()
+            local attr_list = {}
+            for k, v in pairs(list) do
+                local cfg = Config.TrainingCampData.data_assi_info[k]
+                local is_send = false
+                if cfg then
+                    if cfg.func_type == RoleConst.training_index.switch then
+                        is_send = v == 1
+                    elseif cfg.func_type == RoleConst.training_index.Radio then
+                        if type(v) == "table" then
+                            is_send = next(v)
+                        else
+                            is_send = v ~= 0
+                        end
+                    elseif cfg.func_type == RoleConst.training_index.multiple then
+                        if type(v) == "table" then
+                            is_send = next(v)
+                        else
+                            is_send = v ~= 0
+                        end
+                    elseif cfg.func_type == RoleConst.training_index.frequency then
+                        is_send = v ~= 0
+                    elseif cfg.func_type == RoleConst.training_index.shop then
+                        if type(v) == "table" then
+                            is_send = next(v)
+                        else
+                            is_send = v ~= 0
+                        end
+                    elseif cfg.func_type == RoleConst.training_index.elfin then
+                        local index = model:getTrainingStatusForType(RoleConst.training_fun_index.elfin_status)
+                        is_send = index and index == 1
+                    end
+                    if is_send then
+                        local _list = {}
+                        _list.id = k
+                        local param_list = {}
+                        if type(v) == "table" then
+                            for key, value in pairs(v) do
+                                table.insert(param_list,{param=value})
+                            end
+                        else
+                            table.insert(param_list,{param=v})
+                        end
+                        if cfg.func_type == RoleConst.training_index.elfin then
+                            if ElfinController:getInstance():getModel():getAutoRemove() ~= 0 then
+                                table.insert(param_list,{param=9})
+                            end
+                        end
+                        _list.param_list = param_list
+                        table.insert(attr_list,_list)
+                    end
+                end
+            end
+            -- if attr_list and next(attr_list) then
+                controller:sender23311(attr_list)
+            -- else
+            --     message(TI18N("语言_c_61"))
+            -- end
+        end
+    end)
+    self.rule_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(self.rule_btn, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local config = Config.TrainingCampData.data_const.assistant_tip
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        end
+    end)
+end
+
+function TrainingWindow:close_callback()
+    if self.btn_scroll_list and next(self.btn_scroll_list) then
+        for k, v in pairs(self.btn_scroll_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    if self.elfin_panel then
+        self.elfin_panel:DeleteMe()
+        self.elfin_panel = nil
+    end
+    if self.shop_panel then
+        self.shop_panel:DeleteMe()
+        self.shop_panel = nil
+    end
+    model:saveTrainingStatus()
+	controller:openTrainingWindow(false)
+end
+
+
+
+TrainingItem = class("TrainingItem", function()
+    return ccui.Widget:create()
+end)
+
+function TrainingItem:ctor()
+	self:configUI()
+	self:register_event()
+	self.panel_h = 0
+    self.can_click = false
+end
+
+function TrainingItem:configUI(  )
+	self.size = cc.size(584, 134)
+    self:setAnchorPoint(cc.p(0.5,1))
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("roleinfo/training_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self.panel_h = self.root_wnd:getContentSize().height
+    self:addChild(self.root_wnd)
+    --状态
+    self.status_panel = self.root_wnd:getChildByName("status_panel")
+    self.status_bg = self.status_panel:getChildByName("status_bg")
+    self.status_tip_bg = self.status_panel:getChildByName("status_tip_bg")
+    self.confirm_txt = self.status_panel:getChildByName("confirm_txt")
+    self.tab_container = self.status_panel:getChildByName("tab_container")
+    self.status_btn_list = {}
+    for i = 1, 2 do
+        local item = self.tab_container:getChildByName("tab_btn_"..i)
+        item.unselect_bg = item:getChildByName("unselect_bg")
+        item.select_bg = item:getChildByName("select_bg")
+        item.title = item:getChildByName("title")
+        item.index = i
+        if i == 1 then
+            item.title:setString(TI18N("语言_c_7410"))
+        else
+            item.title:setString(TI18N("语言_c_791"))
+        end
+        self.status_btn_list[i] = item
+    end
+    --单选
+    self.choose_panel = self.root_wnd:getChildByName("choose_panel")
+    self.choose_bg = self.choose_panel:getChildByName("choose_bg")
+    self.choose_tip_bg = self.choose_panel:getChildByName("choose_tip_bg")
+    self.choose_txt = self.choose_panel:getChildByName("choose_txt")
+    self.choose_btn_list = {}
+    for i = 1, 3 do
+        local item = self.choose_panel:getChildByName("checkbox_"..i)
+        item.checkbox_name = createRichLabel(22,cc.c3b(0x7c,0x55,0x36),cc.p(0,0.5),cc.p(47,20))
+        item:addChild(item.checkbox_name)
+        item.checkbox_bg = item:getChildByName("checkbox_bg")
+        item.index = i
+        self.choose_btn_list[i] = item
+    end
+    --多选
+    self.more_choose_panel = self.root_wnd:getChildByName("more_choose_panel")
+    self.more_choose_bg = self.more_choose_panel:getChildByName("more_choose_bg")
+    self.more_choose_tip_bg = self.more_choose_panel:getChildByName("more_choose_tip_bg")
+    self.more_choose_txt = self.more_choose_panel:getChildByName("more_choose_txt")
+    self.more_choose_btn_list = {}
+    for i = 1, 3 do
+        local item = self.more_choose_panel:getChildByName("more_checkbox_"..i)
+        item.more_checkbox_name = createRichLabel(22,cc.c3b(0x7c,0x55,0x36),cc.p(0,0.5),cc.p(47,20))
+        item:addChild(item.more_checkbox_name)
+        item.index = i
+        item.more_checkbox_bg = item:getChildByName("more_checkbox_bg")
+        self.more_choose_btn_list[i] = item
+    end
+    --滑动
+    self.slide_panel = self.root_wnd:getChildByName("slide_panel")
+    self.slide_bg = self.slide_panel:getChildByName("slide_bg")
+    self.slide_tip_bg = self.slide_panel:getChildByName("slide_tip_bg")
+    self.slide_txt = self.slide_panel:getChildByName("slide_txt")
+    self.cost_tip = self.slide_panel:getChildByName("cost_tip")
+    self.cost_num = self.slide_panel:getChildByName("cost_num")
+    self.cost_icon = self.slide_panel:getChildByName("cost_icon")
+    self.sweep_tip = self.slide_panel:getChildByName("sweep_tip")
+    self.sweep_num = self.slide_panel:getChildByName("sweep_num")
+    self.Panel_8 = self.slide_panel:getChildByName("Panel_8")
+    self.min_btn = self.slide_panel:getChildByName("min_btn")
+    self.plus_btn = self.slide_panel:getChildByName("plus_btn")
+    self.slider = self.slide_panel:getChildByName("slider")
+    self.slider:setTouchEnabled(false)
+    self.max_btn = self.slide_panel:getChildByName("max_btn")
+    self.max_txt = self.max_btn:getChildByName("txt")
+    self.max_txt:setString(TI18N("语言_c_4543"))
+    --未解锁
+    self.lock_panel = self.root_wnd:getChildByName("lock_panel")
+
+    self.status_panel:setVisible(false)
+    self.choose_panel:setVisible(false)
+    self.more_choose_panel:setVisible(false)
+    self.slide_panel:setVisible(false)
+end
+
+
+function TrainingItem:register_event(  )
+    for k, v in pairs(self.status_btn_list) do
+        v:addTouchEventListener(function(sender, event_type)
+            if self.can_click then
+                if event_type == ccui.TouchEventType.ended then
+                    playButtonSound2()
+                    self:_onClickStatusBtn(v.index)
+                end
+            end
+        end)
+    end
+    for k, v in pairs(self.choose_btn_list) do
+        v:addEventListener(function ( sender,event_type )
+            if self.can_click then
+                self:_onClickChooseBtn(event_type,v.index)
+            end
+        end)
+    end
+    for k, v in pairs(self.more_choose_btn_list) do
+        v:addEventListener(function ( sender,event_type )
+            if self.can_click then
+                if event_type == ccui.CheckBoxEventType.selected then
+                    playButtonSound2()
+                    if not self.more_choose_data then
+                        self.more_choose_data = {}
+                    end
+                    self.more_choose_data[v.index] = 1
+                elseif event_type == ccui.CheckBoxEventType.unselected then 
+                    playButtonSound2()
+                    if self.more_choose_data and self.more_choose_data[v.index] then
+                        self.more_choose_data[v.index] = 0
+                    end
+                end
+                self:_onClickMoreChooseBtn()
+            end
+        end)
+    end
+
+    self.min_btn:addTouchEventListener(function(sender, event_type)
+        if self.can_click then
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                local percent = self.slider:getPercent()
+                if percent == 0 then return end --已经是最小的了
+                if self.status_data == 0 then return end
+                self.status_data = self.status_data - 1
+                self:setCurUseItemInfoByNum(self.status_data)
+            end
+        end
+    end)
+    self.plus_btn:addTouchEventListener(function(sender, event_type)
+        if self.can_click then
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                local percent = self.slider:getPercent()
+                if percent == 100 then return end --已经是最大的了
+                if self.status_data >= self.temp_num then return end
+                self.status_data = self.status_data + 1
+                self:setCurUseItemInfoByNum(self.status_data)
+            end
+        end
+    end)
+    self.max_btn:addTouchEventListener(function(sender, event_type)
+        if self.can_click then
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                local percent = self.slider:getPercent()
+                if percent == 100 then return end --已经是最大的了
+                if self.status_data >= self.temp_num then return end
+                self.status_data = self.temp_num
+                self:setCurUseItemInfoByNum(self.status_data)
+            end
+        end
+    end)
+    if self.slider ~= nil then
+    	self.slider:addEventListener(function ( sender,event_type )
+            if self.can_click then
+                if event_type == ccui.SliderEventType.percentChanged then
+                    self:setCurUseItemInfoByPercent(self.slider:getPercent())
+                end
+            end
+    	end)
+    end
+end
+
+function TrainingItem:setData(data)
+    self.data = data
+    self.status_data = model:getTrainingStatusForType(data.id)
+    if not self.status_data then
+        if Config.TrainingCampData.data_assi_info[data.id] then
+            self.status_data = Config.TrainingCampData.data_assi_info[data.id].default_val           
+        end
+    end
+    self:updatePanel(data)
+end
+
+function TrainingItem:updatePanel(data)
+    if data.func_type == RoleConst.training_index.switch then
+        self.status_panel:setVisible(true)
+        self.choose_panel:setVisible(false)
+        self.more_choose_panel:setVisible(false)
+        self.slide_panel:setVisible(false)
+        self.panel_h = self.status_panel:getContentSize().height
+        self:updateStatusPanel()
+    elseif data.func_type == RoleConst.training_index.Radio then
+        self.status_panel:setVisible(false)
+        self.choose_panel:setVisible(true)
+        self.more_choose_panel:setVisible(false)
+        self.slide_panel:setVisible(false)
+        self.panel_h = self.choose_panel:getContentSize().height
+        self:updateChoosePanel()
+    elseif data.func_type == RoleConst.training_index.multiple then
+        self.status_panel:setVisible(false)
+        self.choose_panel:setVisible(false)
+        self.more_choose_panel:setVisible(true)
+        self.slide_panel:setVisible(false)
+        self.panel_h = self.more_choose_panel:getContentSize().height
+        self:updateMoreChoosePanel()
+    elseif data.func_type == RoleConst.training_index.frequency then
+        self.status_panel:setVisible(false)
+        self.choose_panel:setVisible(false)
+        self.more_choose_panel:setVisible(false)
+        self.slide_panel:setVisible(true)
+        self.panel_h = self.slide_panel:getContentSize().height
+        self:updateSlidePanel()
+    end
+    self:setContentSize(cc.size(self.size.width,self.panel_h))
+    self.root_wnd:setContentSize(cc.size(self.size.width,self.panel_h))
+    self.lock_panel:setContentSize(cc.size(self.size.width,self.panel_h))
+    self.status_panel:setPositionY(self.panel_h)
+    self.more_choose_panel:setPositionY(self.panel_h)
+    self.choose_panel:setPositionY(self.panel_h)
+    self.slide_panel:setPositionY(self.panel_h)
+    self.lock_panel:setPositionY(self.panel_h)
+    self:updateLockPanel()
+end
+
+function TrainingItem:updateStatusPanel()
+    self.confirm_txt:setString(self.data.func_name)
+    self:_onClickStatusBtn(self.status_data)
+end
+function TrainingItem:_onClickStatusBtn(index)
+    if self.status_index and self.status_index == index then return end
+    self.status_index = index
+    for k, v in pairs(self.status_btn_list) do
+        if v.index == self.status_index then
+            v.select_bg:setVisible(true)
+            v.unselect_bg:setVisible(false)
+            v.title:setTextColor(cc.c3b(0xf8,0xef,0x76))
+			v.title:enableOutline(cc.c3b(0x5c,0x27,0x05),2)
+        else
+            v.select_bg:setVisible(false)
+            v.unselect_bg:setVisible(true)
+            v.title:setTextColor(cc.c3b(0x92,0xb1,0xdc))
+			v.title:enableOutline(cc.c3b(0x34,0x4c,0x5f),2)
+        end
+    end
+    model:setTrainingStatusForType(self.data.id,self.status_index)
+end
+
+function TrainingItem:updateMoreChoosePanel()
+    self.more_choose_txt:setString(self.data.func_name)
+    for k, v in pairs(self.more_choose_btn_list) do
+        v.more_checkbox_name:setString(self.data.param[1][v.index])
+    end
+    self.more_choose_data = {}
+    if type(self.status_data) == "table" then
+        for k, v in pairs(self.status_data) do
+            self.more_choose_data[v] = 1
+        end
+    else
+        self.more_choose_data[self.status_data] = 1
+    end
+    self:_onClickMoreChooseBtn()
+end
+function TrainingItem:_onClickMoreChooseBtn()
+    for k, v in pairs(self.more_choose_btn_list) do
+        v:setSelected(self.more_choose_data[v.index] and self.more_choose_data[v.index] == 1)
+    end
+    local list = {}
+    for k, v in pairs(self.more_choose_data) do
+        if v == 1 then
+            table.insert(list,k)
+        end
+    end
+    model:setTrainingStatusForType(self.data.id,list)
+end
+
+function TrainingItem:updateChoosePanel()
+    self.choose_txt:setString(self.data.func_name)
+    for k, v in pairs(self.choose_btn_list) do
+        v.checkbox_name:setString(self.data.param[1][v.index])
+    end
+    self:_onClickChooseBtn(ccui.CheckBoxEventType.selected,self.status_data)
+end
+function TrainingItem:_onClickChooseBtn(event_type,index)
+    if event_type == ccui.CheckBoxEventType.selected then
+        playButtonSound2()
+        for k, v in pairs(self.choose_btn_list) do
+            v:setSelected(v.index == index)
+        end
+        self.sex_select = index
+    elseif event_type == ccui.CheckBoxEventType.unselected then 
+        playButtonSound2()
+        self.sex_select = 0
+    end
+    model:setTrainingStatusForType(self.data.id,self.sex_select)
+end
+
+function TrainingItem:updateSlidePanel()
+    self.slide_txt:setString(self.data.func_name)
+    self.temp_num = 0
+    self.cost_coin_icon = 1
+    self.cost_coin_num = 0
+    self:updateMaxTempNum()
+    self:setCurUseItemInfoByNum(self.status_data)
+end
+function TrainingItem:updateMaxTempNum()
+    self.temp_num = 0
+    if self.data.id == RoleConst.training_fun_index.tower_sweep then
+        local all_count = Config.StarTowerData.data_tower_const["free_times"].val or 0
+        self.temp_num = all_count
+        local config = Config.StarTowerData.data_tower_vip[role_vo.vip_lev]
+        if config and config.buy_count then 
+            self.temp_num = self.temp_num + config.buy_count
+        end
+    elseif self.data.id == RoleConst.training_fun_index.sealTower_sweep then
+        local all_count = Config.StarTowerHighData.data_tower_const["free_times"].val or 0
+        self.temp_num = all_count
+        local config = Config.StarTowerHighData.data_tower_vip[role_vo.vip_lev]
+        if config and config.buy_count then 
+            self.temp_num = self.temp_num + config.buy_count
+        end
+    elseif self.data.id == RoleConst.training_fun_index.organizational_challenge then
+        self.temp_num = Config.GuildDunData.data_const["free_time"].val or 0
+        local cfg = Config.GuildDunData.data_buy_count
+        for i=1,#cfg do
+            if role_vo.vip_lev >= cfg[i].vip_lev then
+                self.temp_num = self.temp_num + 1
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.coin_copy then
+        local cfg = Config.DungeonStoneData.data_buy[1]
+        for i=1,#cfg do
+            if role_vo.vip_lev >= cfg[i].vip then
+                self.temp_num = i
+            end
+        end
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                self.temp_num = self.temp_num + 1
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.exp_copy then
+        local cfg = Config.DungeonStoneData.data_buy[2]
+        for i=1,#cfg do
+            if role_vo.vip_lev >= cfg[i].vip then
+                self.temp_num = i
+            end
+        end
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                self.temp_num = self.temp_num + 1
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.hero_copy then
+        local cfg = Config.DungeonStoneData.data_buy[3]
+        for i=1,#cfg do
+            if role_vo.vip_lev >= cfg[i].vip then
+                self.temp_num = i
+            end
+        end
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                self.temp_num = self.temp_num + 1
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.xianQi_copy then
+        local cfg = Config.DungeonStoneData.data_buy[4]
+        for i=1,#cfg do
+            if role_vo.vip_lev >= cfg[i].vip then
+                self.temp_num = i
+            end
+        end
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                self.temp_num = self.temp_num + 1
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.secret_copy then
+        local cfg = Config.DungeonStoneData.data_buy[5]
+        for i=1,#cfg do
+            if role_vo.vip_lev >= cfg[i].vip then
+                self.temp_num = i
+            end
+        end
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                self.temp_num = self.temp_num + 1
+            end
+        end
+    end
+end
+function TrainingItem:updateCostNum()
+    self.cost_coin_num = 0
+    self.cost_coin_icon = 1
+    if self.data.id == RoleConst.training_fun_index.tower_sweep then
+        local free_num = Config.StarTowerData.data_tower_const["free_times"].val or 0
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            local config = Config.StarTowerData.data_tower_vip[role_vo.vip_lev]
+            if config and config.buy_count then 
+                local buy_num = self.status_data - free_num
+                if Config.StarTowerData.data_tower_buy[buy_num] then
+                    local list = Config.StarTowerData.data_tower_buy[buy_num].expend
+                    self.cost_coin_icon = list[1][1]
+                    for i=1,buy_num do
+                        self.cost_coin_num = self.cost_coin_num + Config.StarTowerData.data_tower_buy[i].expend[1][2]
+                    end
+                end
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.sealTower_sweep then
+        local free_num = Config.StarTowerHighData.data_tower_const["free_times"].val or 0
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            local config = Config.StarTowerHighData.data_tower_vip[role_vo.vip_lev]
+            if config and config.buy_count then 
+                local buy_num = self.status_data - free_num
+                if Config.StarTowerHighData.data_tower_buy[buy_num] then
+                    local list = Config.StarTowerHighData.data_tower_buy[buy_num].expend
+                    self.cost_coin_icon = list[1][1]
+                    for i=1,buy_num do
+                        self.cost_coin_num = self.cost_coin_num + Config.StarTowerHighData.data_tower_buy[i].expend[1][2]
+                    end
+                end
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.organizational_challenge then
+        local free_num = Config.GuildDunData.data_const["free_time"].val or 0
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            local cfg = Config.GuildDunData.data_buy_count
+            local buy_num = self.status_data - free_num
+            if cfg[buy_num] then
+                self.cost_coin_icon = cfg[buy_num].expend[1]
+            end
+            for i=1,buy_num do
+                self.cost_coin_num = self.cost_coin_num + cfg[i].expend[2]
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.coin_copy then
+        local free_num = Config.DungeonStoneData.data_const["free_num"].val or 0
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                free_num = free_num + 1
+            end
+        end
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            self.cost_coin_icon = 3
+            local down_num = 0
+            if self.data.param and next(self.data.param) then
+                local id = self.data.param[1]
+                if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                    down_num = 1
+                end
+            end
+            local cfg = Config.DungeonStoneData.data_buy[1]
+            for i=1,#cfg do
+                self.cost_coin_num = self.cost_coin_num + cfg[i].cost
+                if self.status_data - down_num == i then
+                    break
+                end
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.exp_copy then
+        local free_num = Config.DungeonStoneData.data_const["free_num"].val or 0
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                free_num = free_num + 1
+            end
+        end
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            self.cost_coin_icon = 3
+            local down_num = 0
+            if self.data.param and next(self.data.param) then
+                local id = self.data.param[1]
+                if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                    down_num = 1
+                end
+            end
+            local cfg = Config.DungeonStoneData.data_buy[2]
+            for i=1,#cfg do
+                self.cost_coin_num = self.cost_coin_num + cfg[i].cost
+                if self.status_data - down_num == i then
+                    break
+                end
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.hero_copy then
+        local free_num = Config.DungeonStoneData.data_const["free_num"].val or 0
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                free_num = free_num + 1
+            end
+        end
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            self.cost_coin_icon = 3
+            local down_num = 0
+            if self.data.param and next(self.data.param) then
+                local id = self.data.param[1]
+                if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                    down_num = 1
+                end
+            end
+            local cfg = Config.DungeonStoneData.data_buy[3]
+            for i=1,#cfg do
+                self.cost_coin_num = self.cost_coin_num + cfg[i].cost
+                if self.status_data - down_num == i then
+                    break
+                end
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.xianQi_copy then
+        local free_num = Config.DungeonStoneData.data_const["free_num"].val or 0
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                free_num = free_num + 1
+            end
+        end
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            self.cost_coin_icon = 3
+            local down_num = 0
+            if self.data.param and next(self.data.param) then
+                local id = self.data.param[1]
+                if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                    down_num = 1
+                end
+            end
+            local cfg = Config.DungeonStoneData.data_buy[4]
+            for i=1,#cfg do
+                self.cost_coin_num = self.cost_coin_num + cfg[i].cost
+                if self.status_data - down_num == i then
+                    break
+                end
+            end
+        end
+    elseif self.data.id == RoleConst.training_fun_index.secret_copy then
+        local free_num = Config.DungeonStoneData.data_const["free_num"].val or 0
+        if self.data.param and next(self.data.param) then
+            local id = self.data.param[1]
+            if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                free_num = free_num + 1
+            end
+        end
+        if self.status_data <= free_num then
+            self.cost_coin_num = 0
+        else
+            self.cost_coin_icon = 3
+            local down_num = 0
+            if self.data.param and next(self.data.param) then
+                local id = self.data.param[1]
+                if TreasureController:getInstance():getModel():getTreasureWakeUpIsOpen(id) then
+                    down_num = 1
+                end
+            end
+            local cfg = Config.DungeonStoneData.data_buy[5]
+            for i=1,#cfg do
+                self.cost_coin_num = self.cost_coin_num + cfg[i].cost
+                if self.status_data - down_num == i then
+                    break
+                end
+            end
+        end
+    end
+end
+function TrainingItem:setCurUseItemInfoByPercent(percent)
+    local num = math.floor( percent * self.temp_num * 0.01 + 0.5)
+    self:setCurUseItemInfoByNum(num)
+end
+function TrainingItem:setCurUseItemInfoByNum(num)
+    self.status_data = num
+    
+    if self.status_data < 0 then
+        self.status_data = 0
+    elseif self.status_data > self.temp_num then
+        self.status_data = self.temp_num
+    end
+
+    local percent = self.status_data / self.temp_num * 100
+    if percent < 1 then --进度条数值区间[1,100]
+    	percent = math.ceil(percent)
+    end
+    self.slider:setPercent(percent)
+    self.cost_tip:setString(TI18N("语言_c_7415"))
+    setTextMaxWidth(self.cost_tip,150,-10)
+    self.cost_num:setPositionX(self.cost_tip:getPositionX() + self.cost_tip:getContentSize().width)
+    self:updateCostNum()
+    self.cost_num:setString(self.cost_coin_num)
+    if self.cost_coin_num == 0 then
+        self.cost_icon:setVisible(false)
+    else
+        self.cost_icon:setVisible(true)
+    end
+    self.cost_icon:setPositionX(self.cost_num:getPositionX() + self.cost_num:getContentSize().width+20)
+
+    self.sweep_tip:setString(TI18N("语言_c_7416"))
+    setTextMaxWidth(self.sweep_tip,150,-10)
+    self.sweep_num:setPositionX(self.sweep_tip:getPositionX() + self.sweep_tip:getContentSize().width+5)
+    self.sweep_num:setString(self.status_data)
+
+    model:setTrainingStatusForType(self.data.id,self.status_data)
+end
+
+function TrainingItem:updateLockPanel()
+    local lock_status = model:getTrainingLockForType(self.data.id)
+
+    self.lock_panel:setVisible(lock_status)
+    self.can_click = not lock_status
+    self.slider:setTouchEnabled(self.can_click)
+end
+
+function TrainingItem:DeleteMe(  )
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+

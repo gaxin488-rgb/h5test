@@ -1,0 +1,890 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 圣夜奇境战令主界面
+-- @DateTime:    2020-2-20
+-- *******************************
+HeavenHighOrderWindow = HeavenHighOrderWindow or BaseClass(BaseView)
+
+local controller = HeavenHighController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local config = Config.DungeonHeavenAdvanceData.data_const
+local charge_cfg = Config.ChargeData.data_charge_data
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeavenHighOrderWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+
+    self.layout_name = "heaven_high/heaven_high_order_window"
+    self.res_list = {{path = PathTool.getPlistImgForDownLoad("planesafkorderaction", "planesafkorderaction"),type = ResourcesType.plist}, 
+    {path = PathTool.getPlistImgForDownLoad("oncewarorder", "oncewarorder"),type = ResourcesType.plist},
+    {path = PathTool.getPlistImgForDownLoad("monopoly", "monopolyenter"),type = ResourcesType.plist},
+    {path = PathTool.getPlistImgForDownLoad("monopoly","monopolyboard"), type = ResourcesType.plist}}
+
+    self.reward_list = {}
+end
+
+function HeavenHighOrderWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    -- self.background:ignoreContentAdaptWithSize(true)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.order_panel=self.main_container:getChildByName("order_panel")
+    self.icon_img = self.order_panel:getChildByName("icon_img")
+    -- 解锁奖励总览
+    self.btn_open_lock = self.order_panel:getChildByName("btn_open_lock")
+    self.btn_open_lock_label = self.btn_open_lock:getChildByName("name")
+    self.title_bg=self.main_container:getChildByName("title_bg")
+    self.title_txt = self.title_bg:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_dun_he_09_14"))
+
+    self.type_btn_panel = self.main_container:getChildByName("type_btn_panel")
+
+    self.Image_1 =self.order_panel:getChildByName("Image_1")
+    local medal_title=self.Image_1:getChildByName("medal_title")
+    self.medal_num=self.Image_1:getChildByName("medal_num")
+    medal_title:setString(TI18N("语言_c_5311"))
+    setTextMaxWidth(medal_title,210)
+
+    self.Image_2 = self.main_container:getChildByName("Image_2")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_dun_he_09_15"))
+    autoSizeTitleBg(self.win_title,self.Image_2,60)
+    self.btn_rule = self.order_panel:getChildByName("btn_rule")
+    self.btn_close = self.main_container:getChildByName("btn_close")
+    
+    local tips_bg = self.order_panel:getChildByName("Image_7")
+    tips_bg:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    self.goods_item = self.order_panel:getChildByName("goods_item")
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.time_str = self.main_container:getChildByName("time_str")
+    self.time_str:setString(TI18N("语言_dun_he_09_16"))
+    self.time_txt = self.main_container:getChildByName("time_txt")
+    self.task_panel=self.main_container:getChildByName("task_panel")
+    self.task_con = self.task_panel:getChildByName("task_con")
+    self.task_tip_bg = self.task_panel:getChildByName("tip_bg")
+    self.task_tip = self.task_panel:getChildByName("tip")
+    self.task_time_txt = self.task_panel:getChildByName("time_txt")
+    self.task_panel:setVisible(true)
+	self.order_panel:setVisible(false)
+    self.limit_list = {}
+
+    --根据任务id 保存的列表
+    self.dic_task_list = {}
+    self:initOrderPanel()
+    self:initTaskPanel()
+    self:initTypeBtnList()
+end
+
+-- 初始化Tab按钮列表
+function HeavenHighOrderWindow:initTypeBtnList()
+    self.tab_array = {
+        TI18N("语言_c_5333"),
+        TI18N("语言_c_5334")
+    }
+    self.tab_btn_list = {}
+    for i=1,2 do
+        local tab_btn = {}
+        local item = self.type_btn_panel:getChildByName("tab_btn_"..i)
+        tab_btn.btn = item
+        tab_btn.index = i
+        tab_btn.select_bg = item:getChildByName("select_img")
+        tab_btn.select_bg:setVisible(false)
+        tab_btn.title = item:getChildByName("label")
+        tab_btn.title:getVirtualRenderer():setLineSpacing(-10)
+        tab_btn.title:setTextColor(cc.c4b(247,238,117,255))
+        tab_btn.title:enableOutline(cc.c4b(58,41,10,255), 2)
+        tab_btn.title:setFontSize(25)
+        tab_btn.title:setChangeScaleOffWidth(60)
+        tab_btn.title:setString(self.tab_array[i])
+        tab_btn.red_point = item:getChildByName("red_point")
+        tab_btn.red_point:setVisible(false)
+        self.tab_btn_list[tab_btn.index] = tab_btn
+    end
+
+    for index, tab_btn in ipairs(self.tab_btn_list) do
+        registerButtonEventListener(tab_btn.btn, function() self:_onClickTabBtn(tab_btn.index) end ,false, 2) 
+    end
+end
+
+-- 更新红点显示
+function HeavenHighOrderWindow:updateTaskAwardRedStatus(  )
+    if not self.tab_btn_list then return end
+    for k,tab_btn in pairs(self.tab_btn_list) do
+        local red_status
+        if tab_btn.index == 1 then
+            red_status = model:getTaskRed() 
+        else
+            red_status= model:getOrderRed()
+        end
+        tab_btn.red_point:setVisible(red_status)
+    end
+end
+
+-- 点击Tab按钮
+function HeavenHighOrderWindow:_onClickTabBtn( index )
+    if self.select_btn and self.select_btn.index == index then return end
+
+    if self.select_btn then 
+        self.select_btn.select_bg:setVisible(false)
+        self.select_btn.title:setTextColor(cc.c4b(249,238,208,255))
+        self.select_btn.title:enableOutline(cc.c4b(58,41,10,255), 2)
+    end
+    self.select_btn = self.tab_btn_list[index]
+    if self.select_btn then 
+        self.select_btn.select_bg:setVisible(true)
+        self.select_btn.title:setTextColor(cc.c4b(248,239,118,255))
+        self.select_btn.title:enableOutline(cc.c4b(92,39,5,255), 2)
+        self:updateSubTabBtn(index)
+    end
+end
+
+function HeavenHighOrderWindow:updateSubTabBtn( index )
+    self.task_panel:setVisible(index ==1)
+	self.order_panel:setVisible(index ==2)
+end
+
+--设置倒计时
+function HeavenHighOrderWindow:setLessTime(txt,less_time,node,node_bg)
+    if tolua.isnull(node) then
+        return
+    end
+    local less_time = less_time or 0
+    node:stopAllActions()
+    if less_time > 0 then
+        self:setTimeFormatString(txt,less_time,node,node_bg)
+        node:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1),
+            cc.CallFunc:create(function()
+                less_time = less_time - 1
+                if less_time < 0 then
+                    node:stopAllActions()
+                    controller:openHeavenHighOrderWindow(false)
+                else
+                    self:setTimeFormatString(txt,less_time,node,node_bg)
+                end
+            end))))
+    else
+        self:setTimeFormatString(txt,less_time,node,node_bg)
+    end
+end
+
+function HeavenHighOrderWindow:setTimeFormatString( txt,time ,node,node_bg)
+    if time > 0 then
+        local str = string.format(txt,TimeTool.GetTimeForFunction(time))
+        node:setString(str)
+    else
+        node:setString(TI18N("语言_c_233"))
+    end
+    if node_bg then
+        node_bg:setContentSize(cc.size(math.max(self.time_str:getContentSize().width,node:getContentSize().width)+20,node_bg:getContentSize().height))
+        if self.time_str:getContentSize().width > node:getContentSize().width then
+            node:setPositionX(self.time_str:getPositionX() - (self.time_str:getContentSize().width - node:getContentSize().width)*0.5)
+        else
+            self.time_str:setPositionX(node:getPositionX() - (node:getContentSize().width - self.time_str:getContentSize().width)*0.5)
+        end
+    end
+end
+function HeavenHighOrderWindow:updateSlideShowByVertical()
+    local container_y = self.reward_goods_item:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+function HeavenHighOrderWindow:setChangeLevelStatus()
+    local title_pos = 1
+    local data = model:getOrderData()
+    for key, value in pairs(data.awards or {}) do
+        if value.award1 == 1 or value.award2 == 1 then
+            title_pos = value.id
+            break
+        end
+    end
+    self:jumpToMoveByY(139 * (title_pos - 1))
+end
+function HeavenHighOrderWindow:jumpToMoveByY(y)
+    if not y then
+        return
+    end
+    local pos = y
+    if pos < 0 then
+        pos = 0
+    end
+
+    local len = #self.reward_list or 1
+    local scroll_view_size = self.goods_item:getContentSize()
+    local pos_per = pos * 100 / (len * 139 - scroll_view_size.height)
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_goods_item:scrollToPercentVertical(pos_per, 0.5, true)
+end
+function  HeavenHighOrderWindow:initOrderPanel()
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔 k, 
+        item_width = 720, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+        checkovercallback = handler(self, self.updateSlideShowByVertical)
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,
+        ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    ---进度条相关
+    local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+    local setting = {
+        start_x = -2, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 100, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.reward_num_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size2, setting)
+    self.reward_num_item:setClickEnabled(false)
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+end
+
+function HeavenHighOrderWindow:initTaskPanel()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.task_con:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 688,                -- 单元的尺寸width
+            item_height = 152,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.task_con, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.CreateNewCell3), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.NumberOfCells3), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.UpdateyIndexCell), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+end
+
+--奖励列表
+function HeavenHighOrderWindow:CreateNewCell3()
+    local cell = HeavenHighMoonItem.new()
+    return cell
+end
+
+function HeavenHighOrderWindow:NumberOfCells3()
+    if not self.limit_list then return 0 end
+    return #self.limit_list
+end
+
+function HeavenHighOrderWindow:UpdateyIndexCell(cell, index)
+    cell.index = index
+    local cell_data = self.limit_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+function HeavenHighOrderWindow:initAwardConfig()
+    self.btn_open_lock:setVisible(not model:getOrderStatus())
+    local val = charge_cfg[config["dungeons_war_order_exchange"].val].val
+    self.btn_open_lock_label:setString(string.format(TI18N("语言_dun_he_09_10"),val))
+    local less_time=0
+    local data= model:getOrderData()
+    local end_time= data.end_time or GameNet:getInstance():getTime()
+    local cur_time = GameNet:getInstance():getTime()
+    less_time = end_time - cur_time
+    self:setLessTime("%s",less_time,self.time_txt,self.time_bg)
+
+    self.reward_list = deepCopy(Config.DungeonHeavenAdvanceData.data_task_reward)
+    table.sort(self.reward_list, SortTools.KeyLowerSorter("id"))
+    self.reward_goods_item:reloadData()
+    self.reward_num_item:reloadData()
+
+    if self.comp_bar_bg and not tolua.isnull(self.comp_bar_bg) and self.comp_bar and not tolua.isnull(self.comp_bar) and
+        self.bar_layout and not tolua.isnull(self.bar_layout) then
+        local len = #self.reward_list or 1
+        self.comp_bar_bg:setContentSize(cc.size(139 * (len - 1), 27))
+        self.comp_bar:setContentSize(cc.size(139 * (len - 1), 15))
+        self.bar_layout:setPosition(cc.p(57, 139 * (len - 1) + 139 / 2))
+    end
+    self:setChangeLevelStatus()
+    local need_id = Config.DungeonHeavenAdvanceData.data_const["task_item_id"].val
+    local nextCfg = model:getReceiveFinishNext()
+    -- local num1 = BackpackController:getInstance():getModel():getItemNumByBid(need_id)
+    local num1 = role_vo:getActionAssetsNumByBid(need_id)
+    local num2 = nextCfg and nextCfg.need_num or 0
+    local str = num1.."/"..num2
+    self.medal_num:setString(str)
+end
+
+function HeavenHighOrderWindow:setData()
+    self:initAwardConfig()
+    self:updateTaskAwardRedStatus()
+end
+
+function HeavenHighOrderWindow:setTaskData()
+    self:initTaskConfig()
+    self:updateTaskAwardRedStatus()
+end
+
+function HeavenHighOrderWindow:initTaskConfig()
+    local less_time = TimeTool.getOneDayLessTimeServer(GameNet:getInstance():getTime(),InviteCodeController:getInstance():getModel():getServerTimeZone())
+    self:setLessTime(TI18N("语言_dun_he_09_11"),tonumber(less_time),self.task_time_txt)
+    local num = model:getTaskRewardNum()
+    local max_num = Config.DungeonHeavenAdvanceData.data_const["dungeons_war_order_scorelimit"].val
+    self.task_tip:setString(string.format(TI18N("语言_dun_he_09_12"),num,max_num))
+    local _w = math.max(self.task_tip:getContentSize().width+30,self.task_tip_bg:getContentSize().width)
+    self.task_tip_bg:setContentSize(cc.size(_w, self.task_tip_bg:getContentSize().height))
+    self.limit_list = model:getTaskTasks()
+    self.item_scrollview:reloadData()
+end
+
+-- 奖励列表
+function HeavenHighOrderWindow:createTaskCell()
+    local cell = HeavenHighOrderItem.new()
+    return cell
+end
+
+function HeavenHighOrderWindow:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function HeavenHighOrderWindow:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+
+-- 进度条
+-- 功勋数数列表
+function HeavenHighOrderWindow:createTaskCell2()
+    local cell = HeavenRewardItem.new()
+    return cell
+end
+
+function HeavenHighOrderWindow:numberOfTaskCells2()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function HeavenHighOrderWindow:updateTaskCellByIndex2(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+
+function HeavenHighOrderWindow:register_event()
+    if not self.order_reward_event then
+        self.order_reward_event = GlobalEvent:getInstance():Bind(HeavenHighEvent.Order_Reward_Event, function ()
+            self:setData()
+        end)
+    end
+    if not self.task_reward_event then
+        self.task_reward_event = GlobalEvent:getInstance():Bind(HeavenHighEvent.Task_Reward_Event, function ()
+            self:setTaskData()
+        end)
+    end
+    registerButtonEventListener(self.btn_open_lock, function()
+        if config["dungeons_war_order_exchange"] and charge_cfg[config["dungeons_war_order_exchange"].val] and charge_cfg[config["dungeons_war_order_exchange"].val].val then
+            local val = charge_cfg[config["dungeons_war_order_exchange"].val].val
+            local str = string.format(TI18N("语言_dun_he_09_13"),val)
+            CommonAlert.show( str, TI18N("语言_c_63"), function()
+                local cdata = charge_cfg[config["dungeons_war_order_exchange"].val]
+                sdkOnPay(cdata.val, nil, cdata.id, cdata.name)
+            end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+        end
+    end, true, 1)
+
+    -- 关闭按钮
+    registerButtonEventListener(self.btn_close, function()
+        controller:openHeavenHighOrderWindow(false)
+    end, true, 2)
+    registerButtonEventListener(self.background, function()
+        controller:openHeavenHighOrderWindow(false)
+    end, true, 2)
+
+    -- 帮助说明
+    registerButtonEventListener(self.btn_rule, function(param, sender, event_type)
+        local config = config["dungeons_war_order_rule"]
+        if config then
+            local config_desc = config.val
+            TipsManager:getInstance():showCommonTips(config_desc, sender:getTouchBeganPosition(), nil, nil, 500)
+        end
+    end, false, 1)
+end
+
+
+function HeavenHighOrderWindow:openRootWnd(index)
+    -- local order_data = {
+    --     end_time = 1670241426,
+    --     buy = 0,
+    --     awards = {
+    --         [1] = {id = 1,award1 = 2,award2 = 0},
+    --         [2] = {id = 2,award1 = 2,award2 = 0},
+    --         [3] = {id = 3,award1 = 1,award2 = 0},
+    --         [4] = {id = 4,award1 = 1,award2 = 0},
+    --         [5] = {id = 5,award1 = 1,award2 = 0},
+    --         [6] = {id = 6,award1 = 0,award2 = 0},
+    --         [7] = {id = 7,award1 = 0,award2 = 0},
+    --         [8] = {id = 8,award1 = 0,award2 = 0},
+    --         [9] = {id = 9,award1 = 0,award2 = 0},
+    --         [10] = {id = 10,award1 = 0,award2 = 0},
+    --         [11] = {id = 11,award1 = 0,award2 = 0},
+    --         [12] = {id = 12,award1 = 0,award2 = 0},
+    --         [13] = {id = 13,award1 = 0,award2 = 0},
+    --     }
+    -- }
+    -- model:setOrderData(order_data)
+    -- local task_data = {
+    --     reward_num = 0,
+    --     star_num = 0,
+    --     challenge_num = 1,
+    --     tasks = {
+    --         [1] = {id = 1,state = 1},
+    --         [2] = {id = 2,state = 0},
+    --         [3] = {id = 3,state = 0},
+    --         [4] = {id = 4,state = 0},
+    --     }
+    -- }
+    -- model:setTaskData(task_data)
+    controller:sender25254()
+    controller:sender25256()
+    self.curindex=index or 1
+    self:_onClickTabBtn(self.curindex)
+end
+
+function HeavenHighOrderWindow:close_callback()
+    self.time_txt:stopAllActions()
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    if self.reward_num_item then
+        self.reward_num_item:DeleteMe()
+        self.reward_num_item = nil
+    end
+    if self.order_reward_event then
+        GlobalEvent:getInstance():UnBind(self.order_reward_event)
+        self.order_reward_event = nil
+    end
+    if self.task_reward_event then
+        GlobalEvent:getInstance():UnBind(self.task_reward_event)
+        self.task_reward_event = nil
+    end
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+    end
+    self.item_scrollview = nil
+    controller:openHeavenHighOrderWindow(false)
+end
+
+------------------------------------------
+-- 子项
+HeavenHighMoonItem = class("HeavenHighMoonItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeavenHighMoonItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function HeavenHighMoonItem:configUI(  )
+    self.size = cc.size(688,152)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("action/action_limit_yuanzhen_small_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.max_tip = main_container:getChildByName("max_tip")
+    self.max_tip:setString(TI18N("语言_dun_he_09_18"))
+    self.btn_goto = main_container:getChildByName("btn_goto")
+    self.btn_goto:getChildByName("Text_6"):setString(TI18N("语言_c_108"))
+    self.btn_goto:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_get:getChildByName("Text_5"):setString(TI18N("语言_c_109"))
+    self.btn_get:setVisible(false)
+    self.btn_has = main_container:getChildByName("btn_has")
+    self.btn_has:setVisible(false)
+
+    self.goods_con = main_container:getChildByName("good_cons")
+
+    self.Image_1 = main_container:getChildByName("Image_1")
+
+    --标题
+    self.title_desc = createRichLabel(28, cc.c4b(0x64,0x32,0x23,0xff), cc.p(0,0.5), cc.p(20,130), -15, nil, 500)
+    main_container:addChild(self.title_desc)
+    --小标题
+    self.little_desc = createRichLabel(22, cc.c4b(0x95,0x53,0x22,0xff), cc.p(0,1), cc.p(230,78), -5, nil, 280)
+    main_container:addChild(self.little_desc)
+
+    local size = self.goods_con:getContentSize()
+    self.item_scrollview = createScrollView(size.width, size.height+1, 0, 0, self.goods_con, ScrollViewDir.horizontal)
+end
+
+function HeavenHighMoonItem:register_event( )
+    registerButtonEventListener(self.btn_get, function()
+        if not self.data then return end
+        controller:sender25257(self.data.id)
+    end,true, 1)
+
+    registerButtonEventListener(self.btn_goto, function() self:onGotoBtn() end,true, 1)
+end
+
+function HeavenHighMoonItem:onGotoBtn()
+    controller:openHeavenHighOrderWindow(false)
+    if not self.cfg then return end
+    local config = Config.SourceData.data_source_data[self.cfg.skip]
+    BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+end
+
+function HeavenHighMoonItem:setData( data )
+    self.data = data
+    local num = model:getTaskRewardNum()
+    local max_num = Config.DungeonHeavenAdvanceData.data_const["dungeons_war_order_scorelimit"].val
+    self.btn_goto:setVisible(data.state == TaskConst.task_status.un_finish and num < max_num)
+    self.btn_get:setVisible(data.state == TaskConst.task_status.finish and num < max_num)
+    addRedPointToNodeByStatus(self.btn_get, data.state == TaskConst.task_status.finish,10,10)
+    self.btn_has:setVisible(data.state == TaskConst.task_status.completed)
+    self.max_tip:setVisible(num >= max_num and data.state ~= TaskConst.task_status.completed)
+    self.cfg = Config.DungeonHeavenAdvanceData.data_task_info[self.data.id]
+    self.title_desc:setString(self.cfg.title)
+    local desc = ""
+    if data.id == 1 then
+        desc = string.format(self.cfg.desc,1,self.cfg.limit[1][2])
+    else
+        desc = string.format(self.cfg.desc,model:getTaskChallengeNum(),self.cfg.limit[1][2])
+    end
+    if data.state == TaskConst.task_status.finish then
+        self.little_desc:setString(string_format("<div fontColor=#249003>%s</div>", desc))
+    else
+        self.little_desc:setString(desc)
+    end
+
+    local data_list = deepCopy(self.cfg.reward)
+    if data.id == 1 and model:getTaskStarNum() > 0 then
+        for i,v in pairs(data_list) do
+            v[2] = v[2] * model:getTaskStarNum()
+        end
+    end
+    local setting = {}
+    setting.scale = 0.8
+    setting.max_count = 2
+    self.item_list = commonShowSingleRowItemList(self.item_scrollview, self.item_list, data_list, setting)
+end
+
+function HeavenHighMoonItem:DeleteMe( )
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.item_list = nil
+
+    if self.item then
+        self.item:DeleteMe()
+        self.item = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+--------------------------------
+-- 功勋子项
+HeavenRewardItem = class("HeavenRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeavenRewardItem:ctor()
+    self.size = cc.size(100, 139)
+    self:configUI()
+    self:register_event()
+end
+
+function HeavenRewardItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+    self.size.width / 2, self.size.height / 5 + 11, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+    self.size.height / 5 + 11, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function HeavenRewardItem:register_event()
+end
+
+function HeavenRewardItem:setData(data,index)
+    if not data then
+        return
+    end
+    self.data = data
+    -- self.orderReceive = model:getOrderReceive(index)
+    if not self.select_img then 
+        local resid= Config.DungeonHeavenAdvanceData.data_const["task_item_id"].val
+        local itemcfg = Config.ItemData.data_get_data(resid)
+        self.select_bg = createSprite(PathTool.getResFrame("heaven_ad","heavenad_1034"),self.size.width / 2, self.size.height / 2 + 6,self.root_wnd,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+        setChildUnEnabled(true,self.select_bg)
+        self.select_img = createSprite(PathTool.getResFrame("heaven_ad","heavenad_1034"),self.size.width / 2, self.size.height / 2 + 6,self.root_wnd,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+    end
+    self.select_img:setVisible(false)
+    -- 进度条相关
+    local cfg = Config.DungeonHeavenAdvanceData.data_task_reward
+    if cfg[self.data.id+1] then
+        if self.comp_bar == nil then
+            local size = cc.size(139, 27)
+            local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+            local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.root_wnd:addChild(bar_layout, 1)
+                bar_layout:setPosition(cc.p(50, 77))
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 0, 0)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+            self.comp_bar_bg:setContentSize(cc.size(139, 27))
+            self.comp_bar:setContentSize(cc.size(139, 15))
+        end
+        if self.bar_layout then
+            self.bar_layout:setVisible(true)
+        end
+        local id = model:getReceiveFinish()
+        if self.data then
+            if self.data.id < id then
+                self.comp_bar:setPercent(100)
+                self.select_img:setVisible(true)
+            elseif self.data.id == id then
+                self.select_img:setVisible(true)
+                local nextData = cfg[index + 1]
+                if nextData then
+                    local nowData = Config.DungeonHeavenAdvanceData.data_task_reward[index]
+                    local need_id = Config.DungeonHeavenAdvanceData.data_const["task_item_id"].val
+                    local num1 = role_vo:getActionAssetsNumByBid(need_id)
+                    self.comp_bar:setPercent((num1 - nowData.need_num)/(nextData.need_num - nowData.need_num)*100)
+                else
+                    self.comp_bar:setPercent(0)
+                end
+            else
+                self.comp_bar:setPercent(0)
+            end
+        else
+            self.comp_bar:setPercent(0)
+        end
+    else
+        if self.bar_layout then
+            self.bar_layout:setVisible(false)
+        end
+        local id = model:getReceiveFinish()
+        if self.data.id == id then
+            self.select_img:setVisible(true)
+        end
+    end
+    self.num_txt:setString(data.need_num)
+    self.select_bg:setLocalZOrder(9)
+    self.select_img:setLocalZOrder(10)
+    self.num_bg:setLocalZOrder(11)
+    self.num_txt:setLocalZOrder(12)
+    self:setLocalZOrder(index)
+end
+
+function HeavenRewardItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+
+HeavenHighOrderItem = class("HeavenHighOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeavenHighOrderItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function HeavenHighOrderItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("heaven_high/heaven_high_order_item"))
+    self:setContentSize(cc.size(720, 139))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.goods_item = main_container:getChildByName("goods_item") -- 付费礼物
+    self.goods_item:setScrollBarEnabled(false)
+    self.free_goods_item = main_container:getChildByName("free_goods_item") -- 免费礼物
+    self.free_goods_item:setScrollBarEnabled(false)
+    self.finish_img = main_container:getChildByName("finish_img")
+    self.finish_img:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_name = self.btn_get:getChildByName("name")
+    self.btn_name:setString("")
+end
+
+function HeavenHighOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local is_unlock = model:getOrderStatus()
+        if is_unlock then -- 战令已解锁
+            if self.orderReceive.award1 == 1 or self.orderReceive.award2 == 1 then
+                controller:sender25255()
+            else
+                controller:openHeavenHighOrderWindow(false)
+            end
+        else -- 未解锁
+            if self.orderReceive.award1 == 1 then -- 可领取
+                controller:sender25255()
+            elseif self.orderReceive.award1 == 2 then -- 前往购买
+                if config["dungeons_war_order_exchange"] and charge_cfg[config["dungeons_war_order_exchange"].val] and charge_cfg[config["dungeons_war_order_exchange"].val].val then
+                    local val = charge_cfg[config["dungeons_war_order_exchange"].val].val
+                    local str = string.format(TI18N("语言_dun_he_09_13"),val)
+                    CommonAlert.show( str, TI18N("语言_c_63"), function()
+                        local cdata = charge_cfg[config["dungeons_war_order_exchange"].val]
+                        sdkOnPay(cdata.val, nil, cdata.id, cdata.name)
+                    end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+                end
+            elseif self.orderReceive.award1 == 0 then -- 前往过关
+                controller:openHeavenHighOrderWindow(false)
+            end
+        end
+    end, true, 1)
+end
+
+function HeavenHighOrderItem:setData(data,index)
+    if not data then
+        return
+    end
+    self.data = data
+    self.orderReceive = model:getOrderReceive(index) or {}
+    local free_effect_id = false
+    local free_data_list = data.reward or {}
+    local status = self.orderReceive.award1 == 0
+    local setting1 = {}
+    setting1.start_x = 10
+    setting1.scale = 0.7
+    setting1.is_tip = true
+    setting1.lock = status
+    setting1.is_lock_bg = status
+    setting1.show_effect_id = free_effect_id
+    setting1.is_get_status = self.orderReceive.award1 == 2 or false
+    setting1.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.free_item_list = commonShowSingleRowItemList(self.free_goods_item, self.free_item_list, free_data_list,setting1)
+
+    -- 进阶奖励
+    local is_locak_status = model:getOrderStatus() -- 战令解锁状态
+    local pay_effect_id = false
+    -- 付费道具
+    local data_list = data.rmb_reward or {}
+    local rmbStatus = self.orderReceive.award2 == 0
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.lock = rmbStatus
+    setting.is_lock_bg = rmbStatus
+    setting.is_tip = true
+    setting.show_effect_id = pay_effect_id
+    setting.is_get_status = self.orderReceive.award2 == 2 or false
+    setting.max_count = 2
+    setting.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.item_list = commonShowSingleRowItemList(self.goods_item, self.item_list, data_list, setting)
+
+    if self.btn_get then
+        addRedPointToNodeByStatus(self.btn_get, false, 10, 10)
+        if is_locak_status then -- 战令已经解锁
+            if self.orderReceive.award2 == 1 then -- 可领取
+                self.btn_name:enableOutline(Config.ColorData.data_color4[264], 2)
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 10, 10)
+                setChildUnEnabled(false,self.btn_get)
+            elseif self.orderReceive.award2 == 2 then -- 已领取
+                self.btn_get:setVisible(false)
+                self.finish_img:setVisible(true)
+                addRedPointToNodeByStatus(self.btn_get, false, 10, 10)
+            elseif self.orderReceive.award2 == 0 then -- 前往过关
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(false,self.btn_get)
+                addRedPointToNodeByStatus(self.btn_get, false, 10, 10)
+            end
+        else -- 战令未解锁时
+            if self.orderReceive.award1 == 1 then -- 可领取
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 10, 10)
+                setChildUnEnabled(false,self.btn_get)
+            elseif self.orderReceive.award1 == 2 then -- 前往购买
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(false,self.btn_get)
+                addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+            elseif self.orderReceive.award1 == 0 then
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(false,self.btn_get)
+                addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+            end
+        end
+    end
+end
+
+function HeavenHighOrderItem:DeleteMe()
+    if self.item_list then
+        for i, v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+    if self.common_goods_item then
+        self.common_goods_item:DeleteMe()
+        self.common_goods_item = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

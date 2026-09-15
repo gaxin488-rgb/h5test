@@ -1,0 +1,530 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-02-19 15:36:39
+-- @description    : 
+		-- 个人信息概览
+---------------------------------
+FriendCheckOverview = class("FriendCheckOverview",function()
+    return ccui.Layout:create()
+end)
+
+local _controller = FriendController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _table_sort = table.sort
+local _string_format = string.format
+
+function FriendCheckOverview:ctor(data)
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("friend/friend_check_overview"))
+    self.data = data
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 1)
+    self.root_wnd:setPosition(self.size.width * 0.5, 395)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+
+    -- 资源加载
+    local res_list = {}
+    _table_insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function FriendCheckOverview:loadResListCompleted()
+	self:initView()
+    self:registerEvent()
+    self:updatePage()
+end
+
+
+
+-- 初始化数据
+function FriendCheckOverview:initElfinData(  )
+    self.badge_icon = {} --徽章底图
+    self.honor_item_list = {}--展示徽章
+    self.dic_use_badges = {}
+    self.item_list = {}
+    self.elfin_list = {}
+    self.jinqi_list = {}
+    self.isHaveData = false
+end
+
+-- 初始化界面
+function FriendCheckOverview:initView(  )
+	self.badge_panel = self.root_wnd:getChildByName("badge_panel")
+    self.badge_title = self.badge_panel:getChildByName("badge_title")
+    self.badge_title:setString(TI18N("语言_mis_06_1"))
+    self.rank_icon = self.badge_panel:getChildByName("rank_icon")
+    self.rank_name_bg = self.badge_panel:getChildByName("rank_name_bg")
+    self.rank_name = self.badge_panel:getChildByName("rank_name")
+    self.honor_txt = self.badge_panel:getChildByName("honor_txt")
+    self.honor_txt:setString(TI18N("语言_mis_06_2"))
+    self.honor_num = self.badge_panel:getChildByName("honor_num")
+    self.collect_txt = self.badge_panel:getChildByName("collect_txt")
+    self.collect_txt:setString(TI18N("语言_mis_06_3"))
+    self.collect_num = self.badge_panel:getChildByName("collect_num")
+    for i=1,3 do
+        local item = self.badge_panel:getChildByName("badge_icon_"..i)
+        self.badge_icon[i] = item
+    end
+    self.lineup_panel = self.root_wnd:getChildByName("lineup_panel")
+    self.lineup_title = self.lineup_panel:getChildByName("lineup_title")
+    self.lineup_title:setString(TI18N("语言_mis_06_4"))
+    self.fight_bg = self.lineup_panel:getChildByName("fight_bg")
+    self.fight_label = CommonNum.new(20, self.lineup_panel, 0, -2, cc.p(1, 0.5))
+	self.fight_label:setPosition(560, 390)
+    self.fight_label:setScale(1.4)
+    self.look_btn = self.lineup_panel:getChildByName("look_btn")
+    self.look_btn:setVisible(true)
+    self.close_btn = self.lineup_panel:getChildByName("close_btn")
+    self.close_btn:setVisible(false)
+    self.select_lay = self.lineup_panel:getChildByName("select_lay")
+    self.open_cho_btn = self.select_lay:getChildByName("open_cho_btn")
+    self.close_cho_btn = self.select_lay:getChildByName("close_cho_btn")
+    self.close_cho_btn:setVisible(false)
+    self.choose_txt = self.select_lay:getChildByName("choose_txt")
+    self.choose_txt:setString(TI18N("语言_mis_06_5"))
+    self.scroll = self.select_lay:getChildByName("scroll")
+    self.scroll:setVisible(false)
+    self.lineup_txt = self.lineup_panel:getChildByName("lineup_txt")
+    self.lineup_txt:setString(TI18N("语言_mis_06_6"))
+    self.hero_panel = self.lineup_panel:getChildByName("hero_panel")
+    self.scroll_view_size = self.hero_panel:getContentSize()
+    self.scroll_view = createScrollView(self.scroll_view_size.width - 10,self.scroll_view_size.height,5,0,self.hero_panel,ccui.ScrollViewDir.horizontal)
+    self.scroll_view:setTouchEnabled(false)
+    self.hero_panel:setPositionY(230)
+   
+    self.scroller = self.lineup_panel:getChildByName("scroller")
+    self.scroller:setScrollBarEnabled(false)
+    self.elfin_txt = self.scroller:getChildByName("elfin_txt")
+    self.artifact_txt = self.scroller:getChildByName("artifact_txt")
+    self.artifact_txt:setChangeScaleOffWidth(self.lineup_panel:getContentSize().width - 200)
+    setTextSpacing(self.artifact_txt,-10)
+    self.artifact_txt:setString(TI18N("语言_mis_06_7"))
+    self.jinqi_txt = self.scroller:getChildByName("jinqi_txt")
+    self.jinqi_txt:setString("")
+    local jinqi_hide_status = JinqiController:getInstance():getModel():checkJinqiHideStatus()
+    if not jinqi_hide_status then
+        self.scroller:setInnerContainerSize(cc.size(627, 174))
+        self.lineup_panel:getChildByName("common_90034_1"):setVisible(false)
+    end
+end
+
+function FriendCheckOverview:registerEvent(  )
+    self.look_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickBtn(true)
+        end
+    end)
+    self.close_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickBtn(false)
+        end
+    end)
+    self.open_cho_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(true)
+        end
+    end)
+    self.close_cho_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(false)
+        end
+    end)
+    --接受数据
+	if self.updateEvent == nil then
+		self.updateEvent = GlobalEvent:getInstance():Bind(RoleEvent.DISPATCH_PLAYER_LineUp_VO_EVENT,function ( data )
+            if data and data.show_type == 1 then
+                self:clickChooseBtn(false)
+			    self:setLineUp(self:setMiscCfgItem(data.type),data)
+            end
+		end)
+	end
+    --接受数据
+	if self.dispatch_player_vo_event == nil then
+		self.dispatch_player_vo_event = GlobalEvent:getInstance():Bind(RoleEvent.DISPATCH_PLAYER_VO_EVENT,function ( data )
+            if data then
+			    self:updatePage(data)
+            end
+		end)
+	end
+end
+function FriendCheckOverview:clickChooseBtn(status)
+    if status then
+        self.open_cho_btn:setVisible(false)
+        self.close_cho_btn:setVisible(true)
+        self.scroll:setVisible(true)
+    else
+        self.open_cho_btn:setVisible(true)
+        self.close_cho_btn:setVisible(false)
+        self.scroll:setVisible(false)
+    end
+end
+function FriendCheckOverview:clickBtn(status)
+    if status then
+        self.root_wnd:setPositionY(620)
+        self.hero_panel:setPositionY(180)
+        self.look_btn:setVisible(false)
+        self.close_btn:setVisible(true)
+    else
+        self.root_wnd:setPositionY(395)
+        self.hero_panel:setPositionY(230)
+        self.look_btn:setVisible(true)
+        self.close_btn:setVisible(false)
+    end
+end
+function FriendCheckOverview:updatePage(data)
+    local data = data or self.data
+    if not data then return end
+    self.honor_num:setString(data.honor_point)
+    self.collect_num:setString(data.honor_num)
+    local name, res_id = RoleController:getInstance():getModel():getHonorPointName(data.honor_point)
+    res_id = res_id or 1
+    local res = PathTool.getPlistImgForDownLoad("rolehonorwall/honorwarllicon", "honor_level_"..res_id, false)
+    self.item_load_honor_icon = loadSpriteTextureFromCDN(self.rank_icon, res, ResourcesType.single, self.item_load_honor_icon) 
+    setTextMaxWidth(self.rank_name,110,-4)
+    self.rank_name:setString(name)
+    self.rank_name_bg:setContentSize(cc.size(self.rank_name:getContentSize().width + 40, self.rank_name:getContentSize().height + 12))
+    local list = {}
+    for i = 1, 3 do
+        for key, value in pairs(data.use_badges) do
+            if value.pos == i then
+                list[i] = value
+            end
+        end
+    end
+    data.use_badges = list
+    if data.use_badges and next(data.use_badges) ~= nil then
+        for i = 1, 3 do
+            local v = data.use_badges[i]
+            if v and self.badge_icon[v.pos] then
+                self.dic_use_badges[v.pos] = v
+                if not self.honor_item_list[v.pos] then
+                    local item = RoleHonorItem.new(0.5, true)
+                    item:setPosition(cc.p(self.badge_icon[v.pos]:getContentSize().width*0.5,self.badge_icon[v.pos]:getContentSize().height*0.5))
+                    self.honor_item_list[v.pos] = item
+                    self.badge_icon[v.pos]:addChild(item)
+                    item:addCallBack(function() self:onClickByPos(v.pos) end)
+                    item:setShowEffect(true)
+                end
+                self.honor_item_list[v.pos]:setVisible(true)
+                self.honor_item_list[v.pos]:setData(v)
+            else
+                if self.honor_item_list[i] then
+                    self.honor_item_list[i]:setVisible(false)
+                end
+            end
+        end
+        for i,v in ipairs(data.use_badges) do
+            if self.badge_icon[v.pos] then
+                self.dic_use_badges[v.pos] = v
+                if not self.honor_item_list[v.pos] then
+                    local item = RoleHonorItem.new(0.5, true)
+                    item:setPosition(cc.p(self.badge_icon[v.pos]:getContentSize().width*0.5,self.badge_icon[v.pos]:getContentSize().height*0.5))
+                    self.honor_item_list[v.pos] = item
+                    self.badge_icon[v.pos]:addChild(item)
+                    item:addCallBack(function() self:onClickByPos(v.pos) end)
+                    item:setShowEffect(true)
+                end
+                self.honor_item_list[v.pos]:setData(v)
+            end
+        end
+    end
+    self:setMiscCfg()
+    if self.data then
+        RoleController:getInstance():send16815(self.data.rid,self.data.srv_id,self.misc_cfg[1].type,1)
+    end
+end
+function FriendCheckOverview:setChooseTxt(index,data)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0.5, 0))
+    item:setContentSize(cc.size(210, 30))
+    local res = PathTool.getResFrame("common","common_90101")
+    local bg = createImage(item,res,0,0,cc.p(0,0),true,1,true)
+    bg:setContentSize(cc.size(210,30))
+    bg:setTouchEnabled(true)
+    bg:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            RoleController:getInstance():send16815(self.data.rid,self.data.srv_id,data.type,1)
+        end
+    end)
+    local label = createLabel(22,cc.c3b(0x00,0x00,0x00),nil,105,15,data.formation_name,item,nil,cc.p(0.5,0.5))
+    label:setZOrder(2)
+    return item
+end
+function FriendCheckOverview:setMiscCfg()
+    self.misc_cfg = {}
+    local cfg = deepCopy(Config.MiscData.data_formation_info[1])
+    for key, value in pairs(cfg) do
+        value.type = key
+        table.insert(self.misc_cfg,value)
+    end
+    table.sort(self.misc_cfg,function(a,b) return a.num < b.num end)
+end
+function FriendCheckOverview:setMiscCfgItem(type)
+    if self.misc_cfg then
+        for key, value in pairs(self.misc_cfg) do
+            if value.type == type then
+                return value
+            end
+        end
+    end
+    return nil
+end
+function FriendCheckOverview:setLineUp(list,list_data)
+    local data = list_data.formations[1]
+    local sprite_data = {}
+    if list_data and list_data.team_list and list_data.team_list[1] and list_data.team_list[1].sprites then
+        sprite_data = list_data.team_list[1].sprites
+    end
+    local formation_name = list and list.formation_name or ""
+    self.choose_txt:setString(formation_name)
+    self.scroll:setInnerContainerSize(cc.size(210,tableLen(self.misc_cfg) * 35))
+    self.scroll:setContentSize(cc.size(210,math.min(100,tableLen(self.misc_cfg) * 35)))
+    if self.misc_cfg then
+        for key, value in pairs(self.misc_cfg) do
+            local item = self:setChooseTxt(key,value)
+            self.scroll:addChild(item)
+            item:setPosition(cc.p(105,self.scroll:getInnerContainerSize().height - key * 35))
+        end
+    end
+    self.fight_label:setNum(data.power)    
+    self.fight_bg:setContentSize(cc.size(self.fight_label:getContentSize().width + 90,36))
+    self:createPartnerList(data.partner_list)
+    local jinqi_hide_status = JinqiController:getInstance():getModel():checkJinqiHideStatus()
+    local start_y = 72
+    if not jinqi_hide_status then
+        self.elfin_txt:setPositionY(165)
+        self.artifact_txt:setPositionY(165)
+    else   
+        start_y = 249
+    end
+    --通灵兽
+    local tree_lv = list_data.sprite_lev or 0
+    self.elfin_txt:setString(TI18N("语言_c_700") .. tree_lv)
+    for i=1,4 do
+        local elfin_skill_item = self.elfin_list[i]
+        if not elfin_skill_item then
+            elfin_skill_item = SkillItem.new(true, true, false, 0.8, true)
+            local pos_x = 60 + (i-1)*95
+            elfin_skill_item:setPosition(cc.p(pos_x, start_y))
+            self.scroller:addChild(elfin_skill_item)
+            self.elfin_list[i] = elfin_skill_item
+        end
+        -- self:setElfinSkillItemData(elfin_skill_item, data.sprites, i)
+        self:setElfinSkillItemData(elfin_skill_item, sprite_data, i)
+    end
+    --禁器
+    if not jinqi_hide_status then
+    else      
+        local jinqi_data = {}
+        if next(list_data.prohibitor_team_list) then
+            jinqi_data = list_data.prohibitor_team_list[1].prohibitors
+        end
+        local jinqi_aoyi_order = list_data.prohibitor_aoyi_order or 0
+        self.jinqi_txt:setString(string.format(TI18N("语言_c_6963"), jinqi_aoyi_order))
+        for i=1,4 do
+            local jinqi_skill_item = self.jinqi_list[i]
+            if not jinqi_skill_item then
+                jinqi_skill_item = SkillItem.new(true, true, false, 0.8, true)
+                local pos_x = 60 + (i-1)*95
+                jinqi_skill_item:setPosition(cc.p(pos_x, 72))
+                self.scroller:addChild(jinqi_skill_item)
+                self.jinqi_list[i] = jinqi_skill_item
+            end
+            self:setJinqiSkillItemData(jinqi_skill_item, jinqi_data, i)
+        end
+    end
+    --神器和幻化  hallows_id  look_id 
+    self.artifact_icon = BackPackItem.new(false, false,nil,0.8,true,true)
+    self.artifact_icon:setPosition(cc.p(465, start_y))
+    self.artifact_icon:setTouchEnabled(true)
+    self.scroller:addChild(self.artifact_icon)
+    self.illusion_icon = BackPackItem.new(false, true,nil,0.8,true,true)
+    self.illusion_icon:setPosition(cc.p(565, start_y))
+    self.scroller:addChild(self.illusion_icon)
+    if data.look_id ~= 0 then
+        local magic_cfg = Config.HallowsData.data_magic[data.look_id]
+        if magic_cfg then
+            self.illusion_icon:setBaseData(magic_cfg.item_id)
+            self.illusion_icon:setMagicIcon(true)
+        end
+    end
+    local config = Config.HallowsData.data_base[data.hallows_id]
+    if config then
+        self.artifact_icon:setBaseData(config.item_id)
+        self.artifact_icon:setMagicIcon(false)
+        registerButtonEventListener(self.artifact_icon, function()
+            self:clickHallows(list_data)
+        end,false, 1,nil,0.8)
+        -- registerButtonEventListener(self.illusion_icon, function()
+        --     self:clickHallows(list_data)
+        -- end,false, 1,nil,0.8)
+    end
+end
+function FriendCheckOverview:setJinqiSkillItemData( skill_item, jinqi_data, pos )
+    local jinqi_info = self:getJinqiInfoByPos(jinqi_data, pos)
+    if jinqi_info then
+        local jinqi_bid = jinqi_info.id
+        local jinqi_star = jinqi_info.star
+        skill_item:showLockIcon(false)
+        local jinqi_cfg = Config.ProhibitorData.data_get_proh_star[jinqi_bid]
+        if jinqi_bid == 0 or not jinqi_cfg then -- 已解锁，但未放置精灵
+            skill_item:setData()
+            skill_item:showLevel(false)
+        else
+            local jinqi_skill_id = jinqi_cfg[jinqi_star].active_skill[1]
+            local skill_cfg = Config.SkillData.data_get_skill(jinqi_skill_id)
+            if skill_cfg then
+                skill_item:addCallBack(function() 
+                    TipsManager:getInstance():showSkillTips(jinqi_skill_id)
+                end)
+                skill_item:showLevel(true)
+                skill_item:setData(skill_cfg)
+            end
+        end
+    else
+        skill_item:setData()
+        skill_item:showLevel(false)
+        skill_item:showLockIcon(false)
+    end
+end
+function FriendCheckOverview:getJinqiInfoByPos( jinqi_data, pos )
+    if not jinqi_data or next(jinqi_data) == nil then return end
+    for k,v in pairs(jinqi_data) do
+        if v.pos == pos then
+            return v
+        end
+    end
+end
+function FriendCheckOverview:clickHallows(data)
+    HallowsController:getInstance():send24136(self.data.rid,self.data.srv_id,data.type)
+end
+function FriendCheckOverview:setElfinSkillItemData( skill_item, sprite_data, pos )
+    local elfin_bid = self:getElfinBidByPos(sprite_data, pos)
+    if elfin_bid then
+        skill_item:showLockIcon(false)
+        
+        local elfin_cfg = Config.SpriteData.data_elfin_data(elfin_bid)
+        if elfin_bid == 0 or not elfin_cfg then -- 已解锁，但未放置精灵
+            skill_item:setData()
+            skill_item:showLevel(false)
+        else
+            local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+            if skill_cfg then
+                skill_item:addCallBack(function() 
+                    TipsManager:getInstance():showElfinTips(elfin_bid) 
+                end)
+                skill_item:showLevel(true)
+                skill_item:setData(skill_cfg)
+            end
+        end
+    else
+        skill_item:setData()
+        skill_item:showLevel(false)
+        skill_item:showLockIcon(false)
+    end
+end
+-- 根据位置获取精灵的bid
+function FriendCheckOverview:getElfinBidByPos( sprite_data, pos )
+    if not sprite_data or next(sprite_data) == nil then return end
+    for k,v in pairs(sprite_data) do
+        if v.pos == pos then
+            return v.item_bid
+        end
+    end
+end
+function FriendCheckOverview:createPartnerList(list)
+    for k, v in pairs(self.item_list) do
+        v:DeleteMe()
+    end
+    self.item_list = {}
+    local temp = {}
+	for k,v in pairs(list) do
+        local hero_vo = HeroVo.New()
+        hero_vo:updateHeroVo(v)
+		table.insert(temp,hero_vo)
+	end
+    local width = 119*0.8
+    local p_list_size = #temp
+    local total_width = p_list_size * width 
+    local start_x = 0
+    local partner_item = nil
+    local max_width = math.max(total_width,self.scroll_view_size.width) 
+    self.scroll_view:setInnerContainerSize(cc.size(max_width,self.scroll_view_size.height))
+    for i,v in ipairs(temp) do
+        delayRun(self.lineup_panel, i/60, function() 
+            if self.item_list[i] == nil then 
+                partner_item = HeroExhibitionItem.new(0.8, true)
+                partner_item:setPosition(start_x + width * 0.5 + (i-1) * width, self.scroll_view_size.height*0.5)
+                partner_item:setData(v)
+                self.scroll_view:addChild(partner_item)
+                self.item_list[i] = partner_item
+                partner_item:addCallBack(function(item)
+                    local vo = item:getData()
+                    if vo and next(vo) ~=nil then 
+                        local partner_id = vo.partner_id
+                        if partner_id == 0 then
+                            partner_id = vo.id
+                        end
+                        if self.data then
+                            local rid = self.data.rid
+                            local srv_id = self.data.srv_id 
+                            LookController:getInstance():sender11061(rid,srv_id,partner_id)
+                            LookController:getInstance():sender10352(rid, srv_id, vo.bid)
+                        end
+                    end
+                end)
+            else
+                self.item_list[i]:setData(v)
+            end
+        end)
+    end
+end
+function FriendCheckOverview:onClickByPos(pos)
+    if self.dic_use_badges and self.dic_use_badges[pos] then
+        --查看tips
+        local setting = {}
+        setting.id = self.dic_use_badges[pos].id
+        setting.show_type = RoleConst.role_type.eOther
+        setting.have_name = self.data and self.data.name or ""
+        setting.have_time = self.dic_use_badges[pos].time
+        TipsController:getInstance():openHonorIconTips(true, setting)
+    end
+end
+
+function FriendCheckOverview:DeleteMe(  )
+    if self.fight_label then
+        self.fight_label:DeleteMe()
+        self.fight_label = nil
+    end
+    for k, v in pairs(self.item_list) do
+        v:DeleteMe()
+    end
+    self.item_list = nil
+    for k,v in pairs(self.elfin_list) do
+        v:DeleteMe()
+        v = nil
+    end
+    if self.dispatch_player_vo_event then
+        GlobalEvent:getInstance():UnBind(self.dispatch_player_vo_event)
+        self.dispatch_player_vo_event = nil
+    end
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+end

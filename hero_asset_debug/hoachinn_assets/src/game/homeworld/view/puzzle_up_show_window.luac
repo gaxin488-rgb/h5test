@@ -1,0 +1,160 @@
+--******** 文件说明 ********
+-- 
+-- @description: 拼图图鉴当期up
+-- @DateTime:    2020-02-20
+-- *******************************
+PuzzleUpShowWindow = PuzzleUpShowWindow or BaseClass(BaseView)
+
+local controller = HomeworldController:getInstance()
+local model = controller:getModel()
+local act_controller = ActionController:getInstance()
+local act_model = act_controller:getModel()
+
+function PuzzleUpShowWindow:__init()
+    self.is_full_screen = true
+    self.click_index = 0
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "homeworld/puzzle_up_show_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("partnersummon", "partnersummon"), type = ResourcesType.plist },
+    }
+end
+
+function PuzzleUpShowWindow:open_callback()
+    self._ui = self:getExportUI()
+    self._ui._background:setScale(display.getMaxScale())
+    self._tip = createRichLabel(18,cc.c3b(0x62,0x35,0x11),cc.p(0.5,0.5),cc.p(356,30),-8,nil,600)
+    self._tip:setHorizontalLayoutType(2)
+    self._ui._main_container:addChild(self._tip)
+    self._tip:setString(TI18N("语言_c_7643"))
+
+    self._ui._attr_scroll:setScrollBarEnabled(false)
+    setTextSpacing(self._ui._jump_txt,-8)
+    self._ui._jump_txt:setString(TI18N("语言_c_7644"))
+    local _w = self._ui._jump_txt:getContentSize().width
+    local btn_w = self._ui._jump_btn:getContentSize().width
+    if _w > btn_w - 10 then
+        self._ui._jump_txt:setScale((btn_w-10) / _w)
+    end
+    self._ui._get_txt:setString(TI18N("语言_c_7"))
+    local bottom_y = display.getBottom(self._ui._main_container)
+    self._ui._close_btn:setPositionY(bottom_y+self._ui._close_btn:getPositionY())
+end
+
+function PuzzleUpShowWindow:register_event()
+    registerButtonEventListener(self._ui._background,function()
+        controller:openPuzzleUpShowWindow(false)
+    end,false,2)
+    registerButtonEventListener(self._ui._close_btn,function()
+        controller:openPuzzleUpShowWindow(false)
+    end,true,2)
+    registerButtonEventListener(self._ui._jump_btn,function()
+        controller:openPuzzleUpShowWindow(false)
+        controller:openPuzzleBookMainWindow(true)
+    end,true,2)
+    registerButtonEventListener(self._ui._get_btn,function()
+        self.item_id = self.book_cfg.item_id
+        self.item_cfg = Config.ItemData.data_get_data(self.item_id)
+        if self.item_cfg then
+            BackpackController:getInstance():openTipsSource(true, self.item_cfg)
+        end
+    end,true,2)
+    registerButtonEventListener(self._ui._left_btn,function()
+        self:changePage(false)
+    end,true,2)
+    registerButtonEventListener(self._ui._right_btn,function()
+        self:changePage(true)
+    end,true,2)
+end
+function PuzzleUpShowWindow:changePage(status)
+    if status then
+        self.click_index = self.click_index + 1
+        if not self.book_id_list[self.click_index] then
+            self.click_index = 1
+        end
+    else
+        self.click_index = self.click_index - 1
+        if not self.book_id_list[self.click_index] then
+            self.click_index = tableLen(self.book_id_list)
+        end
+    end
+    self:setData(self.book_id_list[self.click_index])
+end
+function PuzzleUpShowWindow:openRootWnd(book_id_list)
+    self.book_id_list = book_id_list
+    self.click_index = 1
+    self:setData(self.book_id_list[self.click_index])
+    local btn_statsu = tableLen(self.book_id_list) > 1
+    self._ui._left_btn:setVisible(btn_statsu)
+    self._ui._right_btn:setVisible(btn_statsu)
+end
+function PuzzleUpShowWindow:setData(book_id)
+    self.book_id = book_id
+    if not model:getPuzzleFirstRed(self.book_id) then
+        model:updatePuzzleFirstRed(self.book_id)
+    end
+    if model:getActPuzzleFirstRed() then
+        act_controller:sender16612(ActionRankCommonType.olympic_puzzle)
+    end
+    self.book_cfg = Config.PuzzleBookData.data_puzzle[book_id]
+    self.puzzle_cfg = Config.PuzzleBookData.data_puzzle_attr[book_id]
+    self._ui._puzzle_name:setString(self.book_cfg.name)
+	local res = PathTool.getPlistImgForDownLoad("puzzle", self.book_cfg.img.."_big")
+	loadSpriteTexture(self._ui._puzzle_icon, res, LOADTEXT_TYPE)
+    if not self._puzzle_tip then
+        self._puzzle_tip = createRichLabel(21,cc.c3b(0xfd,0xf7,0xe4),cc.p(0.5,0.5),cc.p(416,909),-6,nil,380)
+        self._puzzle_tip:setHorizontalLayoutType(2)
+        self._ui._main_container:addChild(self._puzzle_tip)
+    end
+    local _str = string.format(TI18N("语言_c_7645"))
+    local act_name = ""
+    local act_list = self.book_cfg.camp_id_list
+    for i,v in ipairs(act_list) do
+        local tab_vo = ActionController:getInstance():getActionSubTabVo(v[2])
+        if tab_vo and tab_vo.camp_id == v[1] then
+            if act_name == "" then
+                act_name = act_name .. tab_vo.title
+            else
+                act_name = act_name .. "," .. tab_vo.title
+            end
+        end
+    end
+    self._puzzle_tip:setString(LangStringFormat(_str,act_name,self.book_cfg.total_num))
+    self:updataAttrPanel()
+end
+
+function PuzzleUpShowWindow:updataAttrPanel()
+    if self.attr_list and next(self.attr_list) then
+        for k, v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    self.attr_list = {}
+    local _h = 0
+    for k, v in ipairs(self.puzzle_cfg) do
+        local item = PuzzleBookAttrItem5.new()
+        item:setData(self.book_id,v.num)
+        self._ui._attr_scroll:addChild(item)
+        _h = _h + item.size.height
+        table.insert(self.attr_list,item)
+    end
+    local _max_h = math.max(_h,self._ui._attr_scroll:getContentSize().height)
+    self._ui._attr_scroll:setInnerContainerSize(cc.size(self._ui._attr_scroll:getContentSize().width,_max_h))
+
+    for k, v in ipairs(self.attr_list) do
+        v:setPosition(cc.p(0,_max_h))
+        _max_h = _max_h - v.size.height
+    end
+
+end
+function PuzzleUpShowWindow:close_callback()
+    if self.attr_list and next(self.attr_list) then
+        for k, v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    controller:openPuzzleUpShowWindow(false)
+end

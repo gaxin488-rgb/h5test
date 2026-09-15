@@ -1,0 +1,164 @@
+--******** 文件说明 ********
+-- 
+-- @description: 冒险战令购买进阶卡
+-- @DateTime:    2019-06-24 20:08:18
+-- *******************************
+MazeBuyCardWindow = MazeBuyCardWindow or BaseClass(BaseView)
+
+local controller = MazeController:getInstance()
+local model = controller:getModel()
+function MazeBuyCardWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "battledrama/battle_drama_buy_card_window"
+end
+
+function MazeBuyCardWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_container , 2)
+    self.title = main_container:getChildByName("Text_3")
+    self.title:setString(TI18N("语言_maze_2"))
+    local title_bg = main_container:getChildByName("title_bg")
+    local title_width = main_container:getChildByName("Text_3"):getContentSize().width
+    local title_bg_width = math.max(title_width+130, 266)
+    title_bg:setContentSize(cc.size(title_bg_width,44))
+    self.title_1 = main_container:getChildByName("Text_3_0")
+    self.title_1:setString(TI18N("语言_c_742"))
+    self.title_2 = main_container:getChildByName("Text_3_1")
+    self.title_2:setString(TI18N("语言_c_6862"))
+    self.title_2:setPositionX(325)
+    setTextMaxWidth(self.title_1, 285)
+    setTextMaxWidth(self.title_2, 285)
+
+    -- local label_lock = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff,0xff), cc.p(0.5,0.5), cc.p(325,136), nil, nil, 400)
+    -- local str = string.format(baseCfg.dungeon_pass_introduce.desc)
+    -- label_lock:setString(str)
+    -- main_container:addChild(label_lock)
+    -- local label_lock = createLabel(20, cc.c4b(0xff,0xff,0xff,0xff),cc.c4b(0,0,0,0),325,135,nil,main_container,2, cc.p(0.5,0.5))
+    -- label_lock:setWidth(400)
+    -- self.label_lock = label_lock
+    -- local str = string.format(baseCfg.dungeon_pass_introduce.desc)
+    -- label_lock:setString(str)
+    -- label_lock:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    
+
+    self.btn_change = main_container:getChildByName("btn_change")
+    self.btn_change_label = self.btn_change:getChildByName("Text_6")
+    local baseCfg = Config.MazeData.data_const
+    local chargeId = baseCfg["warpass_chargeid"].val
+    local cdata = Config.ChargeData.data_charge_data[chargeId]
+    local val = 0
+    if cdata then
+        val = GetMoneyNum(cdata,"val")
+    end
+    self.btn_change_label:setString(string.format(TI18N("语言_c_4441"),val))
+
+    local order_data = model:getOrderData()
+    self.rmb_status = order_data.rmb_status
+    if self.rmb_status == 1 then
+        self.btn_change:setTouchEnabled(false)
+        setChildUnEnabled(true, self.btn_change)
+        self.btn_change_label:disableEffect(cc.LabelEffect.OUTLINE)
+    end
+    self.goods_1 = main_container:getChildByName("goods_1")
+    self.goods_1:setScrollBarEnabled(false)
+    self.goods_2 = main_container:getChildByName("goods_2")
+    self.goods_2:setScrollBarEnabled(false)
+    self:setData()
+
+    self.btn_close = main_container:getChildByName("btn_close")
+end
+
+function MazeBuyCardWindow:setData()
+    local baseCfg = Config.MazeData.data_const
+	local warpass_get = baseCfg["warpass_get"].val
+	local warpass_show = baseCfg["warpass_show"].val
+	if warpass_get then
+		local data_list = warpass_get or {}
+		local setting = {}
+		setting.scale = 0.7
+        setting.space_x = 3
+		setting.max_count = 4
+		setting.is_center = true
+		self.item_list1 = commonShowSingleRowItemList(self.goods_1, self.item_list1, data_list, setting)
+    end
+    if warpass_show then
+		local data_list = warpass_show or {}
+		local setting = {}
+		setting.scale = 0.7
+		setting.max_count = 4
+		setting.is_center = true
+		self.item_list2 = commonShowSingleRowItemList(self.goods_2, self.item_list2, data_list, setting)
+	end
+    -- local seal_open = SealtowerController:getInstance():getModel():getSealTowerIsOpen()
+    -- if seal_open == 1 then
+    --     self.label_lock:setString(TI18N("语言_sta_to_h_01_9"))
+    -- end
+end
+
+function MazeBuyCardWindow:register_event()
+	registerButtonEventListener(self.btn_close, function()
+        controller:openMazeOrderBuyWindow(false)
+    end,true, 2)
+    registerButtonEventListener(self.background, function()
+        controller:openMazeOrderBuyWindow(false)
+    end,false, 2)
+    registerButtonEventListener(self.btn_change, function()
+        self:changeWarn()
+    end,true, 1)
+
+    if not self.update_data_event then 
+        self.update_data_event = GlobalEvent:getInstance():Bind(MazeEvent.UpdateOrderList,function(data)
+            local order_data = model:getOrderData()
+            self.rmb_status = order_data.rmb_status
+            if self.rmb_status == 1 then
+                self.btn_change:setTouchEnabled(false)
+                setChildUnEnabled(true, self.btn_change)
+                self.btn_change_label:disableEffect(cc.LabelEffect.OUTLINE)
+            end
+        end)
+    end
+end
+function MazeBuyCardWindow:changeWarn()
+    local order_data = model:getOrderData()
+    self.rmb_status = order_data.rmb_status
+    if self.rmb_status == 1 then
+        message(TI18N("语言_c_1984"))
+        return
+    end
+    local charge_id = Config.MazeData.data_const["warpass_chargeid"].val
+    if charge_id then
+        local charge_data = Config.ChargeData.data_charge_data[charge_id]
+        if charge_data then
+            sdkOnPay(charge_data.val, nil, charge_data.id, charge_data.name)
+        end
+    end
+end
+function MazeBuyCardWindow:openRootWnd()
+
+end
+function MazeBuyCardWindow:close_callback()
+	if self.update_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_data_event)
+        self.update_data_event = nil
+    end
+
+	if self.item_list1 then
+        for i,v in pairs(self.item_list1) do
+            v:DeleteMe()
+        end
+        self.item_list1 = nil
+    end
+
+    if self.item_list2 then
+        for i,v in pairs(self.item_list2) do
+            v:DeleteMe()
+        end
+        self.item_list2 = nil
+    end
+
+	controller:openMazeOrderBuyWindow(false)
+end

@@ -1,0 +1,259 @@
+--******** 文件说明 ********
+-- 
+-- @description: 新回归活动主界面
+-- @DateTime:    2019-12-13 15:12:06
+-- *******************************
+NewReturnActionMainWindow = NewReturnActionMainWindow or BaseClass(BaseView)
+
+local controller = NewReturnActionController:getInstance()
+local model = controller:getModel()
+
+function NewReturnActionMainWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Full
+    self.layout_name = "newreturnaction/newreturnaction_main_window"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","back_banner"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","back_bg"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_back_banner"), type = ResourcesType.single },
+    }
+    for i = 1, 4 do
+        table.insert(self.res_list,{ path = PathTool.getPlistImgForDownLoad("holiday_back","back_ba_"..i), type = ResourcesType.single })
+        table.insert(self.res_list,{ path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_back_ba_"..i), type = ResourcesType.single })
+    end
+    self.item_list = {}
+end
+
+function NewReturnActionMainWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.top_bg = self.top_panel:getChildByName("top_bg")
+    self.top_tip = self.top_panel:getChildByName("top_tip")
+    self.rule_btn = self.top_panel:getChildByName("rule_btn")
+    self.time_bg = self.top_panel:getChildByName("time_bg")
+    self.surplus_txt = self.top_panel:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.top_panel:getChildByName("surplus_time")
+    local top_y = display.getTop()
+    local bottom_y = display.getBottom()
+    local panel_height = top_y - bottom_y
+    self.Image_3 = self.main_container:getChildByName("Image_3")
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.bottom_panel_size = self.bottom_panel:getContentSize()
+    self.bottom_panel_size.height = panel_height - (CC_DESIGN_RESOLUTION.height-self.bottom_panel_size.height)
+    self.bottom_panel:setContentSize(self.bottom_panel_size)
+    self.bottom_panel:setInnerContainerSize(self.bottom_panel_size)
+    self.bottom_panel:setScrollBarEnabled(false)
+    self.first_panel = self.bottom_panel:getChildByName("first_panel")
+    self.other_panel = self.bottom_panel:getChildByName("other_panel")
+    self.other_panel:setScrollBarEnabled(false)
+    self.other_panel:setContentSize(self.bottom_panel_size)
+    self.Image_3:setContentSize(cc.size(self.bottom_panel_size.width,self.bottom_panel_size.height+10))
+    self.close_btn = self.root_wnd:getChildByName("close_btn")
+
+
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    
+    local tab_y = self.main_container:getPositionY()
+    self.main_container:setPositionY(top_y)
+
+    local close_btn_y = self.close_btn:getPositionY()
+    self.close_btn:setPositionY(bottom_y + close_btn_y)
+end
+
+function NewReturnActionMainWindow:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        controller:openNewReturnActionMainWindow(false)
+    end,true, 2)
+    registerButtonEventListener(self.rule_btn, function(param,sender, event_type)
+        if self.period_cfg and self.period_cfg.desc and self.period_cfg.desc ~= "" then
+            TipsManager:getInstance():showCommonTips(self.period_cfg.desc, sender:getTouchBeganPosition())
+        end
+    end,true, 2)
+    self:addGlobalEvent(NewReturnActionEvent.Base_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+    self:addGlobalEvent(NewReturnActionEvent.Update_Red_Event, function()
+        self:updateItemRed()
+    end)
+end
+
+function NewReturnActionMainWindow:openRootWnd()
+    controller:sender11500()
+end
+
+function NewReturnActionMainWindow:setData()
+    self.cycle_index = model:getNowPeriod()
+    if self.cycle_index == 0 then
+        return
+    end
+    self.period_cfg = Config.HolidayBackData.data_get_period[self.cycle_index]
+    if not self.period_cfg or not next(self.period_cfg) then return end
+    self.start_time = model:getStartTime()
+    local time = self.start_time - GameNet:getInstance():getTime() + self.period_cfg.day*86400
+    commonCountDownTime(self.surplus_time,time)
+    local res = PathTool.getPlistImgForDownLoad("holiday_back",self.period_cfg.banner,false)
+    loadSpriteTexture(self.top_bg, res, LOADTEXT_TYPE)
+    local tip_res = PathTool.getPlistImgForDownLoad("holiday_back",self.period_cfg.text,false)
+    loadSpriteTexture(self.top_tip, tip_res, LOADTEXT_TYPE)
+    if self.period_cfg.desc == "" then
+        self.rule_btn:setVisible(false)
+    else
+        self.rule_btn:setVisible(true)
+    end
+    if not self.item_list then
+        self.item_list = {}
+    end
+    -- if not next(self.item_list) then
+    --     self.camp_cfg = Config.HolidayBackData.data_get_camp[self.cycle_index]
+    --     if not self.period_cfg or not next(self.period_cfg) then return end
+    --     table.sort(self.camp_cfg,function(a,b) return a.sort < b.sort end)
+    --     self.other_list = {}
+    --     for i = 1, tableLen(self.camp_cfg) do
+    --         if self.camp_cfg[i].sort == 1 then
+    --             self.first_list = self.camp_cfg[i]
+    --         else
+    --             table.insert(self.other_list,self.camp_cfg[i])
+    --         end
+    --     end
+    --     table.sort(self.other_list,function(a,b) return a.sort < b.sort end)
+    --     self.first_item = self:getActionItem(self.first_list)
+    --     table.insert(self.item_list,self.first_item)
+    --     self.first_panel:addChild(self.first_item)
+    --     self.first_item:setPosition(cc.p(self.first_panel:getContentSize().width*0.5,self.first_panel:getContentSize().height*0.5))
+    --     local _h = math.max(self.other_panel:getContentSize().height,198*math.floor((tableLen(self.other_list)+1)/2))
+    --     self.other_panel:setInnerContainerSize(cc.size(self.other_panel:getContentSize().width,_h))
+    --     self.bottom_panel:setInnerContainerSize(cc.size(self.bottom_panel:getContentSize().width,_h + self.first_panel:getContentSize().height))
+    --     for i = 1, tableLen(self.other_list) do
+    --         local item = self:getActionItem(self.other_list[i])
+    --         self.other_panel:addChild(item)
+    --         item:setPosition(cc.p((i-1)%2*360+180,_h-math.floor((i+1)/2)*198 + 198/2))
+    --         table.insert(self.item_list,item)
+    --     end
+    -- end
+    if not next(self.item_list) then
+        self.camp_cfg = Config.HolidayBackData.data_get_camp[self.cycle_index]
+        if not self.camp_cfg or not next(self.camp_cfg) then return end
+        table.sort(self.camp_cfg,function(a,b)
+            if a and b and a.sort and b.sort then
+                return a.sort < b.sort 
+            end
+        end)
+        self.other_list = {}
+        for i = 1, tableLen(self.camp_cfg) do
+            table.insert(self.other_list,self.camp_cfg[i])
+        end
+        table.sort(self.other_list,function(a,b) return a.sort < b.sort end)
+        local _h = math.max(self.other_panel:getContentSize().height,212*tableLen(self.other_list))
+        self.other_panel:setInnerContainerSize(cc.size(self.other_panel:getContentSize().width,_h))
+        for i = 1, tableLen(self.other_list) do
+            local item = self:getActionItem(self.other_list[i])
+            self.other_panel:addChild(item)
+            item:setPosition(cc.p(360,_h-(i-1)*212 - 212/2))
+            table.insert(self.item_list,item)
+        end
+    end
+    self:updateItemRed()
+end
+function NewReturnActionMainWindow:updateItemRed()
+    if self.item_list and next(self.item_list) then
+        for k , v in pairs(self.item_list) do
+            addRedPointToNodeByStatus(v,model:getReturnRedForId(v.camp_id))
+        end
+    end
+end
+function NewReturnActionMainWindow:getActionItem(data)
+    local pos_list = data.pos
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0.5, 0.5))
+    item:setTouchEnabled(true)
+    -- local _size = cc.size(360,198)
+    -- if data.sort == 1 then
+        local _size = cc.size(705,212)
+    -- end
+    item:setContentSize(_size)
+    local res = PathTool.getPlistImgForDownLoad("holiday_back",data.ico,false)
+    item.bg = createSprite(res,_size.width*0.5,_size.height*0.5,item,cc.p(0.5,0.5),LOADTEXT_TYPE)
+    local res = PathTool.getPlistImgForDownLoad("holiday_back",data.title,false)
+    item.tip = createSprite(res,14,143,item,cc.p(0,0.5),LOADTEXT_TYPE)
+    item.tip:setPosition(cc.p(34,156))
+    if pos_list and next(pos_list) and pos_list[1] then
+        item.tip:setPosition(cc.p(pos_list[1][1],pos_list[1][2]))
+    end
+    -- if data.sort == 1 then
+    -- end
+    item:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            if model:getStartTime() - GameNet:getInstance():getTime() + data.max_day*86400 > 0 then
+                if data.camp_id == NewReturnActionConstants.ReturnActionType.loginGift then
+                    controller:openNewReturnLoginGiftPanel(true)
+                elseif data.camp_id == NewReturnActionConstants.ReturnActionType.resourceBack then
+                    controller:openNewReturnResourceBackPanel(true)
+                elseif data.camp_id == NewReturnActionConstants.ReturnActionType.sixGift then
+                    controller:openNewReturnSixGiftPanel(true)
+                elseif data.camp_id == NewReturnActionConstants.ReturnActionType.specialGift then
+                    controller:openNewReturnSpecialGiftPanel(true)
+                end
+            else
+                message(TI18N("语言_c_233"))
+            end
+        end
+    end)
+    if pos_list and next(pos_list) and pos_list[2] then
+        item.scroll = createScrollView(310,75,pos_list[2][1],pos_list[2][2],item,ccui.ScrollViewDir.horizontal)
+    else
+        item.scroll = createScrollView(310,75,30,25,item,ccui.ScrollViewDir.horizontal)
+    end
+    item.scroll:setSwallowTouches(false)
+    local _w = math.max(310,75*tableLen(data.reward_preview))
+    item.scroll:setInnerContainerSize(cc.size(_w,item.scroll:getContentSize().height))
+    for k,v in ipairs(data.reward_preview) do
+        local back_item = BackPackItem.new(true,true,false,0.6)
+        back_item:setDefaultTip()
+        back_item:setPosition(cc.p((k-0.5)*75,item.scroll:getContentSize().height*0.5))
+        back_item:setData(v)
+        back_item.eff = createEffectSpine("E20984",cc.p(BackPackItem.Width*0.5,BackPackItem.Height*0.5),cc.p(0.5,0.5),true,PlayerAction.action)
+        back_item.eff:setScale(1.2)
+        back_item:addChild(back_item.eff)
+        item.scroll:addChild(back_item)
+    end
+    if data.panel_text ~= "" then
+        if not item.txt then
+            item.txt = createRichLabel(18,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(0,0),-4,nil,1000)
+            item:addChild(item.txt)
+        end
+        item.txt:setString(data.panel_text)
+        item.txt:setVisible(true)
+        
+        if pos_list and next(pos_list) and pos_list[3] then
+            item.txt:setPosition(cc.p(pos_list[3][1],pos_list[3][2]))
+        end
+    else
+        if item.txt then
+            item.txt:setVisible(false)
+        end
+    end
+    
+    item.data = data
+    item.camp_id = data.camp_id
+    return item
+end
+
+function NewReturnActionMainWindow:close_callback()
+    if self.item_list and next(self.item_list) then
+        for k , v in pairs(self.item_list) do
+            v:removeFromParent()
+            v = nil
+        end
+        self.item_list = nil
+    end
+    controller:openNewReturnActionMainWindow(false)
+end
+

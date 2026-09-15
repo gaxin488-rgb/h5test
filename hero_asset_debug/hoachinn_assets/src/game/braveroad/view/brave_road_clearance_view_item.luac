@@ -1,0 +1,93 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 勇者之路 通关详情 item
+--------------------------------- 
+local _controller = BraveRoadController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+BraveRoadClearanceViewItem = class('BraveRoadClearanceViewItem',function()
+    return ccui.Widget:create()
+end)
+
+function BraveRoadClearanceViewItem:ctor(callback)
+    self.callback = callback
+    self:configUI()
+    self:registerEvent()
+end
+
+function BraveRoadClearanceViewItem:configUI()
+    self:setAnchorPoint(cc.p(0, 0))
+	self:setTouchEnabled(false)
+
+	local csbPath = PathTool.getTargetCSB("braveroad/brave_road_clearance_view_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+	self:addChild(self.root_wnd)
+	self.size = self.root_wnd:getContentSize()
+	self:setContentSize(self.size)
+
+    local container = self.root_wnd:getChildByName("container")
+    container:setSwallowTouches(false)
+    self.container = container
+
+    self.label_name = container:getChildByName("label_name")
+    self.progress = container:getChildByName("progress")
+    self.progress:setScale9Enabled(true)
+    self.progress_value = container:getChildByName("progress_value")
+
+    self.goto_btn = container:getChildByName("goto_btn")
+    self.goto_btn:getChildByName("label"):setString(TI18N("语言_c_7"))
+    self.img_lock = container:getChildByName("img_lock")
+
+    self.dun_des = container:getChildByName("dun_des")
+    self.dun_des:setString(TI18N("语言_c_5075"))
+    self.sp_star = container:getChildByName("sp_star")
+    self.bos_des = self.sp_star:getChildByName("boss_des")
+    self.bos_des:setString(TI18N("语言_c_5076"))
+    local total_w = self.sp_star:getContentSize().width + self.bos_des:getContentSize().width
+    self.sp_star:setPositionX((610 - total_w)/2 + self.sp_star:getContentSize().width/2)
+end
+
+function BraveRoadClearanceViewItem:registerEvent()
+    registerButtonEventListener(self.goto_btn, handler(self, self.onClickGo), true, 2)
+end
+
+function BraveRoadClearanceViewItem:onClickGo()
+    GlobalEvent:getInstance():Fire(BraveRoadEvent.Jump_Brave_Road_Cid, self.data.cfg.cid)
+    BraveRoadController:getInstance():openBraveRoadClearanceViewWindow(false)
+end
+
+function BraveRoadClearanceViewItem:setData(data)
+    self.data = data
+    local dun_type = data.dun_type
+    local config = data.cfg
+    local cur_cid = _model:getCurCid()
+    self.label_name:setString(string.format(TI18N("语言_c_34"), config.cid))
+    self.dun_des:setVisible(dun_type == 2)
+    self.sp_star:setVisible(dun_type == 1)
+    cur_cid = _model:checkCidLimit(cur_cid)
+    self.goto_btn:setVisible(cur_cid >= config.cid)
+    self.img_lock:setVisible(cur_cid < config.cid)
+    if dun_type == 2 then
+        local dun_vo = _model:getDunDataById(config.cid)
+        local pass_num = #(dun_vo.ids or {})  --获取当前通过的关卡
+        local toall_num = 12
+        self.progress:setPercent(math.min(pass_num/toall_num*100, 100))
+        self.progress_value:setString(string.format("%s/%s", pass_num, toall_num))
+    else
+        local dun_vo = _model:getDunDataById(config.cid)
+        local pass_star = dun_vo.boss_star or 0
+        local dungeon_boss_cfg = Config.LimitTrainingData.data_dungeon_boss[config.cid]
+        local toall_star = dungeon_boss_cfg and dungeon_boss_cfg.tips_num * 3 or 6
+        self.progress:setPercent(math.min(pass_star/toall_star*100, 100))
+        self.progress_value:setString(string.format("%s/%s", pass_star, toall_star))
+    end
+end
+
+function BraveRoadClearanceViewItem:DeleteMe()
+    self:removeAllChildren()
+	self:removeFromParent()
+end

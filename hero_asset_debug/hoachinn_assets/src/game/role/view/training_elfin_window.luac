@@ -1,0 +1,284 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-2-18 15:15:41
+-- @description    : 
+		-- 小助手通灵兽
+---------------------------------
+TrainingElfinWindow = class("TrainingElfinWindow", function()
+    return ccui.Widget:create()
+end)
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+local role_controller = RoleController:getInstance()
+local role_model = role_controller:getModel()
+
+function TrainingElfinWindow:ctor(cfg)
+	self.par_cfg = cfg[1] or {}
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("roleinfo/training_elfin_window"))
+	self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0,0)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+	self.attr_list = {}
+    -- 资源加载
+	local res_list = {}
+	self.cur_tab_data = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+-- 资源加载完成
+function TrainingElfinWindow:loadResListCompleted(  )
+	self:configUI()
+	self._init_flag = true
+end
+
+function TrainingElfinWindow:configUI(  )
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self.title_txt = self.main_container:getChildByName("title_txt")
+    self.title_txt:setString(self.par_cfg.func_name)
+	self.choose_tip = self.main_container:getChildByName("choose_tip")
+    self.choose_tip:setString(TI18N("语言_c_7409"))
+    setTextMaxWidth(self.choose_tip,300,-10)
+	self.choose_line_1 = self.main_container:getChildByName("choose_line_1")
+	self.choose_line_2 = self.main_container:getChildByName("choose_line_2")
+    setLeftRightImg(self.choose_line_1,self.choose_tip,self.choose_line_2,30)
+	self.checkbox = self.main_container:getChildByName("checkbox")
+	self.checkbox_txt = self.checkbox:getChildByName("txt")
+    self.checkbox_txt:setString(TI18N("语言_c_7385"))
+    self.checkbox:setSelected(ElfinController:getInstance():getModel():getAutoRemove() ~= 0)
+	self.choose_panel = self.main_container:getChildByName("choose_panel")
+	self.grey_panel = self.main_container:getChildByName("grey_panel")
+    self.grey_panel:setVisible(false)
+	self.tab_container = self.main_container:getChildByName("tab_container")
+    self.status_btn_list = {}
+    for i = 1, 2 do
+        local item = self.tab_container:getChildByName("tab_btn_"..i)
+        item.unselect_bg = item:getChildByName("unselect_bg")
+        item.select_bg = item:getChildByName("select_bg")
+        item.title = item:getChildByName("title")
+        item.index = i
+        if i == 1 then
+            item.title:setString(TI18N("语言_c_7410"))
+        else
+            item.title:setString(TI18N("语言_c_791"))
+        end
+        self.status_btn_list[i] = item
+    end
+    self.item_btn_list = {}
+    for i = 1, 3 do
+        local item = self.choose_panel:getChildByName("item_"..i)
+        item.item_name = item:getChildByName("item_name")
+        setTextMaxWidth(item.item_name,135,-10)
+        item.add_btn = item:getChildByName("add_btn")
+        item.checkbox = item:getChildByName("checkbox")
+        item.item_num = item:getChildByName("item_num")
+        setTextMaxWidth(item.item_num,150,-8)
+        item.index = i
+        self.item_btn_list[i] = item
+    end
+    self.discharge_btn = self.item_btn_list[2]:getChildByName("discharge_btn")
+    self.discharge_txt = self.discharge_btn:getChildByName("label")
+    self.discharge_txt:setString(TI18N("语言_c_1967"))
+
+	self:register_event()
+	self:setData()
+end
+function TrainingElfinWindow:setData()
+	self:openRootWnd()
+end
+
+--注册选项框事件
+function TrainingElfinWindow:registerCheckBoxEvent(btn)
+    if not btn then return end
+	btn:addEventListener(function(sender,event_type)
+	    if event_type == ccui.CheckBoxEventType.selected then
+            playButtonSound2()
+            ElfinController:getInstance():getModel():setAutoRemove(1)
+	        btn:setSelected(true)
+	    elseif event_type == ccui.CheckBoxEventType.unselected then 
+            playButtonSound2()
+            ElfinController:getInstance():getModel():setAutoRemove(0)
+            btn:setSelected(false)
+	    end
+    end)
+end
+function TrainingElfinWindow:register_event(  )
+    for k, v in pairs(self.status_btn_list) do
+        v:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                self:_onClickStatusBtn(v.index)
+            end
+        end)
+    end
+    self:registerCheckBoxEvent(self.checkbox)
+    for k, v in pairs(self.item_btn_list) do
+        v.checkbox:addEventListener(function ( sender,event_type )
+            customClickAction_2(v.checkbox, event_type)
+            if event_type == ccui.CheckBoxEventType.selected then
+                playButtonSound2()
+                if not self.more_choose_data then
+                    self.more_choose_data = {}
+                end
+                self.more_choose_data[v.index] = 1
+            elseif event_type == ccui.CheckBoxEventType.unselected then 
+                playButtonSound2()
+                if self.more_choose_data and self.more_choose_data[v.index] then
+                    self.more_choose_data[v.index] = 0
+                end
+            end
+            self:_onClickMoreChooseBtn()
+        end)
+        v.add_btn:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                customClickAction_2(v.add_btn, event_type)
+                playButtonSound2()
+                if self.elfin_cfg[v.index] then
+                    BackpackController:getInstance():openTipsSource(true, self.elfin_cfg[v.index])
+                end
+            end
+        end)
+    end
+    self.discharge_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(self.discharge_btn, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            ElfinController:getInstance():openElfinEggSyntheticPanel(true,10601)--打开水灵蛋合成界面
+        end
+    end)
+    
+    --物品道具增加 判断红点
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then 
+                self:updateHaveNum()
+            end
+        end)
+    end
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then 
+                self:updateHaveNum()
+            end
+        end)
+    end
+
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then 
+                self:updateHaveNum()
+            end
+        end)
+    end
+end
+
+function TrainingElfinWindow:_onClickStatusBtn(index)
+    if self.status_index and self.status_index == index then return end
+    self.status_index = index
+    for k, v in pairs(self.status_btn_list) do
+        if v.index == self.status_index then
+            v.select_bg:setVisible(true)
+            v.unselect_bg:setVisible(false)
+            v.title:setTextColor(cc.c3b(0xf8,0xef,0x76))
+			v.title:enableOutline(cc.c3b(0x5c,0x27,0x05),2)
+        else
+            v.select_bg:setVisible(false)
+            v.unselect_bg:setVisible(true)
+            v.title:setTextColor(cc.c3b(0x92,0xb1,0xdc))
+			v.title:enableOutline(cc.c3b(0x34,0x4c,0x5f),2)
+        end
+    end
+    if self.status_index == 1 then
+        self.grey_panel:setVisible(false)
+        -- setChildUnEnabled(false,self.choose_panel)
+    else
+        self.grey_panel:setVisible(true)
+        -- setChildUnEnabled(true,self.choose_panel)
+    end
+    role_model:setTrainingStatusForType(RoleConst.training_fun_index.elfin_status,self.status_index)
+end
+function TrainingElfinWindow:openRootWnd()
+    local status_index = role_model:getTrainingStatusForType(RoleConst.training_fun_index.elfin_status)
+    self:_onClickStatusBtn(status_index)
+    local cfg = Config.SpriteData.data_hatch_egg
+    self.elfin_cfg = {}
+    for k, v in pairs(cfg) do
+        local item_cfg = Config.ItemData.data_get_data(v.item_bid)
+        table.insert(self.elfin_cfg,item_cfg)
+    end
+    table.sort(self.elfin_cfg,function(a,b) return a.id < b.id end)
+    self:updateChoosePanel()
+    self:updateHaveNum()
+end
+
+function TrainingElfinWindow:updateHaveNum()
+    for i = 1, #self.item_btn_list do 
+        if self.elfin_cfg[i] then
+            self.item_btn_list[i].item_name:setString(self.elfin_cfg[i].name)
+            local num = 0
+            num = BackpackController:getInstance():getModel():getItemNumByBid(self.elfin_cfg[i].id)
+            self.item_btn_list[i].item_num:setString(string.format(TI18N("语言_c_297"),num))
+        end
+    end
+end
+function TrainingElfinWindow:updateChoosePanel()
+    self.status_data = role_model:getTrainingStatusForType(self.par_cfg.id)
+    self.more_choose_data = {}
+    if type(self.status_data) == "table" then
+        for k, v in pairs(self.status_data) do
+            for key, value in pairs(self.elfin_cfg) do
+                if value.id == v then
+                    self.more_choose_data[key] = 1
+                end
+            end
+        end
+    else
+        for key, value in pairs(self.elfin_cfg) do
+            if value.id == self.status_data then
+                self.more_choose_data[key] = 1
+            end
+        end
+    end
+    self:_onClickMoreChooseBtn()
+end
+function TrainingElfinWindow:_onClickMoreChooseBtn()
+    for k, v in pairs(self.item_btn_list) do
+        v.checkbox:setSelected(self.more_choose_data[v.index] and self.more_choose_data[v.index] == 1)
+    end
+    local list = {}
+    for k, v in pairs(self.more_choose_data) do
+        if v == 1 then
+            table.insert(list,self.elfin_cfg[k].id)
+        end
+    end
+    role_model:setTrainingStatusForType(self.par_cfg.id,list)
+end
+
+function TrainingElfinWindow:DeleteMe(  )
+    if self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():UnBind(self.del_goods_event)
+        self.del_goods_event = nil
+    end
+    if self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+end

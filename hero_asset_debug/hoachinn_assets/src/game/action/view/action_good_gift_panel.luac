@@ -1,0 +1,152 @@
+----------------------------
+-- 
+-- @Date:   2019-12-12 14:52:22
+-- @Description:   单笔有礼活动
+----------------------------
+ActionGoodGiftPanel = class("ActionGoodGiftPanel", function()
+	return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+
+function ActionGoodGiftPanel:ctor(bid,id,remain_sec)
+    self.remain_sec = remain_sec
+    self.holiday_bid = bid
+    self.click_btn_list = -1
+	self:configUI()
+    self:register_event()
+    ActionController:getInstance():cs16603(self.holiday_bid)
+end
+
+function ActionGoodGiftPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_good_gift_panel"))
+	self.root_wnd:setPosition(-40,-70)
+	self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setAnchorPoint(0, 0)
+	
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    local str = TI18N("语言_c_1242")
+    self.surplus_txt:setString(str)
+    self.tips = self.main_container:getChildByName("tips")
+    self.tips:setString(TI18N("语言_c_4954"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.surplus_time:setPositionX(self.surplus_txt:getPositionX())
+    controller:getModel():setCountDownTime(self.surplus_time,self.remain_sec or 0)
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.btn_get_txt = self.btn_get:getChildByName("Text_10")
+    self.btn_get_txt:setString(TI18N("语言_c_8"))
+    self.btn_get:setVisible(false)
+    self.btn_goto = self.main_container:getChildByName("btn_goto")
+    self.btn_goto_txt = self.btn_goto:getChildByName("Text_11")
+    self.btn_goto_txt:setString(TI18N("语言_c_7"))
+    self.btn_reward = self.main_container:getChildByName("btn_reward")
+    self.btn_reward_txt = self.btn_reward:getChildByName("Text_10")
+    self.btn_reward_txt:setString(TI18N("语言_c_15"))
+    self.btn_reward:setVisible(false)
+    setChildUnEnabled(true, self.btn_reward)
+    self.btn_reward:setTouchEnabled(false)
+    self.show_img = self.main_container:getChildByName("show_img")
+    self.show_img_txt = self.show_img:getChildByName("show_img_txt")
+    self.hero_node = self.main_container:getChildByName("hero_node")
+    self.look_more = self.main_container:getChildByName("look_more")
+    self.loock_more_txt = self.look_more:getChildByName("loock_more_txt")
+    self.loock_more_txt:setString(TI18N("语言_c_24"))
+    self.txt_num = self.main_container:getChildByName("txt_num")
+    self:setInitData()
+end
+
+function ActionGoodGiftPanel:setInitData()
+    if not self.data then return end
+    local aim_list = self.data.aim_list[1]
+    local item_list = aim_list.item_list[1] 
+    local hero_bid = item_list.bid
+    local hero_num = item_list.num
+    local cfg = Config.ItemData6.data_unit(hero_bid)
+    self.show_img_txt:setString(cfg.name)
+    if not self.camp_icom then
+		self.camp_icom = createSprite("", 475, 225, self.main_container, cc.p(0.5,0.5), LOADTEXT_TYPE_PLIST, 1)
+		-- self.camp_icom:setScale(0.6)
+	end
+	if self.camp_icom then
+		self.camp_icom:setVisible(true)
+		local res = PathTool.getHeroCampTypeIcon(cfg.lev)
+		loadSpriteTexture(self.camp_icom, res, LOADTEXT_TYPE_PLIST)
+	end
+    if self.star_node == nil then
+		self.star_node = cc.Node:create()
+		self.star_node:setPosition(120, -10)
+		self.show_img:addChild(self.star_node)
+	end
+    self.star_setting = HeroController:getInstance():getModel():createStar(cfg.eqm_jie, self.star_node, self.star_setting, 17)
+    local list = cfg.effect[1].val
+    local id = list[1].."_"..list[2]
+    local res_id = Config.PartnerData.data_partner_star(id).res_id
+    self:showGuideEffect(true,res_id)
+    -- local reward_item = BackPackItem.new(true, true, false, 1)
+    -- reward_item:setDefaultTip()
+    -- reward_item:setScale(1)
+    -- self.hero_node:addChild(reward_item)
+    -- reward_item:setBaseData(hero_bid, hero_num)
+    self.btn_goto:setVisible(aim_list.status == 0)
+    self.btn_get:setVisible(aim_list.status == 1)
+    self.btn_reward:setVisible(aim_list.status == 2)
+    local needMoney = aim_list.aim_args[1].aim_args_val
+    self.txt_num:setString(string.format(TI18N("语言_c_4440"),MoneyTool.GetMoneyString(needMoney)))
+    self.txt_num:setPositionX(270)
+end
+--人物模型不要了
+function ActionGoodGiftPanel:showGuideEffect(status,effectId)
+    if status == false then
+        if self.effect_1 then
+            if not tolua.isnull(self.effect_1) then
+                self.effect_1:removeFromParent()
+                self.effect_1 = nil
+            end
+        end
+    else
+        if not tolua.isnull(self.hero_node) and self.effect_1 == nil then
+            self.effect_1 = createSpineByName(effectId,PlayerAction.show)
+            self.effect_1:setPosition(cc.p(20, 220))
+            self.effect_1:setAnimation(0, PlayerAction.show, true)
+            self.hero_node:addChild(self.effect_1)
+        end
+    end
+end
+function ActionGoodGiftPanel:register_event()
+	registerButtonEventListener(self.btn_goto, function()
+        VipController:getInstance():openVipMainWindow(true, VIPTABCONST.CHARGE)
+	end, true)
+    registerButtonEventListener(self.btn_get, function()
+        controller:cs16604(self.holiday_bid,self.data.aim_list[1].aim * 100,0)
+	end, true)
+    registerButtonEventListener(self.look_more, function()
+        if self and self.data then
+            local cfg = Config.ItemData.data_get_data(self.data.aim_list[1].item_list[1].bid)
+            local hero_list = HeroController:getInstance():getModel():getHeroPokedexList()[cfg.lev]
+            local list = model:getHeroList(cfg.effect[1].val[1])
+            HeroController:getInstance():openHeroMainInfoWindow(true, list, hero_list , {show_model_type = HeroConst.BagTab.eBagPokedex})
+        end
+	end, true)
+
+    if not self.updateEvent then
+        self.updateEvent = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE ,function(data)
+            if data.bid ~= self.holiday_bid then return end
+            self.data = data
+            self:setInitData()
+        end)
+    end
+end
+
+function ActionGoodGiftPanel:DeleteMe()
+    self:showGuideEffect(false)
+    doStopAllActions(self.remain_time)
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+end

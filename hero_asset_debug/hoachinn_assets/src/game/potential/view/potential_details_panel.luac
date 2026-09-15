@@ -1,0 +1,270 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-01-17 11:58:06
+-- @description    : 
+		-- 潜能加成详情
+---------------------------------
+PotentialDetailsPanel = PotentialDetailsPanel or BaseClass(BaseView)
+
+local _controller = PotentialController:getInstance()
+local _model = _controller:getModel()
+
+function PotentialDetailsPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "potential/potential_details_panel"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("artifact", "artifact"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("prohibitor", "prohibitor"), type = ResourcesType.plist},
+	}
+    self.now_attr_list = {}
+end
+
+function PotentialDetailsPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(main_container, 1)
+    self.score_panel = self.main_container:getChildByName("score_panel")
+    self.show_icon = self.score_panel:getChildByName("show_icon")
+    self.attr_panel = self.main_container:getChildByName("attr_panel")
+    self.attr_line_right = self.attr_panel:getChildByName("attr_line_right")
+    self.attr_title = self.attr_panel:getChildByName("attr_title")
+    self.attr_title:setString(TI18N("语言_c_6180"))
+    self.attr_line_left = self.attr_panel:getChildByName("attr_line_left")
+    setLeftRightImg(self.attr_line_left,self.attr_title,self.attr_line_right,30)
+    self.attr_scroll = self.attr_panel:getChildByName("attr_scroll")
+    self.attr_scroll:setScrollBarEnabled(false)
+    self.attr_no_bg = self.attr_panel:getChildByName("attr_no_bg")
+    self.attr_no_tip = self.attr_panel:getChildByName("attr_no_tip")
+    self.attr_no_tip:setString(TI18N("语言_c_77"))
+    self.attr_no_bg:setVisible(false)
+    self.attr_no_tip:setVisible(false)
+    self.effect_panel = self.main_container:getChildByName("effect_panel")
+    self.effect_line_right = self.effect_panel:getChildByName("effect_line_right")
+    self.effect_title = self.effect_panel:getChildByName("effect_title")
+    self.effect_title:setString(TI18N("语言_c_2287"))
+    self.effect_line_left = self.effect_panel:getChildByName("effect_line_left")
+    setLeftRightImg(self.effect_line_left,self.effect_title,self.effect_line_right,30)
+    self.effect_scroll = self.effect_panel:getChildByName("effect_scroll")
+    self.effect_no_bg = self.effect_panel:getChildByName("effect_no_bg")
+    self.effect_no_tip = self.effect_panel:getChildByName("effect_no_tip")
+    self.effect_no_tip:setString(TI18N("语言_c_7035"))
+    self.effect_no_bg:setVisible(false)
+    self.effect_no_tip:setVisible(false)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.image_title = self.main_container:getChildByName("image_title")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_5971"))
+    autoSizeTitleBg(self.win_title,self.image_title,60,350)
+
+    if self.task_view == nil then
+        local scroll_view_size = self.effect_scroll:getContentSize()
+        local setting = {
+            item_class = PotentialDetailsItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 10,                   -- y方向的间隔
+            item_width = 603,               -- 单元的尺寸width
+            item_height = 130,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1,  
+        }
+        self.task_view = CommonScrollViewLayout.new(self.effect_scroll, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+end
+
+function PotentialDetailsPanel:register_event(  )
+    registerButtonEventListener(self.background, function ( )
+		_controller:openPotentialDetailsPanel(false)
+    end)
+    registerButtonEventListener(self.close_btn, function ( )
+		_controller:openPotentialDetailsPanel(false)
+    end)
+end
+function PotentialDetailsPanel:openRootWnd()
+    self:updateScorePanel()
+    local list = _model:getPotentialAdd()
+    self.attr_data = {}
+    local attr_list = {}
+    for key, value in pairs(list.attr_list) do
+        local list2 = {}
+        local _list = {}
+        for k, v in pairs(value.list) do
+            local attr_list = {k,v}
+            table.insert(_list,attr_list)
+        end
+        list2.name = value.desc
+        list2.list = _list
+        table.insert(attr_list, list2)
+    end
+    self.attr_data.attr_list = attr_list
+    self.attr_data.skill_list = list.skill_list
+    if not self.attr_data or not next(self.attr_data) then return end
+    self:updateAttrPanel()
+    self.task_view:setData(self.attr_data.skill_list)
+    self.effect_no_bg:setVisible(tableLen(self.attr_data.skill_list) == 0)
+    self.effect_no_tip:setVisible(tableLen(self.attr_data.skill_list) == 0)
+end
+function PotentialDetailsPanel:updateScorePanel()
+    local cfg = Config.PotentialData.data_get_round
+    local icon = cfg[1].icon
+    for k, v in ipairs(cfg) do
+        local list = _model:getPotentialForId(v.key)
+        if list and next(list) then
+            icon = v.icon
+        else
+            break
+        end
+    end
+    loadSpriteTexture(self.show_icon, PathTool.getPotentialIcon(icon), LOADTEXT_TYPE)
+end
+function PotentialDetailsPanel:updateAttrPanel()
+    local status = true
+    for k, v in pairs(self.attr_data.attr_list or {}) do
+        if v.list and next(v.list) then
+            status = false
+        end
+    end
+    self.attr_no_bg:setVisible(status)
+    self.attr_no_tip:setVisible(status)
+    local max_h = 0
+    self.now_attr_list = {}
+    for key, value in pairs(self.attr_data.attr_list) do
+        local lay_item = ccui.Layout:create()
+        self.attr_scroll:addChild(lay_item)
+        lay_item:setAnchorPoint(cc.p(0.5,1))
+        lay_item:setPositionX(300)
+        local _h = math.ceil(tableLen(value.list)/2)*50 + 40
+        lay_item:setContentSize(cc.size(self.attr_scroll:getContentSize().width,_h))
+        max_h = max_h + _h
+        local name_bg = createImage(lay_item,PathTool.getResFrame("prohibitor", "prohibitor_task_2"),0,_h,cc.p(0,1),true,nil,true)
+        local txt = ""
+        if value.name then
+            txt = value.name
+        else
+            txt = string.format(TI18N("语言_c_7053"),Config.PotentialData.data_const.attr_star.val)
+        end
+        local name = createLabel(20,cc.c3b(0x6d,0x3c,0x2d),nil,12,_h-name_bg:getContentSize().height*0.5,txt,lay_item,nil,cc.p(0,0.5))
+        local list = deepCopy(value.list)
+        for k, v in pairs(list) do
+            v.sort_id = 9999
+            if PotentialConst.Attr_sort[v[1]] then
+                v.sort_id = PotentialConst.Attr_sort[v[1]]
+            end
+        end
+        table.sort(list, function(a,b) return a.sort_id < b.sort_id end)
+        for k, v in pairs(list) do
+            local _x = 20 + math.floor((k-1)%2) * 300
+            local _y = _h - 40 - math.floor((k-1)/2) * 50
+            local item = ccui.Layout:create()
+            item:setContentSize(cc.size(280, 40))
+            item:setAnchorPoint(cc.p(0,1))
+            local res = PathTool.getResFrame("common","common_90018")
+            item.bg = createImage(item,res,0,0,cc.p(0,0),true,nil,true)
+            item.bg:setContentSize(cc.size(280, 40))
+            local icon = PathTool.getAttrIconByStr(v[1])
+            item.icon = createSprite(PathTool.getResFrame("common", icon),20,20,item,cc.p(0,0.5),LOADTEXT_TYPE_PLIST)
+            local _txt = Config.AttrData.data_key_to_name[v[1]]
+            if not _txt then
+                _txt = Config.AttrExtraData.data_key_to_name[v[1]]
+            end
+            if v[1] == "atk_per" or v[1] == "hp_max_per" or v[1] == "def_per" then
+                _txt = TI18N("语言_c_7075").._txt
+            end
+            local num = 10
+            if judgingLanguage() then
+                num = 5
+            end
+            item.name = createLabel(22,cc.c4b(124,85,54,255),nil,55,20,transformTextToShort(_txt,num),item,nil,cc.p(0,0.5))
+            addEvt2showAllTextTips(item.name,_txt,num,nil,nil,nil,nil,true)
+            item.label = createRichLabel(22,cc.c4b(124,85,54,255), cc.p(1, 0.5), cc.p(270, 20), nil, nil, 380)
+            item:addChild(item.label)
+            local attr_val = v[2]
+            local is_per = PartnerCalculate.isShowPerByStr(v[1])
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+            local attr_str = string_format("<div fontcolor=#0ea80e>+%s</div>", attr_val)
+            item.label:setString(attr_str)
+            item:setPosition(cc.p(_x,_y))
+            lay_item:addChild(item)
+        end
+        table.insert(self.now_attr_list,lay_item)
+    end
+
+    local _h = math.max(self.attr_scroll:getContentSize().height, max_h)
+    self.attr_scroll:setInnerContainerSize(cc.size(self.attr_scroll:getContentSize().width,_h))
+
+    for k,v in pairs(self.now_attr_list) do
+        v:setPositionY(_h)
+        _h = _h - v:getContentSize().height
+    end
+end
+
+function PotentialDetailsPanel:close_callback(  )
+    _controller:openPotentialDetailsPanel(false)
+end
+
+
+
+
+--子项
+PotentialDetailsItem = class("PotentialDetailsItem", function()
+    return ccui.Widget:create()
+end)
+
+function PotentialDetailsItem:ctor()
+    self.goods_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function PotentialDetailsItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("potential/potential_details_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(603,130))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.skill_node = self.main_container:getChildByName("skill_node")
+    self.desc_scroll = self.main_container:getChildByName("desc_scroll")
+    self.desc_scroll:setScrollBarEnabled(false)
+    self.desc = createRichLabel(22,cc.c3b(0x7c, 0x55, 0x36),cc.p(0,1),cc.p(0,83),nil,nil,430)
+    self.desc_scroll:addChild(self.desc)
+    self.skill_tip = createRichLabel(20,cc.c3b(0x7c, 0x55, 0x36),cc.p(0,0.5),cc.p(140,102),nil,nil,500)
+    self.main_container:addChild(self.skill_tip)
+end
+
+function PotentialDetailsItem:setData(data)
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true, true, true,0.8)
+        self.skill_node:addChild(self.skill_item)
+    end
+    local skill_cfg = Config.SkillData.data_get_skill(data[1])
+    if skill_cfg then
+        self.skill_item:setData(skill_cfg)
+        self.skill_tip:setString(skill_cfg.name)
+        self.desc:setString(skill_cfg.des)
+        local _h = math.max(self.desc_scroll:getContentSize().height,self.desc:getContentSize().height)
+        self.desc_scroll:setInnerContainerSize(cc.size(self.desc_scroll:getContentSize().width,_h))
+        self.desc:setPositionY(_h)
+    end
+end
+
+function PotentialDetailsItem:register_event( )
+    
+end
+
+function PotentialDetailsItem:DeleteMe()
+
+end

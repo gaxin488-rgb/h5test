@@ -1,0 +1,229 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      签到战令的补签页面
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ActionSignSupplementarySignatureWindow = ActionSignSupplementarySignatureWindow or BaseClass(BaseView)
+
+function ActionSignSupplementarySignatureWindow:__init()
+	self.ctrl = ActionController:getInstance()
+    self.is_full_screen = false
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG  
+    self.win_type = WinType.Mini    
+    self.layout_name = "action/action_sign_supplementary_signature_window"
+    self.res_list = {
+        
+	}
+	self.is_can_buy_max = false
+end
+
+function ActionSignSupplementarySignatureWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setPosition(360, 640)
+    self.background:setAnchorPoint(cc.p(0.5, 0.5))
+	self.background:setScale(display.getMaxScale())
+	
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+
+	self.title_con = self.main_container:getChildByName("title_con")
+	self.title_label = self.title_con:getChildByName("title_label")
+	self.title_label:setString(TI18N("语言_c_5145"))
+
+	self.ok_btn = self.main_container:getChildByName("ok_btn")
+	self.ok_btn:setTitleText(TI18N("语言_c_3"))
+	self.ok_btn.label = self.ok_btn:getTitleRenderer()
+    if self.ok_btn.label ~= nil then
+    	self.ok_btn.label:enableOutline(cc.c4b(0x76,0x45,0x19,0xff), 2)
+    end
+	self.cancel_btn = self.main_container:getChildByName("cancel_btn")
+	self.cancel_btn:setTitleText(TI18N("语言_c_62"))
+	self.cancel_btn.label = self.cancel_btn:getTitleRenderer()
+    if self.cancel_btn.label ~= nil then
+    	self.cancel_btn.label:enableOutline(cc.c4b(0x29,0x4a,0x15,0xff), 2)
+    end
+	self.close_btn = self.main_container:getChildByName("close_btn")
+
+	self.item_con = self.main_container:getChildByName("item_con")
+	self.name = self.item_con:getChildByName("name")
+	self.coin = self.item_con:getChildByName("coin")
+	self.price = self.item_con:getChildByName("price")
+	self.icon_bg_image = self.item_con:getChildByName("Image_1")
+
+	self.info_con = self.main_container:getChildByName("info_con")
+	self.slider = self.info_con:getChildByName("slider")-- 滑块
+    self.slider:setBarPercent(10, 89)
+	self.buy_count_title = self.info_con:getChildByName("buy_count_title")
+	self.buy_count_title:setString(TI18N("语言_c_5146"))
+	self.plus_btn = self.info_con:getChildByName("plus_btn")
+	self.buy_count = self.info_con:getChildByName("buy_count")
+	self.buy_count:setPositionX(self.buy_count_title:getPositionX() + self.buy_count_title:getContentSize().width + 10)
+	self.num = 1
+	self.buy_count:setString(self.num)
+	self.min_btn = self.info_con:getChildByName("min_btn")
+	self.max_btn = self.info_con:getChildByName("max_btn")
+	self.total_price_title = self.info_con:getChildByName("total_price_title")
+	self.total_price_title:setString(TI18N("语言_c_276"))
+	self.total_price = self.info_con:getChildByName("total_price")
+	self.total_price:setPositionX(self.total_price_title:getPositionX() + self.total_price_title:getContentSize().width + 10)
+	self.buy_desc = self.main_container:getChildByName("buy_desc")
+	self.buy_desc:setString("")
+	self.tips_label = createLabel(22, 15, nil, 385, 277, TI18N("语言_c_277"), self.main_container, nil, cc.p(0.5, 0.5))
+	self.tips_label:setVisible(false)
+end
+
+function ActionSignSupplementarySignatureWindow:openRootWnd(data)
+	self:setData(data)
+end
+--data结构:
+--data.item_bid data.item_id   花费的道具id
+--data.limit_num  --购买上限
+--data.price --单价
+function ActionSignSupplementarySignatureWindow:setData( data )
+	-- Debug.info(data)
+	self.data = data
+	local config = Config.ItemData.data_get_data(data.item_bid or data.item_id)
+	self.name:setString(string.format(TI18N("语言_c_5144"),1))
+	self.num = 1-- data.limit_num
+	self.limit_num = self.data.limit_num
+	self.price:setString(data.price)
+	self.price_val = data.price
+	self.is_can_buy_num = data.limit_num
+	self.coin:loadTexture(PathTool.getItemRes(config.icon), LOADTEXT_TYPE)
+
+	if self.limit_num >0  then --and data.has_buy
+		-- self.limit:setString(string.format("",self.limit_num-data.has_buy))
+		self.is_can_buy_max = true
+	end
+	--显示限购或玩家可支付购买的个数最小值
+	self.num = math.min(self.is_can_buy_num, self.num)
+	self:setCurUseItemInfoByNum(self.num)
+end
+
+function ActionSignSupplementarySignatureWindow:register_event()
+	if self.close_btn then
+		self.close_btn:addTouchEventListener(function(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playCloseSound()
+				self.ctrl:openSupplementarySignature(false)
+			end
+		end)
+	end
+
+	if self.background then
+		self.background:addTouchEventListener(function(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playCloseSound()
+				self.ctrl:openSupplementarySignature(false)
+			end
+		end)
+	end
+
+	if self.slider ~= nil then
+    	self.slider:addEventListener(function ( sender,event_type )
+			if event_type == ccui.SliderEventType.percentChanged then
+				if self.slider:getPercent() == 100 and self.is_can_buy_num >= self.limit_num and self.is_can_buy_max == false then
+					self.tips_label:setVisible(true)
+				else
+					self.tips_label:setVisible(false)
+				end
+                self:setCurUseItemInfoByPercent(self.slider:getPercent())
+    		end
+    	end)
+    end
+
+    self.min_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 0 then return end --已经是最小的了
+            if self.num == 0 then return end
+            self.num = self.num - 1
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+    self.plus_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            local temp_num = math.min(self.is_can_buy_num, self.limit_num - 0)--self.data.has_buy)
+            if self.num >= temp_num then return end
+            self.num = self.num + 1
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+    self.max_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            local temp_num = self.limit_num   -- self.data.has_buy
+            if self.num >= temp_num then return end
+            self.num = math.min(self.is_can_buy_num, temp_num)
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+
+	if self.ok_btn then
+		self.ok_btn:addTouchEventListener(function ( sender,event_type )
+			if event_type == ccui.TouchEventType.ended then
+				playButtonSound2()
+				local own_num = BackpackController:getInstance():getModel():getItemNumByBid(self.data.item_bid or self.data.item_id)
+				if own_num>= self.num*self.price_val then
+					self.ctrl:sender21607(self.data.other.args_key,self.num)
+					self.ctrl:openSupplementarySignature(false)
+				else
+					local costcfg = Config.ItemData.data_get_data(self.data.item_bid or self.data.item_id)
+					message(string.format(TI18N("语言_c_3666"), costcfg.name))
+				end
+			end
+		end)
+	end
+
+	if self.cancel_btn then
+		self.cancel_btn:addTouchEventListener(function ( sender,event_type )
+			if event_type == ccui.TouchEventType.ended then
+				playButtonSound2()
+				self.ctrl:openSupplementarySignature(false)
+			end
+		end)
+	end
+end
+
+function ActionSignSupplementarySignatureWindow:setCurUseItemInfoByPercent(percent)
+	-- if self.item_vo == nil then return end
+	local temp_num = math.min(self.is_can_buy_num, self.limit_num)-- - self.data.has_buy)
+    local num = math.floor( percent * temp_num * 0.01 + 0.5)
+    self:setCurUseItemInfoByNum(num)
+end
+
+function ActionSignSupplementarySignatureWindow:setCurUseItemInfoByNum(num)
+    -- if self.item_vo == nil then return end
+    self.num = num
+    local temp_num = math.min(self.is_can_buy_num, self.limit_num)-- - self.data.has_buy)
+    
+    if self.num < 1 then
+        self.num = 1
+    elseif self.num > temp_num then
+        self.num = temp_num
+    end
+
+    local percent = self.num / temp_num * 100
+    if percent < 1 then --进度条数值区间[1,100]
+    	percent = math.ceil(percent)
+    end
+    self.slider:setPercent(percent)
+    self.buy_count:setString(self.num)
+    self.total_price:setString(self.num*self.price_val)
+end
+
+function ActionSignSupplementarySignatureWindow:close_callback()
+	if self.goods_item then 
+		self.goods_item:DeleteMe()
+	end
+	self.goods_item = nil
+	self.ctrl:openSupplementarySignature(false)
+end

@@ -1,0 +1,706 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-01-16 21:22:19
+-- @description    : 
+		-- 查克拉二阶段强化
+---------------------------------
+HalidomStrengthenPanel = HalidomStrengthenPanel or BaseClass(BaseView)
+
+local controller = HalidomController:getInstance()
+local model =  controller:getModel()
+
+function HalidomStrengthenPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "hero/hero_halidom_strengthen_panel"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("artifact", "artifact"), type = ResourcesType.plist},
+	}
+	self.attr_name_list = {}
+	self.now_attr_list = {}
+	self.next_attr_list = {}
+	self.lvup_cost_list = {}
+	self.step_cost_hero_data = {} -- 进阶消耗的英雄数据
+    self.step_hero_list = {}    -- 进阶需要的英雄item列表
+	self.role_vo = RoleController:getInstance():getRoleVo()
+end
+
+function HalidomStrengthenPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container , 1)
+	self.attr_panel = self.main_container:getChildByName("attr_panel")
+	self.item = self.attr_panel:getChildByName("item")
+	self.item_bg = self.item:getChildByName("bg")
+	self.item_cir_bg = self.item:getChildByName("cir_bg")
+	self.item_tip = self.item:getChildByName("tip")
+	setTextMaxWidth(self.item_tip,200)
+	self.item_tip:setString(TI18N("语言_halm_01_22"))
+	self.add_btn = self.item:getChildByName("add_btn")
+    local _w = 122
+    local _h = 122
+	self.mask = createSprite(PathTool.getPlistImgForDownLoad("halidom","halidom_2006",false), _w*0.5, _h*0.5, nil, cc.p(0.5, 0.5),LOADTEXT_TYPE)--模板
+	self.mask:setScale(1)
+	if not self.clipNode then
+		self.clipNode = cc.ClippingNode:create(self.mask)
+		self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+		self.clipNode:setContentSize(_w,_h)
+		self.clipNode:setCascadeOpacityEnabled(true)
+		self.clipNode:setPosition(_w*0.5, _h*0.5)
+		self.clipNode:setAlphaThreshold(0)
+		self.item_bg:addChild(self.clipNode,2)
+	end
+	if not self.hero_icon then
+		self.hero_icon = ccui.ImageView:create()
+		self.hero_icon:setCascadeOpacityEnabled(true)
+		self.hero_icon:setAnchorPoint(0.5,0.5)
+		self.hero_icon:setPosition(_w*0.5, _h*0.5)--底板
+		self.hero_icon:setScale(1.1)
+		self.clipNode:addChild(self.hero_icon,3)
+	end
+	self.attr_name_panel = self.attr_panel:getChildByName("attr_name_panel")
+	self.attr_name_panel:setScrollBarEnabled(false)
+	self.now_attr_panel = self.attr_panel:getChildByName("now_attr_panel")
+	self.now_attr_panel:setScrollBarEnabled(false)
+	self.now_attr_title = self.attr_panel:getChildByName("now_attr_title")
+	self.now_attr_title:setString(TI18N("语言_halm_01_23"))
+	self.next_attr_panel = self.attr_panel:getChildByName("next_attr_panel")
+	self.next_attr_panel:setScrollBarEnabled(false)
+	self.next_attr_title = self.attr_panel:getChildByName("next_attr_title")
+	self.next_attr_title:setString(TI18N("语言_halm_01_24"))
+	self.attr_txt = self.attr_panel:getChildByName("attr_txt")
+	self.attr_txt:setString(TI18N("语言_halm_01_25"))
+	self.attr_tip = createRichLabel(22,cc.c3b(0x5c,0x27,0x05),cc.p(0,1),cc.p(160,120),-4)
+	self.attr_panel:addChild(self.attr_tip)
+	self.max_step_tip = self.main_container:getChildByName("max_step_tip")
+	self.max_step_tip:setVisible(false)
+	self.cost_panel = self.main_container:getChildByName("cost_panel")
+	self.remove_btn = self.main_container:getChildByName("remove_btn")
+	self.remove_btn:setVisible(false)
+	self.remove_txt = self.remove_btn:getChildByName("label")
+	self.remove_txt:setString(TI18N("语言_c_6550"))
+	self.activation_btn = self.cost_panel:getChildByName("activation_btn")
+	self.activation_txt = self.activation_btn:getChildByName("label")
+	self.activation_txt:setString(TI18N("语言_halm_01_26"))
+	self.condition_panel = self.cost_panel:getChildByName("condition_panel")
+	self.lock_condition_line_2 = self.condition_panel:getChildByName("lock_condition_line_2")
+	self.lock_condition_line_1 = self.condition_panel:getChildByName("lock_condition_line_1")
+	self.lock_condition_bg = self.condition_panel:getChildByName("lock_condition_bg")
+	self.condition_txt = self.condition_panel:getChildByName("condition_txt")
+	self.condition_txt:setString(TI18N("语言_halm_01_27"))
+	local _w = math.max(self.condition_txt:getContentSize().width + 20,self.lock_condition_bg:getContentSize().width)
+	self.lock_condition_bg:setContentSize(cc.size(_w,self.lock_condition_bg:getContentSize().height))
+	self.lock_condition_line_1:setPositionX(self.lock_condition_bg:getPositionX() - _w*0.5 - 20)
+	self.lock_condition_line_2:setPositionX(self.lock_condition_bg:getPositionX() + _w*0.5 - 20)
+	self.item_node = self.condition_panel:getChildByName("item_node")
+	for i=1,2 do
+        local lvup_cost_bg = self.cost_panel:getChildByName("lvup_cost_bg_" .. i)
+        if lvup_cost_bg then
+            local cost_object = {}
+            cost_object.cost_bg = lvup_cost_bg
+            cost_object.res_icon = self.cost_panel:getChildByName("res_icon_"..i)
+            cost_object.label = self.cost_panel:getChildByName("label_"..i)
+            table.insert(self.lvup_cost_list, cost_object)
+        end
+    end
+	self.cost_add_btn = self.cost_panel:getChildByName("add_btn")
+	self.cost_tip = self.cost_panel:getChildByName("cost_tip")
+	self.cost_tip:setString(TI18N("语言_halm_01_28"))
+
+	self.image_bg_1 = self.main_container:getChildByName("image_bg_1")
+	-- self.image_bg_2 = self.main_container:getChildByName("image_bg_2")
+	self.title_panel = self.main_container:getChildByName("title_panel")
+	self.Image_2 = self.title_panel:getChildByName("Image_2")
+	self.win_title = self.title_panel:getChildByName("win_title")
+	self.win_title:setString(TI18N("语言_halm_01_52"))
+	self.Image_2:setContentSize(self.win_title:getContentSize().width + 100, self.Image_2:getContentSize().height)
+	self.container = self.main_container:getChildByName("container")
+	self.close_btn = self.title_panel:getChildByName("close_btn")
+	self.tip_panel = self.main_container:getChildByName("tip_panel")
+	self.title_tip = createRichLabel(20,cc.c3b(0x00,0x00,0x00),cc.p(0.5,0.5),cc.p(self.tip_panel:getContentSize().width*0.5,self.tip_panel:getContentSize().height*0.5),-10,nil,600)
+	self.tip_panel:addChild(self.title_tip)
+	self.Sprite_1 = self.main_container:getChildByName("Sprite_1")
+end
+
+function HalidomStrengthenPanel:setData()
+	local max_step_num = Config.HalidomData.data_max_step_high[self.halidom_id][self.index]
+	self.data = deepCopy(model:getHighJades(self.halidom_id,self.index))
+	if not self.data then return end
+	if self.data.jade_step == 1 or not model:getHalidomHighHide() then
+		self.remove_btn:setVisible(false)
+		self.activation_btn:setPositionX(339)
+	elseif self.data.jade_step == max_step_num then
+		self.remove_btn:setVisible(true)
+		self.remove_btn:setPositionX(339)
+	else
+		self.remove_btn:setVisible(true)
+		self.activation_btn:setPositionX(474)
+		self.remove_btn:setPositionX(203)
+	end
+	self.halidom_data = deepCopy(model:getHalidomDataById(self.halidom_id))
+	self.cfg = deepCopy(Config.HalidomData.data_step_high[self.halidom_id][self.index][self.data.jade_step])
+	if not self.cfg then return end
+	self.next_cfg = deepCopy(Config.HalidomData.data_step_high[self.halidom_id][self.index][self.data.jade_step+1])
+	self.const_cfg = Config.HalidomData.data_const
+	local txt = TI18N("语言_halm_01_29")
+	self.title_tip:setString(string.format(txt,self.index))
+	self.tip_panel:setContentSize(cc.size(self.tip_panel:getContentSize().width, self.title_tip:getContentSize().height + 30))
+	self.title_tip:setPositionY(self.tip_panel:getContentSize().height - self.title_tip:getContentSize().height*0.5 - 10)
+	local _h = self.tip_panel:getContentSize().height + self.attr_panel:getContentSize().height + self.cost_panel:getContentSize().height + 30
+	self.main_container:setContentSize(cc.size(self.main_container:getContentSize().width, _h))
+	self.image_bg_1:setContentSize(cc.size(self.image_bg_1:getContentSize().width , _h))
+	self.title_panel:setPositionY(_h - 30)
+	self.tip_panel:setPositionY(_h -20)
+	self.attr_panel:setPositionY(_h - self.tip_panel:getContentSize().height - 20)
+	self.cost_panel:setPositionY(0)
+	self.Sprite_1:setPositionY(-23)
+	self:setAttrPanel()
+	if self.data.jade_step < max_step_num then
+		self:upDataConditionPanel()
+		self.max_step_tip:setVisible(false)
+		self.cost_panel:setVisible(true)
+	else
+		self.max_step_tip:setVisible(true)
+		self.cost_panel:setVisible(false)
+		self.max_step_tip:setString(string.format(TI18N("语言_halm_01_32"),self.index))
+	end
+end
+function HalidomStrengthenPanel:setAttrPanel()
+	if self.data.hero_id == 0 then
+		self.hero_icon:setVisible(false)
+		self.add_btn:setVisible(true)
+		self.item_tip:setVisible(true)
+		addRedPointToNodeByStatus(self.item_cir_bg,true)
+	else
+		local hero_vo = HeroController:getInstance():getModel():getHeroById(self.data.hero_id)
+		if hero_vo and next(hero_vo) and hero_vo.bid then
+			local head_id = hero_vo.bid
+			if hero_vo.use_skin and hero_vo.use_skin ~= 0 then
+				local skin_config = Config.PartnerSkinData.data_skin_info[hero_vo.use_skin]
+				if skin_config then
+					head_id = skin_config.head_id
+				end
+			else
+				local key = getNorKey(hero_vo.bid, hero_vo.star)
+				local star_config = Config.PartnerData.data_partner_star(key)
+				if star_config then
+					head_id = star_config.head_id
+				end
+			end
+			self.hero_icon:loadTexture(PathTool.getHeadIcon(head_id), LOADTEXT_TYPE)
+			self.hero_icon:setVisible(true)
+			self.add_btn:setVisible(false)
+			self.item_tip:setVisible(false)
+			addRedPointToNodeByStatus(self.item_cir_bg,false)
+		end
+	end
+	local list = {}
+	for key, value in pairs(self.cfg.dynamic_attr) do
+		local _list = {}
+		_list[1] = value[1]
+		local is_per = PartnerCalculate.isShowPerByStr(value[1])
+		if is_per == true then
+			_list[2] = (value[2]/10) .."%"
+		else
+			_list[2] = value[2]
+		end
+		_list[3] = 0
+		table.insert(list,_list)
+	end
+	if self.next_cfg then
+		for key, value in pairs(self.next_cfg.dynamic_attr) do
+			local status = true
+			for k, v in pairs(list) do
+				if value[1] == v[1] then
+					status = false
+					local is_per = PartnerCalculate.isShowPerByStr(value[1])
+					if is_per == true then
+						v[3] = (value[2]/10) .."%"
+					else
+						v[3] = value[2]
+					end		
+				end
+			end
+			if status then
+				local is_per = PartnerCalculate.isShowPerByStr(value[1])
+				local num = 0
+				if is_per == true then
+					num = (value[2]/10) .."%"
+				else
+					num = value[2]
+				end	
+				local _list = {value[1],0,num}
+				table.insert(list,_list)
+			end
+		end
+		self.next_attr_panel:setVisible(true)
+	else
+		self.next_attr_panel:setVisible(false)
+	end
+
+	local attr_list = {}
+	for k, v in pairs(list) do
+		if v[2] ~= 0 or v[3] ~= 0 then
+			table.insert(attr_list,v)
+		end
+	end
+	for k, v in pairs(self.attr_name_list) do
+		v:setVisible(false)
+	end
+	for k, v in pairs(self.now_attr_list) do
+		v:setVisible(false)
+	end
+	for k, v in pairs(self.next_attr_list) do
+		v:setVisible(false)
+	end
+	local _h = 34*tableLen(attr_list)
+	self.attr_name_panel:setInnerContainerSize(cc.size(self.attr_name_panel:getContentSize().width,_h))
+	self.now_attr_panel:setInnerContainerSize(cc.size(self.now_attr_panel:getContentSize().width,_h))
+	self.next_attr_panel:setInnerContainerSize(cc.size(self.next_attr_panel:getContentSize().width,_h))
+	local attr_name_panel_size = self.attr_name_panel:getContentSize()
+	for i = 1, tableLen(attr_list) do
+		local icon = PathTool.getAttrIconByStr(attr_list[i][1])
+		local _y = _h-17 - (i-1)*34
+		if not self.attr_name_list[i] then
+			self.attr_name_list[i] = createImage(self.attr_name_panel,PathTool.getResFrame("common", icon),attr_name_panel_size.width*0.5,attr_name_panel_size.height*0.5,cc.p(0.5,0.5),true)
+			self.attr_name_list[i]:setTouchEnabled(true)
+			self.attr_name_list[i]:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					local attr_name = ""
+					if Config.AttrData.data_key_to_name[attr_list[i][1]] then
+						attr_name = Config.AttrData.data_key_to_name[attr_list[i][1]]..TI18N("语言_c_4892")
+					else
+						attr_name = Config.AttrExtraData.data_key_to_name[attr_list[i][1]]..TI18N("语言_c_4892")
+					end
+					TipsManager:getInstance():showCommonTips(attr_name, sender:getTouchBeganPosition())
+				end
+			end)
+		end
+		self.attr_name_list[i]:setVisible(true)
+		self.attr_name_list[i]:loadTexture(PathTool.getResFrame("common", icon), LOADTEXT_TYPE_PLIST)
+		self.attr_name_list[i]:setPositionY(_y)
+		if not self.now_attr_list[i] then
+			self.now_attr_list[i] = createLabel(20,cc.c3b(0x0e,0xa8,0x0e),nil,28,0,"",self.now_attr_panel,nil,cc.p(0,0.5))
+		end
+		-- local txt1,txt2 = self:getMarkUpNum(attr_list[i])
+		self.now_attr_list[i]:setVisible(true)
+		self.now_attr_list[i]:setString(attr_list[i][2])
+		self.now_attr_list[i]:setPositionY(_y)
+		if not self.next_attr_list[i] then
+			self.next_attr_list[i] = createRichLabel(20,cc.c3b(0x0e,0xa8,0x0e),cc.p(0,0.5),cc.p(27,0))
+			self.next_attr_panel:addChild(self.next_attr_list[i])
+		end
+		local str = string.format(TI18N("<img src=%s scale=0.5 />        %s"),PathTool.getResFrame("common", "common_90034"),attr_list[i][3])
+		self.next_attr_list[i]:setString(str)
+		self.next_attr_list[i]:setVisible(true)
+		self.next_attr_list[i]:setPositionY(_y)
+	end
+end
+function HalidomStrengthenPanel:getMarkUpNum(list)
+	local now_num = 0
+	local next_num = 0
+	local str = ""
+	if list[1] == "hp_max_per" then
+		str = "hp_max"
+	elseif list[1] == "atk_per" then
+		str = "atk"
+	elseif list[1] == "speed_per" then
+		str = "speed"
+	end
+	for k, v in pairs(self.halidom_data.all_attr) do
+		local _str = Config.AttrData.data_id_to_key[v.name]
+		if not _str then
+			_str = Config.AttrExtraData.data_id_to_key[v.name]
+		end
+		if _str == str then
+			local num = v.val
+			for key, value in pairs(self.halidom_data.high_attr) do
+				if v.name == value.name then
+					num = num + value.val
+				end
+			end
+			now_num = math.floor(num * list[2] * 0.01)
+			next_num = math.floor(num * list[3] * 0.01)
+		end
+	end
+	return now_num,next_num
+end
+function HalidomStrengthenPanel:upDataConditionPanel()
+	local cfg = deepCopy(self.next_cfg.loss_items)
+	for k,v in pairs(self.lvup_cost_list) do
+		v.cost_bg:setVisible(false)
+		v.res_icon:setVisible(false)
+		v.label:setVisible(false)
+	end
+	for i,v in ipairs(cfg) do
+		local bid = v[1]
+		local num = v[2]
+		local cost_object = self.lvup_cost_list[i]
+		local item_config = Config.ItemData.data_get_data(bid)
+		if cost_object and item_config then
+			cost_object.cost_bg:setVisible(true)
+			cost_object.res_icon:setVisible(true)
+			cost_object.label:setVisible(true)
+			cost_object.cost_num = num
+			local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+			if num > have_num then
+				cost_object.label:setTextColor(cc.c3b(255, 93, 93))
+			else
+				cost_object.label:setTextColor(cc.c3b(255, 246, 228))
+			end
+			cost_object.label:setString(MoneyTool.GetMoneyString(have_num) .. "/" .. MoneyTool.GetMoneyString(num))
+			local cost_bg = cost_object.cost_bg
+			moveTextBg(cost_object.label,cost_bg,20)
+			cost_object.label:setPositionX(cost_bg:getPositionX() + (cost_bg:getContentSize().width - 32)*0.5 + 32)
+			if cost_object.cost_bid ~= bid then
+				-- 记录一下消耗的bid，用于数量实时刷新
+				cost_object.cost_bid = bid
+				local item_res = PathTool.getItemRes(item_config.icon)
+				cost_object.res_icon:loadTexture(item_res, LOADTEXT_TYPE)
+			end
+		end
+	end
+    for k,v in pairs(self.step_hero_list) do
+        v:setVisible(false)
+    end
+	-- 英雄消耗
+	self.step_cost_hero_data = {}
+	-- 指定英雄
+	for i,v in ipairs(self.next_cfg.loss_fixed) do
+		local hero_data = self:getHeroData(v[1], v[2], v[3])
+		table.insert(self.step_cost_hero_data, hero_data)
+	end
+	-- 随机英雄
+	for i,v in ipairs(self.next_cfg.loss_rand) do
+		local hero_data = self:getHeroData(nil, v[2], v[3], v[1])
+		table.insert(self.step_cost_hero_data, hero_data)
+	end
+	for i,hero_vo in ipairs(self.step_cost_hero_data) do
+		local hero_item = self.step_hero_list[i]
+		if hero_item == nil then
+			hero_item = HeroExhibitionItem.new(0.8, true)
+			hero_item:addCallBack(function() self:_onClickStepHeroData(i) end)
+			self.condition_panel:addChild(hero_item)
+			self.step_hero_list[i] = hero_item
+		end
+		hero_item:setHeadUnEnabled(true)
+		hero_item:setVisible(true)
+		hero_item:setPosition(cc.p(100 + (i-1) * (HeroExhibitionItem.Width * 0.8 + 10), 76))
+		if hero_vo.bid == 0 then
+			--随机卡的头像id
+			local default_head_id = HeroController:getInstance():getModel():getRandomHeroHeadByQuality(hero_vo.star)
+			hero_item:setData(hero_vo)
+			hero_item:setDefaultHead(default_head_id)
+		else
+			hero_item:setData(hero_vo)
+		end
+		hero_item:setHeadUnEnabled(true)
+	end
+	local red_list = self.halidom_data.red_status_list[HalidomConst.Red_Type.strengthen] or {}
+	if red_list and red_list[self.index] then
+		addRedPointToNodeByStatus(self.activation_btn,true,10,10)
+	else
+		addRedPointToNodeByStatus(self.activation_btn,false)
+	end
+end
+-- 获取英雄数据
+function HalidomStrengthenPanel:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string.format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+        else
+            return nil
+        end
+    end
+    data.dic_select_list = {}
+    return data
+end
+function HalidomStrengthenPanel:_onClickStepHeroData( index )
+    if not self.step_cost_hero_data[index] then return end
+    --标志点击了那个
+    self.step_cost_hero_data[index].is_select = true
+    self.step_cost_hero_data[index].is_ignore_hero_hun = false
+    HeroController:getInstance():openHeroUpgradeStarSelectPanel(true, self.step_cost_hero_data[index], {}, HeroConst.SelectHeroType.eHalidom)
+end
+-- 刷新选择英雄数据
+function HalidomStrengthenPanel:updateSelectHeroInfo(  )
+	if not self.step_cost_hero_data then return end
+	for i,item in ipairs(self.step_cost_hero_data) do
+		if item.is_select then
+			item.is_select = false
+			local count = 0
+			for k,v in pairs(item.dic_select_list) do
+				count = count + 1
+			end
+			item.lev = string.format("%s/%s", count, item.count)
+			if self.step_hero_list[i] then
+				self.step_hero_list[i].num_label:setString(item.lev)
+				if count > 0 then
+					self.step_hero_list[i]:setHeadUnEnabled(false)
+				else
+					self.step_hero_list[i]:setHeadUnEnabled(true)
+				end
+			end
+		end
+	end
+end
+
+-- 刷新消耗道具数量
+function HalidomStrengthenPanel:checkNeedUpdateItemNum( item_list )
+    if item_list == nil or next(item_list) == nil then return end
+    for k, v in pairs(item_list) do
+        if v.config then
+            local bid = v.config.id
+            self:updateCostItemNumByBid(bid)
+        end
+    end
+end
+
+function HalidomStrengthenPanel:updateCostItemNumByBid( bid )
+	for _,cost_object in pairs(self.lvup_cost_list) do
+		if cost_object.cost_bid == bid then
+			local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+			if cost_object.cost_num > have_num then
+				cost_object.label:setTextColor(cc.c3b(255, 93, 93))
+			else
+				cost_object.label:setTextColor(cc.c3b(255, 246, 228))
+			end
+			cost_object.label:setString(MoneyTool.GetMoneyString(have_num) .. "/" .. MoneyTool.GetMoneyString(cost_object.cost_num))
+			local cost_bg = cost_object.cost_bg
+			moveTextBg(cost_object.label,cost_bg,20)
+			cost_object.label:setPositionX(cost_bg:getPositionX() + (cost_bg:getContentSize().width - 32)*0.5 + 32)
+			break
+		end
+	end
+end
+function HalidomStrengthenPanel:register_event(  )
+    registerButtonEventListener(self.close_btn, function ( )
+		controller:openHeroHalidomStrengthenPanel(false)
+    end)
+    
+	registerButtonEventListener(self.background, function ( )
+		controller:openHeroHalidomStrengthenPanel(false)
+	end)
+
+	registerButtonEventListener(self.item, function ( )
+		controller:openHeroHalidomStrengthenClickPanel(true,self.halidom_id,self.index)
+	end)
+
+	registerButtonEventListener(self.cost_add_btn, function ( )
+		local cfg = deepCopy(self.next_cfg.loss_items)
+		for k, v in pairs(cfg) do
+			if v[1] ~= 1 then
+				BackpackController:getInstance():openTipsSource(true, v[1])
+			end
+		end
+	end)
+	registerButtonEventListener(self.remove_btn, function ( )
+		if self.data.jade_step == 1 then 
+			message(TI18N("语言_c_7518"))
+			return 
+		end
+		
+		local now_time = GameNet:getInstance():getTime()
+		local last_time = model:getHalidomHighStepReTime()
+		local cd_time = Config.HalidomData.data_const.halidom_back_time_2.val
+		if last_time + cd_time <= now_time then
+			controller:openHeroHighHalidomRebirthPanel(true,self.halidom_id,self.index)
+		else
+			message(string.format(TI18N("语言_c_7517"),TimeTool.GetTimeFormatDayIIIIIII(last_time + cd_time - now_time)))
+		end
+	end)
+	
+	-- 进阶
+	registerButtonEventListener(self.activation_btn, function (  )
+		if self.data.hero_id == 0 then message(TI18N("语言_halm_01_33")) return end
+		if self.step_cost_hero_data and next(self.step_cost_hero_data) ~= nil then
+			local hero_list = {} -- 固定英雄id
+			local random_list = {} -- 随机英雄id
+			local random_item_list = {} -- 随机英雄忍魂id
+			for i,item in ipairs(self.step_cost_hero_data) do
+				local count = 0
+				for k,v in pairs(item.dic_select_list) do
+					count = count + 1
+				end
+				if count < item.count then
+					message(TI18N("语言_c_3021"))
+					return
+				end
+				for k,v in pairs(item.dic_select_list) do
+					if item.bid == 0 then
+						--随机卡
+						if v.id > 0 then
+							table.insert(random_list, {id = k})
+						else
+							if v.good_vo then
+								local list = {}
+								local status = true
+								for key, value in pairs(random_item_list) do
+									if value.item_id == v.good_vo.base_id then
+										status = false
+										value.num = value.num + 1
+									end
+								end
+								if status then
+									list.item_id = v.good_vo.base_id
+									list.num = 1
+									table.insert(random_item_list,list)
+								end
+							end
+						end
+					else
+						--指定卡
+						table.insert(hero_list, {id = k})
+					end
+				end
+			end
+			controller:sender22211(self.halidom_id, self.index, hero_list, random_list,random_item_list)
+		end
+	end, true)
+	--添加英雄选择返回事件
+    if self.update_hero_select_event == nil then
+        self.update_hero_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function()
+            self:updateSelectHeroInfo()
+        end)
+    end
+
+	-- 圣物数据更新
+    if not self.update_halidom_data_event then
+        self.update_halidom_data_event = GlobalEvent:getInstance():Bind(HalidomEvent.Update_Halidom_Data_Event, function ( id )
+            if self.halidom_id and self.halidom_id == id then
+                self:setData()
+            end
+        end)
+    end
+
+    -- 金币更新
+    if not self.role_lev_event and self.role_vo then
+        self.role_lev_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value) 
+            if key == "coin" then 
+                self:updateCostItemNumByBid(1)
+            end
+        end)
+    end
+	-- 物品数量变化
+    if not self.goods_add_event then
+        self.goods_add_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code, item_list) 
+            if bag_code ~= BackPackConst.Bag_Code.BACKPACK then return end
+            self:checkNeedUpdateItemNum(item_list)
+        end)
+    end
+    if not self.goods_modify_event then
+        self.goods_modify_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code, item_list) 
+            if bag_code ~= BackPackConst.Bag_Code.BACKPACK then return end
+            self:checkNeedUpdateItemNum(item_list)
+        end)
+    end
+    if not self.goods_delete_event then
+        self.goods_delete_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code, item_list) 
+            if bag_code ~= BackPackConst.Bag_Code.BACKPACK then return end
+            self:checkNeedUpdateItemNum(item_list)
+        end)
+    end
+
+
+	self.attr_name_panel:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            local container_y = self.attr_name_panel:getInnerContainer():getPositionY()
+            if container_y and self.now_attr_panel and not tolua.isnull(self.now_attr_panel) then
+                if self.now_attr_panel:getInnerContainer() and not tolua.isnull(self.now_attr_panel:getInnerContainer()) then
+                    self.now_attr_panel:getInnerContainer():setPositionY(container_y)
+                end
+            end
+			if container_y and self.next_attr_panel and not tolua.isnull(self.next_attr_panel) then
+                if self.next_attr_panel:getInnerContainer() and not tolua.isnull(self.next_attr_panel:getInnerContainer()) then
+                    self.next_attr_panel:getInnerContainer():setPositionY(container_y)
+                end
+            end
+        end
+    end)
+    self.now_attr_panel:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            local container_y = self.now_attr_panel:getInnerContainer():getPositionY()
+            if container_y and self.attr_name_panel and not tolua.isnull(self.attr_name_panel) then
+                if self.attr_name_panel:getInnerContainer() and not tolua.isnull(self.attr_name_panel:getInnerContainer()) then
+                    self.attr_name_panel:getInnerContainer():setPositionY(container_y)
+                end
+            end
+			if container_y and self.next_attr_panel and not tolua.isnull(self.next_attr_panel) then
+                if self.next_attr_panel:getInnerContainer() and not tolua.isnull(self.next_attr_panel:getInnerContainer()) then
+                    self.next_attr_panel:getInnerContainer():setPositionY(container_y)
+                end
+            end
+        end
+    end)
+    self.next_attr_panel:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            local container_y = self.next_attr_panel:getInnerContainer():getPositionY()
+            if container_y and self.attr_name_panel and not tolua.isnull(self.attr_name_panel) then
+                if self.attr_name_panel:getInnerContainer() and not tolua.isnull(self.attr_name_panel:getInnerContainer()) then
+                    self.attr_name_panel:getInnerContainer():setPositionY(container_y)
+                end
+            end
+			if container_y and self.now_attr_panel and not tolua.isnull(self.now_attr_panel) then
+                if self.now_attr_panel:getInnerContainer() and not tolua.isnull(self.now_attr_panel:getInnerContainer()) then
+                    self.now_attr_panel:getInnerContainer():setPositionY(container_y)
+                end
+            end
+        end
+    end)
+end
+function HalidomStrengthenPanel:openRootWnd(id,index)
+	self.halidom_id = id
+	self.index = index
+	self:setData()
+end
+
+function HalidomStrengthenPanel:close_callback(  )
+	for k,item in pairs(self.step_hero_list) do
+		item:DeleteMe()
+		item = nil
+	end
+    if self.update_hero_select_event then
+        GlobalEvent:getInstance():UnBind(self.update_hero_select_event)
+        self.update_hero_select_event = nil
+    end
+    if self.update_halidom_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_halidom_data_event)
+        self.update_halidom_data_event = nil
+    end
+    if self.role_lev_event and self.role_vo then
+        self.role_vo:UnBind(self.role_lev_event)
+        self.role_lev_event = nil
+    end
+    if self.goods_add_event then
+        GlobalEvent:getInstance():UnBind(self.goods_add_event)
+        self.goods_add_event = nil
+    end
+    if self.goods_modify_event then
+        GlobalEvent:getInstance():UnBind(self.goods_modify_event)
+        self.goods_modify_event = nil
+    end
+    if self.goods_delete_event then
+        GlobalEvent:getInstance():UnBind(self.goods_delete_event)
+        self.goods_delete_event = nil
+    end
+	controller:openHeroHalidomStrengthenPanel(false)
+end

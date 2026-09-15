@@ -1,0 +1,391 @@
+-- ******** 文件说明 ********
+-- @description: 大富翁活动
+-- @DateTime:    2021-5-6
+-- *******************************
+ActionThemetrainPanel = class("ActionThemetrainPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local table_insert = table.insert
+local table_sort = table.sort
+function ActionThemetrainPanel:ctor(bid)
+    self.holiday_bid = bid
+    self.res_list = {
+        {
+        path = PathTool.getPlistImgForDownLoad("wonderland", "wonderland"),
+        type = ResourcesType.plist
+    }, {
+        path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"),
+        type = ResourcesType.plist
+    }
+}
+    self.skill_item_list= {}
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function ActionThemetrainPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionThemetrainPanel:register_event()
+    if not self.update_dram_data_event then
+        self.update_dram_data_event = GlobalEvent:getInstance():Bind(ActionEvent.ThemeTrainData, function(data)
+            self:updateActionData(data)
+        end)
+    end
+    
+    registerButtonEventListener(self.jump_btn, function()
+        local is_open = AdventureActivityController:getInstance():isOpenActivity(5)
+        if not is_open then
+			message(TI18N("语言_c_5411"))
+			return
+		end
+        BraveRoadController:getInstance():sender13100()
+        MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Brave_road)
+    end, true, 1)
+
+    registerButtonEventListener(self.rule_btn, function(param,sender, event_type)
+        local desc = Config.LimitTrainingData.data_const.event_rule.desc
+        TipsManager:getInstance():showCommonTips(desc, sender:getTouchBeganPosition(),nil,nil,500)
+    end, true, 1)
+
+    self.people_node:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            self.people_node.touch_began = sender:getTouchBeganPosition()
+        end    
+        if event_type == ccui.TouchEventType.ended then
+            local touch_began = self.people_node.touch_began
+            local touch_end = sender:getTouchEndPosition()
+            if touch_began and touch_end and (math.abs(touch_end.x - touch_began.x) > 20 or math.abs(touch_end.y - touch_began.y) > 20) then 
+                --移动大于20了..表示本点击无效
+                return
+            end
+            local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+            local camp_id = tab_vo.camp_id
+            local config = Config.HolidayLimitAssistData.data_mode_npc[camp_id]
+            local theme_type = config[1].type
+            if theme_type == 1 then
+                local show_hero_id = config[1].partner_id[1]
+                HeroController:getInstance():openHeroLibraryInfoWindow(true, show_hero_id)
+            end
+        end
+    end)
+end
+
+function ActionThemetrainPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("themetrain/action_themetrain_panel"))
+    self.root_wnd:setPosition(-40, -82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.rule_btn = self.main_container:getChildByName("btn_rule")
+
+    self.theme_panel =self.main_container:getChildByName("theme_panel")
+    self.theme_panel:getChildByName("tip"):setString(TI18N("语言_c_6296"))
+    self.theme_desc = createRichLabel(20, cc.c3b(0x0e, 0xa8, 0x0e), cc.p(0.5,0.5), cc.p(142, 74), -4, nil, 260)
+    self.theme_panel:addChild(self.theme_desc)
+
+    self.target_panel = self.main_container:getChildByName("target_panel")
+    self.target_panel:getChildByName("tip"):setString(TI18N("语言_c_6298"))
+    self.target_scroll = self.target_panel:getChildByName("goods_con")
+    local scroll_view_size = self.target_scroll:getContentSize()
+    local setting = {
+        start_x = 0,
+        space_x = 0,
+        start_y = 45,
+        space_y = 0,
+        item_width = 280,
+        item_height = 65,
+        row = 0,
+        col = 1
+    }
+    self.target_goods_item = CommonScrollViewSingleLayout.new(self.target_scroll, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+    self.target_goods_item:setSwallowTouches(true)
+    self.target_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.target_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.target_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    
+    self.score_panel_1 = self.main_container:getChildByName("score_panel_1")
+    self.score_panel_1:getChildByName("tip"):setString(TI18N("语言_c_6297"))
+    self.hero_name = self.score_panel_1:getChildByName("hero_name")
+    self.hero_speak = self.score_panel_1:getChildByName("hero_speak")
+    setTextMaxWidth(self.hero_speak, 150, -6)
+    self.people_node = self.score_panel_1:getChildByName("people_node")
+    self.skill_panel = self.score_panel_1:getChildByName("skill_panel")
+
+    self.score_panel_2 = self.main_container:getChildByName("score_panel_2")
+    self.score_panel_2:getChildByName("tips"):setString(TI18N("语言_c_6327"))
+    self.skill_node = self.score_panel_2:getChildByName("skill_node")
+    self.buff_name = self.score_panel_2:getChildByName("buff_name")
+    self.buff_desc = self.score_panel_2:getChildByName("buff_desc")
+    setTextMaxWidth(self.buff_desc, 265, 0)
+
+    self.reward_panel = self.main_container:getChildByName("reward_panel")
+    self.reward_panel:getChildByName("tip"):setString(TI18N("语言_c_6299"))
+    self.reward_con = self.reward_panel:getChildByName("goods_con")
+    local size = self.reward_con:getContentSize()
+    self.item_scrollview = createScrollView(size.width, size.height+2, 0, 0, self.reward_con, ScrollViewDir.horizontal)
+    self.jump_btn = self.reward_panel:getChildByName("jump_btn")
+
+    local time_panel = self.main_container:getChildByName("time_panel")
+    self.time_txt = time_panel:getChildByName("left_txt")
+    self.time_txt:setString(TI18N("语言_c_1113")) 
+    self.left_time = time_panel:getChildByName("left_num")
+    controller:sender29140(self.holiday_bid)
+    self:setData()
+end
+-- 奖励列表
+function ActionThemetrainPanel:createTaskCell()
+    local cell = ActionThemetrainTargetItem.new()
+    return cell
+end
+
+function ActionThemetrainPanel:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function ActionThemetrainPanel:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,is_last)
+end
+-- function ActionThemetrainPanel:setVisibleStatus(bool)
+--     bool = bool or false
+--     self:setVisible(bool) 
+--     if bool then
+       
+--     else
+--         BattleController:getInstance():openBattleView(false)
+--         -- 还原ui战斗类型
+--         MainuiController:getInstance():resetUIFightType()
+--     end
+-- end
+
+function ActionThemetrainPanel:setData()
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    local camp_id = tab_vo.camp_id
+    local config = Config.HolidayLimitAssistData.data_mode_npc[camp_id]
+    local theme_desc = config[1].desc
+    local theme_type = config[1].type
+    self.theme_desc:setString(theme_desc)
+    if theme_type == 1 then
+        self.score_panel_1:setVisible(true)
+        self.score_panel_2:setVisible(false)
+        local show_hero_id = config[1].partner_id[1]
+        self.spine = BaseRole.new(BaseRole.type.partner, show_hero_id, nil, {scale = 1})
+        self.spine:setAnimation(0,PlayerAction.show,true) 
+        self.spine:setCascade(true)
+        self.spine:setScale(0.65, 0.65)
+        self.spine:setPosition(cc.p(58,150))
+        self.spine:setAnchorPoint(cc.p(0.5,0.5)) 
+        self.people_node:addChild(self.spine) 
+        local hero_name = Config.PartnerData.data_partner_base[show_hero_id].name
+        self.hero_name:setString(hero_name)
+        local speak_desc = config[1].context
+        self.hero_speak:setString(speak_desc)
+        local skill_list = config[1].skills
+        local item_width = 80
+        for i, v in pairs(skill_list) do
+            local config = Config.SkillData.data_get_skill(v)
+            if config then
+                self.skill_item_list[i] = SkillItem.new(true,true,true,0.56,nil,false)
+                self.skill_item_list[i]:setPosition((52 + (i-1)%2*item_width),150 - 52 - math.floor((i-1)/2)*item_width)
+                self.skill_item_list[i]:setData(config)
+                self.skill_panel:addChild(self.skill_item_list[i])
+            end
+        end
+    else
+        self.score_panel_1:setVisible(false)
+        local buff_id = config[1].effect
+        if not self.buff_item then
+            self.buff_item = SkillItem.new(true, true, true, 1, true)
+            self.skill_node:addChild(self.buff_item)
+        end
+        local skill_config = Config.SkillData.data_get_skill(buff_id)
+        self.buff_item:setData(skill_config)
+        self.buff_name:setString(skill_config.name)
+        self.buff_desc:setString(skill_config.des)
+        self.score_panel_2:setVisible(true)
+    end
+    self:setLessTime(tab_vo.remain_sec)
+end
+--设置倒计时
+function ActionThemetrainPanel:setLessTime( less_time )
+    if tolua.isnull(self.left_time) then return end
+    self.left_time:stopAllActions()
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.left_time:runAction(cc.RepeatForever:create(cc.Sequence:create(
+            cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                self.left_time:stopAllActions()
+            else
+                self:setTimeFormatString(less_time)
+            end
+        end)
+        )))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+
+function ActionThemetrainPanel:setTimeFormatString(time)
+    if time > 0 then
+        self.left_time:setString(TimeTool.GetTimeFormatDayIIIIII(time))
+    else
+        self.left_time:setString("")
+    end
+    local _posx = self.left_time:getPositionX() - 10 - self.left_time:getContentSize().width
+    self.time_txt:setPositionX(_posx)
+end
+
+function ActionThemetrainPanel:updateActionData(data)
+    self.activity_data = data
+    --print(vardump(data))
+    --任务数据
+    local task_list = data.task_list
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    local camp_id = tab_vo.camp_id
+    local task_config = Config.HolidayLimitAssistData.data_task[camp_id]
+    local new_array = {}
+    for k, v in pairs(task_config) do
+        local task_step = v.task_step
+        local _temp = {}
+        _temp.config = v
+        _temp.task_step = task_step
+        for key, value in pairs(task_list) do
+            if value.step == task_step then
+                _temp.data = value
+                break
+            end
+        end
+        table_insert(new_array,_temp)
+    end
+    table_sort(new_array, SortTools.KeyLowerSorter("task_step"))
+    self.reward_list = deepCopy(new_array)
+    self.target_goods_item:reloadData()
+    local finish_all_task = true
+    for k, v in pairs(task_list) do
+        local task_info = v
+        if task_info.finish == 0 then
+            finish_all_task = false
+        end
+    end
+    --奖励数据
+    local data_list = data.reward
+    local reward_list = {}
+    for k, v in pairs(data_list) do
+        local a = {}
+        table_insert(a,v.base_id)
+        table_insert(a,v.num)
+        table_insert(reward_list,a)
+    end
+    local setting = {}
+    setting.scale = 0.6
+    setting.max_count = 4
+    setting.is_get_status = finish_all_task
+    setting.get_status_res = PathTool.getResFrame("common", "txt_cn_common_get")
+    self.item_list = commonShowSingleRowItemList(self.item_scrollview, self.item_list, reward_list, setting)
+end
+
+function ActionThemetrainPanel:DeleteMe()
+    if self.update_dram_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event)
+        self.update_dram_data_event = nil
+    end
+    if self.spine then
+        self.spine:DeleteMe()
+        self.spine = nil
+    end
+    if self.skill_item_list and next(self.skill_item_list) ~= nil then
+        for i,v in pairs(self.skill_item_list) do
+            v:DeleteMe()
+        end
+        self.skill_item_list = {}
+    end
+    if self.buff_item then
+        self.buff_item:DeleteMe()
+        self.buff_item = nil
+    end
+end
+
+------------------------------------------
+-- 
+ActionThemetrainTargetItem = class("ActionThemetrainTargetItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionThemetrainTargetItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionThemetrainTargetItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("themetrain/action_theme_target_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self:setContentSize(cc.size(274, 50))
+    self.main_container = self.root_wnd:getChildByName("container")
+    self.desc_txt = self.main_container:getChildByName("desc_txt")
+    setTextMaxWidth(self.desc_txt,200,-4)
+    self.right_icon = self.main_container:getChildByName("right_icon")
+    self.right_icon:setVisible(false)
+    self.wrong_icon = self.main_container:getChildByName("wrong_icon")
+    self.wrong_icon:setVisible(false)
+end
+
+function ActionThemetrainTargetItem:register_event()
+    -- self.point_layer:addTouchEventListener(function(sender, event_type)
+    --     if event_type == ccui.TouchEventType.ended then
+    --         TipsController:getInstance():openActionScoreTips(true,"wonderland_point_max",TI18N("语言_c_1195"),TI18N("语言_c_5175"))
+    --     end
+    -- end)
+end
+function ActionThemetrainTargetItem:setData(data)
+    self.data = data
+    local desc = data.config.task_desc
+    local condition = data.config.condition
+    local floor = condition[2]
+    local num = condition[3]
+    local star = condition[4]
+    local temp = {}
+    temp[1] = floor
+    temp[2] = num
+    if star and star[1] and star[1][2] then
+        temp[3] = star[1][2] 
+    end
+    local str = LangStringFormat(desc,temp)
+    self.desc_txt:setString(str)
+    local finish_status = data.data.finish
+    if finish_status == 0 then
+        self.right_icon:setVisible(false)
+        self.wrong_icon:setVisible(true)
+    else
+        self.right_icon:setVisible(true)
+        self.wrong_icon:setVisible(false)
+    end
+end
+
+function ActionThemetrainTargetItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

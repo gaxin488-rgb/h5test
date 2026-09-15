@@ -1,0 +1,1451 @@
+----------------------------
+-- @Description:刻印主界面
+----------------------------
+KeyinPanel = class( "KeyinPanel",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+local controller = KeyinController:getInstance()
+local model = controller:getModel()
+local hero_controller = HeroController:getInstance()
+local hero_model = hero_controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+
+local tyep_bgres = {
+    [2] = "fa",
+    [3] = "wu",
+    [4] = "rou",
+    [5] = "fu",
+}
+function KeyinPanel:ctor(hero_vo)
+    self.hero_vo = hero_vo
+    -- print("..KeyinPanel............",vardump(hero_vo))
+    self.select_pos = nil
+    self.keyin_list = {}
+    self.keyin_skill_list = {}
+    self.attr_list = {}
+    self.is_can_up = nil -- 升级前置条件是否满足
+    self.hero_item_list = {} -- 材料列表
+    self.cost_item_list = {} -- 升星额外消耗的材料
+    self.line_list = {} -- 线的列表
+    self.show_type = false -- true 是预览模式   false 是升级模式
+    self:loadResources()
+end
+function KeyinPanel:loadResources()
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("engraved", "engraved"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("sync", "sync"), type = ResourcesType.plist},
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(
+        self.res_list,
+        function()
+            if self.configUI then
+                self:configUI()
+            end
+            if self.register_event then
+                self:register_event()
+            end
+        end
+    )
+end
+
+function KeyinPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("keyin/keyin_panel"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local partner_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    local hero_type = partner_cfg.type
+    local bg_id = "engraved_bg_"..tyep_bgres[hero_type]
+    local bg_res = PathTool.getPlistImgForDownLoad("engraved", bg_id)
+    self.load1 = createResourcesLoad(bg_res, ResourcesType.single, function()
+        if self.background then
+			loadSpriteTexture(self.background, bg_res, LOADTEXT_TYPE)
+        end
+    end, self.load1)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.img_title = self.main_container:getChildByName("img_title")
+    self.tiel = self.main_container:getChildByName("tiel")
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    self.img_title:setPositionY(top_y-97)
+    self.tiel:setPositionY(top_y-99)
+    
+    self.show_panel = self.main_container:getChildByName("show_panel")
+    self.bg1 = self.show_panel:getChildByName("bg1")
+    self.bg1:setVisible(false)
+    self.bg2 = self.show_panel:getChildByName("bg2")
+    self.bg2:setVisible(false)
+    self.bg3 = self.show_panel:getChildByName("bg3")
+    self.bg3:setVisible(false)
+    self.show_layer = self.show_panel:getChildByName("layer")
+
+    self.attr_panel = self.main_container:getChildByName("attr_panel")
+    self.attr_panel:setVisible(false)
+    self.tips = self.attr_panel:getChildByName("tips")
+    self.attr_bg = self.attr_panel:getChildByName("attr_bg")
+    self.cost_list = self.attr_panel:getChildByName("cost_list")
+    self.act_btn = self.attr_panel:getChildByName("act_btn")
+    self.btn_label = self.act_btn:getChildByName("label")
+    self.btn_label:setString(TI18N("语言_halm_01_37"))
+    self.up_lv_btn = self.attr_panel:getChildByName("up_lv_btn")
+    self.up_lv_btn_label = self.up_lv_btn:getChildByName("label")
+
+    self.max_tips = self.attr_panel:getChildByName("max_tips")
+    self.max_tips:setVisible(false)
+    self.max_tips:setString(TI18N("语言_c_2176"))
+    self.cond_tips = self.attr_panel:getChildByName("cond_tips")
+    self.cond_tips:setString("")
+    self.tips_0 = self.attr_panel:getChildByName("tips_0")
+    self.tips_0:setString(TI18N("语言_c_982"))
+    
+    self.skill_layer = self.main_container:getChildByName("skill_layer")
+    self.skill_list = self.skill_layer:getChildByName("skill_list")
+    
+    self.help_btn = self.main_container:getChildByName("help_btn")
+    -- self.help_btn:getChildByName("label"):setString(TI18N("说明"))
+    self.help_btn:setPositionY(top_y-125)
+    self.form_btn = self.main_container:getChildByName("form_btn")
+    self.form_btn:getChildByName("label"):setString(TI18N("语言_c_295"))
+    self.form_btn:setPositionY(top_y-215)
+    self.total_lv = self.form_btn:getChildByName("total_lv")
+    self.reset_btn = self.main_container:getChildByName("reset_btn")
+    self.reset_btn:setPositionY(top_y-215)
+    setTextMaxWidth(self.reset_btn:getChildByName("label"), 95, -4)
+    self.reset_btn:getChildByName("label"):setString(TI18N("语言_c_6550"))
+    self.reset_btn:getChildByName("label"):setScale(1)
+    self.max_show_btn = self.main_container:getChildByName("max_show_btn")
+    self.max_show_btn:setPositionY(top_y-325)
+    self.max_show_btn_label = self.max_show_btn:getChildByName("label")
+    setTextMaxWidth(self.max_show_btn_label, 95, -4)
+    self.max_show_btn_label:setString(TI18N("语言_c_6416"))
+    self.max_show_btn_label:setScale(1)
+    self.max_show = self.main_container:getChildByName("max_show")
+    self.max_show:setString(TI18N("语言_c_6416"))
+    self.max_show:setPositionY(top_y-149)
+    self:setData()
+end
+
+function KeyinPanel:setData(data)
+    if not data then
+        self.data = model:getKiyinDataById(self.hero_vo.partner_id)
+    else
+        self.data = data
+    end
+    -- print("self.data",vardump(self.data))
+    local partner_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    self.engraved_id = partner_cfg.engraved_id
+    local hero_type = partner_cfg.type
+
+    local bg_id = "engraved_pic_"..tyep_bgres[hero_type].."_01"
+    local bg_res = PathTool.getPlistImgForDownLoad("engraved", bg_id)
+    self.load2 = createResourcesLoad(bg_res, ResourcesType.single, function()
+        if self.bg1 then
+			loadSpriteTexture(self.bg1, bg_res, LOADTEXT_TYPE)
+        end
+    end, self.load2)
+
+    local bg_id = "engraved_pic_"..tyep_bgres[hero_type].."_02"
+    local bg_res = PathTool.getPlistImgForDownLoad("engraved", bg_id)
+    self.load3 = createResourcesLoad(bg_res, ResourcesType.single, function()
+        if self.bg2 then
+			loadSpriteTexture(self.bg2, bg_res, LOADTEXT_TYPE)
+        end
+    end, self.load3)
+
+    local bg_id = "engraved_pic_"..tyep_bgres[hero_type].."_03"
+    local bg_res = PathTool.getPlistImgForDownLoad("engraved", bg_id)
+    self.load4 = createResourcesLoad(bg_res, ResourcesType.single, function()
+        if self.bg3 then
+			loadSpriteTexture(self.bg3, bg_res, LOADTEXT_TYPE)
+        end
+    end, self.load4)
+
+    local base_cfg = Config.PartnerEngravedData.data_base_info[self.engraved_id][1]
+    local equip_name = base_cfg.name
+    self.tiel:setString(equip_name)
+
+    local total_lv = model:getTotalLvById(self.engraved_id)
+    local now_lv = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+    self.total_lv:setString(string.format(TI18N("语言_c_4520"),(now_lv.."/"..total_lv)))
+    self:setKeyinStatusInfo()
+    self:setLinePic()
+    self:setSkillInfo()
+    self:setFubenList()
+end
+
+function KeyinPanel:updatePageData(hero_vo)
+    self.hero_vo = hero_vo
+    if self.load2 ~= nil then
+        self.load2:DeleteMe()
+        self.load2 = nil
+    end
+    if self.load3 ~= nil then
+        self.load3:DeleteMe()
+        self.load3 = nil
+    end
+    if self.load4 ~= nil then
+        self.load4:DeleteMe()
+        self.load4 = nil
+    end
+    self.attr_panel:setVisible(false)
+    self.skill_layer:setVisible(true)
+    if self.keyin_list and self.keyin_list[self.select_pos] then
+        self.keyin_list[self.select_pos]:setSelectStatus(false)
+    end
+    self:setData()
+end
+
+--设置背景图
+function KeyinPanel:setKeyinStatusInfo()
+    local now_lv = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+    if self.show_type then
+        local total_lv = model:getTotalLvById(self.engraved_id)
+        now_lv = total_lv
+    end
+    self.bg1:setVisible(false)
+    self.bg2:setVisible(false)
+    self.bg3:setVisible(false)
+    local const_data = Config.PartnerEngravedData.data_constant.lv_order.val
+    if now_lv >= const_data[3] then 
+        self.bg3:setVisible(true)
+    elseif now_lv >= const_data[2] then
+        self.bg2:setVisible(true)
+    elseif now_lv >= const_data[1] then
+        self.bg1:setVisible(true)
+    end
+end
+
+--设置天赋位信息
+function KeyinPanel:setFubenList()
+    local lv_cfg = Config.PartnerEngravedData.data_lv_info[self.engraved_id]
+    for i = 1, 8, 1 do
+        if not self.keyin_list[i] then
+            self.keyin_list[i] = KeyinItem.new()
+            self.show_panel:addChild(self.keyin_list[i])
+        end
+        local data = deepCopy(lv_cfg[i])
+        self.keyin_list[i]:setShowType(self.show_type)
+        self.keyin_list[i]:setExtralData(self.hero_vo)
+        self.keyin_list[i]:setData(data)
+        self.keyin_list[i]:addCallBack(function()
+            self:selectKeyinItem(i)
+        end)
+    end
+end
+
+function KeyinPanel:setLinePic()
+    local cfg = Config.PartnerEngravedData.data_pos_info
+    for i = 2, 8 do
+        if not self.line_list[i] then
+            local sprite = createSprite("", 0, 0, self.show_layer, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+            self.line_list[i] = sprite
+        end
+        local key = getNorKey(self.engraved_id,i)
+        local posinfo = cfg[key]
+        if posinfo then
+            local res_id = posinfo.line
+            local res = PathTool.getResFrame("engraved", res_id)
+            loadSpriteTexture(self.line_list[i], res, LOADTEXT_TYPE_PLIST)
+            local posx = posinfo.line_x_pos
+            local posy = posinfo.line_y_pos
+            self.line_list[i]:setPositionX(posx)
+            self.line_list[i]:setPositionY(posy)
+        end
+        local is_can_active = model:getKeyinCanUplv(self.hero_vo.partner_id,self.engraved_id,i)
+        if self.show_type then
+            is_can_active = true
+        end
+        local now_data = model:getPosDataByIdandPos(self.hero_vo.partner_id, i)
+        if now_data or is_can_active then
+            self.line_list[i]:setVisible(true)
+        else
+            self.line_list[i]:setVisible(false)
+        end
+    end
+end
+
+function KeyinPanel:selectKeyinItem(pos)
+    if self.keyin_list and self.keyin_list[self.select_pos] then
+        self.keyin_list[self.select_pos]:setSelectStatus(false)
+    end
+    self.select_pos = pos
+    if self.keyin_list and self.keyin_list[pos] then
+        self.keyin_list[pos]:setSelectStatus(true)
+    end
+
+    local cfg = Config.PartnerEngravedData.data_lv_info[self.engraved_id]
+    -- print("当前选中------------",self.engraved_id,self.select_pos)
+    local pos_cfg = Config.PartnerEngravedData.data_pos_info
+    local key = getNorKey(self.engraved_id,self.select_pos)
+    local pos_data = pos_cfg[key]
+    local pos_name = pos_data.pos_name
+    local select_data = model:getPosDataByIdandPos(self.hero_vo.partner_id, self.select_pos)
+    -- print("++++++++++++++",self.hero_vo.partner_id,vardump(select_data))
+    local max_lv = model:getPosMaxLevById(self.engraved_id,self.select_pos)
+    for k, v in pairs(self.attr_list) do
+        if v then
+            v:setVisible(false)
+        end
+    end
+    if self.show_type then
+        local lv = max_lv
+        self.tips:setString(pos_name.."  "..lv.."/"..max_lv)
+        local now_cfg = cfg[pos][lv]
+        local attr = now_cfg.attr
+        local each_width = 610 / (#attr)
+        for i = 1, #attr, 1 do
+            local attr_id = attr[i][1]
+            local attr_txt = attr[i][2]
+            local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr_id, attr_txt)
+            local str = string.format("<img src='%s' scale=1 /> <div fontcolor=#6d3c2d>%s %s</div>", res, attr_name, attr_val)
+            if not self.attr_list[i] then
+                self.attr_list[i] = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0, 0.5), cc.p(45, 23), -4, nil, 600)
+                self.attr_bg :addChild(self.attr_list[i])
+            end
+            self.attr_list[i]:setString(str)
+            local width = self.attr_list[i]:getContentSize().width
+            self.attr_list[i]:setVisible(true)
+            self.attr_list[i]:setPositionX((each_width-width)/2 + (i-1)*each_width + 40)
+        end
+        self.cond_tips:setString("")
+        self.cost_list:setVisible(false)
+        self.act_btn:setVisible(false)
+        self.up_lv_btn:setVisible(false)
+        self.max_tips:setVisible(true)
+        self.tips_0:setVisible(false)
+    else
+        if select_data then --已激活可升级
+            self.btn_label:setString(string_format(TI18N("语言_c_3194"), 1))--(TI18N("语言_c_766"))
+            local lv = select_data.p_lev
+            local next_lv = lv + 1
+            local now_cfg = cfg[pos][lv]
+            local next_cfg = cfg[pos][next_lv]
+            self.tips:setString(pos_name.."  "..lv.."/"..max_lv)
+            if next_cfg then --未满级
+                local attr = now_cfg.attr
+                local next_attr = next_cfg.attr
+                local each_width = 610 / (#attr)
+                for i = 1, #attr, 1 do
+                    local attr_id = attr[i][1]
+                    local attr_txt = attr[i][2]
+                    local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr_id, attr_txt)
+                    local _attr_id = next_attr[i][1]
+                    local _attr_txt = next_attr[i][2]
+                    local chazhi = _attr_txt - attr_txt
+                    local str = string.format("<img src='%s' scale=1 /> <div fontcolor=#6d3c2d>%s %s</div>", res, attr_name, attr_val)
+                    if chazhi ~= 0 then      
+                        local _res, _attr_name, _attr_val = commonGetAttrInfoByKeyValue(_attr_id, chazhi)
+                        str = string.format("<img src='%s' scale=1 /> <div fontcolor=#6d3c2d>%s %s</div><div fontcolor=#249003> (+%s)</div>", res, attr_name, attr_val,(_attr_val))
+                    end
+                    if not self.attr_list[i] then
+                        self.attr_list[i] = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0, 0.5), cc.p(45, 23), -4, nil, 600)
+                        self.attr_bg:addChild(self.attr_list[i])
+                    end
+                    self.attr_list[i]:setString(str)
+                    local width = self.attr_list[i]:getContentSize().width
+                    self.attr_list[i]:setVisible(true)
+                    self.attr_list[i]:setPositionX((each_width-width)/2 + (i-1)*each_width + 40)
+                end
+                self:updateItemDataByConfig(next_cfg)
+    
+                local unlock_type = next_cfg.unlock_type
+                self.is_can_up = true
+                self.cond_str = ""
+                if unlock_type == 1 then --指定天赋等级
+                    local condition = next_cfg.condition
+                    for k, v in pairs(condition) do
+                        local con_pos = v[1]
+                        local con_con = v[2]
+                        local _data = model:getPosDataByIdandPos(self.hero_vo.partner_id, con_pos)
+                        local _key = getNorKey(self.engraved_id,con_pos)
+                        -- print("“%%%%%%%%%%%%%%%%%%%%%，",key)
+                        local _pos_data = pos_cfg[key]
+                        local _pos_name = _pos_data.pos_name
+                        if _data then
+                            if _data.p_lev < con_con then
+                                self.is_can_up = false
+                                self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6980"),_pos_name,con_con)
+                                break
+                            end
+                        else
+                            local lv = 0
+                            if lv < con_con then
+                                self.is_can_up = false
+                                self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6980"),_pos_name,con_con)
+                                break
+                            end
+                        end
+                    end
+                elseif unlock_type == 2 then --天赋总等级
+                    local condition = next_cfg.condition[1]
+                    local total_lv = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+                    if total_lv < condition then
+                        self.is_can_up = false
+                        self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6981"),condition)
+                    end
+                elseif unlock_type == 3 then --当前英雄星级
+                    local condition = next_cfg.condition[1]
+                    local hero_star = self.hero_vo.star
+                    if hero_star < condition then
+                        self.is_can_up = false
+                        self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6982"),condition)
+                    end
+                end
+                self.cond_tips:setString(self.cond_str)
+                self.cost_list:setVisible(true)
+                self.act_btn:setVisible(true)
+                self.act_btn:setPositionX(230)
+                self.max_tips:setVisible(false)
+    
+                local max_lev_num = Config.PartnerEngravedData.data_constant.lvup_num.val
+    
+                --能升多少级
+                --能够升级最大等级
+                local can_upgrade_max_lev = lv
+                local dic_cost_list = {} --总消耗
+                local cost_item_id = next_cfg.cost_num[1][1]
+            
+                local function _checkEnough(up_cost)
+                    local cur_cost_list = {}
+                    local is_enough = true
+                    for i,cost in ipairs(up_cost) do
+                        if dic_cost_list[cost[1]] == nil then
+                            dic_cost_list[cost[1]] = 0
+                        end
+                        cur_cost_list[cost[1]] = dic_cost_list[cost[1]] + cost[2]
+                        local count = BackpackController:getInstance():getModel():getItemNumByBid(cost[1]) or 0
+                        if count < cur_cost_list[cost[1]] then
+                            --不够了
+                            is_enough = false
+                        end
+                    end
+            
+                    return is_enough, cur_cost_list
+                end
+    
+                --升级消耗
+                for i=1,max_lev_num do
+                    local lev1 = lv + i
+    
+                    local lev_config = cfg[pos][lev1]
+                    if lev_config and not next(lev_config.expend1) and not next(lev_config.expend2) then
+                        local up_cost = lev_config.cost_num or {}
+                        local up_cost_id = up_cost[1][1]
+                        if up_cost_id == cost_item_id then
+                            local is_enough, cost_list = _checkEnough(up_cost)
+        
+                            if is_enough then
+                                dic_cost_list = cost_list
+                                can_upgrade_max_lev = lev1
+                            else
+                                if i == 1 then
+                                    dic_cost_list = cost_list
+                                end
+                                break
+                            end
+
+                        else
+                            break
+                        end
+                    else
+                        break
+                    end
+                end
+    
+                self:setLevName(can_upgrade_max_lev - lv)
+                self.tips_0:setVisible(true)
+            else --已满级
+                local attr = now_cfg.attr
+                local each_width = 610 / (#attr)
+                for i = 1, #attr, 1 do
+                    local attr_id = attr[i][1]
+                    local attr_txt = attr[i][2]
+                    local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr_id, attr_txt)
+                    local str = string.format("<img src='%s' scale=1 /> <div fontcolor=#6d3c2d>%s %s</div>", res, attr_name, attr_val)
+                    if not self.attr_list[i] then
+                        self.attr_list[i] = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0, 0.5), cc.p(45, 23), -4, nil, 600)
+                        self.attr_bg :addChild(self.attr_list[i])
+                    end
+                    self.attr_list[i]:setString(str)
+                    local width = self.attr_list[i]:getContentSize().width
+                    self.attr_list[i]:setVisible(true)
+                    self.attr_list[i]:setPositionX((each_width-width)/2 + (i-1)*each_width + 40)
+                end
+                self.cond_tips:setString("")
+                self.cost_list:setVisible(false)
+                self.act_btn:setVisible(false)
+                self.up_lv_btn:setVisible(false)
+                self.max_tips:setVisible(true)
+                self.tips_0:setVisible(false)
+            end
+        else --未激活
+            self.act_btn:setPositionX(360)
+            self.up_lv_btn:setVisible(false)
+            self.btn_label:setString(TI18N("语言_halm_01_37"))
+            self.tips:setString(pos_name.."  0/"..max_lv)
+            local lv = 1
+            local _cfg = cfg[pos][lv]
+            local attr = _cfg.attr
+            local each_width = 610 / (#attr)
+            for i = 1, #attr, 1 do
+                local attr_id = attr[i][1]
+                local attr_txt = attr[i][2]
+                local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr_id, attr_txt)
+                -- print("$$$$$$$$$$$$333333333333333",attr_val)
+                local str = string.format("<img src='%s' scale=1 /> <div fontcolor=#6d3c2d>%s 0</div>", res, attr_name)
+                if attr_txt ~= 0 then
+                    str = string.format("<img src='%s' scale=1 /> <div fontcolor=#6d3c2d>%s 0</div><div fontcolor=#249003> (+%s)</div>", res, attr_name, attr_val)
+                end
+                if not self.attr_list[i] then
+                    self.attr_list[i] = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0, 0.5), cc.p(45, 23), -4, nil, 600)
+                    self.attr_bg :addChild(self.attr_list[i])
+                end
+                self.attr_list[i]:setString(str)
+                local width = self.attr_list[i]:getContentSize().width
+                self.attr_list[i]:setVisible(true)
+                self.attr_list[i]:setPositionX((each_width-width)/2 + (i-1)*each_width + 40)
+            end
+            self:updateItemDataByConfig(_cfg)
+    
+            local unlock_type = _cfg.unlock_type
+            self.is_can_up = true
+            self.cond_str = ""
+            if unlock_type == 1 then --指定天赋等级
+                local condition = _cfg.condition
+                for k, v in pairs(condition) do
+                    local con_pos = v[1]
+                    local con_con = v[2]
+                    local _data = model:getPosDataByIdandPos(self.hero_vo.partner_id, con_pos)
+                    local _key = getNorKey(self.engraved_id,con_pos)
+                    local _pos_data = pos_cfg[_key]
+                    local _pos_name = _pos_data.pos_name
+                    if _data then
+                        if _data.p_lev < con_con then
+                            self.is_can_up = false
+                            self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6980"),_pos_name,con_con)
+                            break
+                        end
+                    else
+                        local lv = 0
+                        if lv < con_con then
+                            self.is_can_up = false
+                            self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6980"),_pos_name,con_con)
+                            break
+                        end
+                    end
+                end
+            elseif unlock_type == 2 then --天赋总等级
+                local condition = _cfg.condition[1]
+                local total_lv = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+                if total_lv < condition then
+                    self.is_can_up = false
+                    self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6981"),condition)
+                end
+            elseif unlock_type == 3 then --当前英雄星级
+                local condition = _cfg.condition[1]
+                local hero_star = self.hero_vo.star
+                if hero_star < condition then
+                    self.is_can_up = false
+                    self.cond_str = self.cond_str .. string.format(TI18N("语言_c_6982"),condition)
+                end
+            end
+            self.cond_tips:setString(self.cond_str)
+            self.cost_list:setVisible(true)
+            self.act_btn:setVisible(true)
+            self.max_tips:setVisible(false)
+            self.tips_0:setVisible(true)
+        end
+    end
+    self.attr_panel:setVisible(true)
+    self.skill_layer:setVisible(false)
+end
+
+function KeyinPanel:setLevName(lev)
+    if lev > 1 then
+        self.up_lv_btn_label:setString(string_format(TI18N("语言_c_3194"), lev))
+        self.act_btn:setPositionX(230)
+        self.up_lv_btn:setVisible(true)
+    else
+        self.up_lv_btn_label:setString(string_format(TI18N("语言_c_3194"), 1))
+        self.act_btn:setPositionX(360)
+        self.up_lv_btn:setVisible(false)
+    end
+end
+
+--更新升星物品材料
+function KeyinPanel:updateItemDataByConfig(star_config)
+    if not star_config then return end
+    self.hero_item_data_list = {}
+    --红点条件list
+    local conditions_list = {}
+    --记录已选id [partner_id] = hero_vo
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    -- 本体卡
+    local self_cost_cfg = star_config.expend1--star_config.expend1
+    local extend1 = {}
+    if self_cost_cfg and self_cost_cfg[1] then
+        local self_need_star = self_cost_cfg[1][1]
+        local cost_self_num = self_cost_cfg[1][2]
+        --判断是否是五系转换或阴阳转换
+        local hero_bid = self.hero_vo.bid
+        local isNewConvertSta = hero_model:isNewConvertSta(self.hero_vo)
+        local isConvert = hero_model:isConvert(self.hero_vo)
+        if isNewConvertSta or isConvert then
+            if isNewConvertSta then
+                hero_bid = hero_model:getNewConvertStaBid(self.hero_vo.bid)
+            end
+            if isConvert then
+                hero_bid = hero_model:getConvertStaBid(self.hero_vo.bid)
+            end
+        end
+        extend1 = {{hero_bid,self_need_star,cost_self_num}}
+    end
+    -- print("...........",vardump(extend1))
+    local index = 1
+    for i,expend in ipairs(extend1) do
+        self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+    --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+    for i,expend in ipairs(star_config.expend2) do
+        self.hero_item_data_list[index] = self:getHeroData(nil, expend[2], expend[3], expend[1])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+    -- print("self.hero_item_data_list",vardump(self.hero_item_data_list))
+    -- print("conditions_list",vardump(conditions_list))
+
+    for i,item in ipairs(self.hero_item_list) do
+        item:setVisible(false)
+    end
+
+    local total_num = #self.hero_item_data_list
+    if star_config.cost_num then
+        total_num = total_num + #star_config.cost_num
+    end
+    self.cost_list:setContentSize(cc.size(total_num * 99, 95))
+
+    for i,hero_vo in ipairs(self.hero_item_data_list) do
+        if self.hero_item_list[i] == nil then
+            self.hero_item_list[i] = HeroExhibitionItem.new(0.7, true)
+            self.hero_item_list[i]:setPosition( (i-1) * (HeroExhibitionItem.Width * 0.8 + 10) + (HeroExhibitionItem.Width * 0.8)/2 , 47)
+            self.hero_item_list[i]:addCallBack(function() self:_onClickItemData(i) end)
+            self.cost_list:addChild(self.hero_item_list[i])
+        end
+        self.hero_item_list[i]:setVisible(true)
+        if hero_vo.bid == 0 then
+            --随机卡的头像id
+            local default_head_id = hero_model:getRandomHeroHeadByQuality(hero_vo.star)
+            self.hero_item_list[i]:setData(hero_vo)
+            self.hero_item_list[i]:setDefaultHead(default_head_id)
+            self.hero_item_list[i]:setHeroName(true, string_format(TI18N("语言_c_3022"), hero_vo.star))
+        else
+            self.hero_item_list[i]:setData(hero_vo)
+            self.hero_item_list[i]:setHeroName(false)
+        end
+        self.hero_item_list[i]:setHeadUnEnabled(true)
+    end
+
+    -- 额外材料
+    for k,item in pairs(self.cost_item_list) do
+        item:setVisible(false)
+    end
+
+    local start_index = #self.hero_item_data_list
+    if star_config.cost_num then
+        for i,v in ipairs(star_config.cost_num) do
+            local bid = v[1]
+            local need_num = v[2]
+
+            local item = self.cost_item_list[i]
+            if not item then
+                item = BackPackItem.new(false, true, false, 0.7)
+                self.cost_list:addChild(item)
+                self.cost_item_list[i] = item
+            end
+            item:setPosition( (start_index+i-1) * (BackPackItem.Width * 0.8 + 10) + BackPackItem.Width * 0.4 , 47)
+            local have_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(bid)
+            item:setBaseData(bid)
+            item:setNeedNum(need_num, have_num, 1, true, 2)
+            if need_num > have_num then
+                item:setDefaultTip(true, true)
+            else
+                item:setDefaultTip()
+            end
+            item:setVisible(true)
+        end
+    end
+
+    self:initHeroListByMatchInfo(conditions_list)
+    self:updateCentreHeroItemRedPoint()
+end
+
+--初始化英雄列表匹配信息
+function KeyinPanel:initHeroListByMatchInfo(conditions_list)
+    local hero_list = hero_model:getHeroList()
+
+    self.conditions_hero_list = {} --满足条件的英雄
+    for k,hero in pairs(hero_list) do
+        for i,conditions in ipairs(conditions_list) do
+            if self.conditions_hero_list[i] == nil then
+                self.conditions_hero_list[i] = {}
+            end
+
+            if self.hero_item_data_list[i].bid == 0 then-- 表示随机卡 
+                if conditions[0] then -- 0表示全部阵营
+                    if conditions[0][hero.star] then
+                        table_insert(self.conditions_hero_list[i], hero)
+                    end
+                else
+                    if conditions[hero.camp_type] and conditions[hero.camp_type][hero.star] ~= nil then
+                        table_insert(self.conditions_hero_list[i], hero)
+                    end
+                end
+            else--指定卡
+                if conditions[hero.bid] and conditions[hero.bid][hero.star] then   -- 指定卡要剔除自己
+                    if self.hero_vo and self.hero_vo.partner_id ~= hero.partner_id then
+                        table_insert(self.conditions_hero_list[i], hero)
+                    end
+                end
+            end
+        end
+    end
+    -- print(" self.conditions_hero_list = {}",vardump( self.conditions_hero_list))
+    local list = BackpackController:getInstance():getModel():getHeroHunList()
+    for k, good_vo in pairs(list) do
+        if good_vo.config then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+                if self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    local camp_type = good_vo.config.camp_type
+                    local star = good_vo.config.eqm_jie
+                    if conditions[camp_type] and conditions[camp_type][star] ~= nil then
+                        for j=1,good_vo.quantity do
+                            local data = {}
+                            data.id = -(j + camp_type * 10)
+                            data.partner_id = data.id
+                            data.good_vo = good_vo
+                            table_insert(self.conditions_hero_list[i], data)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+
+--计算中间item红点显示
+function KeyinPanel:updateCentreHeroItemRedPoint()
+    if not self.conditions_hero_list then return end
+    if not self.dic_other_selected then return end
+    for i,item in ipairs(self.hero_item_list) do
+        --模拟的hero_vo数据
+        local hero_vo = self.hero_item_data_list[i]
+        local conditions_list =  self.conditions_hero_list[i] or {}
+        if hero_vo then
+            local count = 0
+            for k,v in pairs(hero_vo.dic_select_list) do
+                count = count + 1
+            end
+            --已经填满了就不显示红点了
+            if count < hero_vo.count then
+                --随机卡的 --指定卡 逻辑一样的
+                local num = hero_vo.count
+                for j,each_hero in ipairs(conditions_list) do
+                    --自已选的.和 别人没选的 都算数 
+                    if hero_vo.dic_select_list[each_hero.id] or self.dic_other_selected[each_hero.id] == nil then 
+                        if conditions_list[j] and conditions_list[j].is_in_form == 0 and conditions_list[j].is_lock == 0 then
+                            num = num -1
+                            if num == 0 then
+                                break
+                            end
+                        end
+                    end
+                    local dic_select = self.hero_item_data_list[i]
+                    local list = BackpackController:getInstance():getModel():getHeroHunList()
+                    if self.item_list == nil then
+                        self.item_list = {}
+                    end
+                    for _,v in pairs(list) do
+                        if v.config and (v.config.camp_type == each_hero.camp_type or 0) and v.config.eqm_jie ==hero_vo.star then
+                            local ___num = math.min(num, v.quantity)
+                            for i=1, ___num do
+                                local hero_vo = {}
+                                hero_vo.id = -(i + v.config.camp_type * 10)  --因为英雄id是正序的..这里就负序
+                                hero_vo.partner_id = hero_vo.id
+                                hero_vo.is_hero_hun = true
+                                hero_vo.good_vo = v
+                                if dic_select[hero_vo.id] then
+                                    conditions_list[hero_vo.id] = hero_vo
+                                end
+                                table_insert(self.item_list, hero_vo)
+                            end
+                        end
+                    end
+                    for key, value in pairs(self.item_list) do
+                        if each_hero.id == value.id then 
+                            num = num -1
+                            if num == 0 then
+                                break
+                            end
+                        end
+                    end 
+
+                end
+                --说明数量够 显示红点
+                local status = (num <= 0)
+                item:showRedPoint(status, 8, 8)
+            else
+                item:showRedPoint(false)
+            end
+        end
+    end
+end
+
+function KeyinPanel:updateHeroItemInfo()
+    if not self.hero_item_data_list then return end
+    -- print("**********************************",vardump(self.hero_item_data_list))
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    for i,v in ipairs(self.hero_item_data_list) do
+        if v.is_select then
+            v.is_select = false
+            local count = 0
+            for k,vo in pairs(v.dic_select_list) do
+                count = count + 1
+                self.dic_other_selected[k] = vo
+            end
+            v.lev = string_format("%s/%s", count, v.count)
+            if self.hero_item_list[i] then
+                self.hero_item_list[i].num_label:setString(v.lev)
+                if count > 0 then
+                    self.hero_item_list[i]:setHeadUnEnabled(false)
+                else
+                    self.hero_item_list[i]:setHeadUnEnabled(true)
+                end
+            end
+        else
+            for k,vo in pairs(v.dic_select_list) do
+                self.dic_other_selected[k] = vo
+            end
+        end
+    end
+end
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function KeyinPanel:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else    
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+--点击材料数据
+function KeyinPanel:_onClickItemData(index)
+    if not self.hero_item_data_list[index] then return end
+    if not self.hero_vo then return end
+    --标志点击了那个
+    self.hero_item_data_list[index].is_select = true
+    --被其他人选择的列表 [id] = hero_vo 模式
+    local dic_other_selected = {}
+    --把自己也过滤
+    dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    for i,item in ipairs(self.hero_item_data_list) do
+        if i ~= index then
+            for k,v in pairs(item.dic_select_list) do
+                dic_other_selected[k] = v
+            end
+        end
+    end
+
+    local setting = {}
+    if self.hero_item_data_list[index].bid == 0 and self.hero_item_data_list[index].star == 5 then
+        -- 表示随机卡
+        setting.self_mark_bid = self.hero_vo.bid
+    end
+    controller:openKeyinUpgradeSelectPanel(true, self.hero_item_data_list[index], dic_other_selected, 1, setting)
+end
+
+function KeyinPanel:register_event()
+    --更新数据
+    if not self.updateEvent then
+        self.updateEvent = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Update_Keyin_Event ,function()
+                self:setData()
+                if self.select_pos then
+                    self:selectKeyinItem(self.select_pos)
+                end
+            end
+        )
+    end
+    if not self.update_select_hero_event then
+        self.update_select_hero_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Update_Keyin_Select_Hero_Event ,function(data)
+                self:updateHeroItemInfo()
+            end
+        )
+    end
+    if self.help_btn then
+        self.help_btn:addTouchEventListener(function( sender,event_type )
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                -- TipsManager:getInstance():showCommonTips(Config.PartnerEngravedData.data_constant["game_rule1"].desc, sender:getTouchBeganPosition())
+                controller:openKeyinRuletipsWindow(true)
+            end
+        end)
+    end
+    -- 道具数量更新
+    if not self.update_add_good_event then
+        self.update_add_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS,function(bag_code, data_list)
+            if self.select_pos then
+                self:selectKeyinItem(self.select_pos)
+            end
+        end)
+    end
+    if not self.update_delete_good_event then
+        self.update_delete_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS,function(bag_code, data_list)
+            if self.select_pos then
+                self:selectKeyinItem(self.select_pos)
+            end
+        end)
+    end
+    if not self.update_modify_good_event then
+        self.update_modify_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM,function(bag_code, data_list)
+            if self.select_pos then
+                self:selectKeyinItem(self.select_pos)
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.act_btn,function()
+        if self.hero_vo:isResonateHero() == true then
+            message(TI18N("语言_c_3288"))
+            return
+        end
+        if self.is_can_up then
+            self:_sendUpgrade()
+        else
+            local tips = self.cond_tips:getString()
+            message(tips)
+        end
+    end,true,1)
+
+    registerButtonEventListener(self.up_lv_btn,function()
+        if self.hero_vo:isResonateHero() == true then
+            message(TI18N("语言_c_3288"))
+            return
+        end
+        if self.is_can_up then
+            controller:sender11474( self.hero_vo.partner_id, self.select_pos )
+        --     self:_sendUpgrade()
+        else
+            local tips = self.cond_tips:getString()
+            message(tips)
+        end
+    end,true,1)
+    registerButtonEventListener(self.form_btn,function()
+        controller:openKeyinPreviewPanel(true,self.hero_vo)
+    end,true,1)
+    registerButtonEventListener(self.reset_btn,function()
+        local total_lv = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+        if total_lv > 0 then
+            controller:openKeyinResetOfferPanel(true, self.hero_vo.partner_id, function()
+                controller:sender11473(self.hero_vo.partner_id)
+            end)
+        else
+            message(TI18N("语言_c_6983"))
+        end
+    end,true,1)
+    registerButtonEventListener(self.main_container,function()
+        self.attr_panel:setVisible(false)
+        self.skill_layer:setVisible(true)
+        if self.keyin_list and self.keyin_list[self.select_pos] then
+            self.keyin_list[self.select_pos]:setSelectStatus(false)
+        end
+    end,false,1)
+
+    registerButtonEventListener(self.max_show_btn,function()
+        self.show_type = not self.show_type 
+        if self.show_type then
+            self.reset_btn:setVisible(false)
+            self.form_btn:setVisible(false)
+            self.help_btn:setVisible(false)
+            self.max_show:setVisible(true)
+            self.max_show_btn_label:setString(TI18N("语言_c_262"))
+            self.max_show_btn_label:setScale(1)
+        else
+            self.reset_btn:setVisible(true)
+            self.form_btn:setVisible(true)
+            self.help_btn:setVisible(true)
+            self.max_show:setVisible(false)
+            self.max_show_btn_label:setString(TI18N("语言_c_6416"))
+            self.max_show_btn_label:setScale(1)
+        end
+        if self.keyin_list and self.keyin_list[self.select_pos] then
+            self.keyin_list[self.select_pos]:setSelectStatus(false)
+        end
+        self.attr_panel:setVisible(false)
+        self.skill_layer:setVisible(true)
+        self:setKeyinStatusInfo()
+        self:setLinePic()
+        self:setSkillInfo()
+        self:setFubenList()
+    end,false,1)
+end
+
+function KeyinPanel:_sendUpgrade()
+    -- if self.hero_item_data_list and next(self.hero_item_data_list) ~= nil then
+        local partner_id = self.hero_vo.partner_id
+        local hero_list = {}
+        local random_list = {}
+        local dic_item_expend = {}
+        for i,item in ipairs(self.hero_item_data_list) do
+            local count = 0
+            for k,v in pairs(item.dic_select_list) do
+                count = count + 1
+            end
+            if count < item.count then
+                message(TI18N("语言_c_3021"))
+                return
+            end
+            for k,v in pairs(item.dic_select_list) do
+                if v.is_hero_hun then --是否英魂 参考 HeroUpgradeStarSelectPanel:initHeroList(dic_other_selected) 里面的定义
+                    if v.good_vo then
+                        if dic_item_expend[v.good_vo.base_id] == nil then
+                            dic_item_expend[v.good_vo.base_id] = 1
+                        else
+                            dic_item_expend[v.good_vo.base_id] = dic_item_expend[v.good_vo.base_id] + 1
+                        end
+                    end
+                else
+                    local data = {}
+                    data.partner_id = k
+                    if item.bid == 0 then
+                        --随机卡
+                        table_insert(random_list, data)
+                    else
+                        --指定卡
+                        table_insert(hero_list, data)
+                    end
+                end
+            end
+        end
+
+        local item_list = {}
+        for item_id, num in pairs(dic_item_expend) do
+            local data = {}
+            data.item_id = item_id
+            data.num = num
+            table_insert(item_list, data)
+        end
+        if not hero_model:isStarCystalHero(self.hero_vo) then
+            controller:sender11471(partner_id, self.select_pos, hero_list, random_list, item_list)--partner_id,type,expend1,expend2,item_expend
+        else
+            message(TI18N("语言_c_1093"))
+        end
+    -- end
+end
+
+--设置技能信息 --和英雄绑定
+function KeyinPanel:setSkillInfo()
+    local cfg = Config.PartnerEngravedData.data_get_skill 
+    local list = {}
+    for k, v in pairs(cfg) do
+        if v.id == self.hero_vo.bid then
+            table.insert(list,v)
+        end
+    end
+    local sort_fun = SortTools.tableLowerSorter({"total_lv"})
+    table.sort(list, sort_fun)
+    -- local skill_list = {}
+    local hero_star = self.hero_vo.star
+    local total_lev = model:getNowTotalKeyinLv(self.hero_vo.partner_id)
+    -- -- {id=110511, total_lv=2, unlock={{0,518211},{2,518211}}, skill_order={}},
+    local each_width = 440 / (#list)
+
+    for k, v in ipairs(list) do
+        if not self.keyin_skill_list[k] then
+            self.keyin_skill_list[k] = KeyinSkillItem.new()
+            self.skill_list:addChild(self.keyin_skill_list[k])
+        end
+        self.keyin_skill_list[k]:setShowType(self.show_type)
+        self.keyin_skill_list[k]:setExtralData(hero_star,total_lev,self.engraved_id,self.hero_vo.bid)
+        self.keyin_skill_list[k]:setData(v)
+        self.keyin_skill_list[k]:setPositionX((each_width-110)/2 + 110/2 + (k-1)*each_width)
+        self.keyin_skill_list[k]:setPositionY(64)
+    end
+end
+function KeyinPanel:DeleteMe()
+    if self.background_load then
+        self.background_load:DeleteMe()
+        self.background_load = nil
+    end
+    if self.resources_load ~= nil then
+        self.resources_load:DeleteMe()
+        self.resources_load = nil
+    end
+
+    if self.load1 ~= nil then
+        self.load1:DeleteMe()
+        self.load1 = nil
+    end
+    if self.load2 ~= nil then
+        self.load2:DeleteMe()
+        self.load2 = nil
+    end
+    if self.load3 ~= nil then
+        self.load3:DeleteMe()
+        self.load3 = nil
+    end
+    if self.load4 ~= nil then
+        self.load4:DeleteMe()
+        self.load4 = nil
+    end
+
+    if self.update_select_hero_event then
+        GlobalEvent:getInstance():UnBind(self.update_select_hero_event)
+        self.update_select_hero_event = nil
+    end
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+    if self.update_add_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_add_good_event)
+        self.update_add_good_event = nil
+    end
+    if self.update_delete_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_delete_good_event)
+        self.update_delete_good_event = nil
+    end
+    if self.update_modify_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+        self.update_modify_good_event = nil
+    end
+
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+
+    if self.fubenItemList then
+        for i, v in pairs(self.fubenItemList) do
+            v:DeleteMe()
+        end
+        self.fubenItemList = nil
+    end
+    if self.keyin_skill_list then
+        for i, v in pairs(self.keyin_skill_list) do
+            v:DeleteMe()
+        end
+        self.keyin_skill_list = nil
+    end
+end
+
+
+
+
+--天赋位item
+KeyinItem = class("KeyinItem", function() 
+    return ccui.Layout:create()
+end)
+
+function KeyinItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("keyin/keyin_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setTouchEnabled(true)
+    self:setAnchorPoint(0.5,0.5)
+    self:setContentSize(self.size)
+    self.root_wnd:setPosition(0, 0)
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.sele_img = self.main_panel:getChildByName("sele_img")
+    self.sele_img:setVisible(false)
+    self.eff_node = self.main_panel:getChildByName("eff_node")
+    self.icon = self.main_panel:getChildByName("icon")
+    self.can_up = self.main_panel:getChildByName("can_up")
+    self.can_up:setVisible(false)
+
+    self:registerEvent()
+end
+
+function KeyinItem:registerEvent()
+    self.main_panel:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self.callback()
+        end
+    end)
+end
+
+function KeyinItem:setShowType(type)
+    self.item_show_type = type
+end
+
+function KeyinItem:getData()
+    return self.data
+end
+function KeyinItem:setExtralData(hero_vo)
+    self.hero_vo = hero_vo
+end
+function KeyinItem:setData(data)
+    self.data = data
+
+    self.keyin_id = data[1].id
+    self.pos = data[1].pos
+    local keyin_data = model:getPosDataByIdandPos(self.hero_vo.partner_id, self.pos)
+    local is_can_active = model:getKeyinCanUplv(self.hero_vo.partner_id,self.keyin_id,self.pos)
+    local is_can_up = model:getKeyinCanUplv2(self.hero_vo.partner_id,self.keyin_id,self.pos)
+    local is_full_lv = model:getKeyinFulllv(self.hero_vo.partner_id,self.keyin_id,self.pos)
+    local lv = 1
+    local status
+    if keyin_data then
+        lv = keyin_data.p_lev
+    else
+        status = 0
+    end
+    if is_can_active then --可激活
+        status = 1
+    end
+    if is_can_up then --可升级
+        self.can_up:setVisible(true)
+        self:UpdoAction()
+    else
+        self.can_up:setVisible(false)
+    end
+    if is_full_lv then
+        status = 2
+    end
+
+    if self.item_show_type then
+        status = 2
+    end
+
+    local pic = data[lv].pic
+    if status == 0 then
+        pic = pic.."_1"
+    elseif status == 1 then
+        pic = pic.."_2"
+    elseif status == 2 then
+        pic = pic.."_3"
+    else
+        pic = pic.."_2"
+    end
+    doStopAllActions(self.icon)
+    self.icon:setOpacity(255)
+    loadSpriteTexture(self.icon, PathTool.getResFrame("engraved",pic), LOADTEXT_TYPE_PLIST)
+    loadSpriteTexture(self.can_up, PathTool.getResFrame("engraved",pic), LOADTEXT_TYPE_PLIST)
+    if status == 1 then
+        self:doAction()
+    end
+
+    local cfg = Config.PartnerEngravedData.data_pos_info
+    local key = getNorKey(self.keyin_id,self.pos)
+    local posinfo = cfg[key]
+    self:setPosition(cc.p(posinfo.x_pos, posinfo.y_pos))
+
+end
+function KeyinItem:addCallBack(callback)
+    self.callback = callback
+end
+function KeyinItem:setSelectStatus(status)
+    self.sele_img:setVisible(status)
+end
+function KeyinItem:doAction()
+    doStopAllActions(self.icon)
+    local fadein = cc.FadeIn:create(0.6)
+    local fadeout = cc.FadeOut:create(0.6)
+    self.icon:runAction(cc.RepeatForever:create(cc.Sequence:create(fadeout, fadein)))
+end
+
+function KeyinItem:UpdoAction()
+    doStopAllActions(self.can_up)
+    local fadein = cc.FadeIn:create(0.6)
+    local fadeout = cc.FadeOut:create(0.6)
+    self.can_up:runAction(cc.RepeatForever:create(cc.Sequence:create(fadeout, fadein)))
+end
+
+function KeyinItem:DeleteMe()
+    doStopAllActions(self.icon)
+    doStopAllActions(self.can_up)
+    self:showPassMv(false)
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+
+
+--技能item
+KeyinSkillItem = class("KeyinSkillItem", function() 
+    return ccui.Layout:create()
+end)
+
+function KeyinSkillItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("keyin/keyin_skill_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    -- self:setTouchEnabled(true)
+    self:setAnchorPoint(0.5,0.5)
+    self:setContentSize(self.size)
+    self.root_wnd:setPosition(0, 0)
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.eff_node = self.main_panel:getChildByName("hero_icon")
+    self.skill_border_img = self.main_panel:getChildByName("select_img")
+    self.level_name = self.main_panel:getChildByName("level_name")
+
+    self:registerEvent()
+end
+
+function KeyinSkillItem:registerEvent()
+    self.main_panel:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local config = Config.SkillData.data_get_skill(self.skill_id)
+            -- TipsManager:getInstance():showSkillTips(config)
+            controller:openKeyinSkilltipsWindow(true,config,{hero_star= self.hero_star,id=self.data.id,lv=self.total_lev,hero_bid=self.hero_bid,total_lv = self.data.total_lv})
+        end
+    end)
+end
+function KeyinSkillItem:setExtralData(hero_star,total_lev,engraved_id,hero_bid)
+    self.hero_star = hero_star
+    self.total_lev = total_lev
+    self.engraved_id = engraved_id
+    self.hero_bid = hero_bid
+end
+function KeyinSkillItem:setShowType(type)
+    self.skill_item_show_type = type
+end
+-- {id=30511, total_lv=250, unlock={{0,{522405,522821}}}, skill_order={}},
+function KeyinSkillItem:setData(data)
+    self.data = data
+    local lock_status = false
+    local skill_id
+    local total_lev = self.total_lev
+    local hero_star = self.hero_star
+
+    if self.skill_item_show_type then
+        total_lev  = model:getTotalLvById(self.engraved_id)
+        hero_star = 15
+    end
+
+    local is_max_skill = false
+    if total_lev >= data.total_lv then
+        local unlock = data.unlock
+        local function sortFunc( objA, objB )
+            return objA[1] < objB[1]
+        end
+        table.sort(unlock, sortFunc)
+        for k, v in pairs(unlock) do
+            local need_star = v[1]
+            local need_total_lv = v[2]
+            if need_star <= hero_star and need_total_lv <= total_lev then
+                if k == #unlock then
+                    is_max_skill = true
+                end
+                lock_status = true
+                skill_id = v[3][1]
+            end
+        end
+        if not skill_id then
+            skill_id = unlock[1][3][1]
+        end
+    else
+        local unlock = data.unlock
+        skill_id = unlock[1][3][1]
+    end
+    self.skill_id = skill_id
+    self.level_name:setString( string_format(TI18N("语言_c_2867"),data.total_lv))
+    if is_max_skill then
+        self.skill_border_img:loadTexture(PathTool.getResFrame("engraved","engraved_pic_02"), LOADTEXT_TYPE_PLIST)
+    else
+        self.skill_border_img:loadTexture(PathTool.getResFrame("engraved","engraved_pic_09"), LOADTEXT_TYPE_PLIST)
+    end
+    if skill_id then
+        if not self.other_clipNode then
+            self.other_mask = createSprite(PathTool.getResFrame("sync","sync_b"), 45, 45, nil, cc.p(0.5, 0.5),LOADTEXT_TYPE_PLIST)--模板
+            self.other_clipNode = cc.ClippingNode:create(self.other_mask)
+            self.other_clipNode:setContentSize(cc.size(90, 90))
+            self.other_clipNode:setAnchorPoint(cc.p(0.5,0.5))
+            self.other_clipNode:setCascadeOpacityEnabled(true)
+            self.other_clipNode:setPosition(23, 23)
+            self.other_clipNode:setAlphaThreshold(0)
+            self.eff_node:addChild(self.other_clipNode,2)
+        end
+        if not self.item_icon then
+            self.item_icon = createSprite(nil,  45, 45, self.other_clipNode, cc.p(0.5,0.5), LOADTEXT_TYPE, 0)
+            self.item_icon:setCascadeOpacityEnabled(true)
+            self.item_icon:setScale(0.8)
+        end
+        local res = self.data.skill_icon
+        if res == "" then
+            local config = Config.SkillData.data_get_skill(skill_id)
+            res = config.icon
+        end
+        local skill_icon = PathTool.getSkillRes(res, false)
+        loadSpriteTexture(self.item_icon, skill_icon, LOADTEXT_TYPE)
+    end
+
+    if lock_status then
+        self.level_name:setVisible(false)
+        setChildUnEnabled(false,self.item_icon)
+    else
+        self.level_name:setVisible(true)
+        setChildUnEnabled(true,self.item_icon)
+    end
+end
+
+function KeyinSkillItem:DeleteMe()
+    if self.passEffect then
+        self.passEffect:clearTracks()
+        self.passEffect:removeFromParent()
+        self.passEffect = nil
+    end
+    -- self:showPassMv(false)
+    self:removeAllChildren()
+    self:removeFromParent()
+end

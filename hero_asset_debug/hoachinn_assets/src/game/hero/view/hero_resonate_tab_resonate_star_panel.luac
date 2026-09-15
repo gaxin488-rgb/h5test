@@ -1,0 +1,1808 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      升星神树  查克拉共享
+-- <br/> 2019年8月1日
+-- --------------------------------------------------------------------
+HeroResonateTabResonateStarPanel = class("HeroResonateTabResonateStarPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local role_vo = RoleController:getInstance():getRoleVo()
+
+local math_floor = math.floor
+
+function HeroResonateTabResonateStarPanel:ctor(parent)  
+    self.parent = parent
+    self.con_list = {}
+    self.title_list = {}
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function HeroResonateTabResonateStarPanel:config()
+    --槽位上限
+    self.item_max_count = 20
+    local config = Config.ResonateData.data_const.star_cell_max
+    if config then
+        self.item_max_count = config.val
+    end
+    self.sp_item_max_count = 20
+    local config = Config.ResonateData.data_const.sp_star_cell_max
+    if config then
+        self.sp_item_max_count = config.val
+    end
+
+    self.cystal_max_lev_limit = 400
+    local config = Config.ResonateData.data_const.cystal_max_lev_limit
+    if config then
+        self.cystal_max_lev_limit = config.val
+    end
+
+    self.hero_param = 100
+
+    self.time_desc_list = {}
+    self.sp_time_desc_list = {}
+    --能否更新list
+    self.can_update_list = true
+    self.can_sp_update_list = true
+    self.con_tips_list = {false,false}
+end
+
+function HeroResonateTabResonateStarPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_resonate_tab_resonate_star_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.lock_container = self.root_wnd:getChildByName("lock_container")
+    self.lock_panel_x, self.lock_panel_y = self.lock_container:getPosition()
+    self.con_panel = self.lock_container:getChildByName("con_panel")
+    self.con_panel:setScrollBarEnabled(false)
+    self.title_bg = self.lock_container:getChildByName("title_bg")
+    self.title = self.lock_container:getChildByName("title")
+    self.title:setString(transformTextToShort(TI18N("语言_c_6045"),40))
+    addEvt2showAllTextTips(self.title,TI18N("语言_c_6045"),40)
+    self.title_bg:setContentSize(cc.size(self.title:getContentSize().width + 160,29))
+    self.open_btn = self.lock_container:getChildByName("open_btn")
+    self.open_txt = self.open_btn:getChildByName("label")
+    self.open_txt:setChangeScaleOffWidth(-1000)
+    self.open_txt:setString(TI18N("语言_c_5950"))
+    setTextSpacing(self.open_txt,-10)
+    local _w = math.max(self.open_txt:getContentSize().width + 20,100)
+    self.open_btn:setContentSize(cc.size(_w,65))
+    self.open_txt:setPositionX(self.open_btn:getContentSize().width * 0.5)
+
+    self.hero_panel = self.root_wnd:getChildByName("hero_panel")
+    self.hero_param = 100
+    local pos = {
+        [5] = {-600,-600},
+        [3] = {-400,-600},
+        [1] = {0,-700},
+        [2] = {400,-600},
+        [4] = {600,-600},
+    }
+    self.item_lay_list = {}
+    for i=1, 5 do
+        local item_lay = self.hero_panel:getChildByName("item_lay_"..i)
+        self.item_lay_list[i] = {}
+        self.item_lay_list[i].btn = item_lay
+        self.item_lay_list[i].add_img = item_lay:getChildByName("add_img")
+        self.item_lay_list[i].add_img:setVisible(false)
+        local x, y = item_lay:getPosition()
+        self.item_lay_list[i].x = x
+        self.item_lay_list[i].y = y + 20
+        self.item_lay_list[i].pos = pos[i]
+
+        y = y + self.hero_param
+        local zorder = math_floor(1000 - y)
+        item_lay:setZOrder(zorder)
+    end
+    
+    -- if model:isCanResonateStar() then
+        self:updateHeroList(model:getUpStarCon())
+    -- else
+    --     self:updateHeroList(model:getTreeList())
+    -- end
+
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    
+    self.background = self.root_wnd:getChildByName("bg")
+    self.background:setScale(display.getMaxScale())
+    self.look_btn = self.main_container:getChildByName("look_btn")
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.bottom_panel_x, self.bottom_panel_y = self.bottom_panel:getPosition()
+    self.ordinary_panel = self.bottom_panel:getChildByName("ordinary_panel")
+
+    self.tips = self.ordinary_panel:getChildByName("tips")
+    self.tips:setString(TI18N("语言_c_5949"))
+    self.sp_tip = self.ordinary_panel:getChildByName("sp_tip")
+    self.sp_tip:setChangeScaleOffWidth(340)
+    self.sp_tip:setString(TI18N("语言_c_6858"))
+    self.lay_scrollview = self.ordinary_panel:getChildByName("lay_scrollview")
+    
+    local item_buy_panel = self.ordinary_panel:getChildByName("item_buy_panel")
+    self.add_btn = item_buy_panel:getChildByName("add_btn")
+    self.count_label = item_buy_panel:getChildByName("label")
+
+    local item_panel = self.ordinary_panel:getChildByName("item_panel")
+    self.item_img = item_panel:getChildByName("item_img")
+    self.item_add_btn = item_panel:getChildByName("item_add_btn")
+    self.item_label = item_panel:getChildByName("item_label")
+    self:updateItemNum()
+
+    self.special_panel = self.bottom_panel:getChildByName("special_panel")
+    self.special_panel:setVisible(false)
+
+    self.sp_tips = self.special_panel:getChildByName("sp_tips")
+    self.sp_tips:setString(TI18N("语言_partner_sp_star_002"))
+    setTextMaxWidth(self.sp_tips,600)
+    self.sp_lay_scrollview = self.special_panel:getChildByName("sp_lay_scrollview")
+    
+    local sp_item_buy_panel = self.special_panel:getChildByName("sp_item_buy_panel")
+    self.sp_add_btn = sp_item_buy_panel:getChildByName("sp_add_btn")
+    self.count_sp_label = sp_item_buy_panel:getChildByName("sp_label")
+
+    self.sp_look_btn = self.special_panel:getChildByName("look_btn")
+    local sp_item_panel = self.special_panel:getChildByName("sp_item_panel")
+    self.sp_item_img = sp_item_panel:getChildByName("sp_item_img")
+    self.sp_item_add_btn = sp_item_panel:getChildByName("sp_item_add_btn")
+    self.sp_item_label = sp_item_panel:getChildByName("sp_item_label")
+    self:updateSpItemNum()
+    self.tab_container = self.bottom_panel:getChildByName("tab_container")
+    self.tab_container:setVisible(false)
+    local list = {
+        [1] = TI18N("语言_c_6785"),
+        [2] = TI18N("语言_c_6784")
+    }
+    for i=1,2 do
+        local item = self.tab_container:getChildByName("tab_btn_"..i)
+        item.unselect_bg = item:getChildByName("unselect_bg")
+        item.unselect_bg:setVisible(true)
+        item.select_bg = item:getChildByName("select_bg")
+        item.select_bg:setVisible(false)
+        item.title = item:getChildByName("title")
+        item.title:setString(list[i])
+        item.index = i
+        self.title_list[i] = item
+    end
+
+    local top_y = display.getTop(self.main_container)
+    local container_size = self.main_container:getContentSize()
+    local tab_y = self.look_btn:getPositionY()
+    self.look_btn:setPositionY(top_y - (container_size.height - tab_y))
+end
+function HeroResonateTabResonateStarPanel:updateItemNum()
+    local item_id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+    local count = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_id)
+    self.item_label:setString(count)
+end
+function HeroResonateTabResonateStarPanel:updateSpItemNum()
+    local item_id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+    local count = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_id)
+    self.sp_item_label:setString(count)
+end
+function HeroResonateTabResonateStarPanel:playEnterAnimatian()
+    if not self.bottom_panel then return end
+    commonOpenActionLeftMove(self.bottom_panel)
+end
+
+--事件
+function HeroResonateTabResonateStarPanel:registerEvents()
+    registerButtonEventListener(self.item_add_btn, function() self:onClickAddBtn()  end ,true, 2)
+    registerButtonEventListener(self.sp_item_add_btn, function() self:onClickSpAddBtn()  end ,true, 2)
+    registerButtonEventListener(self.add_btn, function() self:onAddBtn()  end ,true, 2)
+    registerButtonEventListener(self.sp_add_btn, function() self:onSpAddBtn()  end ,true, 2)
+    registerButtonEventListener(self.open_btn, function() self:onClickOpenBtn()  end ,true, 2)
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type) 
+        local config = Config.ResonateData.data_const.star_rule_tips
+        if config then
+            TipsManager:getInstance():showAdventureBuffTipsScroll(config.desc,sender:getTouchBeganPosition(),nil,nil,500,false,600)
+        end
+    end ,true, 1)
+    registerButtonEventListener(self.sp_look_btn, function(param,sender, event_type)
+        local config = Config.ResonateData.data_const.sp_star_rule_tips
+        if config then
+            TipsManager:getInstance():showAdventureBuffTipsScroll(config.desc,sender:getTouchBeganPosition(),nil,nil,500,false,400)
+        end
+    end ,true, 1)
+
+	for k, object in pairs(self.title_list) do
+		if object then
+			object:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					playTabButtonSound()
+					self:changeSelectedTab(object.index)
+				end
+			end)
+		end
+    end
+    --共鸣信息更新
+    if self.hero_resonate_info_event == nil then
+        self.hero_resonate_info_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_UpStar_Crystal_Info_Event, function(data)
+           if not data then return end
+           if model:getSpHeroTreeShield() then
+            self.tab_container:setVisible(true)
+        else
+            self.tab_container:setVisible(false)
+        end
+           self:setPanel(data.flag == 1)
+           self:updateHeroList(data.con_list)
+           self:setScData(data)
+        end)
+    end  
+    if self.hero_sp_resonate_info_event == nil then
+        self.hero_sp_resonate_info_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Sp_UpStar_Crystal_Info_Event, function(data)
+           if not data then return end
+           self:setSpData(data)
+        end)
+    end  
+
+    --能否更新list
+    if self.hero_resonate_crystal_can_list_event == nil then
+        self.hero_resonate_crystal_can_list_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_UpStar_Crystal_Can_List_Event, function(status)
+            self.can_update_list = status 
+            self.can_sp_update_list = status
+        end)
+    end  
+    --更新单个英雄信息
+    if self.hero_resonate_crystal_put_in_event == nil then
+        self.hero_resonate_crystal_put_in_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_UpStar_Crystal_Update_One_Event, function(pos)
+            self.can_update_list = true
+            self.can_sp_update_list = true
+            if pos and self.scroll_view then
+                self.scroll_view:resetItemByIndex(pos)
+                self:updateItemNum()
+                self:updateSpItemNum()
+            end
+        end)
+    end  
+
+    -- 选择英雄选择返回事件
+    if self.select_hero_event == nil then
+        self.select_hero_event = GlobalEvent:getInstance():Bind(HeroEvent.Select_Hero_star_Event, function(dic_cur_select_list, form_type)
+            if not self.select_pos then return end
+            if form_type  and form_type == HeroConst.SelectHeroType.eResonateStar then
+                if tableLen(self.dic_partner_id) < Config.ResonateData.data_const["star_open_condition"].val[1][1] then
+                    message(TI18N("语言_c_6052"))
+                    return
+                end
+                for key, value in pairs(self.dic_partner_id) do
+                    if value.star < Config.ResonateData.data_const["star_open_condition"].val[1][2] then
+                        message(TI18N("语言_c_6052"))
+                        return
+                    end
+                end
+                if dic_cur_select_list == nil or next(dic_cur_select_list) == nil then
+                    return
+                end
+                for id,v in pairs(dic_cur_select_list) do
+                    local list = {}
+                    list.con_list = model:getUpStarCon()
+                    local star_num = model:getMinStar(list)
+                    local star_step_num = model:getMinStarStep(list)
+                    local max_star = Config.PartnerData.data_partner_max_star[v.bid]
+                    if star_num < 13 and v.star >= model:getMinStar(list) then
+                        message(TI18N("语言_c_6055"))
+                    elseif v.star == max_star and max_star <= star_num then
+                        message(TI18N("语言_c_6437"))
+                    else
+                        local iscan = true
+                        for key, value in pairs(model:getUpStarCon()) do
+                            local hero_vo = model:getHeroById(value.id)
+                            if hero_vo.bid == v.bid then
+                                message(TI18N("语言_c_6057"))
+                                iscan = false
+                            end
+                        end
+                        for key, value in pairs(model:getUpStarReList()) do
+                            local hero_vo = model:getHeroById(value.id)
+                            if hero_vo.bid == v.bid then
+                                message(TI18N("语言_c_6058"))
+                                iscan = false
+                            end
+                        end
+                        if iscan then
+                            if star_num == 13 then 
+                                if v.star > 13 then
+                                    message(TI18N("语言_c_6436"))
+                                elseif v.star == 13 then
+                                    if v.star_step >= star_step_num then
+                                        message(TI18N("语言_c_6436"))
+                                    else
+                                        controller:sender26406(v.partner_id, self.select_pos)
+                                        break
+                                    end
+                                else
+                                    controller:sender26406(v.partner_id, self.select_pos)
+                                    break
+                                end
+                            elseif star_num == 14 then 
+                                if v.star > 14 then
+                                    message(TI18N("语言_c_6436"))
+                                elseif v.star == 14 then
+                                    if v.star_step >= star_step_num then
+                                        message(TI18N("语言_c_6436"))
+                                    else
+                                        controller:sender26406(v.partner_id, self.select_pos)
+                                        break
+                                    end
+                                else
+                                    controller:sender26406(v.partner_id, self.select_pos)
+                                    break
+                                end
+                            else
+                                -- model:getMinStarStep(list)
+                                controller:sender26406(v.partner_id, self.select_pos)
+                                break
+                            end
+                        end
+                    end
+                end
+                self.select_pos = nil
+            elseif form_type  and form_type == HeroConst.SelectHeroType.eResonateSpStar then
+                if tableLen(self.dic_partner_id) < Config.ResonateData.data_const["star_open_condition"].val[1][1] then
+                    message(TI18N("语言_c_6052"))
+                    return
+                end
+                for key, value in pairs(self.dic_partner_id) do
+                    if value.star < Config.ResonateData.data_const["star_open_condition"].val[1][2] then
+                        message(TI18N("语言_c_6052"))
+                        return
+                    end
+                end
+                if dic_cur_select_list == nil or next(dic_cur_select_list) == nil then
+                    return
+                end
+                for id,v in pairs(dic_cur_select_list) do
+                    local list = {}
+                    list.con_list = model:getUpStarCon()
+                    local star_num = model:getMinStar(list)
+                    local star_step_num = model:getMinStarStep(list)
+                    local max_star = Config.PartnerData.data_partner_max_star[v.bid]
+                    if star_num < 13 and v.star >= model:getMinStar(list) then
+                        message(TI18N("语言_c_6055"))
+                    elseif v.star == max_star and max_star <= star_num then
+                        message(TI18N("语言_c_6437"))
+                    else
+                        local iscan = true
+                        for key, value in pairs(model:getUpStarCon()) do
+                            local hero_vo = model:getHeroById(value.id)
+                            if hero_vo.bid == v.bid then
+                                message(TI18N("语言_c_6057"))
+                                iscan = false
+                            end
+                        end
+                        for key, value in pairs(model:getUpStarReList()) do
+                            local hero_vo = model:getHeroById(value.id)
+                            if hero_vo.bid == v.bid then
+                                message(TI18N("语言_c_6058"))
+                                iscan = false
+                            end
+                        end
+                        if iscan then
+                            if star_num == 13 then 
+                                if v.star > 13 then
+                                    message(TI18N("语言_c_6436"))
+                                elseif v.star == 13 then
+                                    if v.star_step >= star_step_num then
+                                        message(TI18N("语言_c_6436"))
+                                    else
+                                        self:upSpHero(v, self.select_pos)
+                                        break
+                                    end
+                                else
+                                    self:upSpHero(v, self.select_pos)
+                                    break
+                                end
+                            elseif star_num == 14 then 
+                                if v.star > 14 then
+                                    message(TI18N("语言_c_6436"))
+                                elseif v.star == 14 then
+                                    if v.star_step >= star_step_num then
+                                        message(TI18N("语言_c_6436"))
+                                    else
+                                        self:upSpHero(v, self.select_pos)
+                                        break
+                                    end
+                                else
+                                    self:upSpHero(v, self.select_pos)
+                                    break
+                                end
+                            else
+                                self:upSpHero(v, self.select_pos)
+                                break
+                            end
+                        end
+                    end
+                end
+                self.select_pos = nil
+            end
+        end)
+    end
+    
+    -- 道具数量更新
+    if self.add_goods == nil then
+        self.add_goods = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code, data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end 
+    if self.delete_goods == nil then
+        self.delete_goods = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code, data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+    if self.modify_goods == nil then
+        self.modify_goods = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code, data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+end
+function HeroResonateTabResonateStarPanel:upSpHero(hero_vo,pos)
+    if hero_vo.star_step ~= 0 then
+        controller:openHeroSpTreeTipPanel(true,hero_vo,pos,1)
+    else
+        controller:sender26446(hero_vo.partner_id, pos)
+    end
+end
+-- 切换标签页
+function HeroResonateTabResonateStarPanel:changeSelectedTab( index )
+	if self.tab_object ~= nil and self.tab_object.index == index then return end
+	if index == 1 then --普通忍者
+		self.ordinary_panel:setVisible(true)
+        self.special_panel:setVisible(false)
+	else--sp忍者
+		self.ordinary_panel:setVisible(false)
+        self.special_panel:setVisible(true)
+	end
+    
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(false)
+        self.tab_object = nil
+    end
+    self.tab_object = self.title_list[index]
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(true)
+    end
+
+	for i=1, tableLen(self.title_list) do
+		local object = self.title_list[i]
+		if i == index then
+			object.title:setTextColor(cc.c4b(0xf8,0xef,0x76,0xff))
+			object.title:enableOutline(cc.c4b(0x5c,0x27,0x05,0xff),2)
+		else
+			object.title:setTextColor(cc.c4b(0xf9,0xee,0xd0,0xff))
+			object.title:enableOutline(cc.c4b(0x5c,0x27,0x05,0xff),2)
+		end
+	end
+end
+
+function HeroResonateTabResonateStarPanel:refreshExchangeItemNum( bag_code, data_list )
+	if bag_code == BackPackConst.Bag_Code.BACKPACK then
+        local item_id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+        for i,v in pairs(data_list) do 
+            if v and v.base_id and item_id == v.base_id then 
+                self:updateItemNum()
+            end
+        end
+        local item_id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+        for i,v in pairs(data_list) do 
+            if v and v.base_id and item_id == v.base_id then
+                self:updateSpItemNum()
+            end
+        end
+	end
+end
+
+function HeroResonateTabResonateStarPanel:onClickOpenBtn()
+    for key, value in pairs(self.con_tips_list) do
+        if not value then
+            message(TI18N("语言_c_5951"))
+            return
+        end
+    end
+    controller:sender26404()
+end
+
+function HeroResonateTabResonateStarPanel:onClickAddBtn()
+    local item_id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+    local item_config = Config.ItemData.data_get_data(item_id)
+    BackpackController:getInstance():openTipsSource(true, item_config)
+end
+function HeroResonateTabResonateStarPanel:onClickSpAddBtn()
+    local item_id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+    local item_config = Config.ItemData.data_get_data(item_id)
+    BackpackController:getInstance():openTipsSource(true, item_config)
+end
+
+function HeroResonateTabResonateStarPanel:onSpAddBtn()
+    if not self.spdata then return end
+    if not self.sp_open_pos_count then return end
+
+    --等级限制
+    local cfg = deepCopy(Config.ResonateData.data_const["sp_star_cell_lv_limit"].val)
+    table.sort(cfg, function(a,b)
+        return a[2]<b[2]
+    end)
+
+    local function unLock()
+        local cost_count1 = self.spdata.item_count or 1
+        cost_count1 = cost_count1 + 1
+        if cost_count1 <= 0 then
+            cost_count1 = 1
+        end
+        local config = Config.ResonateData.data_cell_cost_2_sp[cost_count1]
+        if not config then return end
+        local list1 = config.loss1
+        local bid1 = list1[1][1]
+        local num1 = list1[1][2]
+        local now_num1 = BackpackController:getInstance():getModel():getItemNumByBid(bid1)
+        local cost_count2 = self.spdata.gold_count or 1
+        cost_count2 = cost_count2 + 1
+        if cost_count2 <= 0 then
+            cost_count2 = 1
+        end
+        local config = Config.ResonateData.data_cell_cost_2_sp[cost_count2]
+        if not config then return end
+        local list2 = config.loss2
+        local bid2 = list2[1][1]
+        local num2 = list2[1][2]
+        local now_num2 = BackpackController:getInstance():getModel():getItemNumByBid(bid2)
+        local re_num = self.item_max_count + model:getSyncStarAddPos() - self.sp_open_pos_count
+        local num_1 = Config.ResonateData.data_const["sp_star_cell_item1_limit"].val
+        if re_num < num_1 then
+            num_1 = re_num
+        end
+        local num_2 = Config.ResonateData.data_const["sp_star_cell_item2_limit"].val
+        if re_num < num_2 then
+            num_2 = re_num
+        end
+        local max_num = Config.ResonateData.data_const["sp_star_cell_item2_limit"].val
+        if cost_count1 <= Config.ResonateData.data_const["sp_star_cell_item1_limit"].val then
+            if now_num1 >= num1 then
+                if self.sp_open_pos_count then
+                    local fun = function()
+                        controller:sender26449(self.sp_open_pos_count + 1, 1)
+                    end
+                    local item_config = Config.ItemData.data_get_data(bid1)
+                    local res = PathTool.getItemRes(item_config.icon)
+		    local str = LangStringFormat(TI18N("语言_c_6708"),{res,num1})
+
+                    CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                end
+            else
+                if cost_count2 <= Config.ResonateData.data_const["sp_star_cell_item2_limit"].val then
+                    if now_num2 >= num2 then
+                        if self.sp_open_pos_count then
+                            local fun = function()
+                                controller:sender26449(self.sp_open_pos_count + 1, 2)
+                            end
+                            local item_config = Config.ItemData.data_get_data(bid2)
+                            local res = PathTool.getItemRes(item_config.icon)
+			    local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+
+                            CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                        end
+                    else
+                        if self.sp_open_pos_count then
+                            local fun = function()
+                                local item_config = Config.ItemData.data_get_data(bid1)
+                                BackpackController:getInstance():openTipsSource(true, item_config)
+                            end
+                            local item_config = Config.ItemData.data_get_data(bid1)
+                            local res = PathTool.getItemRes(item_config.icon)
+                            local str = LangStringFormat(TI18N("语言_c_6708"),{res,num1})
+                            CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                        end
+                    end
+                else
+                    if self.sp_open_pos_count then
+                        local fun = function()
+                            local item_config = Config.ItemData.data_get_data(bid1)
+                            BackpackController:getInstance():openTipsSource(true, item_config)
+                        end
+                        local item_config = Config.ItemData.data_get_data(bid1)
+                        local res = PathTool.getItemRes(item_config.icon)
+                        local str = LangStringFormat(TI18N("语言_c_6708"),{res,num1})
+                        CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                    end
+                end
+            end
+        else
+            if cost_count2 <= Config.ResonateData.data_const["sp_star_cell_item2_limit"].val then
+                if now_num2 >= num2 then
+                    if self.sp_open_pos_count then
+                        local fun = function()
+                            controller:sender26449(self.sp_open_pos_count + 1, 2)
+                        end
+                        local item_config = Config.ItemData.data_get_data(bid2)
+                        local res = PathTool.getItemRes(item_config.icon)
+                        local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+                        CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                    end
+                else
+                    if self.sp_open_pos_count then
+                        local fun = function()
+                            local item_config = Config.ItemData.data_get_data(bid2)
+                            BackpackController:getInstance():openTipsSource(true, item_config)
+                        end
+                        local item_config = Config.ItemData.data_get_data(bid2)
+                        local res = PathTool.getItemRes(item_config.icon)
+                        local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+                        CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                    end
+                end
+            else
+                if self.sp_open_pos_count then
+                    local fun = function()
+                        local item_config = Config.ItemData.data_get_data(bid2)
+                        BackpackController:getInstance():openTipsSource(true, item_config)
+                    end
+                    local item_config = Config.ItemData.data_get_data(bid2)
+                    local res = PathTool.getItemRes(item_config.icon)
+                    local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+                    CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                end
+            end
+        end
+    end
+    local sp_open_pos_count = self.sp_open_pos_count + 1
+    for key, value in pairs(cfg) do
+        if sp_open_pos_count <= value[2] then
+            if role_vo.lev < value[1] then
+                message(string.format(TI18N("语言_c_1027"),value[1]))
+            else
+                unLock()
+            end
+            return 
+        end
+    end
+    unLock()
+end
+--支付类型 1 物品 2 钻石 后端定义的 根据 26429
+function HeroResonateTabResonateStarPanel:onAddBtn()
+    if not self.scdata then return end
+    if not self.open_pos_count then return end
+
+    --等级限制
+    local cfg = deepCopy(Config.ResonateData.data_const["star_cell_lv_limit"].val)
+    table.sort(cfg, function(a,b)
+        return a[2]<b[2]
+    end)
+
+    local function unLock()
+        local cost_count1 = self.scdata.item_count or 1
+        cost_count1 = cost_count1 + 1
+        if cost_count1 <= 0 then
+            cost_count1 = 1
+        end
+        local config = Config.ResonateData.data_cell_cost_2[cost_count1]
+        if not config then return end
+        local list1 = config.loss1
+        local bid1 = list1[1][1]
+        local num1 = list1[1][2]
+        local now_num1 = BackpackController:getInstance():getModel():getItemNumByBid(bid1)
+        local cost_count2 = self.scdata.gold_count or 1
+        cost_count2 = cost_count2 + 1
+        if cost_count2 <= 0 then
+            cost_count2 = 1
+        end
+        local config = Config.ResonateData.data_cell_cost_2[cost_count2]
+        if not config then return end
+        local list2 = config.loss2
+        local bid2 = list2[1][1]
+        local num2 = list2[1][2]
+        local now_num2 = BackpackController:getInstance():getModel():getItemNumByBid(bid2)
+        local re_num = self.item_max_count + model:getSyncStarAddPos() - self.open_pos_count
+        local num_1 = Config.ResonateData.data_const["star_cell_item1_limit"].val
+        if re_num < num_1 then
+            num_1 = re_num
+        end
+        local num_2 = Config.ResonateData.data_const["star_cell_item2_limit"].val
+        if re_num < num_2 then
+            num_2 = re_num
+        end
+        local max_num = Config.ResonateData.data_const["star_cell_item2_limit"].val
+        if cost_count1 <= Config.ResonateData.data_const["star_cell_item1_limit"].val then
+            if now_num1 >= num1 then
+                if self.open_pos_count then
+                    local fun = function()
+                        controller:sender26409(self.open_pos_count + 1, 1)
+                    end
+                    local item_config = Config.ItemData.data_get_data(bid1)
+                    local res = PathTool.getItemRes(item_config.icon)
+                    -- if cost_count1-1 > num_1 then
+                    --     cost_count1 = num_1 + 1
+                    -- end
+                    --道具
+                    -- local str = LangStringFormat(TI18N("语言_c_6041"),{res,num1,cost_count1-1,num_1})
+                    local str = LangStringFormat(TI18N("语言_c_6708"),{res,num1})
+                    CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                end
+            else
+                if cost_count2 <= Config.ResonateData.data_const["star_cell_item2_limit"].val then
+                    if now_num2 >= num2 then
+                        if self.open_pos_count then
+                            local fun = function()
+                                controller:sender26409(self.open_pos_count + 1, 2)
+                            end
+                            local item_config = Config.ItemData.data_get_data(bid2)
+                            local res = PathTool.getItemRes(item_config.icon)
+                            -- if cost_count2-1 > num_2 then
+                            --     cost_count2 = num_2 + 1
+                            -- end
+                            --金币
+                            -- local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,num_2})
+                            local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+                            CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                        end
+                    else
+                        if self.open_pos_count then
+                            local fun = function()
+                                local item_config = Config.ItemData.data_get_data(bid1)
+                                BackpackController:getInstance():openTipsSource(true, item_config)
+                            end
+                            local item_config = Config.ItemData.data_get_data(bid1)
+                            local res = PathTool.getItemRes(item_config.icon)
+                            -- if cost_count1-1 > num_1 then
+                            --     cost_count1 = num_1 + 1
+                            -- end
+                            -- local str = LangStringFormat(TI18N("语言_c_6041"),{res,num1,cost_count1-1,num_1})
+                            local str = LangStringFormat(TI18N("语言_c_6708"),{res,num1})
+                            CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                        end
+                    end
+                else
+                    if self.open_pos_count then
+                        local fun = function()
+                            local item_config = Config.ItemData.data_get_data(bid1)
+                            BackpackController:getInstance():openTipsSource(true, item_config)
+                        end
+                        local item_config = Config.ItemData.data_get_data(bid1)
+                        local res = PathTool.getItemRes(item_config.icon)
+                        -- if cost_count1-1 > num_1 then
+                        --     cost_count1 = num_1 + 1
+                        -- end
+                        -- local str = LangStringFormat(TI18N("语言_c_6041"),{res,num1,cost_count1-1,num_1})
+                        local str = LangStringFormat(TI18N("语言_c_6708"),{res,num1})
+                        CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                    end
+                end
+            end
+        else
+            if cost_count2 <= Config.ResonateData.data_const["star_cell_item2_limit"].val then
+                if now_num2 >= num2 then
+                    if self.open_pos_count then
+                        local fun = function()
+                            controller:sender26409(self.open_pos_count + 1, 2)
+                        end
+                        local item_config = Config.ItemData.data_get_data(bid2)
+                        local res = PathTool.getItemRes(item_config.icon)
+                        -- if cost_count2-1 > num_2 then
+                        --     cost_count2 = num_2 + 1
+                        -- end
+                        -- local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,num_2})
+                        local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+                        CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                    end
+                else
+                    if self.open_pos_count then
+                        local fun = function()
+                            local item_config = Config.ItemData.data_get_data(bid2)
+                            BackpackController:getInstance():openTipsSource(true, item_config)
+                        end
+                        local item_config = Config.ItemData.data_get_data(bid2)
+                        local res = PathTool.getItemRes(item_config.icon)
+                        -- if cost_count2-1 > num_2 then
+                        --     cost_count2 = num_2 + 1
+                        -- end
+                        -- local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,num_2})
+                        local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+                        CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                    end
+                end
+            else
+                if self.open_pos_count then
+                    local fun = function()
+                        local item_config = Config.ItemData.data_get_data(bid2)
+                        BackpackController:getInstance():openTipsSource(true, item_config)
+                    end
+                    local item_config = Config.ItemData.data_get_data(bid2)
+                    local res = PathTool.getItemRes(item_config.icon)
+                    -- if cost_count2-1 > num_2 then
+                    --     cost_count2 = num_2 + 1
+                    -- end
+                    -- local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,num_2})
+                    local str = LangStringFormat(TI18N("语言_c_6041"),{res,num2,cost_count2-1,max_num})
+                    CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                end
+            end
+        end
+    end
+    local open_pos_count = self.open_pos_count + 1
+    for key, value in pairs(cfg) do
+        if open_pos_count <= value[2] + model:getSyncStarAddPos() then
+            if role_vo.lev < value[1] then
+                message(string.format(TI18N("语言_c_1027"),value[1]))
+            else
+                unLock()
+            end
+            return 
+        end
+    end
+    unLock()
+end
+
+--是否首次进入  是否完成
+function HeroResonateTabResonateStarPanel:setPanel(status)
+    if not status then
+        self.lock_container:setVisible(true)
+        self.main_container:setVisible(false)
+        loadSpriteTexture(self.background, "resource/heroresonate/hero_resonate_11.jpg", LOADTEXT_TYPE)
+    else
+        self.lock_container:setVisible(false)
+        self.main_container:setVisible(true)
+        if self.tab_object and self.tab_object.index then
+            self:changeSelectedTab(self.tab_object.index)
+        else    
+            self:changeSelectedTab(1)
+        end
+        loadSpriteTexture(self.background, "resource/heroresonate/hero_resonate_12.png", LOADTEXT_TYPE)
+    end
+end
+function HeroResonateTabResonateStarPanel:setData(parent)
+    self.parent = parent
+    self.is_init_hero = true
+    if model:getSpHeroTreeShield() then
+        self.tab_container:setVisible(true)
+    else
+        self.tab_container:setVisible(false)
+    end
+    controller:sender26405()
+    controller:sender26445()
+    local id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+    loadSpriteTexture(self.item_img, PathTool.getItemRes(id) , LOADTEXT_TYPE)
+    local id = Config.ResonateData.data_cell_cost_2[1].loss1[1][1]
+    loadSpriteTexture(self.sp_item_img, PathTool.getItemRes(id) , LOADTEXT_TYPE)
+end
+function HeroResonateTabResonateStarPanel:setConPanel()
+    local cfg = Config.ResonateData.data_const
+    local list = {
+        [1] = "star_open_lv",
+        [2] = "star_open_condition",
+    }
+    self.con_panel:removeAllChildren()
+    self.con_tips_list = {}
+    for i=1,tableLen(list) do
+        self.con_list[i] = {}
+        local con = createLabel(22,cc.c4b(0x5c,0x27,0x05,0xff),nil,0,0,"",self.con_panel,nil,cc.p(0,1))
+        con:setString(self:setTxt(list[i],cfg[list[i]]))
+        local tip = createRichLabel(22,cc.c4b(0x5c,0x27,0x05,0xff),cc.p(1,1),cc.p(self.con_panel:getContentSize().width,0))
+        self.con_panel:addChild(tip)
+        local str,status = self:setTip(list[i],cfg[list[i]])
+        self.con_tips_list[i] = status
+        tip:setString(str)
+        self.con_list[i].con = con
+        self.con_list[i].tip = tip
+    end
+    local _h = 0
+    for key, value in pairs(self.con_list) do
+        local _w = value.con:getContentSize().width + value.tip:getContentSize().width
+        if _w < self.con_panel:getContentSize().width then
+        else
+            value.con:setWidth(self.con_panel:getContentSize().width - value.tip:getContentSize().width - 10)
+        end
+        _h = _h + value.con:getContentSize().height + 12
+    end
+    local max_h = math.max(_h,self.con_panel:getContentSize().height)
+    self.con_panel:setInnerContainerSize(cc.size(self.con_panel:getContentSize().width,max_h))
+    local _y = max_h
+    for key, value in pairs(self.con_list) do
+        value.con:setPositionY(_y)
+        -- value.tip:setPositionY(_y - value.con:getContentSize().height/2)
+        value.tip:setPositionY(_y)
+        _y = _y - value.con:getContentSize().height - 12
+    end
+    for key, value in pairs(self.con_tips_list) do
+        if not value then
+            setChildUnEnabled(true,self.open_btn)
+            return
+        end
+    end
+end
+function HeroResonateTabResonateStarPanel:setTxt(desc,list)
+    if not list then return "" end
+    local str = ""
+    if desc == "star_open_lv" then
+        str = string.format(TI18N("语言_c_1027"),list.val)
+    elseif desc == "star_open_condition" then
+        str = LangStringFormat(TI18N("语言_c_5953"),list.val[1])
+    end
+    return str
+end
+function HeroResonateTabResonateStarPanel:setTip(desc,list)
+    if not list then return "" end
+    local str = TI18N("语言_c_3561")
+    local status = false
+    if desc == "star_open_lv" then
+        if role_vo.lev >= list.val then
+            str = TI18N("语言_c_3560")
+            status = true
+        end
+    elseif desc == "star_open_condition" then
+        if tableLen(self.scdata.con_list) >= list.val[1][1] then
+            str = TI18N("语言_c_3560")
+            status = true
+        end
+    end
+    return str,status
+end
+function HeroResonateTabResonateStarPanel:setScData(scdata)
+    self.scdata = scdata
+    self:setConPanel()
+    -- self.dic_hero_vo = {}
+    -- for i,v in ipairs(scdata.con_list) do
+    --     if v.id ~= 0 then
+    --         local hero_vo = model:getHeroById(v.id)
+    --         if hero_vo and next(hero_vo) ~= nil then
+    --             table_insert(self.dic_hero_vo, hero_vo)
+    --         end
+    --     end
+    -- end
+
+    self.show_list = self.scdata.res_list
+    table_sort(self.show_list, function(a,b) return a.pos < b.pos end)
+    self.open_pos_count = #self.show_list
+    local item_max_count
+    -- if model:isResonateCystalMaxLev() then
+    --     item_max_count = self.item_max_count + 5
+    --     self.count_label:setString(string_format("%s/%s", self.open_pos_count, item_max_count))
+    -- else
+        item_max_count = self.item_max_count + model:getSyncStarAddPos()
+        self.count_label:setString(string_format("%s/%s", self.open_pos_count, self.item_max_count + model:getSyncStarAddPos()))
+    -- end
+    if self.open_pos_count < item_max_count  then
+        self.add_btn:setVisible(true)
+    else
+        self.add_btn:setVisible(false)
+    end
+
+    if self.can_update_list == true then
+        self:updateScrollList()
+    end
+end
+function HeroResonateTabResonateStarPanel:setSpData(scdata)
+    self.spdata = scdata
+    
+    self.sp_show_list = self.spdata.res_list
+    table_sort(self.sp_show_list, function(a,b) return a.pos < b.pos end)
+    self.sp_open_pos_count = #self.sp_show_list
+    local item_max_count
+    item_max_count = self.sp_item_max_count + model:getSyncSpStarAddPos()
+    self.count_sp_label:setString(string_format("%s/%s", self.sp_open_pos_count, self.sp_item_max_count + model:getSyncSpStarAddPos()))
+    if self.sp_open_pos_count < item_max_count  then
+        self.sp_add_btn:setVisible(true)
+    else
+        self.sp_add_btn:setVisible(false)
+    end
+
+    if self.can_sp_update_list == true then
+        self:updateSpScrollList()
+    end
+end
+function HeroResonateTabResonateStarPanel:startTimeTicket()
+    if self.timeticket == nil then
+        self:countDownEndTime()
+        self.timeticket = GlobalTimeTicket:getInstance():add(function()
+            self:countDownEndTime()
+        end, 1)
+    end
+end
+
+function HeroResonateTabResonateStarPanel:countDownEndTime()
+    if self.scroll_view then
+         for i,v in pairs(self.scroll_view.activeCellIdx) do
+            if v and self.time_desc_list[i] then
+                self:updateTimeByIndex(i, self.time_desc_list[i])
+            end
+        end
+    end
+end
+
+function HeroResonateTabResonateStarPanel:updateTimeByIndex(index, time_desc)
+    -- body 
+    local data = self.show_list[index]
+    if data then
+        if time_desc then
+            local time = data.cool_time - GameNet:getInstance():getTime()
+            if time < 0 then
+                time = 0
+                data.cool_time = 0
+                self.scroll_view:resetItemByIndex(index)
+                self.time_desc_list[index] = nil
+                return
+            end
+            -- time_desc:setString(string_format("%s%s", TI18N("语言_c_131"), TimeTool.getDayOrHour(time)))
+            time_desc:setString(TimeTool.GetTimeFormat(time))
+        end
+    end
+end
+
+
+function HeroResonateTabResonateStarPanel:updateSpScrollList()
+    if self.sp_scroll_view == nil then
+        local scroll_view_size = self.sp_lay_scrollview:getContentSize()
+        local list_setting = {
+            start_x = 5,
+            space_x = 10,
+            start_y = 0,
+            space_y = 0,
+            item_width = 120,
+            item_height = 120,
+            row = 1,
+            col = 5,
+            need_dynamic = true
+        }
+        self.sp_scroll_view = CommonScrollViewSingleLayout.new(self.sp_lay_scrollview, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0, 0)) 
+
+        self.sp_scroll_view:registerScriptHandlerSingle(handler(self,self.createSpNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.sp_scroll_view:registerScriptHandlerSingle(handler(self,self.numberSpOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.sp_scroll_view:registerScriptHandlerSingle(handler(self,self.updateSpCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.sp_scroll_view:registerScriptHandlerSingle(handler(self,self.onCellSpTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end
+    if self.sp_is_init_scroll_view == nil then
+        self.sp_is_init_scroll_view = true
+        self.sp_scroll_view:reloadData()
+    else
+
+        if self.sp_record_count ~= self:numberSpOfCells() then
+            self.sp_scroll_view:reloadData()
+        else
+            self.sp_scroll_view:resetCurrentItems()    
+        end
+        
+    end
+    self.sp_record_count = self:numberSpOfCells()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroResonateTabResonateStarPanel:createSpNewCell(width, height)
+    local cell = HeroExhibitionItem.new(0.9, true, 0, true,true)
+    cell:addCallBack(function() self:onCellSpTouched(cell) end)
+    cell:setLongTimeTouchEffect(true)
+    return cell
+end
+--获取数据数量
+function HeroResonateTabResonateStarPanel:numberSpOfCells()
+    if not self.sp_show_list then return self.sp_item_max_count + model:getSyncSpStarAddPos() end
+    local count = #self.sp_show_list
+    if model:isResonateCystalMaxLev() then
+        if count <= (self.sp_item_max_count + model:getSyncSpStarAddPos()) then
+            return self.sp_item_max_count + model:getSyncSpStarAddPos()
+        else
+            return count
+        end
+    else
+        if count <= self.sp_item_max_count + model:getSyncSpStarAddPos() then
+            return self.sp_item_max_count + model:getSyncSpStarAddPos()
+        else
+            return count
+        end
+    end
+    
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function HeroResonateTabResonateStarPanel:updateSpCellByIndex(cell, index)
+    cell.index = index
+    local data = self.sp_show_list[index]
+
+    cell:showResonateCrystalTime(false)
+    self.sp_time_desc_list[index] = nil
+
+    if data and data.id ~= 0 then
+        local hero_vo =  model:getHeroById(data.id)
+        cell:setData(hero_vo)
+        cell:showLockIcon(false)
+        cell:showAddIcon(false)
+    else
+        cell:setData(nil)
+        cell:showAddIcon(false)
+        if index == (self.sp_open_pos_count + 1) then
+            cell:showLockIcon(true, "", {res = PathTool.getResFrame("heroresonate","hero_resonate_9")})    
+        elseif index > (self.sp_open_pos_count + 1) then
+            cell:showLockIcon(true, "", {res = PathTool.getResFrame("common","common_90009"), is_unenabled_bg = true})
+        else
+            cell:showLockIcon(false)
+
+            if data and data.cool_time and data.cool_time > 0 then
+                local time = data.cool_time - GameNet:getInstance():getTime()
+                if time > 0 then
+                    --显示时间
+                    local time_str = TimeTool.GetTimeFormat(time)
+                    self.sp_time_desc_list[index] = cell:showResonateCrystalTime(true, time_str)
+                    self:startTimeTicket()
+                else
+                    cell:showAddIcon(true)    
+                end
+            else
+                cell:showAddIcon(true)
+            end
+        end
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function HeroResonateTabResonateStarPanel:onCellSpTouched(cell)
+    if not cell.index then return end
+    local index = cell.index
+    local data = self.sp_show_list[index]
+    if data and data.id ~= 0 then
+        controller:openHeroSpTreeTipPanel(true,model:getHeroById(data.id),index,2)
+    else
+        if index == (self.sp_open_pos_count + 1) then
+            --购买
+            self:onSpAddBtn()
+        elseif index > (self.sp_open_pos_count + 1) then
+            message(TI18N("语言_c_3140"))
+        else
+            if data and data.cool_time and data.cool_time ~= 0 then
+                --显示时间
+                local time = data.cool_time - GameNet:getInstance():getTime()
+                if time > 0 then
+                    self:SprefreshTime(index)
+                else
+                    self:onClickSpHeroBtn(index)
+                end
+            else
+                self:onClickSpHeroBtn(index)
+            end
+        end
+    end
+end
+
+function HeroResonateTabResonateStarPanel:SprefreshTime(index)
+    local cell_flush_expend = {3,100}
+
+    local config = Config.ResonateData.data_const.sp_star_cell_flush_expend
+    if config then
+        cell_flush_expend = config.val
+    end
+    if cell_flush_expend and next(cell_flush_expend) ~= nil then 
+        local bid = cell_flush_expend[1][1] or 0
+        local num = cell_flush_expend[1][2] or 0
+        local item_config = Config.ItemData.data_get_data(bid)
+        if item_config then 
+            local fun = function()
+                controller:sender26448(index)
+            end
+
+            local res = PathTool.getItemRes(item_config.icon)
+            local str = string.format(TI18N("语言_c_3141"),res,num)
+            CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+        end
+    end
+end
+
+function HeroResonateTabResonateStarPanel:onClickSpHeroBtn(pos)
+    self.select_pos = pos
+    local setting = {}
+    setting.select_condition = {}
+    setting.select_condition.star_start = 0
+    setting.select_condition.camp_type = 0
+    setting.select_condition.bid = 0
+    setting.select_count = 1
+    setting.form_type = HeroConst.SelectHeroType.eResonateSpStar
+    setting.dic_selected = {}
+
+    setting.dic_filter_selected = {}
+    if self.sp_dic_hero_vo then
+        for k,v in pairs(self.sp_dic_hero_vo) do
+            setting.dic_filter_selected[v.id] = v
+        end
+    end
+    if self.sp_show_list then
+        for k,v in ipairs(self.sp_show_list) do
+            if v.id ~= 0 then
+                local hero_vo = model:getHeroById(v.id)
+                if hero_vo then
+                    setting.dic_filter_selected[v.id] = hero_vo
+                end
+            end
+        end
+    end
+    controller:openHeroStarSelectHeroPanel(true, setting)
+end
+
+
+
+function HeroResonateTabResonateStarPanel:updateScrollList()
+    if self.scroll_view == nil then
+        local scroll_view_size = self.lay_scrollview:getContentSize()
+        local list_setting = {
+            start_x = 5,
+            space_x = 10,
+            start_y = 0,
+            space_y = 0,
+            item_width = 120,
+            item_height = 120,
+            row = 1,
+            col = 5,
+            need_dynamic = true
+        }
+        self.scroll_view = CommonScrollViewSingleLayout.new(self.lay_scrollview, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0, 0)) 
+
+        self.scroll_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.scroll_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.scroll_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.scroll_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end
+    if self.is_init_scroll_view == nil then
+        self.is_init_scroll_view = true
+        self.scroll_view:reloadData()
+    else
+
+        if self.record_count ~= self:numberOfCells() then
+            self.scroll_view:reloadData()
+        else
+            self.scroll_view:resetCurrentItems()    
+        end
+        
+    end
+    self.record_count = self:numberOfCells()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroResonateTabResonateStarPanel:createNewCell(width, height)
+    local cell = HeroExhibitionItem.new(0.9, true, 0, true,true)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    cell:setLongTimeTouchEffect(true)
+    return cell
+end
+--获取数据数量
+function HeroResonateTabResonateStarPanel:numberOfCells()
+    if not self.show_list then return self.item_max_count + model:getSyncStarAddPos() end
+    local count = #self.show_list
+    if model:isResonateCystalMaxLev() then
+        if count <= (self.item_max_count + model:getSyncStarAddPos()) then
+            return self.item_max_count + model:getSyncStarAddPos()
+        else
+            return count
+        end
+    else
+        if count <= self.item_max_count + model:getSyncStarAddPos() then
+            return self.item_max_count + model:getSyncStarAddPos()
+        else
+            return count
+        end
+    end
+    
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function HeroResonateTabResonateStarPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.show_list[index]
+
+    cell:showResonateCrystalTime(false)
+    self.time_desc_list[index] = nil
+
+    if data and data.id ~= 0 then
+        local hero_vo =  model:getHeroById(data.id)
+        cell:setData(hero_vo)
+        cell:showLockIcon(false)
+        cell:showAddIcon(false)
+    else
+        cell:setData(nil)
+        cell:showAddIcon(false)
+        if index == (self.open_pos_count + 1) then
+            cell:showLockIcon(true, "", {res = PathTool.getResFrame("heroresonate","hero_resonate_9")})    
+        elseif index > (self.open_pos_count + 1) then
+            cell:showLockIcon(true, "", {res = PathTool.getResFrame("common","common_90009"), is_unenabled_bg = true})
+        else
+            cell:showLockIcon(false)
+
+            if data and data.cool_time and data.cool_time > 0 then
+                local time = data.cool_time - GameNet:getInstance():getTime()
+                if time > 0 then
+                    --显示时间
+                    local time_str = TimeTool.GetTimeFormat(time)
+                    self.time_desc_list[index] = cell:showResonateCrystalTime(true, time_str)
+                    self:startTimeTicket()
+                else
+                    cell:showAddIcon(true)    
+                end
+            else
+                cell:showAddIcon(true)
+            end
+        end
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function HeroResonateTabResonateStarPanel:onCellTouched(cell)
+    if not cell.index then return end
+    local index = cell.index
+    local data = self.show_list[index]
+    if data and data.id ~= 0 then
+        local hero_vo =  model:getHeroById(data.id)
+        local setting = {}
+        setting.left_hero_vo = hero_vo
+        setting.pos = index
+        controller:openHeroStarPutDownPanel(true, setting)
+    else
+        if index == (self.open_pos_count + 1) then
+            --购买
+            self:onAddBtn()
+        elseif index > (self.open_pos_count + 1) then
+            message(TI18N("语言_c_3140"))
+        else
+            if data and data.cool_time and data.cool_time ~= 0 then
+                --显示时间
+                local time = data.cool_time - GameNet:getInstance():getTime()
+                if time > 0 then
+                    self:refreshTime(index)
+                else
+                    self:onClickHeroBtn(index)
+                end
+            else
+                self:onClickHeroBtn(index)
+            end
+        end
+    end
+end
+
+function HeroResonateTabResonateStarPanel:refreshTime(index)
+    local cell_flush_expend = {3,100}
+
+    local config = Config.ResonateData.data_const.star_cell_flush_expend
+    if config then
+        cell_flush_expend = config.val
+    end
+    if cell_flush_expend and next(cell_flush_expend) ~= nil then 
+        local bid = cell_flush_expend[1][1] or 0
+        local num = cell_flush_expend[1][2] or 0
+        local item_config = Config.ItemData.data_get_data(bid)
+        if item_config then 
+            local fun = function()
+                controller:sender26408(index)
+            end
+
+            local res = PathTool.getItemRes(item_config.icon)
+            local str = string.format(TI18N("语言_c_3141"),res,num)
+            CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+        end
+    end
+end
+
+function HeroResonateTabResonateStarPanel:onClickHeroBtn(pos)
+    self.select_pos = pos
+    local setting = {}
+    setting.select_condition = {}
+    setting.select_condition.star_start = 0
+    setting.select_condition.camp_type = 0
+    setting.select_condition.bid = 0
+    setting.select_count = 1
+    setting.form_type = HeroConst.SelectHeroType.eResonateStar
+    setting.dic_selected = {}
+
+    setting.dic_filter_selected = {}
+    if self.dic_hero_vo then
+        for k,v in pairs(self.dic_hero_vo) do
+            setting.dic_filter_selected[v.id] = v
+        end
+    end
+    if self.show_list then
+        for k,v in ipairs(self.show_list) do
+            if v.id ~= 0 then
+                local hero_vo = model:getHeroById(v.id)
+                if hero_vo then
+                    setting.dic_filter_selected[v.id] = hero_vo
+                end
+            end
+        end
+    end
+    controller:openHeroStarSelectHeroPanel(true, setting)
+end
+
+
+function HeroResonateTabResonateStarPanel:runShowAction(is_run)
+    if is_run then
+        --移开的
+        if self.bottom_panel then
+            local fadeOut = cc.FadeIn:create(0.8)
+            local moveto = cc.MoveTo:create(0.8,cc.p(self.bottom_panel_x, -1000))
+            local spawn_action = cc.Spawn:create(moveto, fadeOut)
+            self.bottom_panel:runAction(spawn_action)    
+        end
+        if self.lock_container then
+            local fadeOut2 = cc.FadeIn:create(0.8)
+            local moveto2 = cc.MoveTo:create(0.8,cc.p(self.lock_panel_x, -1000))
+            local spawn_action2 = cc.Spawn:create(moveto2, fadeOut2)
+            self.lock_container:runAction(spawn_action2)
+        end
+        if self.item_lay_list then
+            for i,v in ipairs(self.item_lay_list) do
+                self:runActionTo(v)
+            end
+        end
+    else
+        self.delayTime_param = self.parent.delayTime_param or 0.5
+        if self.bottom_panel then
+            self.bottom_panel:setPositionY(-1000)
+            local fadeIn = cc.FadeIn:create(0.65)
+            local moveto = cc.MoveTo:create(0.65,cc.p(self.bottom_panel_x, self.bottom_panel_y))
+            local spawn_action = cc.Spawn:create(moveto, fadeIn)
+            self.bottom_panel:runAction(cc.Sequence:create(cc.DelayTime:create(self.delayTime_param), spawn_action))
+        end
+        if self.lock_container then
+            self.lock_container:setPositionY(-1000)
+            local fadeIn2 = cc.FadeIn:create(0.65)
+            local moveto2 = cc.MoveTo:create(0.65,cc.p(self.lock_panel_x, self.lock_panel_y))
+            local spawn_action2 = cc.Spawn:create(moveto2, fadeIn2)
+            self.lock_container:runAction(cc.Sequence:create(cc.DelayTime:create(self.delayTime_param), spawn_action2))
+        end
+        if self.item_lay_list then
+            for i,v in ipairs(self.item_lay_list) do
+                self:runActionBack(v)
+            end
+        end
+    end
+end
+
+function HeroResonateTabResonateStarPanel:runActionTo(item)
+    local node = item.btn
+    local x = item.x + item.pos[1]
+    local y = item.y + item.pos[2]
+    local moveto = cc.MoveTo:create(0.8,cc.p(x, y))
+    local fadeOut = cc.FadeOut:create(0.8)
+    local spawn_action = cc.Spawn:create(moveto, fadeOut)
+    node:runAction(cc.Sequence:create(spawn_action))
+    if item.btn.spine then
+        local moveto = cc.MoveTo:create(0.8,cc.p(x, y + self.hero_param))
+        local fadeOut = cc.FadeOut:create(0.8)
+        local scale = cc.ScaleTo:create(0.8, 3)
+        local spawn_action = cc.Spawn:create(moveto, scale, fadeOut)
+        item.btn.spine:runAction(cc.Sequence:create(spawn_action))
+    end
+end
+function HeroResonateTabResonateStarPanel:runActionBack(item)
+    local node = item.btn
+
+    local old_x = item.x + item.pos[1]
+    local old_y = item.y + item.pos[2]
+    node:setPosition(old_x, old_y)
+    local x = item.x
+    local y = item.y
+    local moveto = cc.MoveTo:create(0.65,cc.p(x, y))
+    local fadeIn = cc.FadeIn:create(0.65)
+    local spawn_action = cc.Spawn:create(moveto, fadeIn)
+    node:runAction(cc.Sequence:create(cc.DelayTime:create(self.delayTime_param), spawn_action))
+
+    if item.btn.spine then
+        item.btn.spine:setPosition(old_x, old_y + self.hero_param)
+        item.btn.spine:setOpacity(0)
+        item.btn.spine:setScale(3)
+        local moveto = cc.MoveTo:create(0.65,cc.p(x, y + self.hero_param))
+        local fadeIn = cc.FadeIn:create(0.65)
+        local scale = cc.ScaleTo:create(0.65, 1)
+        local spawn_action = cc.Spawn:create(moveto, scale, fadeIn)
+        item.btn.spine:runAction(cc.Sequence:create(cc.DelayTime:create(self.delayTime_param), spawn_action))
+    end
+end
+function HeroResonateTabResonateStarPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+function HeroResonateTabResonateStarPanel:updateHeroList(list)
+    if not list then return end
+    if self.dic_hero_vo then return end
+    self.dic_partner_id = {}
+    self.dic_hero_vo = {}
+    for i,v in ipairs(list) do
+        if v.id ~= 0 then
+            local hero_vo = model:getHeroById(v.id)
+            if hero_vo and next(hero_vo) ~= nil then
+                table_insert(self.dic_hero_vo, hero_vo)
+                self.dic_partner_id[hero_vo.partner_id] = hero_vo
+            end
+        end
+    end
+    local func = SortTools.tableLowerSorter({"lev","id"})
+    table.sort( self.dic_hero_vo, func )
+    self.is_must_init_hero = true
+    self:checkShowHeroList()
+end
+function HeroResonateTabResonateStarPanel:checkShowHeroList( )
+    -- if self.is_move_effect then return end
+    if self.is_must_init_hero then
+        self.is_must_init_hero = false
+        for pos,v in ipairs(self.item_lay_list) do
+            if self.is_init_hero then
+                delayRun(self.hero_panel, pos * 0.04, function()
+                    self:updateHSingleHero(pos, v)
+                end)
+            else
+                self:updateHSingleHero(pos, v)
+            end
+        end
+        self.is_init_hero = false
+    end
+end
+function HeroResonateTabResonateStarPanel:updateHSingleHero(pos, v)
+    if self.dic_hero_vo[pos] == nil then
+                --判断解锁 
+        self:checkPosLockUI(pos)
+        if v.btn.spine then
+            v.btn.spine:removeFromParent()
+            v.btn.spine = nil
+        end
+        v.btn.record_spine_bid = nil
+        v.btn.record_spine_star = nil
+        v.btn.record_spine_skin = nil
+        if v.btn.star_node then
+            v.btn.star_node:setVisible(false)
+        end
+    else
+        if v.btn.star_node then
+            v.btn.star_node:setVisible(true)
+        end
+        self:updateAddSpine(pos, true, true)
+        self:updateSpine(v.btn, self.dic_hero_vo[pos], false, pos)
+    end
+end
+--检查位置解锁
+function HeroResonateTabResonateStarPanel:checkPosLockUI(pos)
+    if not self.item_lay_list or not self.item_lay_list[pos] then return end
+    self:updateAddSpine(pos, true)
+end
+function HeroResonateTabResonateStarPanel:updateAddSpine(pos, is_show, is_not_add_mark)
+    if not self.item_lay_list or not self.item_lay_list[pos] then return end
+    if is_show then
+        local action, x, y, scale, linex, liney, rotate
+        scale = 1
+        if pos == 4 then
+            if is_not_add_mark then
+                action = PlayerAction.action_2
+            else
+                action = PlayerAction.action_1
+            end
+            x = 45
+            y = 0
+            linex = -90
+            liney = 80
+            rotate = -70
+        elseif pos == 2 then
+            if is_not_add_mark then
+                action = PlayerAction.action_2
+            else
+                action = PlayerAction.action_1
+            end
+            x = 45
+            y = 0
+            linex = -30
+            liney = 100
+            rotate = -40
+        elseif pos == 3 then
+            if is_not_add_mark then
+                action = PlayerAction.action_2
+            else
+                action = PlayerAction.action_1
+            end
+            x = 45
+            y = 0
+            linex = 130
+            liney = 100
+            scale = -1
+            rotate = 40
+        elseif pos == 5 then
+            if is_not_add_mark then
+                action = PlayerAction.action_2
+            else
+                action = PlayerAction.action_1
+            end
+            x = 45
+            y = 0
+            linex = 190
+            liney = 80
+            scale = -1 
+            rotate = 70
+        else --pos == 1 
+            if is_not_add_mark then
+                action = PlayerAction.action_2
+            else
+                action = PlayerAction.action_1
+            end
+            x = 45
+            y = 0
+            linex = 45
+            liney = 120
+            rotate = 0
+        end
+        --底座
+        if self.item_lay_list[pos].add_spine == nil then
+            self.item_lay_list[pos].add_spine = createEffectSpine("E24317", cc.p(x, y), cc.p(0.5, 0.5), true, action)
+            self.item_lay_list[pos].btn:addChild(self.item_lay_list[pos].add_spine)
+            self.item_lay_list[pos].add_spine:setScaleX(scale)
+        else
+            self.item_lay_list[pos].add_spine:setVisible(true) 
+            self.item_lay_list[pos].add_spine:setAnimation(0, action, true)
+        end
+
+        --连接线
+        if self.item_lay_list[pos].line_spine == nil then
+            self.item_lay_list[pos].line_spine = createEffectSpine("E24319", cc.p(linex, liney), cc.p(0.5, 0.5), true, PlayerAction.action)
+            self.item_lay_list[pos].btn:addChild(self.item_lay_list[pos].line_spine)
+            self.item_lay_list[pos].line_spine:setScale(0.5)
+            self.item_lay_list[pos].line_spine:setRotation(rotate)
+        else
+            self.item_lay_list[pos].line_spine:setVisible(true) 
+            self.item_lay_list[pos].line_spine:setAnimation(0, PlayerAction.action, true)
+        end
+    else
+        if self.item_lay_list[pos].line_spine then
+            self.item_lay_list[pos].line_spine:setVisible(false)
+        end
+    end
+end
+--更新模型,也是初始化模型
+--@is_refresh  是否需要刷新(其实是假刷新)
+function HeroResonateTabResonateStarPanel:updateSpine(parent_panel, hero_vo, is_refresh, pos)
+    if parent_panel.record_spine_bid and parent_panel.record_spine_bid == hero_vo.bid and 
+        parent_panel.record_spine_star and parent_panel.record_spine_star == hero_vo.star and
+        parent_panel.record_spine_step and parent_panel.record_spine_step == hero_vo.star_step and
+        parent_panel.record_spine_skin and parent_panel.record_spine_skin == hero_vo.use_skin then
+        if is_refresh then
+            if parent_panel.spine then
+                local action1 = cc.FadeOut:create(0.2)
+                local action2 = cc.FadeIn:create(0.2)
+                parent_panel.spine:runAction(cc.Sequence:create(action1,action2))
+            end    
+        end
+        return
+    end
+    parent_panel.record_spine_bid = hero_vo.bid
+    parent_panel.record_spine_star = hero_vo.star
+    parent_panel.record_spine_skin = hero_vo.use_skin
+    parent_panel.record_spine_step = hero_vo.star_step
+
+    local fun = function()    
+        if not parent_panel.spine then
+            parent_panel.spine = BaseRole.new(BaseRole.type.partner, hero_vo, nil, {scale = 0.45, skin_id = hero_vo.use_skin})
+            parent_panel.spine:setAnimation(0,PlayerAction.show,true) 
+            parent_panel.spine:setCascade(true)
+            local x, y = parent_panel:getPosition()
+            parent_panel.spine:setPosition(cc.p(x, y + self.hero_param + 10))
+            parent_panel.spine:setAnchorPoint(cc.p(0.5,0.5)) 
+            local pos1 = math_floor(1000 - y)
+            self.hero_panel:addChild(parent_panel.spine, pos1) 
+            parent_panel.spine:setOpacity(0)
+            local action = cc.FadeIn:create(0.2)
+            parent_panel.spine:runAction(action)
+            self:createStar(parent_panel, hero_vo.star,hero_vo.star_step)
+        end
+    end
+    if parent_panel.spine then
+        doStopAllActions(parent_panel.spine)
+        parent_panel.spine:removeFromParent()
+        parent_panel.spine = nil
+        fun()
+    else
+        fun()
+    end
+end
+function HeroResonateTabResonateStarPanel:createStar(parent_panel, num, step)
+    local spine = parent_panel.spine
+    parent_panel.star_node = cc.Node:create()
+    parent_panel.star_node:setCascadeOpacityEnabled(true)
+    parent_panel.star_node:setName("createStar")
+    parent_panel.star_node:setPosition(0, 84)
+    spine:addChild(parent_panel.star_node)
+    local num = num or 0
+    local width = 26
+    if num >= 16 then
+        width = 20
+    end
+    parent_panel.star_setting = model:createStar(num, parent_panel.star_node, parent_panel.star_setting, width, step)
+    parent_panel.star_node:setVisible(true)
+    
+    local star_step = step or 0
+    local con = createLabel(20,cc.c4b(0xff,0xff,0xff,0xff),nil,0,40,"",parent_panel.star_node,nil,cc.p(0.5,1))
+    con:setString("")
+    if num >= 13 then
+        con:setString(string_format(TI18N("语言_c_6282"), step))
+    end
+end
+--移除
+function HeroResonateTabResonateStarPanel:DeleteMe()
+    if self.hero_resonate_power_event then
+        GlobalEvent:getInstance():UnBind(self.hero_resonate_power_event)
+        self.hero_resonate_power_event = nil
+    end
+    if self.hero_resonate_info_event then
+        GlobalEvent:getInstance():UnBind(self.hero_resonate_info_event)
+        self.hero_resonate_info_event = nil
+    end
+    if self.hero_sp_resonate_info_event then
+        GlobalEvent:getInstance():UnBind(self.hero_sp_resonate_info_event)
+        self.hero_sp_resonate_info_event = nil
+    end
+    if self.hero_resonate_crystal_can_list_event then
+        GlobalEvent:getInstance():UnBind(self.hero_resonate_crystal_can_list_event)
+        self.hero_resonate_crystal_can_list_event = nil
+    end
+    if self.hero_resonate_crystal_put_in_event then
+        GlobalEvent:getInstance():UnBind(self.hero_resonate_crystal_put_in_event)
+        self.hero_resonate_crystal_put_in_event = nil
+    end
+    if self.hero_resonate_crystal_put_down_event then
+        GlobalEvent:getInstance():UnBind(self.hero_resonate_crystal_put_down_event)
+        self.hero_resonate_crystal_put_down_event = nil
+    end
+    if self.select_hero_event then
+        GlobalEvent:getInstance():UnBind(self.select_hero_event)
+        self.select_hero_event = nil
+    end
+    if self.add_goods then
+        GlobalEvent:getInstance():UnBind(self.add_goods)
+        self.add_goods = nil
+    end
+    if self.delete_goods then
+        GlobalEvent:getInstance():UnBind(self.delete_goods)
+        self.delete_goods = nil
+    end
+    if self.modify_goods then
+        GlobalEvent:getInstance():UnBind(self.modify_goods)
+        self.modify_goods = nil
+    end
+
+    if self.timeticket then
+        GlobalTimeTicket:getInstance():remove(self.timeticket)
+        self.timeticket = nil
+    end
+
+    if role_vo then
+        if self.role_lev_event then
+            role_vo:UnBind(self.role_lev_event)
+            self.role_lev_event = nil
+        end
+    end
+
+    if self.item_lay_list then
+        for i,v in ipairs(self.item_lay_list) do
+            if v.add_spine then
+                v.add_spine:clearTracks()
+                v.add_spine:removeFromParent()
+                v.add_spine = nil
+            end
+            if v.btn and v.btn.spine then
+                v.btn.spine:removeFromParent()
+                v.btn.spine = nil
+            end
+        end
+    end
+    if self.scroll_view then
+        self.scroll_view:DeleteMe()
+        self.scroll_view = nil
+    end
+
+    doStopAllActions(self.main_container)
+    doStopAllActions(self.bottom_panel)
+
+end

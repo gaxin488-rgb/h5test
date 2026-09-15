@@ -1,0 +1,236 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-11-01
+-- --------------------------------------------------------------------
+ArenaWorldModel = ArenaWorldModel or BaseClass()
+
+function ArenaWorldModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function ArenaWorldModel:config()
+	self.myBaseInfo = {}      -- 个人数据
+	self.enemyListData = {}	  -- 挑战对手数据
+	self.ArenaOpenStatus = 0 -- 天梯是否开启
+
+	self.guildwar_red_list = {} 	-- 红点数据
+	self.is_auto=false   --是否自动
+	
+end
+
+-- 个人数据
+function ArenaWorldModel:setArenaMyBaseInfo( data )
+	self.myBaseInfo = data
+	self:setArenaOpenStatus(data.status)
+end
+function ArenaWorldModel:getArenaMyBaseInfo(  )
+	return self.myBaseInfo
+end
+
+--获取战斗次数
+function ArenaWorldModel:getCombatCount(  )
+	if self.myBaseInfo then
+		return self.myBaseInfo.now_combat_num or 0
+	end
+	return 0
+end
+--战斗结算战斗次数更新
+function ArenaWorldModel:updateCombatCount(num)
+	if self.myBaseInfo then
+		self.myBaseInfo.can_combat_num = self.myBaseInfo.can_combat_num - (num or 1)
+	end
+end
+ 
+function ArenaWorldModel:setAutoBattle( is_auto )
+	if self.myBaseInfo then
+		self.myBaseInfo.is_auto = is_auto
+	end
+end
+
+-- 是否跳过战斗 0：不跳过 1：跳过
+function ArenaWorldModel:getAutoBattle(  )
+	if self.myBaseInfo then
+		return self.myBaseInfo.is_auto or 0
+	end
+	return 0
+end
+
+function ArenaWorldModel:getCurArea(  )
+	local list = Config.ArenaWorldData.data_zone
+    local maxCount= self.myBaseInfo.max_zone_id
+	local i=self.myBaseInfo.zone_id
+    local len=#list
+    local round=1
+    local t=deepCopy(list[i%len==0 and len or i%len])
+    round= i%len==0 and i/len or math.floor(i/len)+1
+    t.round=round
+	return t
+end
+
+-- 获取剩余挑战次数
+function ArenaWorldModel:getLeftChallengeCount(  )
+	if self.myBaseInfo then
+		return self.myBaseInfo.can_combat_num or 0
+	end
+	return 0
+end
+
+-- 获取今日购买次数
+function ArenaWorldModel:getTodayBuyCount(  )
+	if self.myBaseInfo then
+		return self.myBaseInfo.buy_combat_num or 0
+	end
+	return 0
+end
+
+-- 获取赛季已挑战次数
+function ArenaWorldModel:isSeasonCombatCount(  )
+	local status=false
+	local count=Config.ArenaWorldData.data_const.arena_world_skip_count.val
+	if self.myBaseInfo then
+		local num= self.myBaseInfo.season_combat_num or 0
+		status=num>=count
+	end
+	return {status,count}
+end
+
+-- 获取今日剩余购买次数
+function ArenaWorldModel:getTodayLeftBuyCount(  )
+	local role_vo = RoleController:getInstance():getRoleVo()
+	local buy_count = self.myBaseInfo.buy_combat_num or 0
+	local max_count = 0
+	for k,v in pairs(Config.ArenaWorldData.data_buy_num) do
+		if v.vip <= role_vo.vip_lev then
+			max_count = max_count + 1
+		end
+	end
+	local left_count = max_count - buy_count
+	if left_count < 0 then left_count = 0 end
+	return left_count
+end
+
+-- 设置挑战对手数据
+function ArenaWorldModel:setArenaEnemyListData( data )
+	self.enemyListData = data or {}
+end
+function ArenaWorldModel:updateArenaEnemyListData( data )
+	data = data or {}
+	for k,newData in pairs(data) do
+		for _,oldData in pairs(self.enemyListData) do
+			if newData.idx == oldData.idx then
+				for key,value in pairs(newData) do
+					oldData[key] = value
+				end
+				break
+			end
+		end
+	end
+end
+function ArenaWorldModel:getArenaEnemyListData(  )
+	return self.enemyListData
+end
+
+function ArenaWorldModel:getArenaEnemyDataByIndex( index )
+	local enemy_data = {}
+	for k,eData in pairs(self.enemyListData) do
+		if eData.idx == index then
+			enemy_data = eData
+			break
+		end
+	end
+	return enemy_data
+end
+
+
+-- 是否自动
+function ArenaWorldModel:setAutoStatus( status )
+	self.is_auto = status
+end
+
+
+function ArenaWorldModel:getAutoStatus( )
+	return  self.is_auto
+end
+
+-- 天梯是否开启
+function ArenaWorldModel:setArenaOpenStatus( status )
+	self.ArenaOpenStatus = status
+end
+
+-- 是否处于战斗阶段
+function ArenaWorldModel:getArenaIsOpen(  )
+	return (self.ArenaOpenStatus and self.ArenaOpenStatus == 2)
+end
+
+-- 是否屏蔽功能
+function ArenaWorldModel:isHideArenaWorld()
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	local featuresId = MainuiConst.FeaturesShield.arenaworld
+    if not table.indexof(nohideIds,featuresId) then
+		return true
+	end
+end
+
+-- 是否满足天梯功能开启条件 not_tips 不飘字提示
+function ArenaWorldModel:getArenaOpenStatus( not_tips )
+	not_tips = not_tips or false
+	local role_vo = RoleController:getInstance():getRoleVo()
+	local config = Config.ArenaWorldData.data_const.opening_lv
+	local world_lv=Config.ArenaWorldData.data_const.world_class.val
+	local world_lev = RoleController:getInstance():getModel():getWorldLev()
+	if not role_vo then return false end
+	if config and config.val <= role_vo.lev and world_lev>=world_lv then
+		return true
+	else
+		local lock_desc=""
+		if config.val > role_vo.lev then
+			lock_desc=config.desc
+		elseif world_lev< world_lv then
+			lock_desc=string.format(TI18N("语言_s_2783"),world_lv) 
+		end
+		if not not_tips then
+			message(lock_desc)
+		end
+		return false, lock_desc
+	end
+end
+
+function ArenaWorldModel:getCurZoneIndex(zoneid)
+	local list = Config.ArenaWorldData.data_zone
+	local len=#list
+    local round= zoneid%len==0 and zoneid/len or math.floor(zoneid/len)+1
+    return round
+end
+
+-- 更新天梯红点
+function ArenaWorldModel:updateArenaRedStatus(type, status)
+    local _status = self.guildwar_red_list[type]
+	-- if not self.guildwar_red_list[type] then return end
+    if _status~=nil and _status == status then return end
+	self.guildwar_red_list[type] = status
+	-- 更新主界面图标红点
+	local Arena_status = self:checkArenaRedStatus()
+	MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.ladder, {bid = CrossgroundConst.Red_Type.Arenaworld, status = Arena_status})
+	-- 更新天梯界面红点
+	GlobalEvent:getInstance():Fire(ArenaWorldEvent.UpdateArenaRedStatus)
+end
+
+function ArenaWorldModel:checkRedIsShowByRedType( redType )
+	return self.guildwar_red_list[redType] or false
+end
+
+function ArenaWorldModel:checkArenaRedStatus(  )
+    -- local isopen=self:checkRedIsShowByRedType(ArenaWorldConst.RedType.Open)
+	local deface_red_point = ArenaWorldController:getInstance():getDefRedPoint() or false
+    local isred=self:checkRedIsShowByRedType(ArenaWorldConst.RedType.Worship) or self:checkRedIsShowByRedType(ArenaWorldConst.RedType.Challenge) or deface_red_point
+	return isred
+end
+
+function ArenaWorldModel:__delete()
+end

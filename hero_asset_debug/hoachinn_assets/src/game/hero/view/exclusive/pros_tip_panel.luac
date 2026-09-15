@@ -1,0 +1,444 @@
+-- --------------------------------------------------------------------
+-- 竖版专属忍具tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2021-xx-xx
+-- --------------------------------------------------------------------
+ProsTipPanel = ProsTipPanel or BaseClass(BaseView)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+function ProsTipPanel:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/pros_tip_panel"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+
+    self.win_type = WinType.Tips    
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.attr_list = {}
+    self.eff_list = {}
+    self.pros_btn_list = {}
+end
+
+function ProsTipPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+    self.container_init_size.height = self.container_init_size.height + 15
+    -- 基础属性,名字,类型和评分等
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.close_btn = self.base_panel:getChildByName("close_btn")
+    self.img_rule = self.base_panel:getChildByName("img_rule")
+    local background_res = PathTool.getResFrame("tips", "tips_5")
+    self.base_panel:loadTexture(background_res, LOADTEXT_TYPE_PLIST)
+    self.base_panel:getChildByName("score_title"):setString(TI18N("语言_c_1742"))
+    local score_title = self.base_panel:getChildByName("score_title")
+    self.name = self.base_panel:getChildByName("name")
+    setTextMaxWidth(self.name,320,-8)
+    self.power_label = CommonNum.new(1, self.base_panel, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(score_title:getPositionX() + score_title:getContentSize().width + 5 , 32))
+    self.power_label:setNum(0)
+    self.power_label:setScale(0.8)
+
+    self.node_item = self.base_panel:getChildByName("node_item")
+    local item = ProsItem.new()
+    self.node_item:addChild(item)
+    self.itemIcon = item
+
+    -- 基础属性
+    self.baseattr_panel = self.container:getChildByName("baseattr_panel")
+    self.base_title = self.baseattr_panel:getChildByName("label")
+    self.base_title:setString(TI18N("语言_c_1282"))
+    self.base_tip = self.base_title:getChildByName("label_1")
+    self.base_tip:setString(TI18N("语言_c_4964"))
+    ccui.Helper:doLayout(self.baseattr_panel:getChildByName("label"))
+    --切换按钮
+    self.btn_panel = self.container:getChildByName("btn_panel")
+    local tab_txt = {
+        [1] = TI18N("语言_c_6277"),
+        [2] = TI18N("语言_c_6554")
+    }
+    for i=1,2 do
+        local item = self.btn_panel:getChildByName("tab_btn_"..i)
+        item.unselect_bg = item:getChildByName("unselect_bg")
+        item.select_bg = item:getChildByName("select_bg")
+        if i == 1 then
+            item.unselect_bg:setVisible(true)
+            item.select_bg:setVisible(false)
+        else
+            item.unselect_bg:setVisible(false)
+            item.select_bg:setVisible(true)
+        end
+        item.title = item:getChildByName("title")
+        item.title:setString(tab_txt[i])
+        item.index = i
+        self.pros_btn_list[i] = item
+    end
+    --强化效果
+    self.strengattr_panel = self.container:getChildByName("strengattr_panel")
+    self.strengattr_panel.line = self.strengattr_panel:getChildByName("line")
+    self.strengattr_panel.label = self.strengattr_panel:getChildByName("label")
+    self.strengattr_panel.label:setString(TI18N("语言_c_6542"))
+    self.strengattr_scroll = self.strengattr_panel:getChildByName("scroll")
+
+    --描述
+    self.desc_panel = self.container:getChildByName("desc_panel")
+    self.desc_line = self.desc_panel:getChildByName("line")
+    self.desc_txt = self.desc_panel:getChildByName("label")
+    setTextMaxWidth(self.desc_txt,480)
+    --btn 强化
+    self.streng_btn = self.desc_panel:getChildByName("tab_btn_1")
+    self.streng_btn:setTitleText(TI18N("语言_c_4967"))
+    self.streng_btn:setVisible(false)
+
+    self.tip_label = self.desc_panel:getChildByName("tip_label")
+    self.tip_label:setVisible(false)
+    setTextMaxWidth(self.tip_label,480)
+end
+
+function ProsTipPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, function()
+        self:close()
+    end) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, function()
+        self:close()
+    end) ,true, 1)
+    registerButtonEventListener(self.img_rule, function(param, sender, event_type)
+        local config = Config.PartnerProscriptionData.data_constant["game_rule1"]
+        -- TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        TipsManager:getInstance():showAdventureBuffTipsScroll(config.desc, sender:getTouchBeganPosition(),nil,nil,420,false,430)
+    end ,true, 2)
+    registerButtonEventListener(self.streng_btn, handler(self, function()
+        self:close()
+        local setting = {}
+        setting.data = self.old_data
+        setting.index = MainuiConst.pros_type.pros
+        controller:openHeroProsPanel(true,setting)
+    end) ,true, 1)
+    if self.close_btn then 
+        self.close_btn:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                self:close()
+            end
+        end)
+    end
+    for k, object in pairs(self.pros_btn_list) do
+		if object then
+			object:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					playTabButtonSound()
+					self:changeSelectedTab(object.index)
+				end
+			end)
+		end
+    end
+end
+
+-- 切换标签页
+function ProsTipPanel:changeSelectedTab( index )
+	if self.tab_object ~= nil and self.tab_object.index == index then return end
+    if index == 1 then
+        self:close()
+        HeroController:getInstance():openExclusivePropsPanel(true,self.old_data)
+    end
+end
+
+function ProsTipPanel:updateRed()
+    local is_redpoint = HeroCalculate.checkSingleHeroHorcruxStringRedPoint(self.data)
+    addRedPointToNodeByStatus(self.pros_btn_list[1], is_redpoint, 5, 5)
+
+    local status = HeroCalculate.checkSingleHeroProsRedPoint(self.data)
+    addRedPointToNodeByStatus(self.streng_btn, status, 5, 5)
+end
+
+function ProsTipPanel:updatePage(data)
+    self:updateRed()
+    self.proscription = data.proscription or {}
+    if not data.h_lev then
+        data.h_lev = 0
+    end
+    local id = Config.PartnerData.data_partner_base[data.bid].proscription_id
+    self.itemIcon:setBaseData(id)
+    self.itemIcon:setAllLev(data)
+    self.itemIcon:setItemScale(0.8)
+    self.cfg = Config.PartnerProscriptionData.data_base_info[id]
+    local name_str = ""
+    if self.cfg and self.cfg[4] then
+        name_str = self.cfg[4].name or ""
+    end
+    self.name:setString(name_str)
+    self.lv_cfg = Config.PartnerProscriptionData.data_rev_info
+    local num = 0
+    for k, v in pairs(self.proscription or {}) do
+        num = num + v.p_lev
+    end
+    local score = 0
+    if num == 0 then
+        if self.cfg and self.cfg[1] and self.cfg[1].score then
+            score = self.cfg[1].score
+        end
+    else
+        score = self.lv_cfg[num].score
+    end
+    self.power_label:setNum(score)
+
+    --基础属性
+    local list = {}
+    local attr_data = {}
+    if next(self.proscription or {}) and model:getProsIsOpen(self.data) then
+        local lv_cfg = {}
+        if id and Config.PartnerProscriptionData.data_lv_info[id] then
+            lv_cfg = Config.PartnerProscriptionData.data_lv_info[id]
+        end
+        for key, value in pairs(lv_cfg) do
+            for k, v in pairs(value[tableLen(value)].attr) do
+                list[Config.AttrData.data_key_to_id[v[1]]] = 0
+            end
+        end
+        for key, value in pairs(self.proscription) do
+            for k, v in pairs(value.p_attr) do
+                if list[v.attr_id] then
+                    list[v.attr_id] = list[v.attr_id] + v.attr_val
+                else
+                    list[v.attr_id] = v.attr_val
+                end
+            end
+        end
+        for k, v in pairs(list) do
+            local _list = {}
+            _list[1] = k
+            _list[2] = v
+            table.insert(attr_data,_list)
+        end
+    else
+        local lv_cfg = {}
+        if id and Config.PartnerProscriptionData.data_lv_info[id] then
+            lv_cfg = Config.PartnerProscriptionData.data_lv_info[id]
+        end
+        local config = Config.PartnerProscriptionData.data_constant
+        for key, value in pairs(lv_cfg) do
+            for k, v in pairs(value[tableLen(value)].attr) do
+                if v[1] == "atk" then
+                    list[Config.AttrData.data_key_to_id[v[1]]] = config["show_atk"].val
+                elseif v[1] == "hp_max" then
+                    list[Config.AttrData.data_key_to_id[v[1]]] = config["show_hp"].val
+                else
+                    list[Config.AttrData.data_key_to_id[v[1]]] = 0
+                end
+            end
+        end
+        
+        for k, v in pairs(list) do
+            local _list = {}
+            _list[1] = k
+            _list[2] = v
+            table.insert(attr_data,_list)
+        end
+    end
+    for k, v in pairs(self.attr_list) do
+        v:removeFromParent()
+        v = nil
+    end
+    self.attr_list = {}
+    for k, v in pairs(attr_data) do
+        local item = ccui.Layout:create()
+        item:setContentSize(cc.size(280, 40))
+        item:setAnchorPoint(cc.p(0,0))
+        local attr_name = Config.AttrData.data_id_to_key[v[1]]
+        local icon = PathTool.getAttrIconByStr(attr_name)
+        item.icon = createSprite(PathTool.getResFrame("common", icon),8,20,item,cc.p(0,0.5),LOADTEXT_TYPE_PLIST)
+        item.label = createRichLabel(22,cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(46, 20), nil, nil, 380)
+        item:addChild(item.label)
+        local attr_val = v[2]
+        local is_per = PartnerCalculate.isShowPerByStr(attr_name)
+        if is_per == true then
+            attr_val = (attr_val/10).."%"
+        end
+        local attr_str = string_format("%s:<div fontcolor=#ffeedd>%s</div>", Config.AttrData.data_key_to_name[attr_name],attr_val)
+        item.label:setString(attr_str)
+        item:setPosition(cc.p(10,160-k*40))
+        table.insert(self.attr_list,item)
+        self.baseattr_panel:addChild(item)
+    end
+    local base_h = 40 + tableLen(self.attr_list)*40
+    self.baseattr_panel:setContentSize(cc.size(self.baseattr_panel:getContentSize().width,base_h))
+    self.base_title:setPositionY(base_h - 5)
+    for k, v in pairs(self.attr_list) do
+        v:setPosition(cc.p(10,base_h - 40 - k * 40))
+    end
+    --禁术效果
+    for k, v in pairs(self.eff_list) do
+        v:removeFromParent()
+        v = nil
+    end
+    self.eff_list = {}
+    self.lv_cfg = Config.PartnerProscriptionData.data_lv_info[id]
+    local eff_list = {}
+    local back = function(v)
+        if v.desc and v.desc ~= "" then
+            local _list = {}
+            _list.sort = v.type
+            _list.id = v.unlock[1]
+            _list.txt = v.desc
+            _list.is_act = 0
+            table.insert(eff_list,_list)
+        end
+    end
+    for i = 1, tableLen(self.lv_cfg) do
+        local pros_data = self:getProsDataForType(self.lv_cfg[i][1].type)
+        local lev = pros_data and pros_data.p_lev or 0
+        local _cfg = self.lv_cfg[i]
+        local cfg = _cfg[1]
+        for j = 1, tableLen(_cfg) do
+            if _cfg[j].desc ~= "" then
+                cfg = _cfg[j]
+                break
+            end
+        end
+        for j = tableLen(_cfg),1,-1 do
+            if data.h_lev and data.h_lev >= _cfg[j].lv_limit and lev >= _cfg[j].lv and _cfg[j].desc ~= "" then
+                cfg = _cfg[j]
+                break
+            end
+        end
+        back(cfg)
+    end
+    for key, value in pairs(self.proscription or {}) do
+        for k, v in pairs(value.p_extra) do
+            for a, b in pairs(eff_list) do
+                if v.extra_v == b.id then
+                    b.is_act = 1
+                end
+            end
+        end
+    end
+    table.sort(eff_list,function(a,b) return a.sort < b.sort end)
+    local _h = 0
+    for key, value in pairs(eff_list) do
+        local item = nil
+        if value.is_act == 1 and model:getProsIsOpen(self.data) then
+            item = createRichLabel(22,cc.c3b(0x0e,0xa8,0x0e),cc.p(0,1),cc.p(10,0),nil,nil,490)
+        else
+            item = createRichLabel(22,cc.c3b(0xc1,0xb7,0xab),cc.p(0,1),cc.p(10,0),nil,nil,490)
+        end
+        if not model:getOneProsSkillIsShield(self.data) and value.sort == 4 then
+            item:setString(TI18N("语言_c_1891"))
+        else
+            item:setString(value.txt)
+        end
+        self.strengattr_scroll:getInnerContainer():addChild(item)
+        _h = _h + item:getContentSize().height + 10
+        table.insert(self.eff_list,item)
+    end
+    if _h > self.strengattr_scroll:getContentSize().height then
+        self.strengattr_scroll:setTouchEnabled(true)
+    else
+        self.strengattr_scroll:setTouchEnabled(false)
+    end
+    _h = math.max(_h, self.strengattr_scroll:getContentSize().height)
+    self.strengattr_scroll:setInnerContainerSize(cc.size(self.strengattr_scroll:getContentSize().width,_h))
+    local desc_str = ""
+    if self.cfg and self.cfg[4] then
+        desc_str = self.cfg[4].bg_story or ""
+    end
+    self.desc_txt:setString(desc_str)
+    local desc_add_height = 0
+    local lv_list = Config.PartnerProscriptionData.data_get_open_lv[id]
+    if lv_list then
+        local pro_status = false
+        if data.proscription and data.proscription then
+            for k, v in pairs(data.proscription) do
+                if v.p_lev >= 1 then
+                    pro_status = true
+                end
+            end
+        end
+        if (data.h_lev and data.h_lev >= lv_list.lv and data.star >= lv_list.star and self.show_model_type == HeroConst.BagTab.eBagHero) or pro_status then
+            self.tip_label:setVisible(false)
+            self.streng_btn:setVisible(true and self.status)
+            if self.status then
+                desc_add_height = 90
+            else
+                desc_add_height = 40
+            end
+        else
+            self.tip_label:setVisible(true)
+            local txt = ""
+            if data.h_lev < lv_list.lv and data.star < lv_list.star then
+                txt = string.format(TI18N("语言_c_6540"),lv_list.lv).."\n"..string.format(TI18N("语言_c_6739"),lv_list.star)
+            else
+                if data.h_lev < lv_list.lv then
+                    txt = string.format(TI18N("语言_c_6540"),lv_list.lv)
+                elseif data.star < lv_list.star then
+                    txt = string.format(TI18N("语言_c_6739"),lv_list.star)
+                end
+            end
+            self.tip_label:setString(txt)
+            desc_add_height = self.tip_label:getContentSize().height + 40
+            self.streng_btn:setVisible(false)
+        end
+    end
+    self.desc_panel:setContentSize(cc.size(self.desc_panel:getContentSize().width,self.desc_txt:getContentSize().height+desc_add_height))
+    self.desc_txt:setPositionY(desc_add_height - 20)
+    self.desc_line:setPositionY(self.desc_panel:getContentSize().height-10)
+    self.btn_panel:setVisible(self.status)
+    local btn_height = 0
+    if self.status then
+        btn_height = self.btn_panel:getContentSize().height
+    else
+        btn_height = 0
+    end
+
+    local all_h = self.base_panel:getContentSize().height + btn_height + self.baseattr_panel:getContentSize().height + self.strengattr_panel:getContentSize().height + self.desc_panel:getContentSize().height
+    self.container:setContentSize(cc.size(self.container:getContentSize().width,all_h))
+    self.base_panel:setPositionY(all_h)
+    self.btn_panel:setPositionY(all_h - self.base_panel:getContentSize().height)
+    self.baseattr_panel:setPositionY(all_h - btn_height - self.base_panel:getContentSize().height)
+    self.strengattr_panel:setPositionY(all_h - btn_height - self.base_panel:getContentSize().height - self.baseattr_panel:getContentSize().height)
+    self.desc_panel:setPositionY(10)
+    -- self.
+    for k, v in pairs(self.eff_list) do
+        v:setPositionY(_h - 10)
+        _h = _h - v:getContentSize().height - 10
+    end
+end
+
+function ProsTipPanel:getProsDataForType(type)
+    if self.data.proscription and next(self.data.proscription) then
+        for k, v in pairs(self.data.proscription) do
+            if v.p_type == type then
+               return v 
+            end 
+        end
+    end
+    return nil
+end
+function ProsTipPanel:openRootWnd(data,status)
+    self.old_data = data
+    self.status = status or false
+    self.show_model_type = data.show_model_type
+    if data.hero_vo then
+        data = data.hero_vo
+    end
+    self.data = data
+    self:updatePage(data)
+
+    delayRun(self.root_wnd, 114, function()
+        TipsManager:getInstance():hideTips()
+    end)
+end
+
+function ProsTipPanel:close_callback()
+end

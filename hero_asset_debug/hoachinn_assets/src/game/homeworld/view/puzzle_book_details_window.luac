@@ -1,0 +1,234 @@
+--******** 文件说明 ********
+-- 
+-- @description: 拼图图鉴单个拼图详情
+-- @DateTime:    2020-02-20
+-- *******************************
+PuzzleBookDetailsWindow = PuzzleBookDetailsWindow or BaseClass(BaseView)
+
+local controller = HomeworldController:getInstance()
+local model = controller:getModel()
+function PuzzleBookDetailsWindow:__init()
+    self.is_full_screen = true
+    self.title_btn_list = {}
+    self.reward_btn_list = {}
+    self.item_list = {}
+    self.click_index = 0
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "homeworld/puzzle_book_details_window"
+    self.res_list = {
+        
+    }
+end
+
+function PuzzleBookDetailsWindow:open_callback()
+    self._ui = self:getExportUI()
+    self._ui._background:setScale(display.getMaxScale())
+    self._ui._bar:setScale9Enabled(true)
+    self._ui._bar:setPercent(0)
+	nativeBindClass(self._ui._puzzle_item, PuzzleItem)   
+    self._ui._attr_panel:setScrollBarEnabled(false) 
+    setTextMaxWidth(self._ui._puzzle_tip,300,-8)
+    self._ui._puzzle_tip:setString(TI18N("语言_c_7631"))
+    if not self.list_view then
+        local scroll_view_size = self._ui._page_scroll:getContentSize()
+        local setting = {
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = -5,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            item_width = 103,               -- 单元的尺寸width
+            item_height = 52,              -- 单元的尺寸height
+            delay = 1,
+            row = 1,                        -- 行数，作用于水平滚动类型
+            -- col = 2,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true
+        }
+        self.list_view = CommonScrollViewSingleLayout.new(self._ui._page_scroll, cc.p(scroll_view_size.width * 0.5, scroll_view_size.height * 0.5) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0.5,0.5))
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+end
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function PuzzleBookDetailsWindow:createNewCell(width, height)
+    local cell = PuzzlePageItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function PuzzleBookDetailsWindow:numberOfCells()
+    return #self.show_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function PuzzleBookDetailsWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local book_id = self.show_list[index].id
+    if book_id then
+        if book_id == self.book_id then
+            self.click_page_item = cell
+            cell:setSelect(true)
+        else
+            cell:setSelect(false)
+        end
+        cell:setData(book_id,cell.index)
+    end
+
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function PuzzleBookDetailsWindow:onCellTouched(cell)
+    local index = cell.index
+    local book_id = self.show_list[index].id
+    if book_id then
+        if self.book_id == book_id then return end
+        self.book_id = book_id
+        cell:setSelect(true)
+        if not self.click_page_item then
+            self.click_page_item = cell
+        end
+        self.click_page_item:setSelect(false)
+        self.click_page_item = cell
+        self:setData()
+    end
+end
+function PuzzleBookDetailsWindow:register_event()
+    registerButtonEventListener(self._ui._background,function()
+        controller:openPuzzleBookDetailsWindow(false)
+    end,false,2)
+    registerButtonEventListener(self._ui._close_btn,function()
+        controller:openPuzzleBookDetailsWindow(false)
+    end,true,2)
+    -- registerButtonEventListener(self._ui._right_btn,function()
+    --     self:changePage(true)
+    -- end,false,2)
+    -- registerButtonEventListener(self._ui._left_btn,function()
+    --     self:changePage(false)
+    -- end,false,2)
+    registerButtonEventListener(self._ui._add_btn,function()
+        if self.item_cfg then
+            BackpackController:getInstance():openTipsSource(true, self.item_cfg)
+        end
+    end,false,2)
+    self:addGlobalEvent(BackpackEvent.ADD_GOODS, function(bag_code, data_list)
+        self:updataItemPanel()
+    end)
+    self:addGlobalEvent(BackpackEvent.DELETE_GOODS, function(bag_code, data_list)
+        self:updataItemPanel()
+    end)
+    self:addGlobalEvent(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code, data_list)
+        self:updataItemPanel()
+    end)
+    self:addGlobalEvent(HomeworldEvent.Update_One_Puzzle_Book_Data, function(book_id)
+        if book_id == self.book_id then
+            self:setData()
+        end
+    end)
+    self:addGlobalEvent(HomeworldEvent.Update_Puzzle_Book_Data, function()
+        self:setData()
+    end)
+end
+function PuzzleBookDetailsWindow:openRootWnd(book_id)
+    self.book_id = book_id
+    self:setPagePanel()
+    self:setData()
+end
+function PuzzleBookDetailsWindow:setPagePanel()
+    local list = model:getPuzzleBookListData()
+    self.show_list = {}
+    for k, v in pairs(list) do
+        local is_act = model:getOnePuzzleIsInAct(v)
+        table.insert(self.show_list, {is_act = is_act and 1 or 2,id=v})
+    end
+    
+    local sort_func = SortTools.tableCommonSorter({{"is_act", false}, {"id", true}})
+    table.sort(self.show_list, sort_func)
+    self.list_view:reloadData()
+end
+function PuzzleBookDetailsWindow:setData()
+    if not model:getPuzzleFirstRed(self.book_id) then
+        model:updatePuzzleFirstRed(self.book_id)
+    end
+    self.book_cfg = Config.PuzzleBookData.data_puzzle[self.book_id]
+    self.puzzle_cfg = Config.PuzzleBookData.data_puzzle_attr[self.book_id]
+    if not self.book_cfg or not self.puzzle_cfg then return end
+    setTextMaxWidth(self._ui._act_tip,580)
+    self._ui._act_tip:setString(string.format(TI18N('语言_c_7632'),self.book_cfg.activity_name))
+    self._ui._book_name:setString(self.book_cfg.name)
+    self.puzzle_data = model:getOnePuzzleData(self.book_id)
+    self._ui._bar:setPercent(tableLen(self.puzzle_data)/self.book_cfg.total_num*100)
+    self._ui._bar_txt:setString(string.format("%s/%s",tableLen(self.puzzle_data),self.book_cfg.total_num))
+    self._ui._bar_score:setString(self.book_cfg.score)
+
+    local status = model:getOnePuzzleIsInAct(self.book_id)
+    self.item_id = Config.PuzzleBookData.data_const.universal_exchange_items.val
+    if status then
+        self.item_id = self.book_cfg.item_id
+    end
+    self.item_cfg = Config.ItemData.data_get_data(self.item_id)
+    if self.item_cfg then
+        local res = PathTool.getItemRes(self.item_cfg.icon)
+        loadSpriteTexture(self._ui._icon, res, LOADTEXT_TYPE)
+    end
+    self:updataItemPanel()
+	self._ui._puzzle_item:setData(self.book_id,true)
+    self:updataAttrPanel()
+
+    self:updataActSpine()
+end
+--激活播放spine
+function PuzzleBookDetailsWindow:updataActSpine()
+    local data = model:getPuzzleActData(self.book_id)
+    if data and next(data) then
+	    self._ui._puzzle_item:setActSpineData()
+        model:updatePuzzleActData(self.book_id)
+    end
+end
+function PuzzleBookDetailsWindow:updataItemPanel()
+    local num = BackpackController:getInstance():getModel():getItemNumByBid(self.item_id)
+    self._ui._icon_count:setString(num)
+end
+function PuzzleBookDetailsWindow:updataAttrPanel()
+    if self.attr_list and next(self.attr_list) then
+        for k, v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    self.attr_list = {}
+    local _h = 0
+    for k, v in ipairs(self.puzzle_cfg) do
+        local item = PuzzleBookAttrItem4.new()
+        item:setData(self.book_id,v.num)
+        self._ui._attr_panel:addChild(item)
+        _h = _h + item.size.height + 2
+        table.insert(self.attr_list,item)
+    end
+    local _max_h = math.max(_h,self._ui._attr_panel:getContentSize().height)
+    self._ui._attr_panel:setInnerContainerSize(cc.size(self._ui._attr_panel:getContentSize().width,_max_h))
+
+    for k, v in ipairs(self.attr_list) do
+        v:setPosition(cc.p(0,_max_h))
+        _max_h = _max_h - v.size.height - 2
+    end
+
+end
+function PuzzleBookDetailsWindow:close_callback()
+    if self.list_view then
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+    if self.attr_list and next(self.attr_list) then
+        for k, v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    controller:openPuzzleBookDetailsWindow(false)
+end

@@ -1,0 +1,163 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--     主线闯关奖励
+-- Create: 2020-02-10
+-- --------------------------------------------------------------------
+BattleDarmaDungeonRewardWindow = BattleDarmaDungeonRewardWindow or BaseClass(BaseView)
+
+function BattleDarmaDungeonRewardWindow:__init()
+	self.ctrl = BattleDramaController:getInstance()
+	self.model = self.ctrl:getModel()
+    self.is_full_screen = true
+    self.win_type = WinType.Big  
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG  
+    self.layout_name = "battledrama/battle_darma_dungeon_reward_window"    
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("dugeon_reward","dugeon_reward"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable"), type = ResourcesType.single },
+		{ path = PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable_get"), type = ResourcesType.single },
+		{ path = PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_title"), type = ResourcesType.single },
+    } 
+end
+
+function BattleDarmaDungeonRewardWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+	self.bg = self.main_panel:getChildByName("bg")
+	self.title = self.main_panel:getChildByName("title")
+	self.title_2 = self.main_panel:getChildByName("title_2")
+	self.title_txt = createRichLabel(28,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(374,936),nil,nil,500)
+	self.main_panel:addChild(self.title_txt)
+	self.btn = self.main_panel:getChildByName("btn")
+	self.btn_txt = self.btn:getChildByName("btn_txt")
+	self.btn_txt:setString(TI18N("语言_c_503"))
+	self.close_btn = self.main_panel:getChildByName("close_btn")
+	self.btn_draw = self.main_panel:getChildByName("btn_draw")
+	self.draw_txt = self.btn_draw:getChildByName("draw_txt")
+	self.draw_txt:setString(TI18N("语言_c_8"))
+	self.tip_list = {}
+	self.target_list = {}
+	self.item_list = {}
+	for i=1,4 do
+		self.tip_list[i] = self.main_panel:getChildByName("tip_"..i)
+		self.tip_list[i]:setChangeScaleOffWidth(self.main_panel:getContentSize().width - 125)
+		self.tip_list[i]:setString(TI18N("语言_c_6578"))
+		self.target_list[i] = self.main_panel:getChildByName("target_"..i)
+		self.target_list[i]:setChangeScaleOffWidth(self.main_panel:getContentSize().width - 75)
+		local item = self.main_panel:getChildByName("item_"..i)
+		self.item_list[i] = BackPackItem.new(false, true, false, 1, false, true)
+		item:addChild(self.item_list[i])
+	end
+end
+
+function BattleDarmaDungeonRewardWindow:openRootWnd(  )
+	local cfg =Config.DungeonData.data_dun_reward 
+	local reward_cfg = cfg[tableLen(cfg)]
+	local bid = reward_cfg.items[1][1]
+	if bid then
+		local itemcfg = Config.ItemData.data_get_data(bid)
+		local id = itemcfg.effect[1].val
+		local hero_cfg = Config.PartnerData.data_partner_base[id]
+		local star = itemcfg.eqm_jie
+		self.title_txt:setString(string.format(TI18N("语言_c_6579"),reward_cfg.show[1][1],star,hero_cfg.name))
+		self.title_2:setContentSize(cc.size(self.title_txt:getContentSize().width+200,self.title_txt:getContentSize().height+40))
+		self.title_txt:setPositionY(self.title_2:getPositionY() - self.title_2:getContentSize().height*0.5)
+	end
+	self:setData()
+end
+function BattleDarmaDungeonRewardWindow:register_event(  )
+
+	registerButtonEventListener(self.background, function()
+		self.ctrl:openBattleDarmaDungeonRewardWindow(false)
+	end, false,2)
+
+	registerButtonEventListener(self.close_btn, function()
+		self.ctrl:openBattleDarmaDungeonRewardWindow(false)
+	end, true,2)
+	registerButtonEventListener(self.btn_draw, function()
+		self.ctrl:sender13037(0)
+	end, true,2)
+
+	registerButtonEventListener(self.btn, function()
+		local cfg =Config.DungeonData.data_dun_reward 
+		local reward_cfg = cfg[tableLen(cfg)]
+		local bid = reward_cfg.items[1][1]
+		if bid then
+			local itemcfg = Config.ItemData.data_get_data(bid)
+			local id = itemcfg.effect[1].val
+			HeroController:getInstance():openHeroInfoWindowByBidStar(id, itemcfg.eqm_jie)
+		end
+    end ,true, 1)
+	
+
+	--七天登录信息
+	if self.battleDrama_top_update_data == nil then
+		self.battleDrama_top_update_data = GlobalEvent:getInstance():Bind(Battle_dramaEvent.BattleDrama_Top_Update_Data,function ()
+			self:setData()
+		end)
+	end
+end
+function BattleDarmaDungeonRewardWindow:setData()
+	self.cfg = Config.DungeonData.data_dun_reward
+	self.drama_data = self.model:getDramaData()
+	self.lv_data = self.model:getDungeonRewardList()
+	local is_can_draw = false
+	for i=1,4 do
+		local cfg = self.cfg[i]
+		if cfg then
+			self.target_list[i]:setString(string.format(TI18N("语言_c_1120"),cfg.show[1][1]))
+			self.item_list[i]:setData(cfg.items[1])
+			local is_draw = false
+			for k,v in pairs(self.lv_data) do
+				if v.reward_id == cfg.id then
+					is_draw = true
+					self.item_list[i]:setDungeonReceiveIcon(true)
+					break
+				end
+			end
+			if not is_draw then
+				self.item_list[i]:setDungeonReceiveIcon(false)
+				local status = true
+				for k,v in pairs(cfg.limit) do
+					if v[1] == "dun" then
+						if self.drama_data.max_dun_id < v[2] then
+							status = false
+							break
+						end
+					end
+				end
+				if status then
+					is_can_draw = true
+					self.item_list[i]:setCanDungeonReceiveIcon(true)
+				else
+					self.item_list[i]:setCanDungeonReceiveIcon(false)
+				end
+			end
+		end
+	end
+	if is_can_draw then
+		self.btn_draw:setTouchEnabled(true)
+		addRedPointToNodeByStatus(self.btn_draw,true,10,10)
+		setChildUnEnabled(false,self.btn_draw)
+	else
+		self.btn_draw:setTouchEnabled(false)
+		addRedPointToNodeByStatus(self.btn_draw,false)
+		setChildUnEnabled(true,self.btn_draw)
+	end
+end
+function BattleDarmaDungeonRewardWindow:close_callback()
+	if self.battleDrama_top_update_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.battleDrama_top_update_data)
+        self.battleDrama_top_update_data = nil
+    end
+
+	self.ctrl:openBattleDarmaDungeonRewardWindow(false)
+end

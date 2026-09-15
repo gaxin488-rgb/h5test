@@ -1,0 +1,353 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--
+-- --------------------------------------------------------------------
+TreeEnergyBonusWindow = TreeEnergyBonusWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+local base_cfg = Config.ResonateData.data_const
+
+function TreeEnergyBonusWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.layout_name = "hero/tree_energy_bonus_window"
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.attr_list = {}
+end
+
+function TreeEnergyBonusWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container,2)
+
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.imgTitleBg = self.main_container:getChildByName("imgTitleBg")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_7395"))
+    autoSizeTitleBg(self.win_title,  self.imgTitleBg, 160)
+
+    for i=1,2 do
+        local object = {}
+        object.attr_bg = self.main_container:getChildByName('attr_bg_'..i)
+        object.attr_icon = self.main_container:getChildByName('attr_icon_'..i)
+        object.attr = self.main_container:getChildByName("attr_"..i)
+        local attr_value = self.main_container:getChildByName("attr_value_"..i)
+        attr_value:setString("")
+        local pox = attr_value:getPositionX()
+        local poy = attr_value:getPositionY()
+        object.attr_value = createRichLabel(22, cc.c4b(0x6d, 0x3c, 0x2d, 0xff), cc.p(1, 0.5), cc.p(pox, poy))
+        self.main_container:addChild(object.attr_value)
+        self.attr_list[i] = object
+    end
+
+    local progress_bg = self.main_container:getChildByName("progress_bg")
+    self.progress = self.main_container:getChildByName("progress")
+    self.progress:setScale9Enabled(true)
+    self.progress_txt = self.main_container:getChildByName("progress_txt")
+  
+    local tips1 = self.main_container:getChildByName("tips1")
+    tips1:setString(TI18N("语言_c_2997"))
+    local left_img = self.main_container:getChildByName("left_img")
+    local right_img = self.main_container:getChildByName("right_img")
+    setLeftRightImg(left_img, tips1, right_img, 20)
+
+    local tips2 = self.main_container:getChildByName("tips2")
+    tips2:setString(TI18N("语言_c_3425"))
+    self.own_num = self.main_container:getChildByName("num")
+    self.own_num:setString(0)
+    setItemXOneByOne({tips2,self.own_num},5)
+
+    self.info_con = self.main_container:getChildByName("info_con")
+    self.slider_bg = self.info_con:getChildByName("Image_2")
+    self.slider = self.info_con:getChildByName("slider")-- 滑块
+    self.slider:setBarPercent(10, 89)
+    self.min_btn = self.info_con:getChildByName("min_btn")
+    self.min_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+	self.max_btn = self.info_con:getChildByName("max_btn")
+    self.max_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+    self.plus_btn = self.info_con:getChildByName("plus_btn")
+    self.plus_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+    self.item_node = self.info_con:getChildByName("item_node")
+    self.item = BackPackItem.new(true, true, false, 0.9)
+    self.item_node:addChild(self.item)
+    self.item:setDefaultTip(true)
+
+    self.break_btn = self.main_container:getChildByName("break_btn")
+    self.level_up_btn_label = self.break_btn:getChildByName("label")
+    self.level_up_btn_label:setString(TI18N("语言_sta_to_h_01_7"))
+
+    self.tips3 = self.main_container:getChildByName("tips3")
+    setTextMaxWidth(self.tips3, 580, -4)
+    self.tips3:setString(TI18N("语言_c_7396"))
+    self.tips4 = self.main_container:getChildByName("tips4")
+    setTextMaxWidth(self.tips4, 575, -4)
+    controller:sender26451()
+end
+
+function TreeEnergyBonusWindow:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.break_btn, handler(self, self.onClickBtnSpirit) ,true, 1)
+	if self.slider ~= nil then
+    	self.slider:addEventListener(function ( sender,event_type )
+			if event_type == ccui.SliderEventType.percentChanged then
+				-- if self.slider:getPercent() == 100 and self.is_can_buy_num >= self.limit_num and self.is_can_buy_max == false then
+				-- 	self.tips_label:setVisible(true)
+				-- else
+				-- 	self.tips_label:setVisible(false)
+				-- end
+                self:setCurUseItemInfoByPercent(self.slider:getPercent())
+    		end
+    	end)
+    end
+
+    self.min_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 0 then return end --已经是最小的了
+            if self.num == 0 then return end
+            self.num = self.num - 1
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+    self.plus_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            local temp_num = math.min(self.is_can_buy_num, self.limit_num)
+            if self.num >= temp_num then return end
+            self.num = self.num + 1
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+    self.max_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            local temp_num = self.limit_num
+            if self.num >= temp_num then return end
+            self.num = math.min(self.is_can_buy_num, temp_num)
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+
+    -- if self.role_vo ~= nil then
+    --     if self.role_lev_event == nil then
+    --         self.role_lev_event =  self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, lev) 
+    --             if not self.item_lay_list then return end
+    --             if not self.dic_hero_vo then return end
+    --             if key == "lev" then
+    --                 for pos,v in ipairs(self.item_lay_list) do
+    --                     if self.dic_hero_vo[pos] == nil then
+    --                         self:checkPosLockUI(pos)
+    --                     end
+    --                 end
+    --             end
+    --         end)
+    --     end
+    -- end
+    self:addGlobalEvent(HeroEvent.Hero_SHUXINGDAN_Update_Event, function ( )
+        self:openRootWnd()
+    end)
+end
+
+function TreeEnergyBonusWindow:onClickBtnClose()
+    controller:openShuxingdanWindow(false)
+end
+
+function TreeEnergyBonusWindow:onClickBtnSpirit()
+    if self.is_max and self.is_can_buy_num <= 0 then
+        message(TI18N("语言_c_7397"))
+        return
+    end
+    if self.limit_num <= 0 then
+        message(TI18N("语言_c_1539"))
+        local config = Config.ItemData.data_get_data(base_cfg.altar_item.val)
+        BackpackController:getInstance():openTipsSource(true, config)
+    else
+        if self.is_can_buy_num <= 0 then
+            message(TI18N("语言_c_7399"))
+            return
+        end
+        if self.num <= 0 then
+            message(TI18N("语言_c_7398"))
+            return
+        end
+        controller:sender26452(self.num)
+    end
+end
+
+function TreeEnergyBonusWindow:openRootWnd()
+    local item_id  = base_cfg.altar_item.val
+    local own_num = BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+    self.item:setBaseData(item_id,own_num)
+    self.limit_num = own_num
+    self.own_num:setString(own_num)
+    if own_num <=0 then
+        self.num = 0
+    else
+        self.num = 1
+    end
+    self:setAttrInfo()
+    self:setUseInfo()
+end
+
+function TreeEnergyBonusWindow:setAttrInfo()
+    local base_attr = base_cfg.altar_item_attr.val
+    local num = model:getShuxingDanData() or 0
+    for i = 1, 2 do
+        local attr_data = base_attr[i]
+        local attr_key = attr_data[1]
+        local attr_num = attr_data[2] * num
+        local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr_key, attr_num)
+        local object = self.attr_list[i]
+        loadSpriteTexture(object.attr_icon, res, LOADTEXT_TYPE_PLIST)
+        object.attr:setString(attr_name)
+    end
+end
+
+function TreeEnergyBonusWindow:setUseInfo()
+    local tree_lv = HeroController:getInstance():getModel().resonate_cystal_lev
+    if HeroController:getInstance():getModel().getMaxLev then
+        tree_lv = HeroController:getInstance():getModel():getMaxLev() or 0
+    end
+    local __data = Config.ResonateData.data_altar_info
+    local config = {}
+    for k, v in pairs(__data) do
+        table.insert(config,deepCopy(v))
+    end
+    table.sort(config, function(a,b)
+        return a.chakra_lv<b.chakra_lv
+    end)
+    local _data
+    local _last_data
+    local _next_data
+    for i, v in ipairs(config) do
+        local now_lv = v.chakra_lv
+        local next_lv = 0
+        if config[i+1] then
+            next_lv = config[i+1].chakra_lv
+        end
+        if tree_lv >= now_lv and tree_lv < next_lv then
+            _data = v
+            _next_data = config[i+1]
+            _last_data = config[i-1]
+        end
+    end
+    if not _data then
+        local first_data = config[1]
+        local lastd_data = config[#config]
+        if tree_lv <= first_data.chakra_lv then
+            _data = config[1]
+            self.is_min = true
+        elseif tree_lv >= first_data.chakra_lv then
+            _data = config[#config]
+            self.is_max = true
+        end
+    end
+
+    local use_num = model:getShuxingDanData() or 0
+    local total_num = _data.use_limit
+    if self.is_max then
+        self.tips4:setString(TI18N("语言_c_7400"))
+    elseif self.is_min then
+        local add_num = 0
+        add_num = _data.use_limit
+        self.tips4:setString(LangStringFormat(TI18N("语言_c_7401"),{_data.chakra_lv,add_num}))
+    else
+        local add_num = 0
+        if _next_data then
+            add_num = _next_data.use_limit - _data.use_limit 
+        end
+        self.tips4:setString(LangStringFormat(TI18N("语言_c_7401"),{_next_data.chakra_lv,add_num}))
+    end
+    self.progress:setPercent(use_num/total_num*100)
+    self.progress_txt:setString(use_num.."/"..total_num)
+
+    self.is_can_buy_num = total_num - use_num
+
+    if self.limit_num <= 0 or self.is_can_buy_num <= 0 then
+        setChildUnEnabled(true,self.min_btn)
+        setChildUnEnabled(true,self.max_btn)
+        setChildUnEnabled(true,self.plus_btn)
+        -- self.slider:loadSlidBallTextureNormal(PathTool.getResFrame("common","common_1098"),LOADTEXT_TYPE_PLIST)
+        self.slider:setEnabled(false)
+        self.slider_bg:loadTexture(PathTool.getResFrame("common_1","common_1_556"), LOADTEXT_TYPE_PLIST)
+        self.min_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x5c,0x5c,0xff), 2)
+        self.max_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x5c,0x5c,0xff), 2)
+        self.plus_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x5c,0x5c,0xff), 2)
+    else
+        setChildUnEnabled(false,self.min_btn)
+        setChildUnEnabled(false,self.max_btn)
+        setChildUnEnabled(false,self.plus_btn)
+        self.slider:setEnabled(true)
+        self.slider_bg:loadTexture(PathTool.getResFrame("common","common_2006"), LOADTEXT_TYPE_PLIST)
+        self.min_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+        self.max_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+        self.plus_btn:getTitleRenderer():enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+    end
+
+	self:setCurUseItemInfoByNum(self.num)
+end
+
+function TreeEnergyBonusWindow:setCurUseItemInfoByPercent(percent)
+	local limit_num = self.limit_num or 0
+	local temp_num = math.min(self.is_can_buy_num, limit_num)
+    local num = math.floor(percent * temp_num * 0.01 + 0.5)
+    self:setCurUseItemInfoByNum(num)
+end
+
+function TreeEnergyBonusWindow:setCurUseItemInfoByNum(num)
+    self.num = num
+    local temp_num = math.min(self.is_can_buy_num, self.limit_num)
+
+    if self.num > temp_num then
+        self.num = temp_num
+    end
+
+    local percent = 0
+    if temp_num == 0 then
+    else
+        percent = self.num / temp_num * 100
+        if percent < 1 then --进度条数值区间[1,100]
+            percent = math.ceil(percent)
+        end
+    end
+    self.slider:setPercent(percent)
+    self.own_num:setString(self.num)
+
+    local base_attr = base_cfg.altar_item_attr.val
+    local num = model:getShuxingDanData() or 0
+    for i = 1, 2 do
+        local attr_data = base_attr[i]
+        local attr_key = attr_data[1]
+        local attr_num = attr_data[2] * num
+        local add_num = attr_data[2] * self.num
+        local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr_key, attr_num)
+        local res, attr_name, add_attr_val = commonGetAttrInfoByKeyValue(attr_key, add_num)
+        local object = self.attr_list[i]
+        object.attr_value:setString(string.format("%s<div fontcolor=#0EA80E>(+%s)</div>",attr_val,add_attr_val))
+    end
+end
+
+function TreeEnergyBonusWindow:close_callback()
+    if self.role_vo then
+        if self.role_lev_event then
+            self.role_vo:UnBind(self.role_lev_event)
+            self.role_lev_event = nil
+        end
+    end
+
+    controller:openShuxingdanWindow(false)
+end

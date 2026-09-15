@@ -1,0 +1,165 @@
+﻿LoginPlatForm = LoginPlatForm or BaseClass()
+
+function LoginPlatForm.getInstance(arg_1_0)
+	if LoginPlatForm.instance == nil then
+		LoginPlatForm.instance = LoginPlatForm.New()
+	end
+
+	return LoginPlatForm.instance
+end
+
+function LoginPlatForm.__init(arg_2_0)
+	if LoginPlatForm.instance ~= nil then
+		error("[LoginPlatForm] accempt to create a singleton twice!")
+
+		return
+	end
+
+	arg_2_0.info = {}
+end
+
+function LoginPlatForm.isLogin(arg_3_0)
+	return arg_3_0.is_logined
+end
+
+function LoginPlatForm.getInfo(arg_4_0)
+	return arg_4_0.info
+end
+
+function LoginPlatForm.getUId(arg_5_0)
+	if not arg_5_0.is_logined then
+		return ""
+	end
+
+	ACCOUNT_PRE = ACCOUNT_PRE or ""
+
+	return ACCOUNT_PRE .. arg_5_0.info.openid
+end
+
+function LoginPlatForm.getTimestamp(arg_6_0)
+	if not arg_6_0.is_logined then
+		return "" .. os.time()
+	end
+
+	return string.format("%s", arg_6_0.info.timestamp or 0)
+end
+
+function LoginPlatForm.getToken(arg_7_0)
+	return arg_7_0.info.token or ""
+end
+
+function LoginPlatForm.getChannel(arg_8_0)
+	if FINAL_CHANNEL then
+		return FINAL_CHANNEL
+	end
+
+	CHANNEL_PRE = CHANNEL_PRE or ""
+
+	if arg_8_0.info.channelId ~= nil and arg_8_0.info.channelId ~= "" then
+		return CHANNEL_PRE .. arg_8_0.info.channelId
+	end
+
+	local var_8_0 = device.getChannel and device.getChannel() or device.callFunc("channel")
+
+	if var_8_0 == "" or var_8_0 == nil then
+		var_8_0 = CHANNEL_NAME
+	end
+
+	return CHANNEL_PRE .. (var_8_0 or PLATFORM_NAME)
+end
+
+function LoginPlatForm.getSign(arg_9_0)
+	return arg_9_0.info.sign or ""
+end
+
+function LoginPlatForm.loginCallback(arg_10_0)
+	local var_10_0 = string.format("%s", arg_10_0:getUId())
+	local var_10_1 = "12345678"
+	local var_10_2 = {}
+
+	var_10_2.isTourist = false
+	var_10_2.usrName = var_10_0
+	var_10_2.password = var_10_1
+
+	if var_10_2.usrName == LoginController:getInstance():getModel():getLoginData().usrName and var_10_2.usrName ~= "" and var_10_2.account_name ~= nil and var_10_2.account_name ~= "" then
+		print("当前用户ID:" .. var_10_2.usrName .. "已经在线上")
+
+		return
+	else
+		LoginController:getInstance():getModel():getLoginData().rid = 0
+		LoginController:getInstance():getModel():getLoginData().srv_id = ""
+	end
+
+	if webFunc_LoginCallback then
+		webFunc_LoginCallback()
+	end
+
+	if IS_WIN_PLATFORM == true then
+		LoginController:getInstance():getModel():setCurSrv(arg_10_0.info)
+		LoginController:getInstance():requestLoginGame(arg_10_0.info.openid, arg_10_0.info.ip, arg_10_0.info.port, true, true)
+	else
+		LoginController:getInstance():loginPlatformRequest(var_10_2)
+	end
+end
+
+function LoginPlatForm.login(arg_11_0)
+	if arg_11_0.is_logined then
+		arg_11_0:loginCallback()
+	else
+		sdkOnLogin()
+	end
+end
+
+function LoginPlatForm.onLoginInfo(arg_12_0, arg_12_1, arg_12_2)
+	LoginController:getInstance():showVersionLabel()
+
+	local var_12_0, var_12_1, var_12_2, var_12_3, var_12_4, var_12_5, var_12_6, var_12_7, var_12_8, var_12_9, var_12_10 = unpack(Split(arg_12_1, "#"))
+
+	if arg_12_2 then
+		if var_12_0 ~= arg_12_0.info.openid then
+			arg_12_0:onLogout()
+		end
+
+		return
+	end
+
+	arg_12_0.info = {
+		openid = var_12_0,
+		username = var_12_1,
+		token = var_12_2,
+		channelId = var_12_3,
+		timestamp = var_12_4,
+		rid = var_12_5,
+		srv_id = var_12_6,
+		ip = var_12_7,
+		port = var_12_8,
+		host = var_12_9,
+		srv_name = var_12_10
+	}
+	arg_12_0.is_logined = true
+	_no_need_restar = nil
+
+	arg_12_0:loginCallback()
+end
+
+function LoginPlatForm.onLogout(arg_13_0, arg_13_1)
+	print("logout", arg_13_1)
+
+	arg_13_0.is_logined = false
+	arg_13_0.info = {}
+
+	if RoleController:getInstance():getRoleVo() then
+		sdkSubmitUserData(5)
+	end
+
+	if restart then
+		restart()
+	end
+end
+
+function LoginPlatForm.onSdkInitFail(arg_14_0)
+	ViewManager:getInstance():getMainScene():stopAllActions()
+	ViewManager:getInstance():getMainScene():runAction(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+		arg_14_0:login()
+	end)))
+end

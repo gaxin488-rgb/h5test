@@ -1,0 +1,218 @@
+ -- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      竖版伙伴升星信息面板(11级之后使用)
+-- <br/> 2020年12月7日
+-- --------------------------------------------------------------------
+HeroMainTabUpgradeStarHigherPanel = class("HeroMainTabUpgradeStarHigherPanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local table_sort = table.sort
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeroMainTabUpgradeStarHigherPanel:ctor(parent)  
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function HeroMainTabUpgradeStarHigherPanel:config()
+
+    --材料列表
+    self.hero_item_list = {}
+    self.cost_item_list = {} -- 升星额外消耗的材料
+end
+
+function HeroMainTabUpgradeStarHigherPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_main_tab_upgrade_star_higher_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    --config ui 
+    local tab_panel = self.root_wnd:getChildByName("tab_panel")
+    local ui_starup_bg = tab_panel:getChildByName("ui_starup_bg")
+    local configStarUpUI = function(bg, starupList)
+        for i=1,4 do
+            local model = {}
+            model.sp_bright = bg:getChildByName("sp_starup_bright_"..i)
+            model.img_star = bg:getChildByName("img_starup_star_light_"..i)
+            model.img_star_gray = bg:getChildByName("ui_starup_star_gray_"..i)
+            bg:getChildByName("label_name"..i):setString(TI18N("语言_c_1")..i)
+            model.img_star:ignoreContentAdaptWithSize(true)
+            model.img_star.index = i
+            model.img_star_gray.index = i
+            starupList[i] = model  
+            bg:getChildByName("ui_starup_07_"..i):setScale(1.001)
+        end
+    end
+    self.starupList = {}
+    configStarUpUI(ui_starup_bg, self.starupList)
+
+    --hero item
+    self.item_node = ui_starup_bg:getChildByName("item_node")
+
+    self.img_attr_des = ui_starup_bg:getChildByName("img_attr_des")
+    self.img_attr_des:getChildByName("label"):setString(TI18N("语言_c_4892"))
+    ui_starup_bg:getChildByName("label_tip"):setString(TI18N("语言_c_4392"))
+end
+
+--事件
+function HeroMainTabUpgradeStarHigherPanel:registerEvents()
+    for i,v in ipairs(self.starupList) do
+        registerButtonEventListener(v.img_star_gray, handler(self, self.onClickBtnStar) ,true, 1)
+        registerButtonEventListener(v.img_star, handler(self, self.onClickBtnStar) ,true, 1)
+    end
+
+    registerButtonEventListener(self.img_attr_des, handler(self, self.onClickBtnDes) ,true, 1)
+
+    --英雄信息更新
+    if self.hero_data_update_event == nil then
+        self.hero_data_update_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Update, function(hero_vo)
+            if not hero_vo or not self.hero_vo then return end
+            if self.hero_vo.partner_id == hero_vo.partner_id then
+                self:checkUpdateCurrentInfo()
+            end
+        end)
+    end
+
+    --删除英雄
+    if self.hero_data_delete_event == nil then
+        self.hero_data_delete_event = GlobalEvent:getInstance():Bind(HeroEvent.Del_Hero_Event, function()
+            if not self.hero_vo then return end
+            -- self.is_del_hero_event = true
+            self:checkUpdateCurrentInfo()
+        end)
+    end
+
+    --新增英雄
+    if self.hero_data_add_event == nil then
+        self.hero_data_add_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Add, function()
+            if not self.hero_vo then return end
+            self:checkUpdateCurrentInfo(true)
+        end)
+    end
+
+    --物品道具增加 判断红点
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+            if not self.hero_vo then return end
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                self:checkUpdateCurrentInfo(true)
+            end
+        end)
+    end
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+            if not self.hero_vo then return end
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                self:checkUpdateCurrentInfo(true)
+            end
+        end)
+    end
+
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            if not self.hero_vo then return end
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                self:checkUpdateCurrentInfo(true)
+            end
+        end)
+    end
+end
+
+function HeroMainTabUpgradeStarHigherPanel:onClickBtnStar(param, sender, event_type)
+    local data = {
+        star_rank = sender.index,
+        hero_vo = self.hero_vo,
+    }
+    controller:openHeroUpgradeStarHigherPanel(true, data)
+end
+
+-- 属性tips
+function HeroMainTabUpgradeStarHigherPanel:onClickBtnDes()
+    controller:openHeroMainTabUpgradeStarHigherAttrtips(true, {hero_vo = self.hero_vo})
+end
+
+function HeroMainTabUpgradeStarHigherPanel:setData(hero_vo)
+    if not hero_vo then return end
+    self.hero_vo = hero_vo
+    self:updateInfo(hero_vo)
+end
+
+
+function HeroMainTabUpgradeStarHigherPanel:checkUpdateCurrentInfo(is_not_check)
+    -- if (self.is_hero_data_update and self.is_del_hero_event) or is_not_check then
+        self:updateInfo(self.hero_vo)
+    -- end
+end
+
+function HeroMainTabUpgradeStarHigherPanel:updateInfo(hero_vo)
+    --hero item
+    if not self.hero_item then
+        local hero_item = HeroExhibitionItem.new(0.8, false)
+        -- self.hero_item_list[i]:addCallBack(function() self:_onClickItemData(i) end)
+        self.item_node:addChild(hero_item)
+        self.hero_item = hero_item
+    end
+    self.hero_item:setData(hero_vo)
+    self:updateStarUpState()
+end
+
+function HeroMainTabUpgradeStarHigherPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+function HeroMainTabUpgradeStarHigherPanel:updateStarUpState()
+    for i,v in ipairs(self.starupList) do 
+        v.sp_bright:setVisible(model:checkStarStepCompleteByIndex(self.hero_vo, i))
+        -- setChildUnEnabled(not model:checkStarStepCompleteByIndex(self.hero_vo, i), v.img_star)
+        v.img_star:setVisible(model:checkStarStepCompleteByIndex(self.hero_vo, i))
+        v.img_star_gray:setVisible(not v.img_star:isVisible())
+    end
+end
+
+--移除
+function HeroMainTabUpgradeStarHigherPanel:DeleteMe()
+    if self.hero_item then
+        self.hero_item:DeleteMe()
+        self.hero_item = nil
+    end
+
+    if self.hero_data_update_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_update_event)
+        self.hero_data_update_event = nil
+    end
+
+    if self.hero_data_delete_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_delete_event)
+        self.hero_data_delete_event = nil
+    end
+    if self.hero_data_add_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_add_event)
+        self.hero_data_add_event = nil
+    end
+
+    if self.modify_goods_event then
+        GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+    if self.add_goods_event then
+        GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.del_goods_event then
+        GlobalEvent:getInstance():UnBind(self.del_goods_event)
+        self.del_goods_event = nil
+    end
+end

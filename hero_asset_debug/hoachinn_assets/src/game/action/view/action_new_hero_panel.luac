@@ -1,0 +1,398 @@
+--******** 文件说明 ********
+-- 
+-- @description: 新英雄介绍
+-- @DateTime:    2019-08-22 10:57:23
+-- *******************************
+ActionNewHeroPanel = class("ActionNewHeroPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local hero_controller = HeroController:getInstance()
+local hero_model = hero_controller:getModel()
+
+function ActionNewHeroPanel:ctor(bid,id,remain_sec)
+    self.remain_sec = remain_sec
+    self.remain_sec = 5
+	self.holiday_bid = bid
+    local holiday_vo = controller:getActionSubTabVo(self.holiday_bid)
+    self.camp_id = holiday_vo.camp_id
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("heaven","heaven"), type = ResourcesType.plist }
+    }
+    if not Config or not Config.HolidayNewNinjaData then
+        require("config.holiday_new_ninja_data")
+    end
+    self.data_const = deepCopy(Config.HolidayNewNinjaData.data_const[self.camp_id])
+    if not self.data_const then
+        return
+    end
+    if self.data_const then
+        for key, value in pairs(self.data_const) do
+            if type(value.val) == "string" and value.val ~= "" then
+                local list =  { path = PathTool.getPlistImgForDownLoad("new_ninja",value.val), type = ResourcesType.plist }
+                table.insert(self.res_list,list)
+            end
+        end
+    end
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+    end)
+    self.reward_list = {}
+    
+    self.stage = 0
+    self.index = 0
+end
+
+function ActionNewHeroPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionNewHeroPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_new_hero_panel"))
+    self.root_wnd:setPosition(-40,-82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.itle_img = self.main_container:getChildByName("itle_img")
+    self.itle_img:setPosition(cc.p(self.data_const["new_ninja_title"].move[1][1],self.data_const["new_ninja_title"].move[1][2]))
+    local res = PathTool.getPlistImgForDownLoad("new_ninja", self.data_const["new_ninja_bg"].val)
+    if not self.bg_load then
+        self.bg_load = loadSpriteTextureFromCDN(self.image_bg, res, ResourcesType.single, self.bg_load)
+    end
+    local res = PathTool.getPlistImgForDownLoad("new_ninja", self.data_const["new_ninja_title"].val)
+    if not self.bg_txt_load then
+        self.bg_txt_load = loadSpriteTextureFromCDN(self.itle_img, res, ResourcesType.single, self.bg_txt_load)
+    end
+    self.gift_btn = self.main_container:getChildByName("gift_btn")
+    self.receive = self.gift_btn:getChildByName("receive")
+    self.receive:setVisible(false)
+    self.gift_btn:setPosition(cc.p(self.data_const["new_ninja_gift_box"].move[1][1],self.data_const["new_ninja_gift_box"].move[1][2]))
+    self.gift_btn:loadTexture(PathTool.getPlistImgForDownLoad("new_ninja", self.data_const["new_ninja_gift_box"].val),LOADTEXT_TYPE)
+    self.gift_btn:ignoreContentAdaptWithSize(true)
+    self.receive:setPosition(self.gift_btn:getContentSize().width*0.5,self.gift_btn:getContentSize().height*0.5)
+
+    self.btn_lineup = self.main_container:getChildByName("btn_lineup")
+    self.lineup_icon = self.btn_lineup:getChildByName("icon")
+    self.lineup_txt = self.btn_lineup:getChildByName("label")
+    self.lineup_txt:setChangeScaleOffWidth(-1000)
+    self.lineup_txt:setString(TI18N("语言_c_5815"))
+    setTextMaxWidth(self.lineup_txt,100,-10)
+    self.btn_lineup:setPosition(cc.p(self.data_const["new_ninja_DreamTeam"].move[1][1],self.data_const["new_ninja_DreamTeam"].move[1][2]))
+    -- self.lineup_icon:loadTexture(PathTool.getPlistImgForDownLoad("new_ninja", self.data_const["new_ninja_DreamTeam"].val),LOADTEXT_TYPE)
+    self.lineup_icon:ignoreContentAdaptWithSize(true)
+
+    self.attr_btn = self.main_container:getChildByName("attr_btn")
+    self.attr_icon = self.attr_btn:getChildByName("icon")
+    self.attr_txt = self.attr_btn:getChildByName("label")
+    self.attr_txt:setChangeScaleOffWidth(-1000)
+    self.attr_txt:setString(TI18N("语言_c_3075"))
+    setTextMaxWidth(self.attr_txt,100,-10)
+    self.attr_btn:setPosition(cc.p(self.data_const["new_ninja_Stats"].move[1][1],self.data_const["new_ninja_Stats"].move[1][2]))
+    -- self.attr_icon:loadTexture(PathTool.getPlistImgForDownLoad("new_ninja", self.data_const["new_ninja_Stats"].val),LOADTEXT_TYPE)
+    self.attr_icon:ignoreContentAdaptWithSize(true)
+    
+    self.darklight_btn = self.main_container:getChildByName("darklight_btn")
+    self.darklight_icon = self.darklight_btn:getChildByName("icon")
+    self.darklight_txt = self.darklight_btn:getChildByName("label")
+    self.darklight_txt:setChangeScaleOffWidth(-1000)
+    local id = self.data_const["new_ninja_Stats1"].val
+    if hero_model:isConvert({bid=id}) then
+        self.darklight_txt:setString(TI18N("语言_par_19_2"))
+    else
+        self.darklight_txt:setString(TI18N("语言_c_5465"))
+    end
+    setTextMaxWidth(self.darklight_txt,100,-10)
+    local str = self.data_const["new_ninja_yyswitch"].val
+    if str and str ~= 0 then
+        self.darklight_icon:ignoreContentAdaptWithSize(true)
+        self.darklight_icon:loadTexture(PathTool.getResFrame("heaven", self.data_const["new_ninja_yyswitch"].desc),LOADTEXT_TYPE_PLIST)
+        self.darklight_btn:setPosition(cc.p(self.data_const["new_ninja_yyswitch"].move[1][1],self.data_const["new_ninja_yyswitch"].move[1][2]))
+    else
+        self.darklight_btn:setVisible(false)
+    end
+
+    self.time_text = self.main_container:getChildByName("time_text")
+    self.time_text:setString(TI18N("语言_c_1242"))
+    self.time_value = self.main_container:getChildByName("time_value")
+    controller:getModel():setCountDownTime(self.time_value,self.remain_sec or 0,true)
+    self.scroll = self.main_container:getChildByName("scroll_view")
+    self.mask_res = PathTool.getPlistImgForDownLoad("new_ninja",self.data_const["new_ninja_board"].val)
+    self.mask = createSprite(self.mask_res, 0,0, nil, cc.p(0, 0),LOADTEXT_TYPE)--模板
+    self.vSize = self.mask:getContentSize()
+    self.clipNode = cc.ClippingNode:create(self.mask)
+    self.clipNode:setAnchorPoint(cc.p(0,0))
+    self.clipNode:setContentSize(self.vSize)
+    self.clipNode:setCascadeOpacityEnabled(true)
+    self.clipNode:setPosition(cc.p(self.data_const["new_ninja_board"].move[1][1],self.data_const["new_ninja_board"].move[1][2]))
+    self.clipNode:setAlphaThreshold(0)
+    self.scroll:addChild(self.clipNode,2)
+
+    self.scroll_View = createScrollView(self.vSize.width,self.vSize.height,0,0,self.clipNode,ccui.ScrollViewDir.vertical)
+    self.scroll_View:setAnchorPoint(0,0)
+    self.scroll_container = self.scroll_View:getInnerContainer() 
+    controller:cs16603(self.holiday_bid)
+    controller:sender16819(self.camp_id)
+
+    if MAKELIFEBETTER_NEW then
+        if self.darklight_btn then
+            self.darklight_btn:setVisible(false)
+        end
+    end
+end
+
+function ActionNewHeroPanel:setPanel()
+    local data = model:getNewHeroShowData()
+    if data then
+        self:setGiftBtnRed(data)
+    end
+    self:setData()
+    self.scroll_View:removeAllChildren()
+    if tableLen(self.data) < 4 then
+        for i = 1, 4 - tableLen(self.data) do
+            table.insert(self.data,1,{})
+        end
+    end
+    local _h1 = self.data_const["new_ninja_height"].move[1][1]
+    local _h2 = self.data_const["new_ninja_height"].move[1][2]
+    for i = 1, tableLen(self.data) do
+        local item = self:actionItem(self.data[i])
+        self.scroll_container:addChild(item)
+        item:setPosition(cc.p(self.data_const["new_ninja_name_btn"].move[1][1],i*133 + _h2))
+    end
+    local _h = math.max(tableLen(self.data)*133,self.scroll_View:getContentSize().height) + _h1+_h2
+    self.scroll_View:setInnerContainerSize(cc.size(self.vSize.width,_h))
+    local ap_x = 1
+    self.time_text:setPosition(cc.p(712,47))
+    self.time_value:setPosition(cc.p(712,15))
+    if self.data_const["new_ninja_location"].val == 2 then
+        ap_x = 0
+        self.time_text:setPosition(cc.p(8,47))
+        self.time_value:setPosition(cc.p(8,15))
+    end
+    self.time_text:setAnchorPoint(cc.p(ap_x,0.5))
+    self.time_value:setAnchorPoint(cc.p(ap_x,0.5))
+end
+function ActionNewHeroPanel:setData()
+    local cfg = deepCopy(Config.HolidayNewNinjaData.data_lv_info[self.camp_id])
+    self.cfg = deepCopy(cfg)
+    self.data = {}
+    local nowtime = GameNet:getInstance():getTime()
+    for k, v in pairs(self.time_data) do
+        if cfg[v.id] then
+            if v.end_time ~= 0 then
+                if (v.start_time <= nowtime and v.end_time >= nowtime) or v.start_time > nowtime then
+                    cfg[v.id].start_time = v.start_time
+                    cfg[v.id].end_time = v.end_time
+                    table.insert(self.data,cfg[v.id])
+                end
+            else
+                -- if v.start_time <= nowtime then
+                    cfg[v.id].start_time = v.start_time
+                    cfg[v.id].end_time = v.end_time
+                    table.insert(self.data,cfg[v.id])
+                -- end
+            end
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"sort",true},{"start_time",true}})
+    table.sort(self.data,sort_func)
+end
+
+function ActionNewHeroPanel:register_event()
+    if not self.update_action_even_event  then
+        self.update_action_even_event = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE,function (data)
+            if data.bid == self.holiday_bid then
+                self:setGiftBtnRed(data)
+                controller:getModel():setCountDownTime(self.time_value,data.remain_sec or 0,true)
+            end
+        end)
+    end
+    if not self.new_hero_time_event  then
+        self.new_hero_time_event = GlobalEvent:getInstance():Bind(ActionEvent.NewHeroTimeEvent,function (data)
+            if data.camp_id == self.camp_id then
+                self.time_data = data.args
+                self:setPanel()
+            end
+        end)
+    end
+    registerButtonEventListener(self.gift_btn, function()
+        if self.receive:isVisible() then
+            message(TI18N("语言_c_6424"))
+        else
+            controller:cs16604(self.holiday_bid,0,0)
+        end
+    end, true)
+    registerButtonEventListener(self.btn_lineup, function()
+        JumpController:getInstance():jumpViewByEvtData({367, 2})
+    end, true)
+    registerButtonEventListener(self.attr_btn, function()
+        local id = self.data_const["new_ninja_Stats1"].val
+        local pokedex_config = Config.PartnerData.data_partner_pokedex[id]
+        if pokedex_config and pokedex_config[1] then
+            local star = pokedex_config[1].star or 1
+            HeroController:getInstance():openHeroInfoWindowByBidStar(id, star)
+        end
+    end, true)
+    registerButtonEventListener(self.darklight_btn, function()
+        local id = self.data_const["new_ninja_Stats1"].val
+        if hero_model:isConvert({bid=id}) then
+            HeroController:getInstance():openHeroDarkLightWindow(true,id)
+        else
+            HeroController:getInstance():openHeroSpShowWindow(true,id)
+        end
+    end, true)
+end
+
+function ActionNewHeroPanel:setGiftBtnRed(data)
+    local status = false
+    if data and data.aim_list and data.aim_list[1] then
+        status = data.aim_list[1].status == 1
+        if data.aim_list[1].status == 0 then
+            self.receive:setVisible(true)
+        else
+            self.receive:setVisible(false)
+        end
+    end
+    addRedPointToNodeByStatus(self.gift_btn,status)
+end
+function ActionNewHeroPanel:actionItem(data)
+    local size = cc.size(376,133)
+    local item = ccui.Widget:create()
+    item:setContentSize(size)
+    local ap_x = 0
+    if self.data_const["new_ninja_location"].val == 2 then
+        ap_x = 1
+    end
+    item:setAnchorPoint(cc.p(ap_x,1))
+    item:setTouchEnabled(true)
+    if not next(data) then return item end
+    item.bg = createImage(item,PathTool.getPlistImgForDownLoad("new_ninja",self.data_const["new_ninja_name_btn"].val),0,0,cc.p(0,0),false)
+    local res = PathTool.getPlistImgForDownLoad("new_ninja",self.data_const["new_ninja_name_btn"].val)
+    local nowtime = GameNet:getInstance():getTime()
+    local _w = 0
+    if data.start_time <= nowtime then
+        --正在进行中
+        res = PathTool.getPlistImgForDownLoad("new_ninja",data.picture_id)
+        item.icon = createImage(item,res,self.data_const["new_ninja_hero"].move[1][1],self.data_const["new_ninja_hero"].move[1][2],cc.p(0.5,0.5),false)
+        _w = item.icon:getContentSize().width
+        if item.icon_2 then
+            item.icon_2:setVisible(false)
+        end
+    else
+        if data.hero == 1 then
+            --未开启
+            res = PathTool.getPlistImgForDownLoad("new_ninja",data.picture_id)
+            item.icon = createImage(item,res,self.data_const["new_ninja_hero"].move[1][1],self.data_const["new_ninja_hero"].move[1][2],cc.p(0.5,0.5),false)
+            _w = item.icon:getContentSize().width
+
+            --未开启
+            local res_2 = PathTool.getResFrame("common","common_lock",false)
+            -- res = PathTool.getPlistImgForDownLoad("new_ninja",data.picture_id)
+            item.icon_2 = createImage(item,res_2,self.data_const["new_ninja_hero"].move[1][1],self.data_const["new_ninja_hero"].move[1][2],cc.p(0.5,0.5),true)
+        else
+            --未开启
+            res = PathTool.getResFrame("common","common_lock",false)
+            -- res = PathTool.getPlistImgForDownLoad("new_ninja",data.picture_id)
+            item.icon = createImage(item,res,self.data_const["new_ninja_hero"].move[1][1],self.data_const["new_ninja_hero"].move[1][2],cc.p(0.5,0.5),true)
+            _w = item.icon:getContentSize().width + 23
+        end
+        -- --未开启
+        -- res = PathTool.getResFrame("common","common_lock",false)
+        -- -- res = PathTool.getPlistImgForDownLoad("new_ninja",data.picture_id)
+        -- item.icon = createImage(item,res,self.data_const["new_ninja_hero"].move[1][1],self.data_const["new_ninja_hero"].move[1][2],cc.p(0.5,0.5),true)
+        -- _w = item.icon:getContentSize().width + 23
+
+        -- if data.hero == 1 then
+        --     if not item.icon_2 then
+        --         local res_2 = PathTool.getPlistImgForDownLoad("new_ninja",data.picture_id)
+        --         item.icon_2 = createImage(item,res_2,self.data_const["new_ninja_hero"].move[1][1],self.data_const["new_ninja_hero"].move[1][2],cc.p(0.5,0.5),false,1)
+        --     end
+        --     item.icon_2:setVisible(true)
+        -- else
+        --     if item.icon_2 then
+        --         item.icon_2:setVisible(false)
+        --     end
+        -- end
+    end
+    if data.hero == 1 then
+        if not item.hero then
+            res = PathTool.getPlistImgForDownLoad("new_ninja",self.data_const["new_ninja_rec"].val)
+            item.hero = createImage(item.icon,res,_w,0,cc.p(1,1),false)
+        end
+        item.hero:setVisible(true)
+    else
+        if item.hero then
+            item.hero:setVisible(false)
+        end
+    end
+    item.name = createLabel(22,cc.c3b(0xff,0xff,0xff),cc.c3b(0x2e,0x06,0x00),self.data_const["new_ninja_name"].move[1][1],self.data_const["new_ninja_name"].move[1][2],data.act_name,item,2,cc.p(ap_x,0.5))
+    item.name:setChangeScaleOffWidth(item:getContentSize().width - 160)
+    item.name:setLineSpacing(-10)
+    item.name:setString(data.act_name)
+    local start_txt = self.cfg[data.id].start_time
+    local str = ""
+    if data.end_time == 0 then
+        if data.start_time == 0 then
+            str = ""
+        else
+            str = string.format(TI18N("语言_c_6456"),start_txt[1][2].."."..start_txt[1][3])
+        end
+    else
+        local end_txt = self.cfg[data.id].end_time
+        str = string.format("%s.%s-%s.%s",start_txt[1][2],start_txt[1][3],end_txt[1][2],end_txt[1][3])
+    end
+    item.time = createLabel(22,cc.c3b(0xff,0xee,0x62),cc.c3b(0x3a,0x23,0x05),self.data_const["new_ninja_time"].move[1][1],self.data_const["new_ninja_time"].move[1][2],str,item,2,cc.p(0.5,0.5))
+    item:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local nowtime = GameNet:getInstance():getTime()
+            if data.type == 1 then    
+                if data.end_time <= nowtime then
+                    message(TI18N("语言_c_233"))
+                    return 
+                elseif data.start_time > nowtime then
+                    message(TI18N("语言_c_1473"))
+                    return 
+                else
+                    if controller:getActionSubTabVo(data.skip_id) then
+                        controller:openActionMainPanel(false)
+                        controller:openActionMainPanel(true, nil, data.skip_id)
+                    else
+                        message(TI18N("语言_c_1473"))
+                    end
+                end
+            elseif data.type == 2 then
+                if data.start_time > nowtime then
+                    local start_txt = self.cfg[data.id].start_time
+                    message(string.format(TI18N("语言_c_6456"),start_txt[1][2].."."..start_txt[1][3]))
+                    return 
+                else
+                    local cfg = Config.SourceData.data_source_data[data.skip_id]
+                    if cfg then
+                        BackpackController:getInstance():gotoItemSources(cfg.evt_type, cfg.extend)
+                    end
+                end
+            end
+        end
+    end)
+    return item
+end
+function ActionNewHeroPanel:DeleteMe()
+    if self.update_action_even_event then
+        self.update_action_even_event = GlobalEvent:getInstance():UnBind(self.update_action_even_event)
+        self.update_action_even_event = nil
+    end
+    if self.new_hero_time_event then
+        self.new_hero_time_event = GlobalEvent:getInstance():UnBind(self.new_hero_time_event)
+        self.new_hero_time_event = nil
+    end
+end

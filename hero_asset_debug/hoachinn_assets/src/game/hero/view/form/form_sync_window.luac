@@ -1,0 +1,326 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+-- 阵容同步
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+FormSyncWindow = FormSyncWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+
+
+function FormSyncWindow:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini
+    self.is_full_screen = false
+    self.layout_name = "hero/form_sync_window"
+    self.line_bg_list = {}
+    self.select_list = {}
+    self.res_list = {
+     { path = PathTool.getPlistImgForDownLoad("form","form"), type = ResourcesType.plist },
+    }
+end
+
+function FormSyncWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+    self.imgTitleBg = self.main_container:getChildByName("imgTitleBg")
+    self.title = self.main_container:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_7388"))
+    autoSizeTitleBg(self.title,  self.imgTitleBg, 120, 332)
+
+    self.tips1 = self.main_container:getChildByName("tips1")
+    self.tips1:setString(TI18N("语言_c_7389"))
+    self.tips2 = self.main_container:getChildByName("tips2")
+    self.tips2:setString(TI18N("语言_c_7390"))
+    self.tips3 = self.main_container:getChildByName("tips3")
+    self.tips3:setString(TI18N("语言_c_7391"))
+    
+    self.scrollview = self.main_container:getChildByName("scrollview")
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.scrollview:getContentSize()
+        local setting = {
+            start_x = 0, -- 第一个单元的X起点
+            space_x = 0, -- x方向的间隔
+            start_y = 0, -- 第一个单元的Y起点
+            space_y = 0, -- y方向的间隔
+            item_width = 300, -- 单元的尺寸width
+            item_height = 70, -- 单元的尺寸height
+            row = 0,                         -- 行数，作用于水平滚动类型
+            col = 2,  
+            once_num = 1 -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.scrollview, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    end
+    self.empty_img = self.scrollview:getChildByName("empty_img")
+    local tips = self.empty_img:getChildByName("tips")
+    tips:setString(TI18N("语言_c_7392"))
+    tips:setScale(1)
+    self.empty_img:setVisible(false)
+
+    self.comfirm_btn = self.main_container:getChildByName("comfirm_btn")
+    self.comfirm_btn:getChildByName("label"):setString(TI18N("语言_c_261"))
+    self.cancel_btn = self.main_container:getChildByName("cancel_btn")
+    self.cancel_btn:getChildByName("label"):setString(TI18N("语言_c_62"))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+end
+
+function FormSyncWindow:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.cancel_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.comfirm_btn, handler(self, self.onClickComfirmBtn) ,true, 1)
+end
+
+function FormSyncWindow:createNewCell(width, height)
+    local cell = FormSyncItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+	return cell
+end
+function FormSyncWindow:numberOfCells()
+    if not self.good_list_data then return 0 end
+    return #self.good_list_data
+end
+function FormSyncWindow:updateCellByIndex(cell, index)
+    if not self.good_list_data then return end
+    cell.index = index
+    local cell_data = self.good_list_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data,index)
+    cell:setCheckBoxStatus(self.select_list[cell_data.type])
+end
+function FormSyncWindow:onCellTouched(cell)
+    local cell_data = cell:getData()
+    local form_type = cell_data.type
+    if self.select_list[form_type] then
+        cell:setSelectStatus(false)
+        self.select_list[form_type] = nil
+    else
+        self.select_list[form_type] = form_type
+        cell:setSelectStatus(true)
+    end
+  --  print(vardump(self.select_list))
+end
+
+--关闭
+function FormSyncWindow:onClickBtnClose()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    controller:openFormSyncPanel(false)
+end
+
+--确定
+function FormSyncWindow:onClickComfirmBtn()
+    local list = {}
+    for k, v in pairs(self.select_list) do
+        local obj = {}
+        obj.target_type = v
+        table.insert(list,obj)
+    end
+    if #list == 0 then
+        message(TI18N("语言_c_7391"))
+        return
+    end
+    if self.setting and self.setting.form_is_change then
+        GlobalEvent:getInstance():Fire(HeroEvent.Hero_Form_Change_Event)
+        delayOnce(function ()
+            if controller then
+                controller:sender11220(self.formation_type,list)
+            end
+        end, 0.1)
+    else
+        controller:sender11220(self.formation_type,list)
+    end
+end
+
+function FormSyncWindow:openRootWnd(formation_type,setting)
+    self.formation_type = formation_type
+    self.setting = setting
+   -- print(" self.formation_type +++++++++++", self.formation_type)
+    local cfg = Config.FormationSysTypeData.data_copy_formation
+    self.form_1 = {}
+    self.form_2 = {}
+    for k, v in pairs(cfg) do
+        if v.group == 1 then
+            self.form_1[v.type] = v
+        end
+        if v.group == 2 then
+            self.form_2[v.type] = v
+        end
+    end
+
+    self:setData(formation_type)
+end
+
+function FormSyncWindow:setData(formation_type)
+    local list = {}
+    local temp_data = self.form_1[formation_type]
+    local temp_list
+    if temp_data then
+        temp_list = self.form_1
+    else
+        temp_list = self.form_2
+    end
+    self.select_list = {}
+    for k, v in pairs(temp_list) do
+        if v.type ~= formation_type then
+            local is_open = self:checkOpenStatus(v.type)
+            if is_open then
+                table_insert(list,v)
+                self.select_list[v.type] = v.type
+            end
+        end
+    end
+    self.good_list_data = list
+    if not next(self.good_list_data) then
+        self.empty_img:setVisible(true)
+    else
+        self.empty_img:setVisible(false)
+    end
+    self.item_scrollview:reloadData()
+
+
+    local line_num = math.ceil(#list/2)
+    for k, v in pairs( self.line_bg_list) do
+        v:setVisible(false)
+    end
+    local total_height = math.max(400, line_num*70)
+    for i = 1, line_num do
+        if i % 2 == 0 then
+            if not self.line_bg_list[i] then
+                self.line_bg_list[i] = createScale9Sprite(PathTool.getResFrame("common_1","common_1_437"), 300, 0, LOADTEXT_TYPE_PLIST, self.item_scrollview.scroll_view)
+                self.line_bg_list[i]:setLocalZOrder(i)
+                self.line_bg_list[i]:setAnchorPoint(cc.p(0.5, 1))
+                self.line_bg_list[i]:setContentSize(cc.size(600,70))
+                self.line_bg_list[i]:setOpacity(10)
+            end
+            self.line_bg_list[i]:setVisible(true)
+            self.line_bg_list[i]:setPositionY(total_height-i/2*70) 
+        end
+    end
+end
+
+function FormSyncWindow:checkOpenStatus(fun_form_type)
+    local is_open = true
+    if fun_form_type == PartnerConst.Fun_Form.Arena or fun_form_type == PartnerConst.Fun_Form.ArenaChampion then 
+        is_open = MainSceneController:getInstance():checkBuildIsOpen(CenterSceneBuild.arena)
+    elseif fun_form_type == PartnerConst.Fun_Form.Ladder then
+        is_open = LadderController:getInstance():getModel():getLadderOpenStatus(true)
+    elseif fun_form_type == PartnerConst.Fun_Form.EliteMatch then
+        is_open = ElitematchController:getInstance():getModel():checkElitematchIsOpen(true)
+    elseif fun_form_type == PartnerConst.Fun_Form.ArenaTeam then
+        is_open = ArenateamController:getInstance():getModel():checkArenaTeamIsOpen(true)
+    elseif fun_form_type == PartnerConst.Fun_Form.CrossArenaDef then
+        is_open = CrossarenaController:getInstance():getModel():getCrossarenaIsOpen(true)
+    elseif fun_form_type == PartnerConst.Fun_Form.ArenaWorldDef then
+        local model = ArenaWorldController:getInstance():getModel()
+        if model:isHideArenaWorld() then return false end
+        is_open = ArenaWorldController:getInstance():getModel():getArenaOpenStatus(true)
+    elseif fun_form_type == PartnerConst.Fun_Form.ShinobiDef then
+        local model = ShinobiController:getInstance():getModel()
+        if model:isHideShinobi() then return false end
+        is_open = ShinobiController:getInstance():getModel():getShinobiIsOpen(true)
+    elseif fun_form_type == PartnerConst.Fun_Form.ArenapeakchampionDef then
+        is_open = ArenapeakchampionController:getInstance():getModel():checkPeakChampionIsOpen(true)
+    elseif fun_form_type == PartnerConst.Fun_Form.GuildNewWarLegend then
+        -- local config_lv = Config.GuildWarNewData.data_const.limit_lev
+        -- local config_day = Config.GuildWarNewData.data_const.limit_open_time
+        -- local my_guild_info = GuildController:getInstance():getModel():getMyGuildInfo()
+        local is_unlock = true
+        -- if config_lv and config_day then
+        --     is_unlock =(my_guild_info and my_guild_info.lev >= config_lv.val)
+        --     if is_unlock == true then
+        --         local open_srv_day = RoleController:getInstance():getModel():getOpenSrvDay()
+        --         is_unlock = (open_srv_day > config_day.val)
+        --     end
+        -- end
+        is_open = is_unlock
+    end
+    return is_open
+end
+
+function FormSyncWindow:close_callback()
+    controller:openFormSyncPanel(false)
+end
+
+
+FormSyncItem = class("FormSyncItem", function()
+    return ccui.Widget:create()
+end)
+
+function FormSyncItem:ctor()
+    self:configUI()
+    self:register_event()
+    self.item_list = {}
+    self.item_list2 = {}
+end
+
+function FormSyncItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/form_sync_item"))
+    self:addChild(self.root_wnd)
+    self:setAnchorPoint(0, 0)
+    self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(300,70))
+	self:setTouchEnabled(true)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.checkbox = self.main_container:getChildByName("checkbox")
+    self.label = self.checkbox:getChildByName("label")
+end
+
+function FormSyncItem:register_event()
+    self.checkbox:addEventListener(function(sender,event_type)
+	    -- if event_type == ccui.CheckBoxEventType.selected then
+        --     playButtonSound2()
+	    --     self.checkbox:setSelected(true)
+	    -- elseif event_type == ccui.CheckBoxEventType.unselected then 
+        --     playButtonSound2()
+        --     self.checkbox:setSelected(false)
+	    -- end
+        self.callback()
+    end)
+end
+
+function FormSyncItem:setData(data,index)
+    self.data = data
+    self:setLocalZOrder(500+index)
+    self.label:setString(data.name)
+    self.checkbox:setSelected(false)
+end
+function FormSyncItem:getData()
+    return self.data
+end
+function FormSyncItem:addCallBack( callback )
+    self.callback = callback
+end
+
+function FormSyncItem:setCheckBoxStatus(status)
+    if status then
+        self.checkbox:setSelected(true)
+    end
+end
+function FormSyncItem:setSelectStatus(status)
+    self.checkbox:setSelected(status)
+end
+function FormSyncItem:getSelectStatus()
+    return self.checkbox:getSelectedState()
+end
+
+function FormSyncItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

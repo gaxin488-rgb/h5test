@@ -1,0 +1,125 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-05-05 14:16:55
+-- @description    : 
+		-- 跨服竞技场 英雄 item
+---------------------------------
+local _controller = ShinobiController:getInstance()
+local _model = _controller:getModel()
+local _string_format = string.format
+
+ShinobiRoleItem = class("ShinobiRoleItem", function()
+    return ccui.Widget:create()
+end)
+
+ShinobiRoleItem.Width = 150
+ShinobiRoleItem.Height = 350
+
+function ShinobiRoleItem:ctor()
+    self:configUI()
+	self:register_event()
+end
+
+function ShinobiRoleItem:configUI(  )
+	self.size = cc.size(ShinobiRoleItem.Width, ShinobiRoleItem.Height)
+	self:setContentSize(self.size)
+	self:setAnchorPoint(cc.p(0.5, 0))
+
+	local csbPath = PathTool.getTargetCSB("shinobi/shinobi_role_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+	self.container = self.root_wnd:getChildByName("container")
+    self.image_result=self.container:getChildByName("image_result")
+    self.model=self.container:getChildByName("model")
+    self.txt_role_name=self.container:getChildByName("name")
+    self.txt_role_name:setChangeScaleOffWidth(-10000)
+    self.image_bg=self.container:getChildByName("image_bg")
+    self.starlist={}
+    for i=1,3 do 
+        local star=self.container:getChildByName("star"..i)
+        table.insert(self.starlist,star)
+    end
+    self.can_open = true
+end
+
+
+function ShinobiRoleItem:register_event( )
+    registerButtonEventListener(self.container, handler(self, self.onClickRoleItem), false)
+    if not self.update_single_role_event then
+        self.update_single_role_event = GlobalEvent:getInstance():Bind(ShinobiEvent.Update_Single_Challenge_Role_Event, function ( data )
+            if data and data.idx and self.data and self.data.idx == data.idx then
+                self:setData(data)
+            end
+        end)
+    end
+end
+
+function ShinobiRoleItem:onClickRoleItem(  )
+    -- if self.data and _model:checkShinobiIsOpen() then
+    --     if self.data.rid == 0 then
+    --         message(TI18N("语言_c_459"))
+    --         return
+    --     end
+
+    -- end
+    if self.can_open then
+        self.can_open = false
+        _controller:openShinobiAtkWindow(true,self.data) 
+        delayOnce(function()
+            self.can_open = true
+        end , 1)
+    end
+end
+
+function ShinobiRoleItem:setData( data, index )
+	if not data then return end
+
+	self.data = data
+    -- 名称
+    self.txt_role_name:setString(transformNameByServ(data.name or "", data.srv_id))
+    local wid=self.txt_role_name:getContentSize().width+20
+    self.image_bg:setContentSize(cc.size(wid,24))
+    -- 模型
+    if self.role_spine then
+        self.role_spine:DeleteMe()
+        self.role_spine = nil
+    end
+    if data.look then
+        self.role_spine = BaseRole.new(BaseRole.type.role, data.look)
+        self.role_spine:setCascade(true)
+        self.role_spine:setAnchorPoint(cc.p(0.5,0.5))
+        self.role_spine:setAnimation(0,PlayerAction.show,true)
+        self.role_spine:showShadowUI(false)
+        self.model:addChild(self.role_spine, 1)
+        local consize=self.model:getContentSize()
+        self.role_spine:setPosition(cc.p(consize.width/2,consize.height/2+40))
+    end
+    if data.is_challenged~=0 then
+       self.image_result:setVisible(true)
+       local res= PathTool.getResFrame("shinobi",data.stars==0 and "txt_cn_shinobi_03" or "txt_cn_shinobi_02" )
+       self.image_result:loadTexture(res, LOADTEXT_TYPE_PLIST)
+    else
+       self.image_result:setVisible(false)
+    end
+    self:setStar(data.stars)
+end
+
+function ShinobiRoleItem:setStar(star)
+     for i=1,3 do
+        local res= PathTool.getResFrame("common",i<=star  and "common_90013" or "common_90014" )
+        loadSpriteTexture(self.starlist[i], res, LOADTEXT_TYPE_PLIST)
+     end
+end
+
+function ShinobiRoleItem:__delete()
+    if self.role_spine then
+        self.role_spine:DeleteMe()
+        self.role_spine = nil
+    end
+    if self.update_single_role_event then
+        GlobalEvent:getInstance():UnBind(self.update_single_role_event)
+        self.update_single_role_event = nil
+    end
+end

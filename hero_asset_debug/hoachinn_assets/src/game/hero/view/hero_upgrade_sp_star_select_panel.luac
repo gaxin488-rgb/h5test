@@ -1,0 +1,538 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      sp神将提交任务s
+-- <br/> 2020年12月7日
+-- --------------------------------------------------------------------
+HeroUpgradeSpStarSelectPanel = HeroUpgradeSpStarSelectPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local math_ceil = math.ceil
+
+
+function HeroUpgradeSpStarSelectPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Tips
+    self.layout_name = "hero/hero_upgrade_sp_star_send_task_window"
+    self:config()
+end
+
+function HeroUpgradeSpStarSelectPanel:config()
+
+    --材料列表
+    self.hero_item_list = {}
+    self.cost_item_list = {} -- 升星额外消耗的材料
+end
+
+function HeroUpgradeSpStarSelectPanel:open_callback()
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:playEnterAnimatianByObj(self, 2)
+
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.close_btn = self.root_wnd:getChildByName("close_btn")
+    self.star_rank_title = self.root_wnd:getChildByName("star_rank_title")
+    self.star_rank_title:setString(TI18N("语言_hol_ni_01_135"))
+    self.Image_2 = self.root_wnd:getChildByName("Image_2")
+
+    self.main_container = self.root_wnd:getChildByName("container")
+
+    self.star_rank_name = self.main_container:getChildByName("star_rank_name")
+    setTextMaxWidth(self.star_rank_name, 620, -4)
+    self.star_rank_name:setString(TI18N("语言_c_7722"))
+    self.label_cost_title = self.main_container:getChildByName("label_cost_title")
+    self.label_cost_title:setString(TI18N("语言_c_1971"))
+    self.item_node = self.main_container:getChildByName("item_node")
+
+    self.confirm_btn = self.main_container:getChildByName("confirm_btn")
+    self.confirm_btn:getChildByName("label"):setString(TI18N("语言_hol_ni_01_135"))
+end
+
+function HeroUpgradeSpStarSelectPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.confirm_btn, handler(self, self.onClickBtnConfirm) ,true, 1)
+
+    self:addGlobalEvent(TipsEvent.TipsGoToEvent, function( )
+        self:onClickBtnClose()
+    end)
+
+    --添加英雄选择返回事件
+    if self.upgrade_star_select_event == nil then
+        self.upgrade_star_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function()
+            self:updateHeroItemInfo()
+        end)
+    end
+end
+
+function HeroUpgradeSpStarSelectPanel:openRootWnd(object,hero_vo)
+    self.data = object
+    self.hero_vo = hero_vo
+    self:updateInfo(self.data)
+end
+
+--关闭
+function HeroUpgradeSpStarSelectPanel:onClickBtnClose()
+    controller:openSpStarSelectWindow(false)
+end
+
+-- 确定使用
+function HeroUpgradeSpStarSelectPanel:onClickBtnConfirm()
+    self:_sendUpgradeStar()
+end
+
+--发升星协议
+function HeroUpgradeSpStarSelectPanel:_sendUpgradeStar()
+    -- if self.is_complete_star_step then
+    --     message(TI18N("语言_c_3074"))
+    --     return 
+    -- end
+    local partner_id = self.hero_vo.partner_id
+    local hero_list = {}
+    local random_list = {}
+    local dic_item_expend = {}
+    if self.hero_item_data_list and next(self.hero_item_data_list) ~= nil then
+        for i,item in ipairs(self.hero_item_data_list) do
+            local count = 0
+            for k,v in pairs(item.dic_select_list) do
+                count = count + 1
+            end
+            if count < item.count then
+                message(TI18N("语言_c_3021"))
+                return
+            end
+            for k,v in pairs(item.dic_select_list) do
+                if v.is_hero_hun then --是否英魂 参考 HeroUpgradeStarSelectPanel:initHeroList(dic_other_selected) 里面的定义
+                    if v.good_vo then
+                        if dic_item_expend[v.good_vo.base_id] == nil then
+                            dic_item_expend[v.good_vo.base_id] = 1
+                        else
+                            dic_item_expend[v.good_vo.base_id] = dic_item_expend[v.good_vo.base_id] + 1
+                        end
+                    end
+                else
+                    local data = {}
+                    data.partner_id = k
+                    if item.bid == 0 then
+                        --随机卡
+                        table_insert(random_list, data)
+                    else
+                        --指定卡
+                        table_insert(hero_list, data)
+                    end
+                end
+            end
+        end 
+        -- model:setUpgradeStarUpdateRecord(false)
+    end
+
+    local item_list = {}
+    for item_id, num in pairs(dic_item_expend) do
+        local data = {}
+        data.item_id = item_id
+        data.num = num
+        table_insert(item_list, data)
+    end
+    controller:sender11486(self.data.id, hero_list, random_list, item_list)
+    controller:openSpStarSelectWindow(false)
+end
+
+--更新选中英雄信息
+function HeroUpgradeSpStarSelectPanel:updateHeroItemInfo()
+    if not self.hero_item_data_list then return end
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    for i,v in ipairs(self.hero_item_data_list) do
+        if v.is_select then
+            v.is_select = false
+            local count = 0
+            for k,vo in pairs(v.dic_select_list) do
+                count = count + 1
+                self.dic_other_selected[k] = vo
+            end
+            v.lev = string_format("%s/%s", count, v.count)
+            if self.hero_item_list[i] then
+                self.hero_item_list[i].num_label:setString(v.lev)
+                if count > 0 then
+                    self.hero_item_list[i]:setHeadUnEnabled(false)
+                else
+                    self.hero_item_list[i]:setHeadUnEnabled(true)
+                end
+            end
+        else
+            for k,vo in pairs(v.dic_select_list) do
+                self.dic_other_selected[k] = vo
+            end
+        end
+    end
+    self:updateCentreHeroItemRedPoint()
+end
+
+function HeroUpgradeSpStarSelectPanel:updateInfo(hero_vo)
+    -- {id=2004, progress={{cli_label="evt_submit_partner",target=0,target_val=0,param={{'heroid',{}},{'hero_item',{{4,5,1}}},{'item',{}}}}}, 
+    -- extra={}, desc=TI18N("提交材料完成任务"), source_id=1},
+    local cost_cfg = hero_vo.progress[1]
+    local param = cost_cfg.param
+    self:updateItemDataByConfig(param)
+end
+
+--更新升星物品材料
+function HeroUpgradeSpStarSelectPanel:updateItemDataByConfig(star_config)
+    -- print("HeroUpgradeSpStarSelectPanel updateItemDataByConfig", vardump(star_config))
+    if not star_config then return end
+    self.hero_item_data_list = {}
+    --红点条件list
+    local conditions_list = {}
+    --记录已选id [partner_id] = hero_vo
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    -- local expend = star_config.expend1[1]
+    -- if expend then --主卡
+    --     --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    --     self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3]) 
+    -- end
+
+    --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    local index = 1
+    for i,expend in ipairs(star_config[1][2]) do
+        self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+    --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+    for i,expend in ipairs(star_config[2][2]) do
+        self.hero_item_data_list[index] = self:getHeroData(nil, expend[2], expend[3], expend[1])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+
+    for i,item in ipairs(self.hero_item_list) do
+        item:setVisible(false)
+    end
+
+    for i,hero_vo in ipairs(self.hero_item_data_list) do
+        if self.hero_item_list[i] == nil then
+            self.hero_item_list[i] = HeroExhibitionItem.new(1, true)
+            self.hero_item_list[i]:setPosition( (i-1) * (HeroExhibitionItem.Width * 1 + 10) , 0)
+            self.hero_item_list[i]:addCallBack(function() self:_onClickItemData(i) end)
+            self.item_node:addChild(self.hero_item_list[i])
+        end
+        self.hero_item_list[i]:setVisible(true)
+        if hero_vo.bid == 0 then
+            --随机卡的头像id
+            local default_head_id = model:getRandomHeroHeadByQuality(hero_vo.star)
+            self.hero_item_list[i]:setData(hero_vo)
+            self.hero_item_list[i]:setDefaultHead(default_head_id)
+            -- self.hero_item_list[i]:setHeroName(true, string_format(TI18N("语言_c_3022"), hero_vo.star))
+        else
+            self.hero_item_list[i]:setData(hero_vo)
+            -- self.hero_item_list[i]:setHeroName(true, hero_vo.name)
+        end
+        
+        self.hero_item_list[i]:setHeadUnEnabled(true)
+    end
+
+    -- 额外材料
+    for k,item in pairs(self.cost_item_list) do
+        item:setVisible(false)
+    end
+    local upgrade_star_cost = {} --消耗材料
+    local start_index = #self.hero_item_data_list
+    if star_config[3][2] then
+        for i,v in ipairs(star_config[3][2]) do
+            local bid = v[1]
+            local need_num = v[2]
+            local item = self.cost_item_list[i]
+            if not item then
+                item = BackPackItem.new(false, true, false, 1)
+                self.item_node:addChild(item)
+                self.cost_item_list[i] = item
+            end
+            item:setPosition( (start_index+i-1) * (BackPackItem.Width * 1 + 10) , 0)
+            local have_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(bid)
+            item:setBaseData(bid)
+            item:setNeedNum(need_num, have_num, 1, true, 2)
+            if need_num > have_num then
+                item:setDefaultTip(true, true)
+            else
+                item:setDefaultTip()
+            end
+            item:setVisible(true)
+            -- if bid ~= model.upgrade_star_cost_id then
+            -- end
+        end
+    end
+
+    self:initHeroListByMatchInfo(conditions_list)
+    self:updateCentreHeroItemRedPoint()
+end
+
+--初始化英雄列表匹配信息
+function HeroUpgradeSpStarSelectPanel:initHeroListByMatchInfo(conditions_list)
+    local hero_list = model:getHeroList()
+
+    self.conditions_hero_list = {}
+    for k,hero in pairs(hero_list) do
+        --去掉lock de 
+        if not hero:isResonateHero() and not hero:isInForm() and not hero:isLock() then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+    
+                if self.hero_item_data_list and self.hero_item_data_list[i] and self.hero_item_data_list[i].bid and self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    if conditions[0] then
+                        if conditions[0][hero.star] then
+                            table_insert(self.conditions_hero_list[i], hero)
+                        end
+                    else
+                        if conditions[hero.camp_type] and conditions[hero.camp_type][hero.star] ~= nil then
+                            table_insert(self.conditions_hero_list[i], hero)
+                        end
+                    end
+                else
+                    --指定卡
+                    if conditions[hero.bid] and conditions[hero.bid][hero.star] then   -- 指定卡要剔除自己
+                        if self.hero_vo and self.hero_vo.partner_id ~= hero.partner_id then
+                            table_insert(self.conditions_hero_list[i], hero)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    --新加需求.自动填满指定定的位置的英雄
+    -- if self.hero_vo and self.hero_vo.red_point[HeroConst.RedPointType.eRPStar] then
+        self.dic_other_selected = {}
+        if self.hero_vo then
+            self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+        end
+        for i,v in ipairs(self.hero_item_data_list) do
+            --策划要求指定才需要填充 
+            if v.bid ~= 0 then
+                if self.conditions_hero_list[i] and #self.conditions_hero_list[i] > 0 then
+                    local sort_func = SortTools.tableCommonSorter({{"lev", false}, {"id", true}}) 
+                    table_sort(self.conditions_hero_list[i], sort_func)
+                    local count = 0
+                    for _,hero_vo in ipairs(self.conditions_hero_list[i]) do
+                        if self.dic_other_selected[hero_vo.id] == nil and not hero_vo:checkHeroLockTips(true, nil, true) then
+                            v.dic_select_list[hero_vo.id] = hero_vo
+                            count = count + 1
+                            if count >= v.count then
+                                break
+                            end
+                        end
+                    end
+                    if count < v.count then
+                        --说明不够..就不显示了
+                        v.dic_select_list = {}
+                    else
+                        for k,v in pairs(v.dic_select_list) do
+                            self.dic_other_selected[k] = v
+                        end
+                        v.lev = string_format("%s/%s", count, v.count)
+                        if self.hero_item_list[i] then
+                            self.hero_item_list[i].num_label:setString(v.lev)
+                            if count > 0 then
+                                self.hero_item_list[i]:setHeadUnEnabled(false)
+                            else
+                                self.hero_item_list[i]:setHeadUnEnabled(true)
+                            end
+                        end      
+                    end
+                end
+            end
+        end
+    -- end
+
+
+    local list = BackpackController:getInstance():getModel():getHeroHunList()
+    for k, good_vo in pairs(list) do
+        if good_vo.config then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+                if self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    local camp_type = good_vo.config.camp_type
+                    local star = good_vo.config.eqm_jie
+                    if conditions[camp_type] and conditions[camp_type][star] ~= nil then
+                        for j=1,good_vo.quantity do
+                            local data = {}
+                            data.id = -(j + camp_type * 10)
+                            data.partner_id = data.id
+                            data.good_vo = good_vo
+                            table_insert(self.conditions_hero_list[i], data)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+
+--计算中间item红点显示
+function HeroUpgradeSpStarSelectPanel:updateCentreHeroItemRedPoint()
+    if not self.conditions_hero_list then return end
+    if not self.dic_other_selected then return end
+    for i,item in ipairs(self.hero_item_list) do
+        --模拟的hero_vo数据
+        local hero_vo = self.hero_item_data_list[i]
+        local conditions_list =  self.conditions_hero_list[i] or {}
+        if hero_vo then
+            local count = 0
+            for k,v in pairs(hero_vo.dic_select_list) do
+                count = count + 1
+            end
+            --已经填满了就不显示红点了
+            if count < hero_vo.count then
+                --随机卡的 --指定卡 逻辑一样的
+                local num = hero_vo.count
+                for i,each_hero in ipairs(conditions_list) do
+                    --自已选的.和 别人没选的 都算数 
+                    if hero_vo.dic_select_list[each_hero.id] or self.dic_other_selected[each_hero.id] == nil then 
+                        num = num -1
+                        if num == 0 then
+                            break
+                        end
+                    end
+                end
+                --说明数量够 显示红点
+                local status = (num <= 0) 
+                item:showRedPoint(status, 8, 8)
+
+            else
+                item:showRedPoint(false)
+            end
+        end
+    end
+end
+
+--点击材料数据
+function HeroUpgradeSpStarSelectPanel:_onClickItemData(index)
+    if not self.hero_item_data_list[index] then return end
+    if not self.hero_vo then return end
+    --标志点击了那个
+    self.hero_item_data_list[index].is_select = true
+    --被其他人选择的列表 [id] = hero_vo 模式
+    local dic_other_selected = {}
+    --把自己也过滤
+    dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    for i,item in ipairs(self.hero_item_data_list) do
+        if i ~= index then
+            for k,v in pairs(item.dic_select_list) do
+                dic_other_selected[k] = v
+            end
+        end
+    end
+
+    local setting = {}
+    if self.hero_item_data_list[index].bid == 0 and self.hero_item_data_list[index].star == 5 then
+        -- 表示随机卡
+        setting.self_mark_bid = self.hero_vo.bid
+    end
+
+    controller:openHeroUpgradeStarSelectPanel(true, self.hero_item_data_list[index], dic_other_selected, HeroConst.SelectHeroType.eSPshenjiang, setting)
+end
+
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function HeroUpgradeSpStarSelectPanel:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+
+function HeroUpgradeSpStarSelectPanel:updateCostInfo(lev)
+    -- local config = Config.ResonateData.data_crystal_cost[lev]
+    -- if config and next(config.expend) ~= nil then
+    --     for i=1,3 do
+    --         local cost_data = config.expend[i]
+    --         local cost_icon = self.cost_bg_list[i].cost_icon
+    --         local cost_txt = self.cost_bg_list[i].cost_txt
+    --         if cost_data then
+    --             local bid = cost_data[1]
+    --             local num = cost_data[2]
+    --             local item_config = Config.ItemData.data_get_data(bid)
+    --             if item_config then
+    --                 cost_icon:loadTexture(PathTool.getItemRes(item_config.icon), LOADTEXT_TYPE)
+    --                 local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+    --                 cost_txt:setString(MoneyTool.GetMoneyString(have_num) .. "/" .. MoneyTool.GetMoneyString(num))
+    --                 if have_num >= num then
+    --                     cost_txt:setTextColor(cc.c3b(255, 246, 228))
+    --                 else
+    --                     cost_txt:setTextColor(cc.c3b(0xff,0x8b,0x8b))
+    --                 end
+    --             end
+    --         else
+    --             cost_txt:setString("")
+    --         end
+    --     end
+    -- end
+end
+
+
+function HeroUpgradeSpStarSelectPanel:close_callback()
+    if self.hero_item_list then
+        for i,v in ipairs(self.hero_item_list) do
+             v:DeleteMe()
+        end
+        self.hero_item_list = nil
+    end
+    if self.cost_item_list then
+        for i,v in ipairs(self.cost_item_list) do
+            v:DeleteMe()
+        end
+        self.cost_item_list = nil
+    end
+
+    if self.upgrade_star_select_event then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+
+    controller:openSpStarSelectWindow(false)
+end

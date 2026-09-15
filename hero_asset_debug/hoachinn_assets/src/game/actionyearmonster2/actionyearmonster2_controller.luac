@@ -1,0 +1,758 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      年兽活动 后端 国辉  策划 中建
+-- <br/>Create: 2020-01-03
+-- --------------------------------------------------------------------
+Actionyearmonster2Controller = Actionyearmonster2Controller or BaseClass(BaseController)
+
+function Actionyearmonster2Controller:config()
+    self.model = Actionyearmonster2Model.New(self)
+    self.dispather = GlobalEvent:getInstance()
+end
+
+function Actionyearmonster2Controller:getModel()
+    return self.model
+end
+
+function Actionyearmonster2Controller:registerEvents()
+
+    if not self.red_bg_event then
+        self.red_bg_event = GlobalEvent:getInstance():Bind(MainuiEvent.CLOSE_ITEM_VIEW, function(data)
+            if data and data.is_year_red_bag then
+                --此数据是 18214 返回的数据
+                local info_data = data.info_data
+                self:openActionyearmonster2RedbagEventPanel(true,{info_data = info_data})
+            end
+        end)
+    end
+end
+
+function Actionyearmonster2Controller:registerProtocals()
+    self:RegisterProtocal(18200, "handle18200") -- 基础数据信息
+    self:RegisterProtocal(18201, "handle18201") -- 格子数据信息
+    self:RegisterProtocal(18202, "handle18202") -- 移动进入指定格子，需接收到成功后方可移动 
+    self:RegisterProtocal(18203, "handle18203") --  操作指定格子事件
+    self:RegisterProtocal(18204, "handle18204") -- 请求进入副本
+    self:RegisterProtocal(18205, "handle18205") -- 事件信息返回
+    self:RegisterProtocal(18206, "handle18206") -- 背包信息
+    self:RegisterProtocal(18207, "handle18207") -- 背包新增（更新）信息
+    self:RegisterProtocal(18208, "handle18208") -- 背包删除信息
+
+    self:RegisterProtocal(18209, "handle18209") -- 战斗结果
+
+    self:RegisterProtocal(18210, "handle18210") -- 获取对方阵容信息
+    self:RegisterProtocal(18211, "handle18211") -- 提交贡品
+    self:RegisterProtocal(18212, "handle18212") -- 购买挑战次数
+    self:RegisterProtocal(18213, "handle18213") -- 排行奖励
+    self:RegisterProtocal(18214, "handle18214") -- 获取红包情况
+    self:RegisterProtocal(18215, "handle18215") -- 挑战信息
+
+    self:RegisterProtocal(18218, "handle18218") -- 格子更新
+
+    self:RegisterProtocal(18216, "handle18216") -- 集字兑换
+    self:RegisterProtocal(18217, "handle18217") -- 集字兑换界面
+
+    self:RegisterProtocal(18219, "handle18219") -- 保存年兽表情
+    self:RegisterProtocal(18220, "handle18220") -- 个人年兽表情
+    self:RegisterProtocal(18221, "handle18221") -- 使用烟花
+    self:RegisterProtocal(18222, "handle18222") -- 个人交换
+    self:RegisterProtocal(18223, "handle18223") -- 是否有红包事件
+    self:RegisterProtocal(18224, "handle18224") -- 是否有年兽可以挑战
+    self:RegisterProtocal(18225, "handle18225") -- 一键扫荡
+    self:RegisterProtocal(18226, "handle18226") -- 设置阵法
+    self:RegisterProtocal(18227, "handle18227") -- 请求阵法
+    self:RegisterProtocal(18228, "handle18228") -- 排行榜数据
+end
+
+--基本数据
+function Actionyearmonster2Controller:sender18200( )
+    self:SendProtocal(18200, {})
+end
+
+function Actionyearmonster2Controller:handle18200( data )
+    --活动未开启
+    if data.camp_id == 0 then
+        self:openActionyearmonster2ChallengePanel(false)
+        self:openActionyearmonster2RedbagEventPanel(false)
+        self:openActionyearmonster2RedbagEffectPanel(false)
+        self:openActionyearmonster2SubmitPanel(false)
+        self:openActionyearmonster2BagPanel(false)
+        self:openActionyearmonster2MonsterInfo(false)
+        self:openActionyearmonster2ExchangeWindow(false)
+        self:openActionyearmonster2MainWindow(false)
+        self.model:setyearMonster2Open(false)
+        return
+    end
+    self.model:setBaseData(data)
+    self.model:setPlanesRoleLookId(data.look_id)
+    self.model:setHolidayOpen(data.camp_id)
+    HomeworldController:getInstance():getModel():setMyCurHomeFigureId(data.look_id)
+    HomeworldController:getInstance():getModel():setActivateFigureList(data.list, true)
+
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.YEAR_MONSTER_BASE_INFO, data)
+
+    --主界面红点
+    local role_vo = RoleController:getInstance():getRoleVo()
+    if role_vo then
+        local isshow=false
+        if data.val >= data.max_val then
+            isshow=false
+        else
+            local holiday_nian_tribute_id = 80351
+            local comp_id=MonopolyController:getInstance():getModel():getCamp_id1()
+            local data_const_config = Config.HolidayNianCrossData.data_const
+            if data_const_config and data_const_config[comp_id] then
+                local config  = data_const_config[comp_id].holiday_nian_tribute_id
+                if config then
+                    holiday_nian_tribute_id = config.val
+                end
+                local have_count = role_vo:getActionAssetsNumByBid(holiday_nian_tribute_id)
+
+                if have_count > 0 then
+                    isshow=true
+                else
+                    isshow=false
+                end
+            end
+        end
+        if isshow==false then
+            local orderid= MonopolyController:getInstance():getModel():getOrderBid()
+            local ho = ActionController:getInstance():getHolidayAweradsStatus(orderid)
+            if ho ~= nil and ho.status == true then
+                isshow=true
+            end
+            local vo = ActionController:getInstance():getHolidayAweradsStatus(93032)
+            if vo ~= nil and vo.status == true then
+                isshow=true
+            end
+        end
+        MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.year_monster2, isshow)
+    end
+end
+
+--格子数据信息
+-- function Actionyearmonster2Controller:sender18201( )
+--     self:SendProtocal(18201, {})
+-- end
+
+--格子数据信息
+function Actionyearmonster2Controller:handle18201( data )
+    self.model:setCellData(data)
+    if data.tile_list and next(data.tile_list) ~= nil then
+        self.model:setYearEvtVoList(data.tile_list)
+    end
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.YEAR_MONSTER_CEIL_INFO, data)
+end
+--格子数据更新
+function Actionyearmonster2Controller:handle18218(data)
+    if next(data.tile_list) ~= nil then
+        self.model:updateYearEvtVoList(data.tile_list)
+        GlobalEvent:getInstance():Fire(Actionyearmonster2Event.YEAR_UPDATE_GRID_EVENT, data)
+    end
+end
+
+
+--移动进入指定格子，需接收到成功后方可移动 
+function Actionyearmonster2Controller:sender18202( index)
+    local protocal = {}
+    protocal.index = index
+    self:SendProtocal(18202, protocal)
+end
+
+function Actionyearmonster2Controller:handle18202( data )
+    message(data.msg)
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Update_Role_Grid_Event, data)
+end
+
+
+-- 请求操作格子事件
+function Actionyearmonster2Controller:sender18203( index, action, ext_list, extend )
+    local protocal = {}
+    protocal.index = index or self.evt_grid_index
+    protocal.action = action
+    protocal.ext_list = ext_list or {}
+    self.evt_extend = extend -- 额外数据
+    self:SendProtocal(18203, protocal)
+end
+
+function Actionyearmonster2Controller:handle18203( data )
+    message(data.msg)
+    -- 事件成功，可能需要做一些表现（例如buff图标动画）
+    if data.code == TRUE and self.evt_extend and self.evt_extend.index == data.index then
+        -- if self.evt_extend.buff_id and self.evt_extend.world_pos then -- 选择buff成功，播放飘动动画
+        --     GlobalEvent:getInstance():Fire(PlanesEvent.Chose_Buff_Event, self.evt_extend.buff_id, self.evt_extend.world_pos)
+        --     self:openPlanesBuffChoseWindow(false)
+        -- end
+        self.evt_extend = nil
+    end
+end
+
+-- 请求进入副本
+function Actionyearmonster2Controller:sender18204( )
+    -- if self.model:getCurDunId() == 0 then -- 如果是开启副本，需要特殊处理
+    --     self.is_open_dun_flag = true
+    -- else
+    --     self.is_open_dun_flag = false
+    -- end
+    -- 锁屏，防止连续点击
+    -- if self.planes_main_wnd then
+    --     self.planes_main_wnd:onLockScreenCallBack(true)
+    -- end
+    self.model:setCellData(nil)
+    self:SendProtocal(18204, {})
+end
+
+function Actionyearmonster2Controller:handle18204( data )
+    message(data.msg)
+    -- 进入副本成功则打开地图界面
+    --写到这里
+    if data.flag == TRUE then
+        -- if self.is_open_dun_flag then -- 开启副本先播特效再进入场景
+        --     GlobalEvent:getInstance():Fire(PlanesEvent.Dun_Open_Effect_Event, data)
+        -- else
+            if self.model.isshowMain then
+                MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.MonsterYear2)
+            end
+            self.model:setSdStatus(data.open)
+            self.model:setYearTimeData(data)
+            self.model:setyearMonster2Open(true)
+            GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Go_Map_Event)
+            -- if self.planes_main_wnd then -- 解除锁屏，如果是需要先播特效的，特效播完会解除锁屏
+            --     self.planes_main_wnd:onLockScreenCallBack(false)
+            -- end
+        -- end
+    end
+end
+
+-- 请求背包数据
+function Actionyearmonster2Controller:sender18206(  )
+    self:SendProtocal(18206, {})
+end
+
+function Actionyearmonster2Controller:handle18206( data )
+    self.model:setYearBagData(data.holiday_nian_item)
+end
+
+-- 背包数据更新、新增
+function Actionyearmonster2Controller:handle18207( data )
+    self.model:updateYearBagData(data.update_item)
+end
+
+-- 背包数据删除
+function Actionyearmonster2Controller:handle18208( data )
+    self.model:deleteYearBagData(data.delete_pos)
+end
+
+-- 战斗结果
+function Actionyearmonster2Controller:handle18209( data )
+    data.item_rewards = data.reward
+    for i,v in ipairs(data.item_rewards) do
+        v.bid = v.base_id
+    end
+    table.sort(data.all_hurt_statistics, function(a, b) return a.a_team_id < b.a_team_id end)
+	data.hurt_statistics=data.all_hurt_statistics
+    BattleController:getInstance():openFinishView(true, BattleConst.Fight_Type.MonsterYear2,data)
+    if self.actionyearmonster_challenge_panel then
+        if data.type == Actionyearmonster2Constants.Evt_Type.YearMonster or 
+            data.type == Actionyearmonster2Constants.Evt_Type.GoldYearMonster then
+            self:sender18203(data.evt_index, 0, {} )
+        end
+    end
+end
+
+
+--敌方阵容
+function Actionyearmonster2Controller:handle18210( data )
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Get_Master_Data_Event, data)
+end
+    
+-- 提交祭品
+function Actionyearmonster2Controller:sender18211( num )
+    local protocal = {}
+    protocal.num = num
+    self:SendProtocal(18211, protocal)
+end
+
+function Actionyearmonster2Controller:handle18211( data )
+    message(data.msg)
+    if data.flag == TRUE then
+        GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Submit_item_Event, data)
+    end
+end
+
+-- 购买挑战次数
+function Actionyearmonster2Controller:sender18212( _type )
+    local protocal = {}
+    protocal.type = _type
+    self:SendProtocal(18212, protocal)
+end
+
+function Actionyearmonster2Controller:handle18212( data )
+    message(data.msg)
+    if data.flag == TRUE then
+        GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Buy_count_Event, data)
+    end
+end
+
+--红包显示
+function Actionyearmonster2Controller:handle18214( data )
+    if data.flag == 0 then
+        self:openActionyearmonster2RedbagEventPanel(true,{info_data = data})
+    else
+       self:openActionyearmonster2RedbagEffectPanel(true, data)
+    end
+end
+
+--本服排行榜相关
+function Actionyearmonster2Controller:sender18213( _type, num )
+    local protocal = {}
+    protocal.type = _type
+    protocal.num = num
+    self:SendProtocal(18213, protocal)
+end
+function Actionyearmonster2Controller:handle18213( data )
+    self.model:saveLocalSelfData(data)
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Rank_Info_Event, data)
+end
+
+
+--挑战界面--后端推送
+function Actionyearmonster2Controller:handle18215( data )
+    if self.actionyearmonster_challenge_panel then
+        self.actionyearmonster_challenge_panel:updateData(data)
+    else
+       self:openActionyearmonster2ChallengePanel(true, {data = data})
+    end
+end
+
+
+
+--打开活动主界面
+function Actionyearmonster2Controller:openActionyearmonster2MainWindow(status, setting)
+    if status == false then
+        if self.actionyearmonster_main_window ~= nil then
+            self.actionyearmonster_main_window:close()
+            self.actionyearmonster_main_window = nil
+        end
+    else
+        local comp_id = MonopolyController:getInstance():getModel():getCamp_id1()
+        local config  = Config.HolidayNianCrossData.data_const[comp_id]
+        if not config then
+            --不存在配置 上报错误
+            send_error_to_pf(simpleTrace(debug.traceback()))
+            send_error_to_pf("openActionyearmonsterMainWindow_camp2"..comp_id)
+            return
+        end
+        if self.actionyearmonster_main_window == nil then
+            self.actionyearmonster_main_window = Actionyearmonster2MainWindow.New()
+        end
+        if self.actionyearmonster_main_window:isOpen() == false then
+			self.actionyearmonster_main_window:open(setting)
+		end
+        -- self.actionyearmonster_main_window:open(setting)
+    end
+end
+
+
+--打开怪物布阵界面
+function Actionyearmonster2Controller:openActionyearmonster2MonsterInfo(status, index)
+    if status == false then
+        if self.actionyearmonster_monster_info ~= nil then
+            self.actionyearmonster_monster_info:close()
+            self.actionyearmonster_monster_info = nil
+        end
+    else
+        if self.actionyearmonster_monster_info == nil then
+            self.actionyearmonster_monster_info = Actionyearmonster2MonsterInfo.New()
+        end
+        self.actionyearmonster_monster_info:open(index)
+    end
+end
+
+--打开背包
+function Actionyearmonster2Controller:openActionyearmonster2BagPanel(status, setting)
+    if status == false then
+        if self.actionyearmonster_bag_panel ~= nil then
+            self.actionyearmonster_bag_panel:close()
+            self.actionyearmonster_bag_panel = nil
+        end
+    else
+        if self.actionyearmonster_bag_panel == nil then
+            self.actionyearmonster_bag_panel = Actionyearmonster2BagPanel.New()
+        end
+        self.actionyearmonster_bag_panel:open(setting)
+    end
+end
+--提交祭品
+function Actionyearmonster2Controller:openActionyearmonster2SubmitPanel(status, setting)
+    if status == false then
+        if self.actionyearmonster_submit_panel ~= nil then
+            self.actionyearmonster_submit_panel:close()
+            self.actionyearmonster_submit_panel = nil
+        end
+    else
+        if self.actionyearmonster_submit_panel == nil then
+            self.actionyearmonster_submit_panel = Actionyearmonster2SubmitPanel.New()
+        end
+        self.actionyearmonster_submit_panel:open(setting)
+    end
+end
+
+--打开红包特效
+function Actionyearmonster2Controller:openActionyearmonster2RedbagEffectPanel(status, data)
+    if status == false then
+        if self.actionyearmonster_redbag_effect_panel ~= nil then
+            self.actionyearmonster_redbag_effect_panel:close()
+            self.actionyearmonster_redbag_effect_panel = nil
+        end
+    else
+        self.is_show_redbag = true
+        if self.actionyearmonster_redbag_effect_panel == nil then
+            self.actionyearmonster_redbag_effect_panel = Actionyearmonster2RedbagEffectPanel.New()
+        end
+        self.actionyearmonster_redbag_effect_panel:open(data)
+    end
+end
+
+--红包信息界面
+function Actionyearmonster2Controller:openActionyearmonster2RedbagEventPanel(status, index)
+    if status == false then
+        if self.actionyearmonster_redbag_event_panel ~= nil then
+            self.actionyearmonster_redbag_event_panel:close()
+            self.actionyearmonster_redbag_event_panel = nil
+        end
+    else
+        if self.actionyearmonster_redbag_event_panel == nil then
+            self.actionyearmonster_redbag_event_panel = Actionyearmonster2RedbagEventPanel.New()
+        end
+        self.actionyearmonster_redbag_event_panel:open(index)
+    end
+end
+
+--挑战boss界面
+function Actionyearmonster2Controller:openActionyearmonster2ChallengePanel(status, setting)
+    if status == false then
+        if self.actionyearmonster_challenge_panel ~= nil then
+            self.actionyearmonster_challenge_panel:close()
+            self.actionyearmonster_challenge_panel = nil
+        end
+    else
+        if self.actionyearmonster_challenge_panel == nil then
+            self.actionyearmonster_challenge_panel = Actionyearmonster2ChallengePanel.New()
+        end
+        self.actionyearmonster_challenge_panel:open(setting)
+    end
+end
+
+--打开通用单个排行类型的排行榜界面
+--@ setting 说明
+--@setting.rank_type 
+function Actionyearmonster2Controller:openRankMainWindow(bool, setting, view_type)
+    if bool == true then 
+        local setting = setting or {}
+        local title_name = setting.title_name
+        local background_path = setting.background_path
+        if not self.actionyearmonster_rank_main_window then 
+            self.actionyearmonster_rank_main_window = Actionyearmonster2RankMainWindow.New(title_name, background_path)
+        end
+        self.actionyearmonster_rank_main_window:open(setting, view_type)
+    else
+        if self.actionyearmonster_rank_main_window then 
+            self.actionyearmonster_rank_main_window:close()
+            self.actionyearmonster_rank_main_window = nil
+        end
+    end
+end
+
+--战斗结算界面
+function Actionyearmonster2Controller:openActionyearmonster2ResultPanel(status, data, fight_type)
+    if status == false then
+        if self.actionyearmonster_result_panel ~= nil then
+            self.actionyearmonster_result_panel:close()
+            self.actionyearmonster_result_panel = nil
+        end
+    else
+        if self.actionyearmonster_result_panel == nil then
+            self.actionyearmonster_result_panel = Actionyearmonster2ResultPanel.New(fight_type)
+        end
+        self.actionyearmonster_result_panel:open(data)
+    end
+end
+
+-----------------@ 处理事件
+-- evt_type:事件类型 index:格子索引
+function Actionyearmonster2Controller:onHandleYearEvtById( evt_type, index )
+    self.evt_grid_index = index  -- 这里缓存一下格子id
+
+    if evt_type == Actionyearmonster2Constants.Evt_Type.Normal then -- 空事件
+        -- 无需处理
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Monster then -- 怪物(小年兽)
+        self:openActionyearmonster2MonsterInfo(true, index)
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Start then -- 出生点
+        -- 无需处理
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Board then -- 广告牌
+        self:sender18203( index, 0, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Goods then -- 获得道具
+        self:sender18203( index, 1, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Dialog then -- 奖励NPC对话
+        self:sender18203( index, 0, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.DesBarrier then -- 可破坏的障碍物
+        --不知道id不知道怎么处理..
+        -- local board_cfg = Config.HolidayNianCrossData.data_board[v.val1]
+        -- if board_cfg then
+        --     PlanesController:getInstance():openPlanesBoardWindow(true, v.val1, data.index, {show_type = 2, board_cfg = board_cfg })
+        -- end
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Barrier then -- 不可破坏的障碍物
+        message(TI18N("语言_c_2353"))
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Character then  --获取文字
+        self:sender18203( index, 1, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Tribute then  --获取贡品
+        self:sender18203( index, 1, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.Fireworks then  --获取烟花
+        self:sender18203( index, 1, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.RedBag then  --获取红包
+        self:sender18203( index, 1, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.YearMonster then  --年兽
+        -- self:openActionyearmonster2ChallengePanel(true, {monster_type = 1})
+        self:sender18203( index, 0, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.GoldYearMonster then  --黄金年兽
+        -- self:openActionyearmonster2ChallengePanel(true, {monster_type = 2})
+        self:sender18203( index, 0, {} )
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.YearMonster_nothit then  --年兽(不可挑战)
+        local comp_id=MonopolyController:getInstance():getModel():getCamp_id1()
+        local str=Config.HolidayNianCrossData.data_const[comp_id].holiday_nian_lang_6.desc
+        message(str)
+    elseif evt_type == Actionyearmonster2Constants.Evt_Type.GoldYearMonster_nothit then  --黄金年兽 (不可挑战)
+        local comp_id=MonopolyController:getInstance():getModel():getCamp_id1()
+        local str=Config.HolidayNianCrossData.data_const[comp_id].holiday_nian_lang_7.desc
+        message(str)
+    end
+end
+
+-- 事件处理返回
+function Actionyearmonster2Controller:handle18205( data )
+    local evt_vo = self.model:getYearEvtVoByGridIndex(data.index)
+    if not evt_vo or not evt_vo.config then return end
+    local comp_id=MonopolyController:getInstance():getModel():getCamp_id1()
+    if data.ext_list and next(data.ext_list) ~= nil then
+        for k,v in pairs(data.ext_list) do
+            if v.type == Actionyearmonster2Constants.Proto_18205.Dialog then
+                local dialog_cfg = Config.HolidayNianCrossData.data_dialogue[comp_id][v.val1]
+                if dialog_cfg then
+                    delayOnce(function ( )
+                        ActionController:getInstance():openActionTimeCollectWindow(true,80, data.index, dialog_cfg)
+                    end, 0.5)
+                end
+            elseif v.type == Actionyearmonster2Constants.Proto_18205.Board  then --广告牌
+                local board_cfg = Config.HolidayNianCrossData.data_board[comp_id][v.val1]
+                if board_cfg then
+                    PlanesafkController:getInstance():openPlanesBoardWindow2(true, v.val1, data.index, {show_type = 2, board_cfg = board_cfg })
+                end
+            elseif v.type == Actionyearmonster2Constants.Proto_18205.Goods then--获取道具
+                -- v.type == Actionyearmonster2Constants.Evt_Type.Character or --获取文字
+                -- v.type == Actionyearmonster2Constants.Evt_Type.Tribute or -- 获取贡品
+                -- v.type == Actionyearmonster2Constants.Evt_Type.Fireworks  then --获取烟花
+                self:showEvtItem(v.val1)
+            elseif v.type == Actionyearmonster2Constants.Proto_18205.DesBarrier then--可破坏道具
+            elseif v.type == Actionyearmonster2Constants.Proto_18205.YearMonster then--大年兽
+            elseif v.type == Actionyearmonster2Constants.Proto_18205.GoldYearMonster then--金年兽
+
+            end
+        end
+    end
+end
+
+function Actionyearmonster2Controller:showEvtItem(item_bid)
+    if not item_bid then return end
+    local items = {{bid = item_bid, num = 1}}
+    MainuiController:getInstance():openGetItemView(true, items, 0, {is_backpack = true}, MainuiConst.item_open_type.normal)
+end
+
+---------------------------------------集字兑换--------------------------------------------
+--集字兑换 
+function Actionyearmonster2Controller:sender18216( id,num)
+    local protocal = {}
+    protocal.id = id
+    protocal.num = num
+    self:SendProtocal(18216, protocal)
+end
+
+--集字兑换
+function Actionyearmonster2Controller:handle18216(data)
+    message(data.msg)
+end
+
+--集字兑换界面 
+function Actionyearmonster2Controller:sender18217()
+    local protocal = {}
+    self:SendProtocal(18217, protocal)
+end
+
+--集字兑换界面
+function Actionyearmonster2Controller:handle18217(data)
+    self.model:setExchangeData(data)
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.UPDATE_EXCHANGE_DATA_EVENT)
+end
+
+--集字兑换界面
+function Actionyearmonster2Controller:openActionyearmonster2ExchangeWindow(status)
+    if status == false then
+        if self.actionyearmonster_exchange_window ~= nil then
+            self.actionyearmonster_exchange_window:close()
+            self.actionyearmonster_exchange_window = nil
+        end
+    else
+        if self.actionyearmonster_exchange_window == nil then
+            self.actionyearmonster_exchange_window = Actionyearmonster2ExchangeWindow.New()
+        end
+        self.actionyearmonster_exchange_window:open()
+    end
+end
+
+--保存年兽表情 
+function Actionyearmonster2Controller:sender18219(face)
+    local protocal = {}
+    protocal.face = face
+    self:SendProtocal(18219, protocal)
+end
+
+--保存年兽表情
+function Actionyearmonster2Controller:handle18219(data)
+    message(data.msg)
+end
+
+--个人年兽表情
+function Actionyearmonster2Controller:sender18220()
+    local protocal = {}
+    self:SendProtocal(18220, protocal)
+end
+
+function Actionyearmonster2Controller:handle18220(data)
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Face_Event, data)
+end
+
+--使用烟花
+function Actionyearmonster2Controller:sender18221()
+    local protocal = {}
+    self:SendProtocal(18221, protocal)
+end
+
+function Actionyearmonster2Controller:handle18221(data)
+    message(data.msg)
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Five_Effect_Event,data)    
+end
+
+--交互玩家数据
+function Actionyearmonster2Controller:sender18222()
+    local protocal = {}
+    self:SendProtocal(18222, protocal)
+end
+
+function Actionyearmonster2Controller:handle18222(data)
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Other_Role_Event, data)    
+end
+
+--请求主界面红包
+function Actionyearmonster2Controller:sender18223()
+    local protocal = {}
+    self:SendProtocal(18223, protocal)
+end
+
+
+function Actionyearmonster2Controller:handle18223(data)
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Update_Year_Main_Redbag_Event,{data.flag,3})    
+end
+
+--请求主界面红包
+function Actionyearmonster2Controller:sender18224()
+    local protocal = {}
+    self:SendProtocal(18224, protocal)
+end
+
+
+--请求主界面一键扫荡
+function Actionyearmonster2Controller:sender18225(bid)
+    local protocal = {}
+    protocal.bid=bid
+    self:SendProtocal(18225, protocal)
+end
+
+function Actionyearmonster2Controller:handle18225(data)
+    message(data.msg)
+    if data.flag==1 then
+        GlobalEvent:getInstance():Fire(Actionyearmonster2Event.YEAR_Swap_EVENT)
+        if data.tile_list and next(data.tile_list) ~= nil then
+            self.model:updateYearEvtVoList(data.tile_list)
+        end  
+    end
+end
+
+--设置阵法
+function Actionyearmonster2Controller:sender18226(type,formations)
+    local protocal = {}
+    protocal.type=type
+    protocal.formations=formations
+    self:SendProtocal(18226, protocal)
+end
+
+function Actionyearmonster2Controller:handle18226(data)
+    -- message(data.msg)
+    if data.code==1 then
+          
+    end
+end
+
+--请求阵法
+function Actionyearmonster2Controller:sender18227(type)
+    local protocal = {}
+    protocal.type=type
+    self:SendProtocal(18227, protocal)
+end
+
+function Actionyearmonster2Controller:handle18227(data)
+    local model = HeroController:getInstance():getModel()
+	for i,v in ipairs(data.formations) do
+        v.type = PartnerConst.Fun_Form.MonsterYear2
+        -- model:setFormList(v, v.team_id)
+        self.model:setTeamData(v)
+    end
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Update_Fun_Form,data)
+end
+
+--跨服排行排行榜数据
+function Actionyearmonster2Controller:sender18228(type)
+    local protocal = {}
+    protocal.type=type
+    self:SendProtocal(18228, protocal)
+end
+
+function Actionyearmonster2Controller:handle18228(data)
+    -- if data.end_num == 1 then
+    --     --有排行信息才能有红点逻辑
+    --     if #data.rank_list > 0 then
+    --         self.model:setWorshipRedPoint(data.day_worship, data)
+    --     end
+    -- end
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Update_Rank_Data, data)
+end
+
+function Actionyearmonster2Controller:handle18224(data)
+    if data.timer_flag == 1 or data.gold_flag == 1 then
+        if not MainuiController:getInstance().is_click_yearmoster then
+            PromptController:getInstance():getModel():addPromptData({type = PromptTypeConst.Year_monster2_tips})
+        end
+    else
+        PromptController:getInstance():getModel():removePromptDataByTpye(PromptTypeConst.Year_monster2_tips)
+    end
+end
+
+function Actionyearmonster2Controller:__delete()
+    if self.model ~= nil then
+        self.model:DeleteMe()
+        self.model = nil
+    end
+end

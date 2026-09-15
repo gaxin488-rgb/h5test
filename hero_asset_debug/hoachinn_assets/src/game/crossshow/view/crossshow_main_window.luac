@@ -1,0 +1,937 @@
+ -- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      跨服时空 主界面 
+-- <br/>Create: 2019年3月15日
+CrossshowMainWindow = CrossshowMainWindow or BaseClass(BaseView)
+
+local controller = CrossshowController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+local rank_btn_type = {
+    rank_1 = 1,
+    rank_2 = 2,
+    rank_3 = 3,
+}
+
+local rank_btn_label = {
+    "语言_c_4869",
+    "语言_c_4870",
+    "语言_c_4871",
+}
+
+function CrossshowMainWindow:__init()
+    self.win_type = WinType.Full
+    self.is_full_screen = true
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("crossshow", "crossshow"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("bigbg/crossshow", "crossshow_bg", true), type = ResourcesType.single}
+    }
+    self.layout_name = "crossshow/crossshow_main_window"
+
+    self.select_rank_type = rank_btn_type.rank_1
+    --跨服名字
+    self.cross_name_list = {}
+
+    self.hero_panel_list = {}
+end
+
+function CrossshowMainWindow:getRankData()
+    self:updateBtnState()
+    local rank_type = RankConstant.RankType.union
+    if self.select_rank_type == rank_btn_type.rank_1 then
+        rank_type = RankConstant.RankType.power
+        RankController:getInstance():send_12900(rank_type, 1, 3, true) -- 请求前三名数据
+    elseif self.select_rank_type == rank_btn_type.rank_2 then
+        rank_type = RankConstant.RankType.ladder
+        RankController:getInstance():send_12900(rank_type, 1, 3, true) -- 请求前三名数据
+    elseif self.select_rank_type == rank_btn_type.rank_3 then
+        rank_type = RankConstant.RankType.union
+        RankController:getInstance():send_12903(true, 1, 3) -- 请求前三名数据
+    end
+    --- 4 6 33
+end
+
+function CrossshowMainWindow:open_callback(  )
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:loadTexture(PathTool.getPlistImgForDownLoad("bigbg/crossshow", "crossshow_bg", true), LOADTEXT_TYPE)
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.container_size = self.main_container:getContentSize()
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    --top_panel
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.title_name = self.top_panel:getChildByName("title_name")
+    self.title_name:setString(TI18N("语言_cit_01_13"))
+
+    self.lay_scrollview = self.main_container:getChildByName("lay_scrollview")
+
+    --rank_play_panel
+    self:configRankPanel()
+    self:getRankData()
+
+    --bottom_panel
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+
+    self.icon_scrollview = self.bottom_panel:getChildByName("icon_scrollview")
+    local Image_31 = self.bottom_panel:getChildByName("Image_31")
+    local label_cross = self.bottom_panel:getChildByName("label_cross")
+    label_cross:setString(TI18N("语言_c_2860"))
+    setTextSpacing(label_cross)
+
+    local label_tips = self.bottom_panel:getChildByName("label_tips")
+    label_tips:setString(TI18N("语言_c_2861"))
+
+    self.rule_btn = self.main_container:getChildByName("rule_btn")
+    self.rule_btn_label = self.rule_btn:getChildByName("label")
+    self.rule_btn_label:setString(TI18N("语言_c_577"))
+
+    self.rank_btn = self.main_container:getChildByName("rank_btn")
+    self.rank_btn_label = self.rank_btn:getChildByName("label")
+    self.rank_btn_label:setString(TI18N("语言_c_271"))
+
+    -- self.leve_up_node = panel:getChildByName("leve_up_node")
+    -- self.reward_label = createRichLabel(22, cc.c4b(0xff,0xf8,0xbf,0xff), cc.p(0,0.5), cc.p(53,391), nil, nil, 600)
+    -- panel:addChild(self.reward_label)
+    -- self.bule_tips = createLabel(20,cc.c4b(0x4c,0xb1,0xff,0xff),cc.c4b(0x00,0x00,0x00,0xff),self.level_up_tips:getPositionX(),465,"",panel,2, cc.p(0.5,0.5))
+    -- self.bule_tips:setString(TI18N("语言_c_2862"))
+    -- self.bule_tips:setVisible(false)
+    self:adaptationScreen()
+end
+
+function CrossshowMainWindow:configRankPanel()
+    self.rank_play_panel = self.main_container:getChildByName("rank_play_panel")
+    for i=1,3 do
+        local object = {}
+        local panel = self.rank_play_panel:getChildByName("hero_panel_"..i)
+        local node_spine = panel:getChildByName("node_spine")
+        local icon_img = panel:getChildByName("icon_img")
+        icon_img:setVisible(false)
+        local power_title = panel:getChildByName("power_title")
+        local power_img = panel:getChildByName("power_img")
+        power_img.i_width = power_img:getContentSize().width
+        local arenamp = panel:getChildByName("arenamp")
+        local role_name = panel:getChildByName("role_name")
+        local score_num = panel:getChildByName("score_num")
+        score_num:setVisible(false)
+        local power_title = panel:getChildByName("power_title")
+        local power_num = CommonNum.new(20, panel, 99999, 2, cc.p(0, 0), -2)
+        power_num:setPosition(cc.p(power_title:getPositionX() + power_title:getContentSize().width/2, power_title:getPositionY()))
+        local lev_num = panel:getChildByName("lev_num")
+        -- local head_icon = PlayerHead.new(PlayerHead.type.circle)
+        -- head_icon:setHeadLayerScale(0.80)
+        -- head_icon:setPosition (119 , 300)
+        -- panel:addChild(head_icon)
+        -- head_icon:addCallBack(function() self:onClickHead(i,true) end )
+        panel:addTouchEventListener(function(sender, event_type)
+            -- customClickAction_2(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                self:onClickHead(i)
+            end
+        end)
+        panel:setVisible(false)
+        object.node_spine = node_spine
+        object.panel = panel
+        object.icon_img = icon_img
+        object.arenamp = arenamp 
+        object.power_img = power_img
+        object.power_title = power_title
+        object.role_name = role_name
+        object.score_num = score_num
+        object.power_num = power_num
+        object.lev_num = lev_num
+        -- object.head_icon = head_icon
+        object.rank_tips = self.rank_play_panel:getChildByName("rank_tips_"..i)
+        object.rank_tips:setString(TI18N("语言_c_526"))
+        object.rank_tips:setVisible(false)
+        self.hero_panel_list[i] = object
+    end
+
+    for i=1,3 do
+        local btn = self.rank_play_panel:getChildByName("rank_btn_"..i)
+        btn.rank_index = i
+        local label = btn:getChildByName("label")
+        label:setString(TI18N(rank_btn_label[i]))
+        btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                if self.select_rank_type == sender.rank_index then
+                    return 
+                end
+                self.select_rank_type = sender.rank_index
+                self:getRankData()
+            end
+        end)
+    end
+    local bottom_y = display.getBottom(self.main_container)
+    local rank_play_panel_y = self.rank_play_panel:getPositionY()
+    self.rank_play_panel:setPositionY(bottom_y + rank_play_panel_y)
+end
+
+function CrossshowMainWindow:updateBtnState()
+    for i=1,3 do
+        local btn = self.rank_play_panel:getChildByName("rank_btn_"..i)
+        local label = btn:getChildByName("label")
+        if self.select_rank_type == i then
+            btn:setBright(false)
+            btn:setTouchEnabled(false)
+            label:setTextColor(cc.c3b(248, 239, 118))
+        else
+            btn:setBright(true)
+            btn:setTouchEnabled(true)
+            label:setTextColor(cc.c3b(249, 238, 208))
+        end
+    end
+end
+
+function CrossshowMainWindow:onClickHead(i)
+    local head_list = self.hero_panel_list
+    if head_list and head_list[i] and head_list[i].head_icon and head_list[i].head_icon:getData() then
+        local data = head_list[i].head_icon:getData()
+        if self.role_vo and data.rid == self.role_vo.rid and data.sid == self.role_vo.srv_id then 
+            message(TI18N("语言_c_4333"))
+            return
+        end
+        FriendController:getInstance():openFriendCheckPanel(true, {srv_id = data.sid, rid = data.rid})
+    end
+end
+
+--设置适配屏幕
+function CrossshowMainWindow:adaptationScreen()
+    --对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    local left_x = display.getLeft(self.main_container)
+    local right_x = display.getRight(self.main_container)
+
+    local tab_y = self.top_panel:getPositionY()
+    self.top_panel:setPositionY(top_y - (self.container_size.height - tab_y))
+
+    local rule_btn_y = self.rule_btn:getPositionY()
+    self.rule_btn:setPositionY(top_y - (self.container_size.height - rule_btn_y))
+    local rank_btn_y = self.rank_btn:getPositionY()
+    self.rank_btn:setPositionY(top_y - (self.container_size.height - rank_btn_y))
+
+
+    local bottom_panel_y = self.bottom_panel:getPositionY()
+    self.bottom_panel:setPositionY(bottom_y + bottom_panel_y)
+    local close_btn_y = self.close_btn:getPositionY()
+    self.close_btn:setPositionY(bottom_y + close_btn_y)
+
+    -- --主菜单 顶部的高度
+    local top_height = MainuiController:getInstance():getMainUi():getTopViewHeight()
+    -- --主菜单 底部的高度
+    -- local bottom_height = MainuiController:getInstance():getMainUi():getTopViewHeight()
+
+    --计算scrollview的高度
+    local bottom_size = self.bottom_panel:getContentSize()
+    self.scrollview_y = (bottom_y + bottom_panel_y) + bottom_size.height + self.rank_play_panel:getContentSize().height
+    self.scrollview_height = top_y - top_height - self.scrollview_y + 58 --58 是角色框底到经验条的高度
+end
+
+
+function CrossshowMainWindow:register_event(  )
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickCloseBtn), true, 2)
+    registerButtonEventListener(self.rank_btn, handler(self, self.onClickRankBtn), true, 1)
+
+    registerButtonEventListener(self.rule_btn, function(param,sender, event_type) 
+        local config = Config.CrossShowData.data_const.game_rule
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        end
+    end ,true, 2)
+
+    self:addGlobalEvent(CrossshowEvent.Get_Cross_Show_Info_Event, function(scdata)
+        if not scdata then return end
+        self:setData(scdata)
+    end)
+
+    if not self.update_data_event then 
+        self.update_data_event =GlobalEvent:getInstance():Bind(RankEvent.RankEvent_Get_Rank_data,function(data)
+            self:setRankData(data)
+        end)
+    end
+end
+
+-- 关闭
+function CrossshowMainWindow:onClickCloseBtn(  )
+    controller:openCrossshowMainWindow(false)
+end
+
+-- 打开排行榜
+function CrossshowMainWindow:onClickRankBtn(  )
+    RankController:getInstance():openMainView(true, RankConstant.MainTabType.CrossRank)
+end
+
+function CrossshowMainWindow:openRootWnd( )
+    --世界等级
+    self.world_lev = RoleController:getInstance():getModel():getWorldLev() or 0
+    --个人等级
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    if self.role_vo then
+        self.role_lev = self.role_vo.lev  or 0
+    else
+        self.role_lev = 0
+    end 
+
+    controller:sender22150()
+    self:addEffect()
+end
+
+function CrossshowMainWindow:createHeroSpine(node, vo)
+    if tolua.isnull(node) then return end
+    local data = vo
+    if data == nil then
+        if  node.spine ~= nil then
+            if node.spine ~= nil then
+                node.spine:DeleteMe()
+                node.spine = nil
+            end
+            node.spine_id = nil
+        end
+        return
+    end
+    -- 形象id
+    local look_id = data.look_id or data.lookid or data.leader_look_id or 110101
+    if look_id == 0 then look_id = 110101 end --新增的字段，后端可能发0过来
+    if node.spine_id == look_id then return end    
+    if node.spine ~= nil then
+        node.spine:DeleteMe()
+        node.spine = nil
+    end
+    node.spine_id = look_id
+    node.spine = BaseRole.new(BaseRole.type.role, look_id)
+    node.spine:setAnimation(0, PlayerAction.show, true)
+    local size = node:getContentSize()
+    node.spine:setPosition(cc.p(size.width*0.5, 160))
+    node.spine:setAnchorPoint(cc.p(0.5, 0))
+    -- node.spine:setScale(0.72)
+    node:addChild(node.spine)
+end
+
+function CrossshowMainWindow:setRankData(rank_data)
+    if not rank_data then return end
+    local temp_list = rank_data.rank_list or {}
+    table_sort(temp_list, SortTools.KeyLowerSorter("rank"))
+    for i,v in ipairs(self.hero_panel_list) do
+        local panel = self.hero_panel_list[i].panel
+        local data = temp_list[i]
+        if data then
+            panel:setVisible(true)
+            v.rank_tips:setVisible(false)
+            self.hero_panel_list[i].role_name:setString(data.name)
+            -- self.hero_panel_list[i].score_num:setString(string_format(TI18N("语言_c_460"),data.score))
+            self.hero_panel_list[i].power_num:setNum(((data.power or data.val1) or 0))
+            -- local elite_config = Config.HolidayArenaTeamData.data_elite_level[data.score_lev or 1]
+            -- if elite_config then
+            --     local color = cc.c4b(0x56,0x2e,0x0d,0xff)
+            --     if elite_config.icon == "amp_icon_1" or elite_config.icon == "amp_icon_2" or elite_config.icon == "amp_icon_3" then
+            --         color = cc.c4b(0x30,0x38,0x53,0xff)
+            --     end
+            --     self.hero_panel_list[i].lev_num:enableOutline(color,2)
+            --     self.hero_panel_list[i].lev_num:setString(elite_config.name)
+
+            --     local res = PathTool.getPlistImgForDownLoad("arenampmatch/arenampmatch_icon", elite_config.icon)
+            --     self.hero_panel_list[i].item_load = loadSpriteTextureFromCDN(self.hero_panel_list[i].icon_img, res, ResourcesType.single, self.hero_panel_list[i].item_load)
+            -- end
+        else
+            panel:setVisible(false)
+            v.rank_tips:setVisible(true)
+        end 
+        -- 延迟创建模型，避免打开面板的时候卡
+        delayRun(self.top_panel, 5*i/display.DEFAULT_FPS, function() 
+            self:createHeroSpine(self.hero_panel_list[i].node_spine, data)
+        end)
+        self:adaptationRoleLayout(self.hero_panel_list[i])
+    end
+end
+
+function CrossshowMainWindow:adaptationRoleLayout(obj)
+    local layout = obj.panel
+    local t_width = layout:getContentSize().width
+    --name 
+    local c_width = obj.arenamp:getContentSize().width + obj.role_name:getContentSize().width
+    obj.arenamp:setPositionX((t_width/2 - c_width/2) + obj.arenamp:getContentSize().width/2)
+    obj.role_name:setPositionX((t_width/2 - c_width/2) + obj.arenamp:getContentSize().width + obj.role_name:getContentSize().width/2)
+    --power
+    local c_width = obj.power_title:getContentSize().width + obj.power_num:getContentSize().width
+    if c_width > (obj.power_img.i_width - 20) then
+        obj.power_img:setContentSize(cc.size(c_width + 20, obj.power_img:getContentSize().height))
+    else
+        c_width = obj.power_img.i_width
+    end
+    obj.power_title:setPositionX((t_width/2 - c_width/2) + obj.power_title:getContentSize().width/2 - 2)
+    obj.power_num:setPositionX((t_width/2 - c_width/2) + obj.power_title:getContentSize().width + 3)
+end
+
+function CrossshowMainWindow:setData(data)
+    if not data then return end
+    local list = {}
+    for i,v in ipairs(data.srv_list) do
+        local srv_index, is_local = getServerIndex(v.srv_id)
+        local s_data = {}
+        if srv_index == 0 then
+            s_data.sort_index = 1
+            s_data.srv_name = TI18N("语言_c_101")
+        else
+            if is_local then
+                s_data.sort_index = 0 --本服
+                s_data.srv_name = string_format(TI18N("语言_c_2863"),srv_index)
+            else
+                s_data.sort_index = 1
+                s_data.srv_name = string_format(TI18N("语言_c_1428"),srv_index)
+            end
+        end
+        s_data.srv_index = tonumber(srv_index)
+        if s_data.srv_index == nil then
+            s_data.srv_index = 0
+        end
+        s_data.world_name = string_format(TI18N("语言_c_2864"), v.world_lev )
+        list[i] = s_data
+    end
+    local sort_func = SortTools.tableLowerSorter({"sort_index", "srv_index"})
+    table_sort(list, sort_func)
+
+    self.show_list = {}
+    local count = math.ceil(#list/2)
+    for i=1,count do
+        local left_data = list[i*2 - 1]
+        local right_data = list[i*2]
+        local data = {}
+        data.left_data = left_data
+        data.right_data = right_data
+        table_insert(self.show_list, data)
+    end
+    if #self.show_list == 0 then
+        self:showNoInfo()
+    else
+        self:updateNameList() 
+    end
+
+    self:initCrossInfo()
+end
+
+function CrossshowMainWindow:addEffect()
+    self.size = self.main_container:getSize()
+    --流星
+    if self.scene_effect_1 == nil then
+        self.scene_effect_1 = createEffectSpine(PathTool.getEffectRes(305), cc.p(self.size.width*0.5,self.size.height*0.5), cc.p(0.5, 0.5), true, PlayerAction.action)
+        self.background:addChild(self.scene_effect_1, 1) 
+    end
+
+    --星星
+    if self.scene_effect_2 == nil then
+        self.scene_effect_2 = createEffectSpine(PathTool.getEffectRes(306), cc.p(self.size.width*0.5,self.size.height*0.5), cc.p(0.5, 0.5), true, PlayerAction.action)
+        self.background:addChild(self.scene_effect_2, 1) 
+    end
+end
+
+function CrossshowMainWindow:showNoInfo()
+    if not self.role_vo then return end
+    if self.cross_icon ~= nil then return end
+    local lay_scrollview_size = self.lay_scrollview:getContentSize()
+    local x = lay_scrollview_size.width * 0.5
+    local y = lay_scrollview_size.height * 0.5 + 300
+    local icon_res = PathTool.getResFrame("crossshow","crossshow_06")
+    local cell = self.lay_scrollview
+    self.cross_icon = createSprite(icon_res,x, y, cell, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+
+    local effect_id = Config.EffectData.data_effect_info[376]
+    self.cross_effect = createEffectSpine(effect_id, cc.p(x, y+60), cc.p(0.5, 0.5), true, PlayerAction.action_2)
+    cell:addChild(self.cross_effect, 0)
+    self.cross_effect:setScale(0.9)
+
+    local res = PathTool.getResFrame("crossshow","crossshow_02")
+    self.left_level_bg = createImage(cell, res, x, y - 120, cc.p(0.5,0.5), true, nil, true)
+    self.left_level_bg:setContentSize(cc.size(156,40))
+    self.left_level_bg:setCapInsets(cc.rect(14, 20, 2, 0))
+    
+    local srv_index, is_local = getServerIndex(self.role_vo.main_srv_id)
+     --左边名字
+    local srv_name = string_format(TI18N("语言_c_2863"),srv_index)
+    self.left_name = createLabel(22,cc.c4b(0x7c,0xd7,0x5d,0xff),cc.c4b(0x00,0x00,0x00,0xff),x,y - 120 + 90,srv_name,cell,2, cc.p(0.5,0.5))
+    local world_name = string_format(TI18N("语言_c_2864"), self.world_lev) 
+    self.left_world_lev = createLabel(22,cc.c4b(0xff,0xe6,0xce,0xff),cc.c4b(0x00,0x00,0x00,0xff),x,y - 156 + 90,world_name,cell,2, cc.p(0.5,0.5))
+
+    local tips = TI18N("语言_c_2865")
+    self.cross_show_tips = createLabel(24,cc.c4b(0xff,0xe6,0xce,0xff),cc.c4b(0x00,0x00,0x00,0xff),x, y - 200 + 90 + 10,tips,cell,2, cc.p(0.5,0.5))
+end
+
+function CrossshowMainWindow:updateNameList()
+    if not self.show_list then return end
+    if not self.scrollview_y then return end
+    if not self.scrollview_height then return end
+
+    if self.list_view == nil then
+        local lay_scrollview_size = self.lay_scrollview:getContentSize()
+        local scroll_view_size = cc.size(lay_scrollview_size.width, self.scrollview_height)
+
+        local start_y = 170
+        local start_x = 0
+        local space_y = -10
+        local space_x = 10
+        local item_height = 250
+        local item_width = lay_scrollview_size.width/2
+        local content_height = self.scrollview_height - start_y
+        local content_width = lay_scrollview_size.width
+        local position_data_list
+        local max_count = math.floor(content_width/(item_width + space_x))--math.floor(content_height/(item_height + space_y))
+        local count = self:numberOfCellsName()
+        -- if max_count >= count then
+        --     --如果数量不够单屏显示数量..居中显示
+        --     position_data_list = {}
+        --     local s_y = (content_height - (item_height + space_y)  * count) * 0.5
+        --     local x = scroll_view_size.width * 0.5
+        --     for i=1,count do
+        --         local y = content_height - s_y - ((item_height + space_y) * 0.5 + (i - 1) * (item_height + space_y))
+        --         position_data_list[i] = cc.p(x, y)
+        --     end
+        -- end
+        local setting = {
+            -- item_class = HeroExhibitionItem,      -- 单元类
+            start_x = start_x,                  -- 第一个单元的X起点
+            space_x = space_x,                    -- x方向的间隔
+            start_y = start_y,                    -- 第一个单元的Y起点
+            end_y = 0,
+            space_y = 0,                   -- y方向的间隔
+            item_width = item_width,               -- 单元的尺寸width
+            item_height = item_height,              -- 单元的尺寸height
+            delay = 1,
+            row = 1,                        -- 行数，作用于水平滚动类型
+            -- col = 1,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true,
+            position_data_list = position_data_list
+        }
+        
+        self.list_view = CommonScrollViewSingleLayout.new(self.lay_scrollview, cc.p(scroll_view_size.width * 0.5, self.scrollview_y) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0.5,0))
+        self.list_view.scroll_view:setClippingEnabled(true)
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCellName), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCellsName), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndexName), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+
+        if max_count >= count then
+            self.list_view:setClickEnabled(false)
+        end
+    end 
+    self.list_view:reloadData()
+end
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function CrossshowMainWindow:createNewCellName(width, height)
+    local cell = ccui.Layout:create()
+    cell:setCascadeOpacityEnabled(true)
+    cell:setTouchEnabled(false)
+    cell:setAnchorPoint(0,0)
+    -- cell:setLocalZOrder(2)
+    cell:setContentSize(cc.size(width, height))
+    local off_height = 70
+    cell.left_item = {}
+    cell.right_item = {}
+    --icon
+    local icon_res = PathTool.getResFrame("crossshow","crossshow_06")
+    cell.left_item.icon = createSprite(icon_res,width/4, 164 + off_height, cell, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    cell.left_item.icon:setScale(0.46)
+    
+    --右边icon
+    cell.right_item.icon = createSprite(icon_res,width/4*3, 133, cell, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    cell.right_item.icon:setScale(0.46)
+
+    local res = PathTool.getResFrame("crossshow","crossshow_02")
+    cell.left_item.level_bg = createImage(cell, res, width/4, 76 + off_height, cc.p(0.5,0.5), true, nil, true)
+    cell.left_item.level_bg:setContentSize(cc.size(156,40))
+    cell.left_item.level_bg:setCapInsets(cc.rect(14, 20, 2, 0))
+    --右边背景
+    cell.right_item.level_bg = createImage(cell, res, width/4*3, 47, cc.p(0.5,0.5), true, nil, true)
+    cell.right_item.level_bg:setContentSize(cc.size(156,40))
+    cell.right_item.level_bg:setCapInsets(cc.rect(14, 20, 2, 0))
+
+
+    --左边特效
+    local effect_id = Config.EffectData.data_effect_info[377]
+    cell.left_item.cross_effect = createEffectSpine(effect_id, cc.p(width/4, 164 + off_height), cc.p(0.5, 0.5), true, PlayerAction.action_2)
+    cell.left_item.cross_effect:setScale(0.46)
+    cell:addChild(cell.left_item.cross_effect, 1)
+
+    --右边特效
+    effect_id = Config.EffectData.data_effect_info[376]
+    cell.right_item.cross_effect = createEffectSpine(effect_id, cc.p(width/4*3, 133), cc.p(0.5, 0.5), true, PlayerAction.action_2)
+    cell.right_item.cross_effect:setScale(0.46)
+    cell:addChild(cell.right_item.cross_effect, 1)
+
+    --线
+    effect_id = Config.EffectData.data_effect_info[378]
+    cell.line_effect1 = createEffectSpine(effect_id, cc.p(width * 0.5, 150 + off_height/2), cc.p(0.5, 0.5), true, PlayerAction.action)
+    cell.line_effect1:setRotation(30)
+    cell:addChild(cell.line_effect1, 1)
+
+    --线2
+    effect_id = Config.EffectData.data_effect_info[378]
+    cell.line_effect2 = createEffectSpine(effect_id, cc.p(width, 150 + off_height/2), cc.p(0.5, 0.5), true, PlayerAction.action)
+    cell.line_effect2:setRotation(-30)
+    cell.line_effect2:setScaleX(1.3)
+    cell:addChild(cell.line_effect2, 1)
+
+
+    --左边名字
+    cell.left_item.name = createLabel(18,cc.c4b(0xff,0xff,0xff,0xff),cc.c4b(87,47,100,0xff),width/4 - 35,112 + off_height,"",cell,2, cc.p(0.5,0.5))
+    cell.left_item.world_lev = createLabel(20,cc.c4b(0xff,0xff,0xff,0xff),cc.c4b(0x00,0x00,0x00,0xff),width/4,76 + off_height,"",cell,2, cc.p(0.5,0.5))
+    --右边名字
+    cell.right_item.name = createLabel(18,cc.c4b(0xff,0xff,0xff,0xff),cc.c4b(87,47,100,0xff),width/4*3 - 35,83,"",cell,2, cc.p(0.5,0.5))
+    cell.right_item.world_lev = createLabel(20,cc.c4b(0xff,0xff,0xff,0xff),cc.c4b(0x00,0x00,0x00,0xff),width/4*3,47,"",cell,2, cc.p(0.5,0.5))
+    -- local cell = createRichLabel(24, cc.c4b(0x64,0x32,0x23,0xff), cc.p(0.5,0.5), cc.p(0,0), nil, nil, 300)
+    cell.left_item.name:setLocalZOrder(2)
+    cell.left_item.world_lev:setLocalZOrder(2)
+    cell.right_item.name:setLocalZOrder(2)
+    cell.right_item.world_lev:setLocalZOrder(2)
+
+    cell.DeleteMe = function() 
+        if cell.left_item.cross_effect then
+            cell.left_item.cross_effect:clearTracks()
+            cell.left_item.cross_effect:removeFromParent()
+            cell.left_item.cross_effect = nil
+        end
+
+        if cell.left_item.cross_effect then
+            cell.left_item.cross_effect:clearTracks()
+            cell.left_item.cross_effect:removeFromParent()
+            cell.left_item.cross_effect = nil
+        end
+        if cell.line_effect1 then
+            cell.line_effect1:clearTracks()
+            cell.line_effect1:removeFromParent()
+            cell.line_effect1 = nil
+        end
+        if cell.line_effect2 then
+            cell.line_effect2:clearTracks()
+            cell.line_effect2:removeFromParent()
+            cell.line_effect2 = nil
+        end
+    end
+    return cell
+end
+--获取数据数量
+function CrossshowMainWindow:numberOfCellsName()
+    if not self.show_list then return 0 end
+    return #self.show_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function CrossshowMainWindow:updateCellByIndexName(cell, index)
+    local data = self.show_list[index]
+    if data then
+        cell:setLocalZOrder(#self.show_list - index)
+        if data.left_data then --
+            if data.left_data.sort_index == 0 then
+                cell.left_item.name:setTextColor(cc.c4b(79,255,79,0xff))
+            else
+                cell.left_item.name:setTextColor(cc.c4b(0xff,0xff,0xff,0xff))
+            end
+            cell.left_item.name:setString(data.left_data.srv_name)
+            cell.left_item.world_lev:setString(data.left_data.world_name)
+        end
+        
+        if data.right_data then
+             if data.right_data.sort_index == 0 then
+                cell.right_item.name:setTextColor(cc.c4b(79,255,79,0xff))
+            else
+                cell.right_item.name:setTextColor(cc.c4b(0xff,0xff,0xff,0xff))
+            end
+            cell.right_item.name:setString(data.right_data.srv_name)
+            cell.right_item.world_lev:setString(data.right_data.world_name)
+
+            for k,v in pairs(cell.right_item) do
+                v:setVisible(true)
+            end
+            cell.line_effect1:setVisible(true)
+        else
+            for k,v in pairs(cell.right_item) do
+                v:setVisible(false)
+            end
+            cell.line_effect1:setVisible(false)
+        end
+
+        if index == self:numberOfCellsName() then
+            --最后一个了..最后一条线不显示
+            cell.line_effect2:setVisible(false)
+        else
+            cell.line_effect2:setVisible(true)
+        end
+    end
+end
+
+    
+--设置倒计时(保留代码说不定那天改有时间就惨了)
+-- function CrossshowMainWindow:setOpenTime(less_time)
+--     if tolua.isnull(self.time_val) then
+--         return
+--     end
+--     local less_time =  less_time or 0
+--     self.time_val:stopAllActions()
+--     if less_time > 0 then
+--         self:setTimeFormatString(less_time)
+--         self.time_val:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1),
+--             cc.CallFunc:create(function()
+--                 less_time = less_time - 1
+--                 if less_time < 0 then
+--                     self.time_val:stopAllActions()
+--                 else
+--                     self:setTimeFormatString(less_time)
+--                 end
+--             end))))
+--     else
+--         self:setTimeFormatString(less_time)
+--     end
+-- end
+-- function CrossshowMainWindow:setTimeFormatString(time)
+--     if time > 0 then
+--         self.time_val:setString(TimeTool.GetTimeDayOrTime(time))
+--     else
+--         self.time_val:setString("00:00:00")
+--     end
+--     -- local str = string.format(TI18N(""), TimeTool.GetTimeDayOrTime(time), TI18N("语言_c_4800"))
+-- end
+
+--初始化 icon信息
+function CrossshowMainWindow:initCrossInfo()
+    local config =  Config.CrossShowData.data_base
+    self.cross_list = {}
+    if config then
+        for k,v in pairs(config) do
+            table_insert(self.cross_list, v)
+        end
+    end
+    table_sort(self.cross_list, function(a,b) return a.id < b.id end)
+    self:updateCrossList()
+end
+
+
+function CrossshowMainWindow:updateCrossList()
+    if not self.cross_list then return end
+    if self.cross_list_view == nil then
+        local scroll_view_size = self.icon_scrollview:getContentSize()
+        local item_width = 150
+        local item_height = 120
+        local position_data_list
+        local max_count = math.floor(scroll_view_size.width/item_width)
+        local count = self:numberOfCells()
+        if max_count >= count then
+            position_data_list = {}
+            -- local s_x = (scroll_view_size.width - item_width * count) * 0.5
+            local s_x = 50
+            local y = item_height * 0.5
+            for i=1,count do
+                local x = s_x + item_width * 0.5 + (i -1) * item_width
+                position_data_list[i] = cc.p(x, y)
+            end
+        end
+
+        local setting = {
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            item_width = 128,               -- 单元的尺寸width
+            item_height = item_height,              -- 单元的尺寸height
+            delay = 1,
+            -- row = 1,                        -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true,
+            position_data_list = position_data_list
+        }
+        
+        self.cross_list_view = CommonScrollViewSingleLayout.new(self.icon_scrollview, cc.p(scroll_view_size.width * 0.5, scroll_view_size.height * 0.5) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0.5,0.5))
+
+        self.cross_list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.cross_list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.cross_list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.cross_list_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+
+        if max_count >= count then
+            self.cross_list_view:setClickEnabled(false)
+        end
+    end
+    self.cross_list_view:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function CrossshowMainWindow:createNewCell(width, height)
+    local cell = ccui.Layout:create()
+    cell:setCascadeOpacityEnabled(true)
+    cell:setTouchEnabled(true)
+    cell:setAnchorPoint(0,0)
+    cell:setContentSize(cc.size(width, height))
+    local res = PathTool.getResFrame("common", "common_90083")
+    cell.icon = createSprite(res, width * 0.5, height * 0.5, cell, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    -- cell.name = createRichLabel(24, cc.c4b(0x64,0x32,0x23,0xff), cc.p(0.5,0.5), cc.p(0,0), nil, nil, 300)
+    -- cell.name = createLabel(24,cc.c4b(0x4c,0xb1,0xff,0xff),cc.c4b(0x00,0x00,0x00,0xff), width*0.5 ,30,"",cell,2, cc.p(0.5,0.5))
+
+    cell.goto_info = createLabel(18,cc.c4b(0x7c,0xd7,0x5d,0xff),cc.c4b(0x00,0x00,0x00,0xff), width*0.5 - 2 ,45,"",cell,2, cc.p(0.5,0))
+    cell.goto_info:setDimensions(width + 10, 0)
+    cell.goto_info:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    --点击事件
+    cell:addTouchEventListener(function(sender, event_type)
+        -- if cell.is_lock then return end
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onCellTouched(cell)
+        end
+    end)
+
+    --回收用
+    cell.DeleteMe = function() 
+        if cell.item_load ~= nil then
+            cell.item_load:DeleteMe()
+            cell.item_load = nil
+        end
+    end
+    return cell
+end
+--获取数据数量
+function CrossshowMainWindow:numberOfCells()
+    return #self.cross_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function CrossshowMainWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.cross_list[index]
+    if data then
+        local is_lock, lock_str = self:checkIconLockInfo(data.open_limit)
+        if is_lock then
+            -- cell.goto_info:disableEffect(cc.LabelEffect.OUTLINE)
+            -- setChildUnEnabled(true, cell)
+            cell.goto_info:setString(lock_str)
+            cell.goto_info:setVisible(true)
+        else
+            -- setChildUnEnabled(false, cell)
+            -- cell.goto_info:enableOutline(cc.c4b(0x00,0x00,0x00,0xff), 2)
+            -- cell.goto_info:setString(TI18N("语言_c_2345"))
+            cell.goto_info:setVisible(false)
+        end
+        -- cell.name:setString(data.name)
+        cell.is_lock  = is_lock
+        local icon_name = string_format("txt_cn_cross_icon_%s", data.icon)
+        local bg_res = PathTool.getPlistImgForDownLoad("crossshow/cross_icon",icon_name, false)
+
+        if cell.record_icon_res ~= bg_res then
+            cell.record_icon_res = bg_res
+            cell.item_load = createResourcesLoad(bg_res, ResourcesType.single, function()
+                if not tolua.isnull(cell.icon) then
+                    loadSpriteTexture(cell.icon, bg_res, LOADTEXT_TYPE)
+                    if is_lock then
+                        setChildUnEnabled(true, cell)
+                    end
+                end
+            end, cell.item_load)
+        end
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function CrossshowMainWindow:onCellTouched(cell)
+    local index = cell.index
+    local data = self.cross_list[index]
+
+    local is_lock, lock_str = self:checkIconLockInfo(data.open_limit)
+    if is_lock then
+        message(lock_str)
+        return
+    end
+
+    local config = Config.SourceData.data_source_data[data.source_id]
+    if config then
+        BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+    end 
+end
+
+function CrossshowMainWindow:checkIconLockInfo(open_limit)
+    if not open_limit then return end
+    local is_lock = false
+    local lock_str
+    for i,v in ipairs(open_limit) do
+        if v[1] == "world_lev" then
+            if self.world_lev < v[2] then
+                is_lock = true
+                lock_str = string_format(TI18N("语言_c_2866"), v[2])
+                break
+            end
+        elseif v[1] == "lev" then
+            if self.role_lev < v[2] then
+                is_lock = true
+                lock_str = string_format(TI18N("语言_c_2867"), v[2])
+                break
+            end
+        elseif v[1] == "guild_war" then
+            local checkIsCanOpenGuildWarWindow
+        end
+    end
+    return is_lock, lock_str
+end
+
+
+function CrossshowMainWindow:close_callback(  )
+    if self.list_view then 
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+    if self.cross_list_view then 
+        self.cross_list_view:DeleteMe()
+        self.cross_list_view = nil
+    end
+
+    if self.hero_panel_list then
+        for k,v in pairs(self.hero_panel_list) do
+            if v and v.head_icon and v.head_icon.DeleteMe then
+                v.head_icon:DeleteMe()
+                v.head_icon = nil    
+            end
+    
+            if v and v.item_load and v.item_load.DeleteMe then
+                v.item_load:DeleteMe()
+                v.item_load = nil    
+            end
+        end
+        self.hero_panel_list = nil
+    end
+
+    if self.update_data_event then 
+        GlobalEvent:getInstance():UnBind(self.update_data_event)
+        self.update_data_event = nil
+    end
+
+    if self.cross_effect then
+        self.cross_effect:clearTracks()
+        self.cross_effect:removeFromParent()
+        self.cross_effect = nil
+    end
+    if self.scene_effect_1 then
+        self.scene_effect_1:clearTracks()
+        self.scene_effect_1:removeFromParent()
+        self.scene_effect_1 = nil
+    end
+    if self.scene_effect_2 then
+        self.scene_effect_2:clearTracks()
+        self.scene_effect_2:removeFromParent()
+        self.scene_effect_2 = nil
+    end
+    -- self.time_val:stopAllActions()
+    -- self.king_match_time:stopAllActions()
+    controller:openCrossshowMainWindow(false)
+end

@@ -1,0 +1,703 @@
+----------------------------
+-- @Description:金色秘卷强化
+----------------------------
+ArtifactGoldStrongPanel = class( "ArtifactGoldStrongPanel",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function ArtifactGoldStrongPanel:addToParent( status )
+	status = status or false
+    self:setVisible(status)
+end
+function ArtifactGoldStrongPanel:ctor(hero_vo,pos_id)
+	self.hero_vo = hero_vo
+	self.pos_id = pos_id
+	self.gold_artiface_data = self.hero_vo.golden_artifact[self.pos_id]
+    --材料列表
+    self.hero_item_list = {}
+    self.cost_item_list = {} -- 升星额外消耗的材料
+    self:loadResources()
+end
+function ArtifactGoldStrongPanel:loadResources()
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("engraved", "engraved"), type = ResourcesType.plist},
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(
+        self.res_list,
+        function()
+            if self.configUI then
+                self:configUI()
+            end
+            if self.register_event then
+                self:register_event()
+            end
+            if self.setData then
+                self:setData()
+            end
+        end
+    )
+end
+
+function ArtifactGoldStrongPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/artifact_gold_strong_panel"))
+	if not self.root_wnd then return end
+	self:addChild(self.root_wnd)
+	self._ui = getAllCsbExportChildren(self.root_wnd)
+    local ui = self._ui
+
+	ui._attrTxt:setString(TI18N("语言_c_6180"))
+	ui._resetTxt:setString(TI18N("语言_c_6528"))
+	ui._up_txt:setString(TI18N("语言_c_4967"))
+	ui._now_level_tip:setString(TI18N("语言_c_7609"))
+	ui._next_level_tip:setString(TI18N("语言_c_7609"))
+	ui._bot_title:setString(TI18N("语言_c_1508"))
+	ui._cost_tip:setString(TI18N("语言_c_6534"))
+	ui._max_tip:setString(TI18N("语言_c_4810"))
+
+    self.evt_effect = createEffectSpine("E90005", cc.p(0, 0), cc.p(0.5, 0.5), true, "action")
+    ui._spine_node:addChild(self.evt_effect)
+    self.evt_effect:setScale(-1)
+
+    local top_y = display.getTop(ui._main_container)
+    local bottom_y = display.getBottom(ui._main_container)
+    local add_h = top_y - bottom_y - ui._main_container:getContentSize().height
+    local bottom_panel_size = ui._bottom_panel:getContentSize()
+    ui._bottom_panel:setContentSize(cc.size(bottom_panel_size.width,bottom_panel_size.height + add_h))
+    local list_view_bg_size = ui._list_view_bg:getContentSize()
+    ui._list_view_bg:setContentSize(cc.size(list_view_bg_size.width,list_view_bg_size.height + add_h))
+    local list_view_size = ui._list_view:getContentSize()
+    ui._list_view:setContentSize(cc.size(list_view_size.width,list_view_size.height + add_h))
+    local tab_y = ui._bot_title_bg_1:getPositionY()
+    ui._bot_title_bg_1:setPositionY(add_h + tab_y)
+    local tab_y = ui._bot_title_bg_2:getPositionY()
+    ui._bot_title_bg_2:setPositionY(add_h + tab_y)
+    local tab_y = ui._bot_title:getPositionY()
+    ui._bot_title:setPositionY(add_h + tab_y)
+end
+
+
+--点击事件
+function ArtifactGoldStrongPanel:startTimeTicket()
+    if self.time_ticket == nil then
+        self.time_idnex = 0
+        local _callback = function()
+            if self.onClickUpBtn then
+                self.is_click_btn = true
+                -- playButtonSound2()
+                self:onClickUpBtn()
+                self.time_idnex = self.time_idnex + 1
+                if self.time_idnex > 5 then
+                    self.time_idnex = 0
+                end
+            end
+        end
+
+        self.time_ticket = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+    end
+end
+
+function ArtifactGoldStrongPanel:clearTimeTicket()
+    if self.sequence_action then
+        self._ui._up_btn:stopActionByTag(1)
+        -- self._ui._up_btn:stopAction(self.sequence_action)
+        self.sequence_action = nil
+    end
+    self.is_send_level = false
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end 
+function ArtifactGoldStrongPanel:register_event()
+	local ui = self._ui
+    registerButtonEventListener(ui._resetBtn, function() self:onClickBreakBtn() end ,true, 1) 
+	registerButtonEventListener(ui._attrBtn, function() self:onClickAttrBtn() end ,true, 1) 
+    ui._up_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        
+        if event_type == ccui.TouchEventType.began then
+            self.is_click_btn = false --标志只点一次btn
+            if GuideController:getInstance():isInGuide() then return end
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                self:startTimeTicket()
+            end))
+            self.sequence_action = ui._up_btn:runAction(sequence_action)
+            self.sequence_action:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+            if not self.is_click_btn then
+                playButtonSound2()
+                self:onClickUpBtn()
+            end
+        end
+    end)
+	if self.upgrade_star_select_event == nil then
+        self.upgrade_star_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function()
+			self:updateHeroItemInfo()
+        end)
+    end
+	if self.hero_data_update == nil then
+        self.hero_data_update = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Update, function(hero_vo)
+			if hero_vo and hero_vo.partner_id == self.hero_vo.partner_id then
+                self.hero_vo = hero_vo
+                self.gold_artiface_data = self.hero_vo.golden_artifact[self.pos_id]
+                self:setData()
+            end
+        end)
+    end
+    -- 物品数量变化
+    if not self.goods_add_event then
+        self.goods_add_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code, item_list) 
+            self:updateCostPanel()
+        end)
+    end
+    if not self.goods_modify_event then
+        self.goods_modify_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code, item_list) 
+            self:updateCostPanel()
+        end)
+    end
+    if not self.goods_delete_event then
+        self.goods_delete_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code, item_list) 
+            self:updateCostPanel()
+        end)
+    end
+end
+function ArtifactGoldStrongPanel:onClickUpBtn()
+    local lev_cfg = Config.PartnerArtifactGoldenData.data_enhance[self.artifact_cfg.artifact_id][self.gold_artiface_data.enhance_level]
+    local cfg = lev_cfg.cost_level_up
+    for k, v in pairs(cfg) do
+        local need_id = v[1]
+        local need_num = v[2]
+        local have_num = BackpackController:getInstance():getModel():getItemNumByBid(need_id)
+        if have_num < need_num then
+            BackpackController:getInstance():openTipsSource(true, need_id)
+            return
+        end
+    end
+    controller:sender11483(self.hero_vo.partner_id,self.artifact_cfg.artifact_id,1)
+end
+function ArtifactGoldStrongPanel:onClickBreakBtn()
+    if self.gold_artiface_data.enhance_level > 0 then
+        controller:openArtifactGoldLevRebirthPanel(true,self.hero_vo.partner_id,self.gold_artiface_data)
+    else
+        message(TI18N("语言_c_7549"))
+    end
+end
+function ArtifactGoldStrongPanel:onClickAttrBtn()
+    controller:openArtifactGoldAttrPop(true,self.gold_artiface_data,1)
+end
+
+function ArtifactGoldStrongPanel:setData()
+    self:setTopPanel()
+    self:setBotPanel()
+    self:updateStrengRed()
+end
+function ArtifactGoldStrongPanel:setTopPanel()
+    local ui = self._ui
+    self.artifact_cfg = Config.PartnerArtifactGoldenData.data_artifact_by_index[self.pos_id]
+    self.item_cfg = Config.ItemData.data_get_data(self.artifact_cfg.artifact_id)
+    ui._name_txt:setString(self.item_cfg.name)
+    local res = PathTool.getResFrame("artifact_golden", self.artifact_cfg.icon)
+    loadSpriteTexture(ui._icon, res, LOADTEXT_TYPE_PLIST)
+    self:updateSkillNode()
+    self:updateLevelPanel()
+end
+function ArtifactGoldStrongPanel:updateSkillNode()
+    local ui = self._ui
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true, true, true, 0.95, true)
+        ui._skill_node:addChild(self.skill_item)
+    end
+    local skill_id = self.gold_artiface_data.skill_id
+    local skill_cfg = Config.SkillData.data_get_skill(skill_id)
+    if skill_cfg then
+        self.skill_item:setData(skill_cfg)
+        if transformTextToShortByWidth(ui._skill_name, skill_cfg.name, 200) then
+            addEvt2showAllTextTips(ui._skill_name,skill_cfg.name, 0)
+        else
+            addEvt2showAllTextTips(ui._skill_name,"", 0)
+        end
+        autoSizeTitleBg(ui._skill_name,ui._skill_name_bg,20,157)
+        self.skill_item:setShowLevel(true,0.8,5,111)
+    end
+end
+function ArtifactGoldStrongPanel:updateLevelPanel()
+    local ui = self._ui
+    local lev_cfg = Config.PartnerArtifactGoldenData.data_enhance[self.artifact_cfg.artifact_id][self.gold_artiface_data.enhance_level]
+    self.score_val = HeroCalculate.calculatePower(lev_cfg.attr)
+    ui._power_txt:setString(self.score_val)
+    if not self.now_level then
+        self.now_level = CommonNum.new(23, ui._top_panel, 1, - 2, cc.p(0.5, 0))
+        self.now_level:setPosition(cc.p(265, 32))
+        self.now_level:setNum(0)
+        self.now_level:setScale(0.8)
+    end
+    if not self.next_level then
+        self.next_level = CommonNum.new(23, ui._top_panel, 1, - 2, cc.p(0.5, 0))
+        self.next_level:setPosition(cc.p(462, 32))
+        self.next_level:setNum(0)
+        self.next_level:setScale(0.8)
+    end
+    self.now_level:setNum(lev_cfg.enhance_level)
+    if Config.PartnerArtifactGoldenData.data_enhance[self.artifact_cfg.artifact_id][self.gold_artiface_data.enhance_level+1] then
+        self.next_level:setNum(lev_cfg.enhance_level+1)
+        ui._next_level_tip:setVisible(true)
+        ui._level_tip:setVisible(true)
+        self.next_level:setVisible(true)
+        ui._now_level_tip:setPositionX(265)
+        self.now_level:setPositionX(265)
+    else
+        ui._next_level_tip:setVisible(false)
+        ui._level_tip:setVisible(false)
+        self.next_level:setVisible(false)
+        ui._now_level_tip:setPositionX(360)
+        self.now_level:setPositionX(360)
+    end
+end
+function ArtifactGoldStrongPanel:setBotPanel()
+    local ui = self._ui
+    local lev_cfg = Config.PartnerArtifactGoldenData.data_enhance[self.artifact_cfg.artifact_id][self.gold_artiface_data.enhance_level]
+    local list = DeepCopy(lev_cfg.attr)
+    local next_lev_cfg = Config.PartnerArtifactGoldenData.data_enhance[self.artifact_cfg.artifact_id][self.gold_artiface_data.enhance_level+1]
+    if next_lev_cfg then
+        for key, value in pairs(next_lev_cfg.attr) do
+            local status = false
+            for k, v in pairs(list) do
+                if v[1] == value[1] then
+                    v[3] = value[2]
+                    status = true
+                    break
+                end
+            end
+            if not status then
+                local _list = {value[1],0,value[2]}
+                table.insert(list,_list)
+            end
+        end
+    end
+    self.show_list = list
+    if self.list_view == nil then
+        if tolua.isnull(ui._list_view) then return end
+        local list_setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 0,
+            space_y = 0,
+            item_width = ArtifactGoldAttrItem3.Width,
+            item_height = ArtifactGoldAttrItem3.Height,
+            row = 0,
+            col = 1,
+            need_dynamic = true
+        }
+        local size = ui._list_view:getContentSize()
+        self.list_view = CommonScrollViewSingleLayout.new(ui._list_view, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, list_setting, cc.p(0, 0)) 
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.list_view:reloadData()
+    self:updateCostPanel()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ArtifactGoldStrongPanel:createNewCell(width, height)
+    local cell = ArtifactGoldAttrItem3.new(0.9, true)
+    return cell
+end
+--获取数据数量
+function ArtifactGoldStrongPanel:numberOfCells()
+    return #self.show_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function ArtifactGoldStrongPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.show_list[index]
+    cell:setData(data,index)
+end
+
+function ArtifactGoldStrongPanel:updateCostPanel()
+    local ui = self._ui
+    local lev_cfg = Config.PartnerArtifactGoldenData.data_enhance[self.artifact_cfg.artifact_id][self.gold_artiface_data.enhance_level]
+    if lev_cfg.cost_level_up and next(lev_cfg.cost_level_up) then
+        self:updateItemDataByConfig(lev_cfg)
+        ui._up_btn:setVisible(true)
+        ui._cost_node:setVisible(true)
+        ui._cost_tip:setVisible(true)
+        ui._max_tip:setVisible(false)
+    else
+        ui._up_btn:setVisible(false)
+        ui._cost_node:setVisible(false)
+        ui._cost_tip:setVisible(false)
+        ui._max_tip:setVisible(true)
+    end
+end
+
+--更新升星物品材料
+function ArtifactGoldStrongPanel:updateItemDataByConfig(star_config)
+    if not star_config then return end
+    self.hero_item_data_list = {}
+    --红点条件list
+    local conditions_list = {}
+    --记录已选id [partner_id] = hero_vo
+    self.dic_other_selected = {}
+    --过滤自己
+    -- local expend = star_config.expend1[1]
+    -- if expend then --主卡
+    --     --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    --     self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3]) 
+    -- end
+
+    --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    local index = 1
+    for i,expend in ipairs(star_config.cost_partner or {}) do
+        self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+    --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+    for i,expend in ipairs(star_config.cost_rnd_partner or {}) do
+        self.hero_item_data_list[index] = self:getHeroData(nil, expend[2], expend[3], expend[1])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+
+    for i,item in ipairs(self.hero_item_list) do
+        item:setVisible(false)
+    end
+
+    for i,hero_vo in ipairs(self.hero_item_data_list) do
+        if self.hero_item_list[i] == nil then
+            self.hero_item_list[i] = HeroExhibitionItem.new(0.95, true)
+            self.hero_item_list[i]:setPosition( (i-1) * (HeroExhibitionItem.Width * 1 + 10) , 0)
+            self.hero_item_list[i]:addCallBack(function() self:_onClickItemData(i) end)
+            self._ui._cost_node:addChild(self.hero_item_list[i])
+        end
+        self.hero_item_list[i]:setVisible(true)
+        if hero_vo.bid == 0 then
+            --随机卡的头像id
+            local default_head_id = model:getRandomHeroHeadByQuality(hero_vo.star)
+            self.hero_item_list[i]:setData(hero_vo)
+            self.hero_item_list[i]:setDefaultHead(default_head_id)
+            -- self.hero_item_list[i]:setHeroName(true, string_format(TI18N("语言_c_3022"), hero_vo.star))
+        else
+            self.hero_item_list[i]:setData(hero_vo)
+            -- self.hero_item_list[i]:setHeroName(true, hero_vo.name)
+        end
+        
+        self.hero_item_list[i]:setHeadUnEnabled(true)
+    end
+
+    -- 额外材料
+    for k,item in pairs(self.cost_item_list) do
+        item:setVisible(false)
+    end
+    local start_index = #self.hero_item_data_list
+    if star_config.cost_level_up then
+        for i,v in ipairs(star_config.cost_level_up) do
+            local bid = v[1]
+            local need_num = v[2]
+            if bid ~= model.upgrade_star_cost_id then
+                local item = self.cost_item_list[i]
+                if not item then
+                    item = BackPackItem.new(false, true, false, 0.95)
+                    self._ui._cost_node:addChild(item)
+                    self.cost_item_list[i] = item
+                end
+                item:setPosition( (start_index+i-1) * (BackPackItem.Width * 1 + 10) , 0)
+                local have_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(bid)
+                item:setBaseData(bid)
+                item:setNeedNum(need_num, have_num, 1, true, 2)
+                if need_num > have_num then
+                    item:setDefaultTip(true, true)
+                else
+                    item:setDefaultTip()
+                end
+                item:setVisible(true)
+            end
+        end
+    end
+
+    self:initHeroListByMatchInfo(conditions_list)
+    self:updateCentreHeroItemRedPoint()
+end
+
+--更新选中英雄信息
+function ArtifactGoldStrongPanel:updateHeroItemInfo()
+    if not self.hero_item_data_list then return end
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    for i,v in ipairs(self.hero_item_data_list) do
+        if v.is_select then
+            v.is_select = false
+            local count = 0
+            for k,vo in pairs(v.dic_select_list) do
+                count = count + 1
+                self.dic_other_selected[k] = vo
+            end
+            v.lev = string_format("%s/%s", count, v.count)
+            if self.hero_item_list[i] then
+                self.hero_item_list[i].num_label:setString(v.lev)
+                if count > 0 then
+                    self.hero_item_list[i]:setHeadUnEnabled(false)
+                else
+                    self.hero_item_list[i]:setHeadUnEnabled(true)
+                end
+            end
+        else
+            for k,vo in pairs(v.dic_select_list) do
+                self.dic_other_selected[k] = vo
+            end
+        end
+    end
+    self:updateCentreHeroItemRedPoint()
+end
+--初始化英雄列表匹配信息
+function ArtifactGoldStrongPanel:initHeroListByMatchInfo(conditions_list)
+    local hero_list = model:getHeroList()
+
+    self.conditions_hero_list = {}
+    for k,hero in pairs(hero_list) do
+        --去掉lock de 
+        if not hero:isResonateHero() and not hero:isInForm() and not hero:isLock() then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+    
+                if self.hero_item_data_list and self.hero_item_data_list[i] and self.hero_item_data_list[i].bid and self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    if conditions[0] then
+                        if conditions[0][hero.star] then
+                            table.insert(self.conditions_hero_list[i], hero)
+                        end
+                    else
+                        if conditions[hero.camp_type] and conditions[hero.camp_type][hero.star] ~= nil then
+                            table.insert(self.conditions_hero_list[i], hero)
+                        end
+                    end
+                else
+                    --指定卡
+                    if conditions[hero.bid] and conditions[hero.bid][hero.star] then   -- 指定卡要剔除自己
+                        table.insert(self.conditions_hero_list[i], hero)
+                    end
+                end
+            end
+        end
+    end
+    
+    --新加需求.自动填满指定定的位置的英雄
+        self.dic_other_selected = {}
+        for i,v in ipairs(self.hero_item_data_list) do
+            --策划要求指定才需要填充 
+            if v.bid ~= 0 then
+                if self.conditions_hero_list[i] and #self.conditions_hero_list[i] > 0 then
+                    local sort_func = SortTools.tableCommonSorter({{"lev", false}, {"id", true}}) 
+                    table.sort(self.conditions_hero_list[i], sort_func)
+                    local count = 0
+                    for _,hero_vo in ipairs(self.conditions_hero_list[i]) do
+                        if self.dic_other_selected[hero_vo.id] == nil and not hero_vo:checkHeroLockTips(true, nil, true) then
+                            v.dic_select_list[hero_vo.id] = hero_vo
+                            count = count + 1
+                            if count >= v.count then
+                                break
+                            end
+                        end
+                    end
+                    if count < v.count then
+                        --说明不够..就不显示了
+                        v.dic_select_list = {}
+                    else
+                        for k,v in pairs(v.dic_select_list) do
+                            self.dic_other_selected[k] = v
+                        end
+                        v.lev = string_format("%s/%s", count, v.count)
+                        if self.hero_item_list[i] then
+                            self.hero_item_list[i].num_label:setString(v.lev)
+                            if count > 0 then
+                                self.hero_item_list[i]:setHeadUnEnabled(false)
+                            else
+                                self.hero_item_list[i]:setHeadUnEnabled(true)
+                            end
+                        end      
+                    end
+                end
+            end
+        end
+    -- end
+
+
+    local list = BackpackController:getInstance():getModel():getHeroHunList()
+    for k, good_vo in pairs(list) do
+        if good_vo.config then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+                if self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    local camp_type = good_vo.config.camp_type
+                    local star = good_vo.config.eqm_jie
+                    if conditions[camp_type] and conditions[camp_type][star] ~= nil then
+                        for j=1,good_vo.quantity do
+                            local data = {}
+                            data.id = -(j + camp_type * 10)
+                            data.partner_id = data.id
+                            data.good_vo = good_vo
+                            table.insert(self.conditions_hero_list[i], data)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+
+--计算中间item红点显示
+function ArtifactGoldStrongPanel:updateCentreHeroItemRedPoint()
+    if not self.conditions_hero_list then return end
+    if not self.dic_other_selected then return end
+    for i,item in ipairs(self.hero_item_list) do
+        --模拟的hero_vo数据
+        local hero_vo = self.hero_item_data_list[i]
+        local conditions_list =  self.conditions_hero_list[i] or {}
+        if hero_vo then
+            local count = 0
+            for k,v in pairs(hero_vo.dic_select_list) do
+                count = count + 1
+            end
+            --已经填满了就不显示红点了
+            if count < hero_vo.count then
+                --随机卡的 --指定卡 逻辑一样的
+                local num = hero_vo.count
+                for i,each_hero in ipairs(conditions_list) do
+                    --自已选的.和 别人没选的 都算数 
+                    if hero_vo.dic_select_list[each_hero.id] or self.dic_other_selected[each_hero.id] == nil then 
+                        num = num -1
+                        if num == 0 then
+                            break
+                        end
+                    end
+                end
+                --说明数量够 显示红点
+                local status = (num <= 0) 
+                item:showRedPoint(status, 8, 8)
+
+            else
+                item:showRedPoint(false)
+            end
+        end
+    end
+end
+
+--点击材料数据
+function ArtifactGoldStrongPanel:_onClickItemData(index)
+    if not self.hero_item_data_list[index] then return end
+    --标志点击了那个
+    self.hero_item_data_list[index].is_select = true
+    --被其他人选择的列表 [id] = hero_vo 模式
+    local dic_other_selected = {}
+    for i,item in ipairs(self.hero_item_data_list) do
+        if i ~= index then
+            for k,v in pairs(item.dic_select_list) do
+                dic_other_selected[k] = v
+            end
+        end
+    end
+
+    local setting = {}
+    -- if self.hero_item_data_list[index].bid == 0 and self.hero_item_data_list[index].star == 5 then
+    --     -- 表示随机卡
+    --     setting.self_mark_bid = self.hero_vo.bid
+    -- end
+
+    controller:openHeroUpgradeStarSelectPanel(true, self.hero_item_data_list[index], dic_other_selected, HeroConst.SelectHeroType.eArtifactGoldUpSkill, setting)
+end
+
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function ArtifactGoldStrongPanel:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+--设置强化红点
+function ArtifactGoldStrongPanel:updateStrengRed()
+    local artifact_list = self.hero_vo.golden_artifact[self.pos_id] or {}
+    local is_redpoint = HeroCalculate.checkSingleHeroArtifactGoldStrongRedPoint(artifact_list)
+    addRedPointToNodeByStatus(self._ui._up_btn,is_redpoint,10,10)
+end
+function ArtifactGoldStrongPanel:DeleteMe()
+    if self.now_level then
+        self.now_level:DeleteMe()
+    end
+    self.now_level = nil
+    if self.next_level then
+        self.next_level:DeleteMe()
+    end
+    self.next_level = nil
+	if self.upgrade_star_select_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+    
+    if self.goods_add_event then
+        GlobalEvent:getInstance():UnBind(self.goods_add_event)
+        self.goods_add_event = nil
+    end
+    if self.goods_modify_event then
+        GlobalEvent:getInstance():UnBind(self.goods_modify_event)
+        self.goods_modify_event = nil
+    end
+    if self.goods_delete_event then
+        GlobalEvent:getInstance():UnBind(self.goods_delete_event)
+        self.goods_delete_event = nil
+    end
+	if self.hero_data_update ~= nil then
+        GlobalEvent:getInstance():UnBind(self.hero_data_update)
+        self.hero_data_update = nil
+    end
+end

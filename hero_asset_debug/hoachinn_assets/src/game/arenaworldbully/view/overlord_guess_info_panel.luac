@@ -1,0 +1,250 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--     时空争霸赛 忍者大师赛 争霸赛 竞猜信息
+-- <br/> 2019年11月19日
+-- --------------------------------------------------------------------
+OverlordGuessInfoPanel = OverlordGuessInfoPanel or BaseClass(BaseView)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+
+
+function OverlordGuessInfoPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big   
+    self.is_full_screen = false
+    self.layout_name = "arenaworldbully/overlord_guess_info_panel"
+
+    self.res_list = {
+        -- { path = PathTool.getPlistImgForDownLoad("vedio","vedio"), type = ResourcesType.plist },
+    }
+
+    --奖励
+    -- self.dic_reward_list = {}
+    self.show_list = {}
+end
+
+function OverlordGuessInfoPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+
+    self.Image_2 = self.main_panel:getChildByName("Image_2")
+    self.title = self.main_panel:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_543"))
+	autoSizeTitleBg(self.title,self.Image_2,60,332)
+
+    self.scroll_container = self.main_panel:getChildByName("scroll_container")
+
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+end
+
+function OverlordGuessInfoPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+
+
+     --我的竞猜信息返回 
+    self:addGlobalEvent(ArenaworldbullyEvent.UpdateOverGuessInfo, function(data)
+        if not data then return end
+        self:setData(data)
+    end)
+end
+
+--关闭
+function OverlordGuessInfoPanel:onClickBtnClose()
+    controller:openOverlordGuessInfoPanel(false)
+end
+
+function OverlordGuessInfoPanel:openRootWnd()
+    controller:sender14523()
+end
+
+function OverlordGuessInfoPanel:setData(data)
+    self.show_list = data.bet_list
+    local sort_func = SortTools.tableCommonSorter({{"group", true},{"bet_pid", false}})
+    table.sort(self.show_list, sort_func)
+    self:updateList()
+end
+
+function OverlordGuessInfoPanel:updateList()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.scroll_container:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 606,                -- 单元的尺寸width
+            item_height = 150,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.scroll_container, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    
+    self.item_scrollview:reloadData()
+    if #self.show_list == 0 then
+        commonShowEmptyIcon(self.scroll_container, true, {text = TI18N("语言_c_592")})
+    else
+        commonShowEmptyIcon(self.scroll_container, false)
+    end
+end
+
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function OverlordGuessInfoPanel:createNewCell(width, height)
+   local cell = OverlordGuessInfoItem.new(width, height)
+   -- cell:setActionRankCommonType(self.holiday_bid, self.type)
+    -- cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function OverlordGuessInfoPanel:numberOfCells()
+    if not self.show_list then return 0 end
+    return #self.show_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function OverlordGuessInfoPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.show_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+
+function OverlordGuessInfoPanel:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+    end
+    self.item_scrollview = nil
+
+    controller:openOverlordGuessInfoPanel(false)
+end
+
+------------------------------------------
+-- 子项
+OverlordGuessInfoItem = class("OverlordGuessInfoItem", function()
+    return ccui.Widget:create()
+end)
+
+function OverlordGuessInfoItem:ctor(width, height)
+    self:configUI(width, height)
+    self:register_event()
+end
+
+function OverlordGuessInfoItem:configUI( width, height )
+    self.size = cc.size(width, height)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+
+    local csbPath = PathTool.getTargetCSB("arenaworldbully/overlord_guess_info_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self.root_wnd:setAnchorPoint(cc.p(0.5, 0.5))
+    self.root_wnd:setPosition(cc.p(width * 0.5 , height * 0.5))
+    self:addChild(self.root_wnd)
+   
+
+    self.container = self.root_wnd:getChildByName("container")
+
+    local head_node = self.container:getChildByName("head_node")
+    self.player_head = PlayerHead.new(PlayerHead.type.circle)
+    self.player_head:setHeadLayerScale(0.8)
+    head_node:addChild(self.player_head)
+
+    --名字
+    self.name = self.container:getChildByName("name")
+
+    self.step = self.container:getChildByName("step")
+    self.step:setString("")
+    --投注
+    self.guess_label = self.container:getChildByName("guess_label")
+    self.guess_label:setString(TI18N("语言_c_593"))
+    self.success_lable = self.container:getChildByName("success_lable")
+    self.group_icon = self.container:getChildByName("group_icon")
+
+    --竞猜信息
+    self.guess_count_info = createRichLabel(22, cc.c4b(0x64,0x32,0x23,0xff), cc.p(0, 0.5), cc.p(248, 48),nil,nil,1000)
+    self.container:addChild(self.guess_count_info)
+end
+
+function OverlordGuessInfoItem:register_event( )
+    
+end
+
+
+function OverlordGuessInfoItem:setData(data)
+    if not data then return end
+    self.data = data
+    self.player_head:setHeadRes(data.face_id, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+    self.player_head:showWarldBullyRegion(data.nation,0.8,cc.p(54,7))
+	local avatar_bid = data.avatar_bid
+    local vo = Config.AvatarData.data_avatar[avatar_bid]
+    if vo then
+        local res_id = vo.res_id or 1
+        local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+        self.player_head:showBg(res, nil, false, vo.offy)
+    end
+	self.player_head:setLev(data.lev)
+    self.name:setString(transformNameByServ(data.name, data.srvid))
+    local icon = Config.ArenaTimeWarpData.data_const["happy_coin_item"].val
+    local res = PathTool.getItemRes(icon)
+	local cfg = Config.ArenaTimeWarpData.data_const["guess_option"].val
+    if data.bet_ret == 0 then --进行中
+        self.success_lable:setString(TI18N("语言_c_594"))
+        self.step:setString(TI18N("语言_c_6614"))
+        self.guess_count_info:setString(TI18N("语言_c_6615"))
+    elseif data.bet_ret == 1 then --竞猜成功
+        self.success_lable:setString(TI18N("语言_c_596"))
+        if cfg[data.bet_rank] then
+            if cfg[data.bet_rank][1] == cfg[data.bet_rank][2] then
+                self.step:setString(string.format(TI18N("语言_c_6616"),data.bet_rank))
+            else
+                self.step:setString(string.format(TI18N("语言_c_6616"),string.format("%s-%s",cfg[data.bet_rank][1],cfg[data.bet_rank][2])))
+            end
+        end
+        self.guess_count_info:setString(string.format(TI18N("语言_c_6617"),res,data.get_bet))
+    elseif data.bet_ret == 2 then --竞猜失败
+        self.success_lable:setString(TI18N("语言_c_598"))
+        if cfg[data.bet_rank] then
+            if cfg[data.bet_rank][1] == cfg[data.bet_rank][2] then
+                self.step:setString(string.format(TI18N("语言_c_6616"),data.bet_rank))
+            else
+                self.step:setString(string.format(TI18N("语言_c_6616"),string.format("%s-%s",cfg[data.bet_rank][1],cfg[data.bet_rank][2])))
+            end
+        end
+        self.guess_count_info:setString(TI18N("语言_c_6618"))
+    end
+    local cfg = Config.ArenaTimeWarpData.data_group[data.group]
+    loadSpriteTexture(self.group_icon,PathTool.getResFrame("time_warp",cfg.icon,false,"qualifier"),LOADTEXT_TYPE_PLIST)
+end
+
+function OverlordGuessInfoItem:DeleteMe( )
+    if self.player_head then
+        self.player_head:DeleteMe()
+        self.player_head = nil
+    end
+
+    self:removeAllChildren()
+    self:removeFromParent()
+end

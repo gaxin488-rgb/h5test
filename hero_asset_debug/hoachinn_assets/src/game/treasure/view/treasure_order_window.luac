@@ -1,0 +1,704 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 魔导器战令
+--------------------------------- 
+local _controller = TreasureController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+TreasureOrderWindow = TreasureOrderWindow or BaseClass(BaseView)
+
+function TreasureOrderWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "treasure/treasure_order_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("planesafkorderaction","planesafkorderaction"), type = ResourcesType.plist},
+	}
+    self.role_vo = RoleController:getInstance():getRoleVo()
+end
+
+function TreasureOrderWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+	self.container = container
+    self:playEnterAnimatianByObj(container, 2)
+	self.item_panel = container:getChildByName("item_panel")
+    self.show_btn = container:getChildByName("show_btn")
+    self.show_txt = self.show_btn:getChildByName("show_txt")
+    self.show_txt:setString(TI18N("语言_c_503"))
+    self.show_bg = container:getChildByName("show_bg")
+    self.tip_scroll = self.show_bg:getChildByName("tip_scroll")
+    self.tip_scroll:setScrollBarEnabled(false)
+    self.show_tip = self.tip_scroll:getChildByName("show_tip")
+    self.show_tip:setChangeScaleOffWidth(-9999)
+    setTextMaxWidth(self.show_tip,350,-6)
+	self.btn_panel = container:getChildByName("btn_panel")
+	self.buy_btn_1 = self.btn_panel:getChildByName("buy_btn_1")
+	self.btn_txt_1 = self.buy_btn_1:getChildByName("btn_txt")
+	self.btn_txt_1:setString(TI18N("语言_c_6164"))
+	self.price_1 = createRichLabel(20, cc.c3b(0xff,0xff,0xff), cc.p(0.5,0.5), cc.p(self.buy_btn_1:getContentSize().width*0.5,17))
+	self.price_1:setHorizontalLayoutType(2)
+	self.buy_btn_1:addChild(self.price_1)
+	self.btn_lock_1 = self.buy_btn_1:getChildByName("btn_lock")
+	
+	self.buy_btn_2 = self.btn_panel:getChildByName("buy_btn_2")
+	self.btn_txt_2 = self.buy_btn_2:getChildByName("btn_txt")
+	self.btn_txt_2:setString(TI18N("语言_c_6165"))
+	self.price_2 = createRichLabel(20, cc.c3b(0xff,0xff,0xff), cc.p(0.5,0.5), cc.p(self.buy_btn_2:getContentSize().width*0.5,17))
+	self.price_2:setHorizontalLayoutType(2)
+	self.buy_btn_2:addChild(self.price_2)
+	self.btn_lock_2 = self.buy_btn_2:getChildByName("btn_lock")
+
+	self.time_bg = container:getChildByName("time_bg")
+	self.time_tip = self.time_bg:getChildByName("time_tip")
+	self.time_tip:setString(TI18N("语言_c_6166"))
+	self.time_label = self.time_bg:getChildByName("time_label")
+
+    self.image_2 = container:getChildByName("image_2")
+	self.win_title = container:getChildByName("win_title")
+	self.close_btn = container:getChildByName("close_btn")
+	self.explain_btn = container:getChildByName("explain_btn")
+end
+
+function TreasureOrderWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, function (  )
+		_controller:openTreasureOrderWindow(false)
+	end, true, 2)
+
+    -- 规则说明
+    registerButtonEventListener(self.explain_btn, function ( param,sender, event_type )
+        local rule_cfg = Config.NinjaTreasureDrawData.data_constant["order_tips"]
+        if rule_cfg then
+            TipsManager:getInstance():showCommonTips(rule_cfg.val, sender:getTouchBeganPosition())
+        end
+    end)
+
+	registerButtonEventListener(self.background, function (  )
+		_controller:openTreasureOrderWindow(false)
+	end, false, 2)
+
+	registerButtonEventListener(self.buy_btn_1, function (  )
+		self:clickBuyBtn1()
+	end, false, 2)
+
+	registerButtonEventListener(self.buy_btn_2, function (  )
+		self:clickBuyBtn2()
+	end, false, 2)
+
+	if not self.treasure_order_event then
+        self.treasure_order_event = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Order_Event, function ()
+            self:setData()
+        end)
+    end
+	if not self.treasure_order_con_event then
+        self.treasure_order_con_event = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Order_Con_Event, function ()
+            if _model:getOrderBuy1() == 0 then
+				self:clickBuyBtn1()			
+			elseif _model:getOrderBuy2() == 0 then
+				self:clickBuyBtn2()
+			end
+        end)
+    end
+	if not self.treasure_order_receive_event then
+        self.treasure_order_receive_event = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Order_Receive_Event, function ()
+            if not self.play_effect then
+                self.play_effect = createEffectSpine("E55000", cc.p(self.buy_btn_1:getContentSize().width*0.5,self.buy_btn_1:getContentSize().height*0.5), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+                self.buy_btn_1:addChild(self.play_effect)
+            else
+                self.play_effect:setAnimation(0, PlayerAction.action_1, true)
+            end
+        end)
+    end
+    if not self.tips_event then
+        self.tips_event = GlobalEvent:getInstance():Bind(MonopolyEvent.Get_Monopoly_War_Order_Popups, function (data)
+            if data.type == ActionStorageBool2.Treasure and data.flag == 0 then
+                local day_num = 0
+                local times = _model:getOrderEndTime() - GameNet:getInstance():getTime()
+                if times > 0 then
+                    day_num = math.floor(times/86400)
+                end
+                if day_num == 7 or day_num == 3 or day_num == 0 then
+                    local _txt = TI18N("语言_c_6167")
+                    ActionController:getInstance():openEndWarnView(true,day_num,_txt)
+                    MonopolyController:getInstance():sender16811(ActionStorageBool2.Treasure)
+                end
+            end
+        end)
+    end
+    registerButtonEventListener(self.show_btn, function()
+        local _x,_y = self.show_btn:getPosition()
+        -- local world_pos = self:convertToWorldSpace(cc.p(_x+350,_y))
+        local world_pos = self.show_btn:convertToWorldSpace(cc.p(350,0))
+        if self.task_cfg and self.task_cfg.show_reward then
+            EsecsiceController:getInstance():openEserciseShowRewardWindow(true,self.task_cfg.show_reward,world_pos)
+        end
+    end, true, 1)
+end
+
+function TreasureOrderWindow:clickBuyBtn1()
+    if _model:getOrderBuy1() == 1 then
+        message(TI18N("语言_c_1984"))
+        return
+    end
+	local function fun()
+		_controller:sender22326()
+	end
+    if self.charge_cfg then
+        local num = BackpackController:getInstance():getModel():getItemNumByBid(self.charge_cfg.buy_cost[1][1])
+        local _str = string.format(TI18N("语言_c_6168"),PathTool.getItemRes(self.charge_cfg.buy_cost[1][1]),self.charge_cfg.buy_cost[1][2],num)
+        CommonAlert.show(_str, TI18N("语言_c_63"), fun, TI18N("语言_c_62"), nil, CommonAlert.type.rich, nil, nil, nil, true)
+    end
+end
+function TreasureOrderWindow:clickBuyBtn2()
+    if _model:getOrderBuy2() == 1 then
+        message(TI18N("语言_c_1984"))
+        return
+    end
+	local function fun()
+        if self.charge_cfg then
+            local charge_id = self.charge_cfg.charge_id
+            if _model:getOrderDiscount() == 1 then
+                charge_id = self.charge_cfg.dis_charge_id
+            end
+            local charge_data = Config.ChargeData.data_charge_data[charge_id]
+            if charge_data then
+                sdkOnPay(charge_data.val, nil, charge_data.id, charge_data.name)
+            else
+                message("error")
+            end
+        end
+	end
+    local str = TI18N("语言_c_6169")
+    if _model:getOrderDiscount() == 1 then
+        str = TI18N("语言_c_6170")
+    end
+	CommonAlert.show(str, TI18N("语言_c_63"), fun, TI18N("语言_c_62"), nil, CommonAlert.type.rich, nil, nil, nil, true)
+end
+
+function TreasureOrderWindow:setData()
+    if self.play_effect then
+        self.play_effect:clearTracks()
+        self.play_effect:removeFromParent()
+        self.play_effect = nil
+    end
+	self.order_id = _model:getOrderId()
+	self.task_cfg = Config.NinjaTreasureDrawData.data_get_task[self.order_id]
+	self.reward_cfg = Config.NinjaTreasureDrawData.data_get_task_reward[self.order_id]
+	self.charge_cfg = Config.NinjaTreasureDrawData.data_get_task_charge[self.order_id]
+	self.win_title:setString(self.task_cfg.name)
+    if self.task_cfg.conf_txt ~= "" then
+        self.show_btn:setVisible(true)
+        self.show_bg:setVisible(true)
+        -- self.show_tip:setString(transformTextToShort(self.task_cfg.conf_txt,63))
+        -- addEvt2showAllTextTips(self.show_tip,self.task_cfg.conf_txt,63)
+        self.show_tip:setString(self.task_cfg.conf_txt)
+        local _w = math.max(self.show_tip:getContentSize().width+58,243)
+        self.show_bg:setContentSize(_w,70)
+        local _h = math.max(self.show_tip:getContentSize().height+10,self.show_bg:getContentSize().height)
+        self.tip_scroll:setInnerContainerSize(cc.size(self.tip_scroll:getContentSize().width,_h))
+        self.show_tip:setPositionY(_h)
+    else
+        self.show_btn:setVisible(false)
+        self.show_bg:setVisible(false)
+    end
+    moveTextBg(self.win_title,self.image_2,60,self.image_2:getContentSize().width)
+    setChildUnEnabled(_model:getOrderDiscount() == 0,self.tip_txt_2)
+	self.end_time = _model:getOrderEndTime()
+    commonCountDownTime(self.time_label,self.end_time - GameNet:getInstance():getTime(),{end_callback=function(time)
+        if time <= 0 then
+	        _controller:openTreasureOrderWindow(false)
+        end
+    end})
+	local _str = string.format(TI18N("语言_c_6171"),self.charge_cfg.buy_cost[1][2],PathTool.getItemRes(self.charge_cfg.buy_cost[1][1]))
+	self.price_1:setString(_str)
+	local charge_id = self.charge_cfg.charge_id
+	if _model:getOrderDiscount() == 1 then
+		charge_id = self.charge_cfg.dis_charge_id
+	end
+	local charge_data = Config.ChargeData.data_charge_data[charge_id]
+    local val = 198
+    if charge_data then
+        val = GetMoneyNum(charge_data,"val")
+    end
+	self.price_2:setString(string.format(TI18N("语言_c_6172"),val))
+    self.btn_lock_1:setVisible( _model:getOrderBuy1() ~= 1)
+    self.btn_lock_2:setVisible( _model:getOrderBuy2() ~= 1)
+	if _model:getOrderBuy1() == 1 then
+        local _str = TI18N("语言_c_6252")
+	    self.price_1:setString(_str)
+	else
+        local _str = string.format(TI18N("语言_c_6171"),self.charge_cfg.buy_cost[1][2],PathTool.getItemRes(self.charge_cfg.buy_cost[1][1]))
+	    self.price_1:setString(_str)
+    end
+	if _model:getOrderBuy2() == 1 then
+        self.price_2:setString(TI18N("语言_c_6252"))
+	else
+        self.price_2:setString(string.format(TI18N("语言_c_6172"),val))
+	end
+	self:setRewardPanel()
+    self:updateScrollY()
+end
+function TreasureOrderWindow:updateScrollY()
+    local num_tol = tableLen(self.reward_cfg)
+    local data = _model:getOrderAwards()
+    local num = tableLen(data)
+    for key, value in pairs(data) do
+        if (value.award1 == 0 and _model:getOrderBuy1() == 1) or (value.award2 == 0 and _model:getOrderBuy2() == 1) then
+            num = value.id
+            break
+        end
+    end    
+    local scroll_view_size = self.item_panel:getContentSize()
+    local pos_per = 124 * (num - 1) * 100 / (num_tol * 124 - scroll_view_size.height)
+
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_list:scrollToPercentVertical(pos_per, 0.5, true)
+end
+function TreasureOrderWindow:setRewardPanel()
+	if self.reward_list == nil then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 5,
+            space_y = 4,
+            item_width = 650,
+            item_height = 124,
+            row = 0,
+            col = 1,
+            need_dynamic = true,
+            checkovercallback = handler(self, self.updateSlideShowByVertical)
+        }
+        self.reward_list = CommonScrollViewSingleLayout.new(self.item_panel, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+        self.reward_list:setSwallowTouches(true)
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+
+        --进度条相关
+        local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+        local setting = {
+            start_x = 10, -- 第一个单元的X起点
+            space_x = 0, -- x方向的间隔
+            start_y = 5, -- 第一个单元的Y起点
+            space_y = 4, -- y方向的间隔
+            item_width = 55, -- 单元的尺寸width
+            item_height = 124, -- 单元的尺寸height
+            row = 0, -- 行数，作用于水平滚动类型
+            col = 1, -- 列数，作用于垂直滚动类型
+            need_dynamic = true
+        }
+        self.reward_num_item = CommonScrollViewSingleLayout.new(self.item_panel, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size2, setting)
+        self.reward_num_item:setClickEnabled(false)
+        self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    end
+    self.reward_list:reloadData(nil,nil,true)
+    self.reward_num_item:reloadData(nil,nil,true)
+end
+
+-- 滑动的时候处理显示
+function TreasureOrderWindow:updateSlideShowByVertical()
+    local container_y = self.reward_list:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+-- 奖励列表
+function TreasureOrderWindow:createTaskCell()
+    local cell = TreasureOrderItem.new()
+    return cell
+end
+
+function TreasureOrderWindow:numberOfTaskCells()
+    if not self.reward_cfg then
+        return 0
+    end
+    return #self.reward_cfg
+end
+
+function TreasureOrderWindow:updateTaskCellByIndex(cell, index)
+    if not self.reward_cfg then
+        return
+    end
+    local cell_data = self.reward_cfg[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+
+-- 进度条
+-- 功勋数数列表
+function TreasureOrderWindow:createTaskCell2()
+    local cell = TreasureOrderLineItem.new()
+    return cell
+end
+
+function TreasureOrderWindow:numberOfTaskCells2()
+    if not self.reward_cfg then
+        return 0
+    end
+    return #self.reward_cfg
+end
+
+function TreasureOrderWindow:updateTaskCellByIndex2(cell, index)
+    if not self.reward_cfg then
+        return
+    end
+    local cell_data = self.reward_cfg[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+function TreasureOrderWindow:openRootWnd(setting)
+    self.setting = setting
+	_controller:sender22324()
+    MonopolyController:getInstance():sender16810(ActionStorageBool2.Treasure)
+    MonopolyController:getInstance():sender16811(ActionStorageBool2.TreasureWar)
+end
+
+function TreasureOrderWindow:close_callback(  )
+    if self.setting and self.setting.enter and self.setting.enter == 1 then
+    else
+        TreasureController:getInstance():openTreasureMainWindow(true)
+    end
+    if self.treasure_order_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_order_event)
+        self.treasure_order_event = nil
+    end
+    if self.tips_event then
+        GlobalEvent:getInstance():UnBind(self.tips_event)
+        self.tips_event = nil
+    end
+	if self.treasure_order_con_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_order_con_event)
+        self.treasure_order_con_event = nil
+    end
+	if self.treasure_order_receive_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_order_receive_event)
+        self.treasure_order_receive_event = nil
+    end
+    if self.play_effect then
+        self.play_effect:clearTracks()
+        self.play_effect:removeFromParent()
+        self.play_effect = nil
+    end
+	_controller:openTreasureOrderWindow(false)
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      传奇之征奖励子集
+-- Create: 2018-06-28
+-- --------------------------------------------------------------------
+TreasureOrderItem = class("TreasureOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function TreasureOrderItem:ctor()
+    self:configUI()
+    self:register_event()
+    self.item_list = {}
+    self.item_list2 = {}
+end
+
+function TreasureOrderItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("treasure/treasure_order_item"))
+    self:addChild(self.root_wnd)
+    self:setAnchorPoint(0, 0)
+    self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(650,124))
+	self:setTouchEnabled(true)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.Image_19 = self.main_container:getChildByName("Image_19")
+    self.free_layer = self.main_container:getChildByName("free_layer")
+    self.free_layer:setScrollBarEnabled(false)
+	self.title = self.main_container:getChildByName("title")
+    self.goods_con = self.main_container:getChildByName("goods_con")
+	self.goods_con:setScrollBarEnabled(false)
+    self.buy_img = self.main_container:getChildByName("buy_img")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.btn_get_txt = self.btn_get:getChildByName("Text_5")
+    self.btn_get_txt:setString(TI18N("语言_c_109"))
+    self.btn_go = self.main_container:getChildByName("btn_go")
+    self.btn_go_txt = self.btn_go:getChildByName("Text_5")
+    self.btn_go_txt:setString(TI18N("语言_c_108"))
+    self.btn_con = self.main_container:getChildByName("btn_con")
+    self.btn_con_txt = self.btn_con:getChildByName("Text_5")
+    self.btn_con_txt:setString(TI18N("语言_c_2684"))
+end
+
+function TreasureOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        if _model:getOrderBuy1() ~= 0 or _model:getOrderBuy2() ~= 0 then
+            _controller:sender22325()
+        else
+            message(TI18N("语言_c_6173"))
+            GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Order_Receive_Event)
+        end
+	end, true)
+	registerButtonEventListener(self.btn_go, function()
+		_controller:openTreasureOrderWindow(false)
+		_controller:openTreasureMainWindow(false)
+        MainuiController:getInstance():changeMainUIStatus(MainuiConst.btn_index.main_scene)
+        TaskController:getInstance():openTaskMainWindow(true, TaskConst.type.quest)
+	end, true)
+	registerButtonEventListener(self.btn_con, function()
+        GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Order_Con_Event)
+	end, true)
+end
+
+function TreasureOrderItem:setData(data,index)
+    self.rewardData = data
+	self.index = index
+	self.need_num = self.rewardData.need_num
+    self.title:setString(string.format(TI18N("语言_c_6174"),self.need_num,_model:getOrderScore()))
+	local list = {}
+    for index, value in ipairs(self.rewardData.reward1) do
+        table.insert(list,index,value)
+    end
+    for key, value in pairs(self.item_list) do
+        value:DeleteMe()
+        value = nil
+    end
+    self.item_list = {}
+	local scale_num = 0.7
+	for key, value in pairs(list) do
+        if Config.ItemData.data_get_data(value[1]).sub_type == BackPackConst.Bag_Code.TREASURE then
+            local item = TreasureItem.new(true,scale_num)
+            item:setData(value)
+            table.insert(self.item_list,item)
+            self.free_layer:addChild(item)
+        else
+            local item = BackPackItem.new(true,true,false,scale_num)
+            item:setBaseData(value[1],value[2])
+            table.insert(self.item_list,item)
+            self.free_layer:addChild(item)
+            item:setDefaultTip(true,false)
+        end
+    end
+	if tableLen(self.item_list) == 1 then
+		self.free_layer:setTouchEnabled(false)
+	else
+		self.free_layer:setTouchEnabled(true)
+	end
+    local list_num = 5
+    local _w = self.free_layer:getContentSize().width
+    local row_y = math.ceil(tableLen(self.item_list)/list_num)
+    local _h = math.max(self.free_layer:getContentSize().height,row_y * TreasureItem.Width * scale_num)
+    self.free_layer:setInnerContainerSize(cc.size(_w,_h))
+    for key, value in pairs(self.item_list) do
+        local _x = (119 * scale_num + 10) * key -(119 * scale_num*0.5)
+        local _y = self.free_layer:getContentSize().height*0.5
+        value:setPosition(cc.p(_x,_y))
+        if value.setReceiveIcon then
+            value:setReceiveIcon(_model:getOrderAwardsReceive(self.index,1))
+        end
+    end
+
+	local scale_num2 = 0.7
+	local list2 = {}
+    for index, value in ipairs(self.rewardData.reward2) do
+        table.insert(list2,index,value)
+    end
+    for key, value in pairs(self.item_list2) do
+        value:DeleteMe()
+        value = nil
+    end
+    self.item_list2 = {}
+	for key, value in pairs(list2) do
+        if Config.ItemData.data_get_data(value[1]).sub_type == BackPackConst.Bag_Code.TREASURE then
+            local item = TreasureItem.new(true,scale_num2)
+            item:setData(value)
+            table.insert(self.item_list2,item)
+            self.goods_con:addChild(item)
+        else
+            local item = BackPackItem.new(true,true,false,scale_num2)
+            item:setBaseData(value[1],value[2])
+            table.insert(self.item_list2,item)
+            self.goods_con:addChild(item)
+            item:setDefaultTip(true,false)
+        end
+    end
+	if tableLen(self.item_list2) <= 2 then
+		self.goods_con:setTouchEnabled(false)
+	else
+		self.goods_con:setTouchEnabled(true)
+	end
+	local list_num = 5
+    local _w = math.max(self.goods_con:getContentSize().width,tableLen(self.item_list2) * 129 * scale_num2)
+    local _h = self.goods_con:getContentSize().height
+    self.goods_con:setInnerContainerSize(cc.size(_w,_h))
+    for key, value in pairs(self.item_list2) do
+        local _x = (119 * scale_num2 + 10) * key -(119 * scale_num2*0.5)
+        local _y = self.goods_con:getContentSize().height*0.5
+        value:setPosition(cc.p(_x,_y))
+        value:setReceiveIcon(_model:getOrderAwardsReceive(self.index,2))
+    end
+
+	self:setItemLock()
+	self:setStatus()
+end
+function TreasureOrderItem:setItemLock()
+	local lock_1 = _model:getOrderBuy1()
+	for key, value in pairs(self.item_list) do
+		value:showOrderWarLock(lock_1 == 0,cc.p(60,60))
+	end
+	local lock_2 = _model:getOrderBuy2()
+	for key, value in pairs(self.item_list2) do
+		value:showOrderWarLock(lock_2 == 0,cc.p(60,60))
+	end
+end
+function TreasureOrderItem:setStatus()
+	self.score = _model:getOrderScore()
+	self.btn_go:setVisible(false)
+	self.btn_get:setVisible(false)
+	self.buy_img:setVisible(false)
+	self.btn_con:setVisible(false)
+	if self.score >= self.need_num then --积分已满足
+		self.locl_status = _model:getOrderStaForId(self.index)
+		if self.locl_status == 0 then --未领取
+			self.btn_get:setVisible(true)
+		elseif self.locl_status == 1 then --有未领取的
+			if _model:getOrderBuy2() == 1 then
+				self.btn_get:setVisible(true)
+			else
+				self.btn_con:setVisible(true)
+			end
+		elseif self.locl_status == 2 then --已领取第二个
+			if _model:getOrderBuy1() == 1 then
+				self.btn_get:setVisible(true)
+			else
+				self.btn_con:setVisible(true)		
+			end
+		elseif self.locl_status == 3 then
+			self.buy_img:setVisible(true)
+		end
+	else--积分不满足
+		self.btn_go:setVisible(true)
+	end
+end
+function TreasureOrderItem:DeleteMe()
+end
+
+
+------------------------------------------
+-- 功勋子项
+TreasureOrderLineItem = class("TreasureOrderLineItem", function()
+    return ccui.Widget:create()
+end)
+
+function TreasureOrderLineItem:ctor()
+    self.size = cc.size(55, 124)
+    self:configUI()
+    self:register_event()
+end
+
+function TreasureOrderLineItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    self.select_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_2"),
+        self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+	self.select_bg:setScale(0.7)
+    self.select_img = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_1"),
+        self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img:setVisible(false)
+	self.select_img:setScale(0.7)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+        self.size.width / 2, 60, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+	self.num_bg:setScale(0.7)
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+    60, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function TreasureOrderLineItem:register_event()
+end
+
+function TreasureOrderLineItem:setData(data,index)
+    if not data then
+        return
+    end
+    self.data = data
+	self.order_id = _model:getOrderId()
+    self.cfg = Config.NinjaTreasureDrawData.data_get_task_reward[self.order_id]
+	self.num_txt:setString(tostring(self.cfg[index].need_num))
+    local score = _model:getOrderScore()
+    if tonumber(score) >= tonumber(self.cfg[index].need_num) then
+        self.select_img:setVisible(true)
+    else
+        self.select_img:setVisible(false)
+    end
+    -- 进度条相关
+    local next_id = index + 1
+    if self.cfg[next_id] then
+        if self.comp_bar == nil then
+            local size = cc.size(75, 27)
+            local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+            local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.root_wnd:addChild(bar_layout, 1)
+                bar_layout:setPosition(cc.p(26, 65))
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =
+                createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 5, 1)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+            self.comp_bar_bg:setContentSize(cc.size(120, 27))
+            self.comp_bar:setContentSize(cc.size(105, 15))
+        end
+        if self.bar_layout then
+            self.bar_layout:setVisible(true)
+        end
+        if score >= self.cfg[index].need_num and score < self.cfg[next_id].need_num then
+            self.comp_bar:setPercent((score - self.cfg[index].need_num)/ (self.cfg[next_id].need_num - self.cfg[index].need_num) * 100)
+        elseif score >= self.cfg[next_id].need_num then
+            self.comp_bar:setPercent(100)
+        else
+            self.comp_bar:setPercent(0)
+        end
+    else
+        if self.bar_layout then
+            self.bar_layout:setVisible(false)
+        end
+    end
+    self.select_bg:setLocalZOrder(9)
+    self.select_img:setLocalZOrder(10)
+    self.num_bg:setLocalZOrder(11)
+    self.num_txt:setLocalZOrder(12)
+    self:setLocalZOrder(score)
+end
+
+function TreasureOrderLineItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

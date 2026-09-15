@@ -1,0 +1,1300 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      魔导器研发
+-- <br/> 2019年8月1日
+-- --------------------------------------------------------------------
+TreasureResearchWindow = class("TreasureResearchWindow", function()
+    return ccui.Widget:create()
+end)
+
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+
+function TreasureResearchWindow:ctor()  
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+    controller:sender22336()
+    controller:sender22344()
+    
+    ActionController:getInstance():sender16808({ActionStorageBool.TreasureResearchFinish,ActionStorageBool.TreasureResearchInto})
+end
+
+function TreasureResearchWindow:config()
+    self.treasure_list = {}
+    self.rank_list = {}
+    self.filt_btn_list = {}
+    self.data_base_info = Config.NinjaTreasureResearchData.data_base_info
+    self.research_cfg = model:getResearchCfg() --筛选完的配置表
+    self.project_num = 1 --项目期数
+    self.click_num = 1 --第几个魔导器
+    self.click_rank_index = 1 --第几个任务
+    self.constitute_id = 0 --构成的任务id
+    self.treasure_pos = {
+        [1] = {[1] = cc.p(360,87),},
+        [2] = {[1] = cc.p(216,87),[2] = cc.p(504,87),},
+        [3] = {[1] = cc.p(122,87),[2] = cc.p(360,87),[3] = cc.p(597,87),},
+    }
+    self.submit_treasure_list = {}  --提交任务是魔导器碎片的列表
+    self.rank_posx = 0
+end
+
+function TreasureResearchWindow:layoutUI()
+    local csbPath = PathTool.getTargetCSB("treasure/treasure_research_window")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+
+    self.treasure_panel = self.main_container:getChildByName("treasure_panel")
+    self.treasure_bg = self.treasure_panel:getChildByName("treasure_bg")
+    self.treasure_spine = createEffectSpine("E24321",cc.p(341,537),cc.p(0.5,0.5),true,PlayerAction.action)
+    self.treasure_bg:addChild(self.treasure_spine)
+    self.treasure_img = self.treasure_panel:getChildByName("treasure_img")
+    self.treasure_spine_1 = createEffectSpine("E24322",cc.p(100,100),cc.p(0.5,0.5),true,PlayerAction.action)
+    self.treasure_img:addChild(self.treasure_spine_1,9)
+    self.reward_btn = self.treasure_panel:getChildByName("reward_btn")
+    self.reward_txt = self.treasure_panel:getChildByName("reward_txt")
+    self.reward_txt:setString(TI18N("语言_c_6559"))
+    setTextMaxWidth(self.reward_txt,100,-10)
+    self.right_btn = self.treasure_panel:getChildByName("right_btn")
+    self.left_btn = self.treasure_panel:getChildByName("left_btn")
+    self.treasure_name = self.treasure_panel:getChildByName("name")
+    self.star_node = self.treasure_panel:getChildByName("star_node")
+    self.treasure_tips = self.treasure_panel:getChildByName("treasure_tips")
+    self.constitute_bg = self.treasure_panel:getChildByName("constitute_bg")
+    self.constitute_tip = self.constitute_bg:getChildByName("constitute_tip")
+    self.constitute_tip:setChangeScaleOffWidth(-1000)
+    setTextMaxWidth(self.constitute_tip,150,-10)
+    self.constitute_bg:setVisible(false)
+    
+    self.rank_panel = self.main_container:getChildByName("rank_panel")
+    self.name_bg = self.rank_panel:getChildByName("name_bg")
+    self.name_txt = self.name_bg:getChildByName("name")
+    self.constitute = self.rank_panel:getChildByName("constitute")
+    self.constitute:setVisible(false)
+    self.rank_scroll = self.constitute:getChildByName("rank_scroll")
+    self.rank_scroll:setScrollBarEnabled(false)
+    self.rank_container = self.rank_scroll:getInnerContainer()
+    self.rank_click = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_17"), 73,111,self.rank_container,cc.p(0.5,0.5))
+    self.rank_click:setZOrder(99)
+    self.time_txt = createRichLabel(20,cc.c3b(0xfb,0xf4,0xe4),cc.p(0.5,0.5),cc.p(182,665),nil,nil,310)
+    self.constitute:addChild(self.time_txt)---解锁倒计时
+    self.rank_tip_bg = self.constitute:getChildByName("rank_tip_bg")
+    self.require_bg = self.constitute:getChildByName("require_bg")
+    self.finish_tip = self.require_bg:getChildByName("finish_tip")
+    self.rank_txt = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(0.5,0.5),cc.p(180,337),nil,nil,310)
+    self.constitute:addChild(self.rank_txt)
+    self.rank_schedule_txt = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(1,0.5),cc.p(323,265),nil,nil,310)
+    self.constitute:addChild(self.rank_schedule_txt)
+    self.constitute_bar = self.constitute:getChildByName("constitute_bar")
+    self.constitute_bar:setScale9Enabled(true)
+    self.submit_btn = self.constitute:getChildByName("submit_btn")
+    self.submit_txt = self.submit_btn:getChildByName("submit_txt")
+    self.submit_txt:setString(TI18N("语言_c_279"))
+
+    self.research = self.rank_panel:getChildByName("research")
+    -- self.research:setVisible(false)
+    self.research_img = self.research:getChildByName("research_img")
+    self.research_txt = self.research_img:getChildByName("research_txt")
+    self.research_txt:setString(TI18N("语言_c_6344"))
+    self.state_bg = self.research:getChildByName("state_bg")
+    self.state_txt = self.state_bg:getChildByName("state_txt")
+    self.state_txt:setString(TI18N("语言_c_6345"))
+    self.state_tip = self.research:getChildByName("state_tip")
+    self.state_tip:setString(TI18N("语言_c_6346"))
+    self.get_bg = self.research:getChildByName("get_bg")
+    self.get_txt = self.get_bg:getChildByName("get_txt")
+    self.get_txt:setString(TI18N("语言_c_6347"))
+    self.go_txt = createRichLabel(18,cc.c3b(0x0e,0xa8,0x0e),cc.p(1,0.5),cc.p(324,14))
+    self.get_bg:addChild(self.go_txt)
+    self.go_txt:setString(TI18N("语言_c_6348"))
+    local function clickLinkCallBack( _type, value )
+        if _type == "href" then
+            self:clickGoTxt()
+        end
+    end
+    self.go_txt:addTouchLinkListener(clickLinkCallBack,{"href"})
+    self.get_tip = self.research:getChildByName("get_tip")
+    self.schedule_bg = self.research:getChildByName("schedule_bg")
+    self.schedule_txt = self.schedule_bg:getChildByName("schedule_txt")
+    self.schedule_txt:setString(TI18N("语言_c_6349"))
+    self.schedule_num = self.schedule_bg:getChildByName("schedule_num")
+    self.research_bar = self.schedule_bg:getChildByName("research_bar")
+    self.research_bar:setScale9Enabled(true)
+    self.remain_bg = self.research:getChildByName("remain_bg")
+    self.remain_txt = self.remain_bg:getChildByName("remain_txt")
+    self.remain_txt:setString(TI18N("语言_c_6350"))
+    local _w = math.max(self.remain_txt:getContentSize().width+40,self.remain_bg:getContentSize().width)
+    self.remain_bg:setContentSize(cc.size(_w,self.remain_bg:getContentSize().height))
+    self.item_panel = self.research:getChildByName("item_panel")
+    self.item_panel:setScrollBarEnabled(false)
+    self.flag_bg = self.rank_panel:getChildByName("flag_bg")
+    self.flag_txt = self.flag_bg:getChildByName("flag_txt")
+
+    self.project_panel = self.main_container:getChildByName("project_panel")
+    self.project_title_bg = self.project_panel:getChildByName("project_title_bg")
+    self.project_title_txt = self.project_title_bg:getChildByName("project_title_txt")
+    self.project_btn = self.project_panel:getChildByName("project_btn")
+    self.click_img = self.project_panel:getChildByName("click_img")
+    for i = 1, 3 do
+        local item = self.project_panel:getChildByName("treasure_"..i)
+        item.img = item:getChildByName("img")
+        item.name = item:getChildByName("name")
+        setTextMaxWidth(item.name,200,-10)
+        item.stage_bg = item:getChildByName("stage_bg")
+        item.stage_txt = item.stage_bg:getChildByName("stage_txt")
+        item.stage_img = item:getChildByName("stage_img")
+        item.spine = createEffectSpine("E24320",cc.p(23,23),cc.p(0.5,0.5),true,PlayerAction.action)
+        item.stage_img:addChild(item.spine)
+        self.treasure_list[i] = item
+    end
+
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self:sendPro()
+end
+
+function TreasureResearchWindow:sendPro()
+    self.project_num = model:getResearchProjectNum()
+    self.click_num = model:getResearchClickNum()
+    if self.project_num == 0 or self.click_num == 0 or not self.project_num or not self.click_num then
+        for key, value in pairs(self.research_cfg) do
+            table.sort(value,function(a,b) return a.id < b.id end)
+            for k, v in pairs(value) do
+                self.project_num = v.round
+                self.click_num = v.id
+                self:setData()
+                return
+            end
+        end
+    end
+    -- if model:getResearchFirstRedForType(self.project_num) then
+        ActionController:getInstance():sender16809(2000+self.project_num,1,"")
+    -- end
+    self:setData()
+end
+
+--事件
+function TreasureResearchWindow:registerEvents()
+    registerButtonEventListener(self.btn_rule, handler(self, self._onClickBtnRule) ,false, 2)
+    registerButtonEventListener(self.research_img, handler(self, self._onClickImgResearch) ,false, 2)
+    registerButtonEventListener(self.treasure_tips, handler(self, self._onClickTreasureTips) ,false, 2)
+    registerButtonEventListener(self.project_btn, handler(self, self._onClickBtnProject) ,false, 2)
+    registerButtonEventListener(self.submit_btn, handler(self, self._onClickBtnSubmit) ,false, 2)
+    
+    self.right_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local num = self.click_num
+            local len = tableLen(self.research_cfg[self.project_num]) or 0
+            num = num + 1
+            if num > len then
+                num = 1
+            end
+            self:_onClickBtnTreasure(num)
+        end
+    end)
+    self.reward_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local setting = {}
+            setting.project_num = self.project_num
+            setting.click_num = self.click_num
+            controller:openTreasureRewardWindow(true,setting)
+        end
+    end)
+    self.left_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local num = self.click_num
+            local len = tableLen(self.research_cfg[self.project_num]) or 0
+            num = num - 1
+            if num < 1 then
+                num = len
+            end
+            self:_onClickBtnTreasure(num)
+        end
+    end)
+    self.treasure_img:addTouchEventListener(function(sender, event_type)
+        self:updateTreasure(sender, event_type)
+    end)
+    self.constitute_bg:addTouchEventListener(function(sender, event_type)
+        self:updateTreasure(sender, event_type)
+    end)
+    for i = 1, 3 do
+        if self.treasure_list[i] then
+            self.treasure_list[i]:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    self:_onClickBtnTreasure(i)
+                end
+            end)
+        end
+    end
+    if not self.treasure_submit_cho_data then
+        self.treasure_submit_cho_data = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Submit_Cho_Event, function (data)
+            local cfg = Config.NinjaTreasureResearchData.data_get[self.constitute_id]
+            self.submit_treasure_list = deepCopy(data.list)
+            local num = 0
+            for key, value in pairs(self.submit_treasure_list) do
+                num = num + value.item_num
+            end
+            local max_num = cfg.progress[1].param[1][1]
+		    self.trea_num:setString(string.format("%s/%s",num,max_num))
+            if num >= max_num then
+                self.trea_num:setTextColor(cc.c3b(0xff,0xff,0xff))
+            else
+                self.trea_num:setTextColor(cc.c3b(0xff,0x00,0x00))
+            end
+        end)
+	end
+
+    if not self.research_data_event then
+        self.research_data_event = GlobalEvent:getInstance():Bind(TreasureEvent.Research_Data_Event, function (round,pos)
+            if round and pos then
+                if round == self.project_num and pos == self.click_num then
+                    self:setData(true)
+                    if self.constitute_id ~= 0 then
+                        self:clickRankItem(self.click_rank_index,self.constitute_id)
+                    end
+                    return
+                end
+            end
+            self:setData()
+        end)
+	end
+    if not self.research_rank_data_event then
+        self.research_rank_data_event = GlobalEvent:getInstance():Bind(TreasureEvent.Research_Rank_Data_Event, function (round,pos)
+            local status = model:ResearchSta(self.project_num,self.click_num)
+            if status == 2 then
+                self:setResearchPanel()
+            else
+                self:setConstitutePanel(is_move)
+            end
+            -- self:setResearchPanel()
+            self:setProjectPanel()
+        end)
+	end
+    if not self.treasure_act then
+        self.treasure_act = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Act_Event, function ()
+            self:setConstitutePanel(true)
+        end)
+    end
+    -- 道具数量更新
+    if not self.add_goods then
+        self.add_goods = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS,function(bag_code, data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.delete_goods then
+        self.delete_goods = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS,function(bag_code, data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.modify_goods_num then
+        self.modify_goods_num = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM,function(bag_code, data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+
+    if not self.research_first_finish_event then
+        self.research_first_finish_event = GlobalEvent:getInstance():Bind(TreasureEvent.Research_First_Finish_Event, function ()
+            if model:getFirstFinish() then
+                self:setFingerGuide(self.constitute_bg)
+            else
+                self:setFingerGuide()
+            end
+        end)
+	end
+    if not self.research_first_into_event then
+        self.research_first_into_event = GlobalEvent:getInstance():Bind(TreasureEvent.Research_First_Into_Event, function ()
+            if model:getFirstFinish() then
+                self:setFingerGuide2(self.research_img)
+            else
+                self:setFingerGuide2()
+            end
+        end)
+	end
+    if not self.research_first_red_event then
+        self.research_first_red_event = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_First_Red_Event, function ()
+            self:updateResearchOnlyRed()
+        end)
+	end
+end
+function TreasureResearchWindow:updateTreasure(sender, event_type)
+    if event_type == ccui.TouchEventType.began then
+        self.touch_began = sender:getTouchBeganPosition()
+        self.can_touch = true
+    elseif event_type == ccui.TouchEventType.moved then
+        local touch_began = self.touch_began
+        local touch_move = sender:getTouchMovePosition()
+        if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 20 or math.abs(touch_move.y - touch_began.y) > 20) then 
+            self.can_touch = false
+        end 
+    elseif event_type == ccui.TouchEventType.ended then
+        if self.can_touch then
+            playTabButtonSound()
+            self:_onClickImgConstitute()
+        else
+            local touch_began = self.touch_began
+            local touch_move = sender:getTouchMovePosition()
+            if touch_began and touch_move then 
+                local num = self.click_num
+                local len = tableLen(self.research_cfg[self.project_num]) or 0
+                if touch_move.x > touch_began.x then
+                    num = num + 1
+                    if num > len then
+                        num = 1
+                    end
+                else
+                    num = num - 1
+                    if num < 1 then
+                        num = len
+                    end
+                end
+                self:_onClickBtnTreasure(num)
+            end
+        end
+    elseif event_type == ccui.TouchEventType.canceled then
+        if self.can_touch then
+            playTabButtonSound()
+            self:_onClickImgConstitute()
+        else
+            local touch_began = self.touch_began
+            local touch_move = sender:getTouchMovePosition()
+            if touch_began and touch_move then 
+                local num = self.click_num
+                local len = tableLen(self.research_cfg[self.project_num]) or 0
+                if touch_move.x > touch_began.x then
+                    num = num + 1
+                    if num > len then
+                        num = 1
+                    end
+                else
+                    num = num - 1
+                    if num < 1 then
+                        num = len
+                    end
+                end
+                self:_onClickBtnTreasure(num)
+            end
+        end
+    end
+end
+function TreasureResearchWindow:refreshExchangeItemNum(bag_code,data_list)
+    local config = deepCopy(self.research_cfg[self.project_num][self.click_num])
+    for k, v in pairs(config.task_list) do
+        local cfg = Config.NinjaTreasureResearchData.data_get[v]
+        if cfg.progress[1].cli_label == "evt_use_item" then
+            for i,v in pairs(data_list) do
+                if v.base_id == cfg.progress[1].param[1][1] then
+                    self:setConstitutePanel(false)
+                end
+            end
+        elseif cfg.progress[1].cli_label == "evt_give_annals" then
+            for i,v in pairs(data_list) do
+                if v.sub_type == BackPackConst.Bag_Code.TREASURE and v.quality == cfg.progress[1].param[1][2] then
+                    self:setConstitutePanel(false)
+                end
+            end
+        end
+    end
+end
+function TreasureResearchWindow:_onClickBtnTreasure(index)
+    if self.click_num == index then return end
+    self.click_num = index
+    self.constitute_id = 0
+    self.click_rank_index = 1
+    self:setData(false)
+end
+
+--提交按钮点击事件
+function TreasureResearchWindow:_onClickBtnSubmit()
+    local status = false
+    local cfg = deepCopy(Config.NinjaTreasureResearchData.data_get[self.constitute_id])
+    local open_time = model:ResearchTimeNum(self.project_num,self.click_num)
+    if cfg and open_time ~= 0 and GameNet:getInstance():getTime() - open_time >= cfg.open_time then
+        status = true
+    end  
+    if not status then
+        message(TI18N("语言_c_1586"))
+        return
+    end
+    local data = model:getConstituteRankList(self.project_num,self.click_num,self.constitute_id)
+    if data then
+        local list = data.quest_state[1]
+        if list.num >= list.need_num then
+            controller:sender22340(self.project_num,self.click_num,self.constitute_id)
+            return
+        end
+    end
+    local cfg = Config.NinjaTreasureResearchData.data_get[self.constitute_id]
+    if cfg.progress[1].cli_label == "evt_use_item" then
+        local need_id = cfg.progress[1].param[1][1]
+        local need_num = cfg.progress[1].param[1][2]
+        local have_num = BackpackController:getInstance():getModel():getItemNumByBid(need_id)
+        if have_num >= need_num then
+            local cfg = Config.ItemData.data_get_data(need_id)
+            local str = string.format(TI18N("语言_c_6397"),cfg.name,need_num)
+            CommonAlert.show( str, TI18N("语言_c_63"), function()
+                controller:sender22343(self.project_num,self.click_num,self.constitute_id,{})
+            end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_154"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+        else
+            message(TI18N("语言_c_6351"))
+        end
+        return
+    elseif cfg.progress[1].cli_label == "evt_give_annals" then
+        local need_num = cfg.progress[1].param[1][1]
+        local num = 0
+        for key, value in pairs(self.submit_treasure_list) do
+            num = num + value.item_num
+        end
+        if num >= need_num then
+            local str = string.format(TI18N("语言_c_6396"),BackPackConst.quality_name[cfg.progress[1].param[1][2]],need_num)
+            CommonAlert.show( str, TI18N("语言_c_63"), function()
+                controller:sender22343(self.project_num,self.click_num,self.constitute_id,self.submit_treasure_list)
+            end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_154"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+        else
+            message(TI18N("语言_c_6351"))
+        end
+        return
+    end
+    message(TI18N("语言_c_6343"))
+end
+
+--开始构成完成构成
+function TreasureResearchWindow:_onClickImgConstitute()
+    if not model:ResearchStaData(self.project_num,self.click_num) then
+        local cfg = deepCopy(Config.NinjaTreasureResearchData.data_base_info[self.project_num][self.click_num])
+        local status = false
+        local limit = cfg.open_limit[1][1]
+        local need_num = cfg.open_limit[1][2]
+        if limit == "tree_lev" then
+            local num = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+            if num >= need_num then
+                status = true
+            end
+        end
+        if status then
+            self:send22339(self.project_num,self.click_num)
+        else
+            message(string.format(cfg.open_desc,need_num))
+        end
+    else
+        if model:ResearchStaData(self.project_num,self.click_num).pos_state == 1 then
+            if model:getFirstFinish() then
+                ActionController:getInstance():sender16809(ActionStorageBool.TreasureResearchFinish,1,"")
+            end
+            controller:sender22341(self.project_num,self.click_num)
+        else
+            if self.project_num ~= model:getResearchProjectNum() or self.click_num ~= model:getResearchClickNum() then
+                self:send22339(self.project_num,self.click_num)
+            end
+        end
+    end
+end
+function TreasureResearchWindow:send22339(project_num,click_num)
+    if model:getResearchProjectNum() and model:getResearchClickNum() then
+        local num = model:ResearchSta(model:getResearchProjectNum(),model:getResearchClickNum())
+        if num ~= 2 then
+            local base_cfg = Config.NinjaTreasureData.data_base_info
+            local cfg = Config.NinjaTreasureResearchData.data_base_info
+            local id = cfg[model:getResearchProjectNum()] and cfg[model:getResearchProjectNum()][model:getResearchClickNum()] and cfg[model:getResearchProjectNum()][model:getResearchClickNum()].annals_id
+            local id2 = cfg[project_num] and cfg[project_num][click_num] and cfg[project_num][click_num].annals_id
+            if id then
+                local str = LangStringFormat(TI18N("语言_c_6438"),base_cfg[id].name,base_cfg[id2].name)
+                CommonAlert.show( str, TI18N("语言_c_63"), function()
+                    controller:sender22339(project_num,click_num)
+                end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+            else
+                controller:sender22339(project_num,click_num)
+            end
+            return
+        end
+    end
+    controller:sender22339(project_num,click_num)
+end
+function TreasureResearchWindow:_onClickBtnProject()
+    local config = deepCopy(Config.NinjaTreasureResearchData.data_constant.project_name.val)
+    if not config then return end
+
+    if not self.filt_layout then
+        self.filt_layout = ccui.Layout:create()
+        self.filt_layout:setTouchEnabled(true)
+        self.filt_layout:setContentSize(cc.size(720, 1280))
+        self.filt_layout:setAnchorPoint(0.5,0.5)
+        self.filt_layout:setPosition(360, 640)
+        self.main_container:addChild(self.filt_layout)
+
+        self.filt_layout:addTouchEventListener(function(sender, event)
+            if event == ccui.TouchEventType.began then
+                self:_onClickBtnProject()
+            end
+        end)
+
+        self.filt_bg = createImage(self.filt_layout, PathTool.getResFrame("arenapeakchampion", "arenapeakchampion_mian_14"), 0, 0, cc.p(0, 0), true, 1, true)
+        self.filt_bg:setTouchEnabled(true)
+        self.filt_bg:setAnchorPoint(cc.p(0, 0))
+        local world_pos = self.project_btn:convertToWorldSpace(cc.p(0, 0))
+        local node_pos = self.filt_layout:convertToNodeSpace(world_pos)
+        self.filt_bg:setPosition(cc.p(node_pos.x-160, node_pos.y+40))
+        self.filt_bg:setContentSize(cc.size(156,50))
+    end
+    local evt_list = {}
+    for key, value in pairs(self.research_cfg) do
+        for k, v in pairs(config) do
+            if key == v[1] then
+                table.insert(evt_list,v)
+            end
+        end
+    end
+    for k,btn in pairs(self.filt_btn_list) do
+        btn:setVisible(false)
+    end
+    local space_y = 0
+    local distance = 10
+    local btn_size = cc.size(156, 50)
+    local bg_size = cc.size(166, distance*2 + #evt_list*(btn_size.height+space_y)-space_y)
+    self.filt_bg:setContentSize(bg_size)
+    for i,v in ipairs(evt_list) do
+        local btn = self.filt_btn_list[i]
+        if btn == nil then
+            btn = createButton(self.filt_bg, "", 0, 0, btn_size, PathTool.getResFrame("common", "common_90058_1"), 22, Config.ColorData.data_color4[1])
+            btn:setAnchorPoint(cc.p(0.5, 1))
+            btn:addTouchEventListener(function( sender, event_type )
+                customClickAction_2(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    self:_onClickFiltItem(v[1])
+                end
+            end)
+            table.insert(self.filt_btn_list, btn)
+        end
+        btn:setSize(btn_size)
+        btn:setVisible(true)
+        local pos_y = (bg_size.height-distance) - (i-1)*(btn_size.height+space_y)
+        btn:setPosition(cc.p(bg_size.width/2, pos_y))
+        local btn_str = v[2]
+        btn:setBtnLabel(btn_str)
+        btn:enableOutline(Config.ColorData.data_color4[264], 2)
+        if v[1] == self.project_num then
+            btn:loadTextures(PathTool.getResFrame("common", "common_90058_1"))
+        else
+            btn:loadTextures(PathTool.getResFrame("arenapeakchampion", "arenapeakchampion_mian_16"))
+        end
+        addRedPointToNodeByStatus(btn:getButton(),model:getResearchOnlyRedForRound(v[1]) or model:getResearchFirstRedForType(v[1]),10,10)
+    end
+
+    self.filt_is_show = not self.filt_is_show
+    self.filt_layout:setVisible(self.filt_is_show)
+end
+
+function TreasureResearchWindow:_onClickFiltItem(index)
+    self.project_num = index
+    self.click_num = 1
+    self.constitute_id = 0
+    self:setData()
+    self:_onClickBtnProject()
+    -- if model:getResearchFirstRedForType(index) then
+        ActionController:getInstance():sender16809(2000+index,1,"")
+    -- end
+end
+
+function TreasureResearchWindow:_onClickImgResearch()
+    if model:getFirstInto() then
+        ActionController:getInstance():sender16809(ActionStorageBool.TreasureResearchInto,1,"")
+    end
+    controller:openTreasureRankWindow(true,self.project_num,self.click_num)
+end
+
+function TreasureResearchWindow:_onClickTreasureTips()
+    local cfg = deepCopy(Config.NinjaTreasureResearchData.data_base_info[self.project_num][self.click_num])
+    local vo = TreasureVo.New()
+    vo:updataData(cfg.annals_id)
+    controller:openTreasureTips(true, vo)
+end
+
+function TreasureResearchWindow:_onClickBtnRule()
+    if Config.NinjaTreasureResearchData.data_get_desc then
+        MainuiController:getInstance():openCommonExplainView(true, Config.NinjaTreasureResearchData.data_get_desc)
+    end
+end
+
+function TreasureResearchWindow:clickGoTxt()
+    local config = deepCopy(self.research_cfg[self.project_num][self.click_num])
+    local cfg = Config.SourceData.data_source_data[config.skip_id]
+    if cfg and cfg.evt_type and cfg.extend then
+		local evt_type = cfg.evt_type
+		local extend = cfg.extend
+        BaseView.closeAllView()
+        BackpackController:getInstance():gotoItemSources(evt_type, extend)
+	end
+end
+
+--设置项目期数文本
+function TreasureResearchWindow:setProjectTitleTxt(index)
+    local config = deepCopy(Config.NinjaTreasureResearchData.data_constant.project_name.val)
+    for key, value in pairs(config) do
+        if index == value[1] then
+            self.project_title_txt:setChangeScaleOffWidth(60)
+            self.project_title_txt:setString(value[2])
+        end
+    end 
+end
+
+function TreasureResearchWindow:setData(status)
+    local data = model:ResearchStaData(self.project_num,self.click_num)
+    self:setProjectTitleTxt(self.project_num)
+    if not next(self.research_cfg) then return end
+    self.cfg = self.research_cfg[self.project_num][self.click_num]
+    self:setProjectPanel()
+    self.click_img:setPositionX(self.treasure_list[self.click_num]:getPositionX())
+    self:setTreasurePanel()
+    if status == false then
+        self:RunRankPanel()
+    end
+    self:setRankScroll(status)
+    self:updateRewardRed()
+    self:updateResearchOnlyRed()
+end
+--设置魔导器显示面板
+function TreasureResearchWindow:setTreasurePanel()
+    local data = self.research_cfg[self.project_num][self.click_num]
+    local treasure_data = model:getTreasureForId(data.annals_id)
+    local star = 1
+    if treasure_data then
+        star = treasure_data.star
+    end
+    local cfg = deepCopy(Config.NinjaTreasureData.data_base_info[data.annals_id])
+    local star_cfg = Config.NinjaTreasureData.data_star_info[cfg.id]
+    if not self.treasure_icon then
+        self.treasure_icon = createSprite(string.format("resource/ninja_treasure/treasure_item/%s.png",star_cfg[star].icon),100,100,self.treasure_img,cc.p(0.5,0.5),LOADTEXT_TYPE)
+    else
+        loadSpriteTexture(self.treasure_icon, string.format("resource/ninja_treasure/treasure_item/%s.png",star_cfg[star].icon), LOADTEXT_TYPE)
+        self.treasure_icon:setPosition(cc.p(100,100))
+    end
+    self.treasure_icon:setScale(1.2)
+    setTextMaxWidth(self.treasure_name,200,-10)
+    self.treasure_name:setString(cfg.name)
+    self.star_setting = self:createStar(star,tableLen(star_cfg),self.star_node,self.star_setting)
+    --图标上下浮动
+    doStopAllActions(self.treasure_icon)
+    local act_1 = cc.MoveBy:create(1, cc.p(0, 8))
+    local act_2 = cc.MoveBy:create(1, cc.p(0, -8))
+    self.treasure_icon:runAction(cc.RepeatForever:create(cc.Sequence:create(act_1, act_2)))
+    self:setFingerGuide()
+    if self.project_num == model:getResearchProjectNum() and self.click_num == model:getResearchClickNum() then
+        if model:ResearchStaData(self.project_num,self.click_num).pos_state == 1 then
+            self.constitute_bg:setVisible(true)
+            self.constitute_tip:setString(TI18N("语言_c_6352"))
+            if model:getFirstFinish() then
+                self:setFingerGuide(self.constitute_bg)
+            else
+                self:setFingerGuide()
+            end
+        else
+            self.constitute_bg:setVisible(false)
+        end
+    elseif not model:ResearchStaData(self.project_num,self.click_num) or model:ResearchStaData(self.project_num,self.click_num).pos_state == 0 then
+        self.constitute_bg:setVisible(true)
+        self.constitute_tip:setString(TI18N("语言_c_6353"))
+    else
+        self.constitute_bg:setVisible(false)
+    end
+end
+--设置手指点击引导完成构成
+function TreasureResearchWindow:setFingerGuide(item)
+    if self.play_effect then
+        self.play_effect:clearTracks()
+        self.play_effect:removeFromParent()
+        self.play_effect = nil
+    end
+    if item then
+        self.play_effect = createEffectSpine("E55000", cc.p(item:getContentSize().width*0.5,item:getContentSize().height*0.5), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+        item:addChild(self.play_effect)
+    end
+end
+--设置手指点击引导实战投入
+function TreasureResearchWindow:setFingerGuide2(item)
+    if self.play_effect2 then
+        self.play_effect2:clearTracks()
+        self.play_effect2:removeFromParent()
+        self.play_effect2 = nil
+    end
+    if item then
+        self.play_effect2 = createEffectSpine("E55000", cc.p(item:getContentSize().width*0.5,item:getContentSize().height*0.5), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+        item:addChild(self.play_effect2)
+    end
+end
+--设置星星
+function TreasureResearchWindow:createStar(num ,max_num, star_con, star_setting)
+	local num = num or 0
+    local star_setting = star_setting or {}
+	if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+	for i,v in pairs(star_setting.star_list) do
+        v:setVisible(false)
+    end
+	local _cStar = function(star_count, max_count, star_list,moveW)
+        local width = 20
+        local x = - max_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,max_count do
+            if not star_list[i] then 
+				local res = PathTool.getResFrame("common","common_90074")
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,max_count-i,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+			if i > star_count then
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90093"), LOADTEXT_TYPE_PLIST)	
+			else
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90074"), LOADTEXT_TYPE_PLIST)
+			end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+	_cStar(num,max_num, star_setting.star_list)
+	return star_setting
+end
+--设置下方魔导器选择面板
+function TreasureResearchWindow:setProjectPanel()
+    local data = self.research_cfg[self.project_num]
+    local num = tableLen(data)
+    for i = 1, 3 do
+        if i > num then
+            self.treasure_list[i]:setVisible(false)
+        else
+            self.treasure_list[i]:setVisible(true)
+            local cfg = deepCopy(Config.NinjaTreasureData.data_base_info[data[i].annals_id])
+            local item = self.treasure_list[i]
+            item.name:setString(cfg.name)
+            local star_cfg = Config.NinjaTreasureData.data_star_info[cfg.id]
+            loadSpriteTexture(item.img, string.format("resource/ninja_treasure/treasure_item/%s.png",star_cfg[1].icon), LOADTEXT_TYPE)
+            self.treasure_list[i]:setPosition(self.treasure_pos[num][i])
+            if model:ResearchStaData(self.project_num,i) and model:ResearchSta(self.project_num,i) == 2 then
+                item.stage_bg:setVisible(false)
+                item.spine:setAnimation(0, PlayerAction.action_2, true)
+                if not item.research_num then
+                    item.research_num = CommonNum.new(20, item.stage_img, 99999, - 2, cc.p(0.5, 0.5), 4)
+                end
+                item.research_num:setVisible(true)
+                item.research_num:setPosition(cc.p(22,35))
+                local list = deepCopy(model:getResearchRankListForItem(self.project_num,i))
+                local num = 0
+                if list and next(list.quest_list) then
+                    for k, v in pairs(list.quest_list) do
+                        if v.state == 2 then
+                            num = num + 1
+                        end
+                    end
+                end
+                item.research_num:setNum(num)
+            else
+                if not model:ResearchStaData(self.project_num,i) then
+                    item.stage_bg:setVisible(true)
+                    item.stage_txt:setTextColor(cc.c3b(0xff,0x15,0x15))
+                    item.stage_txt:setString(TI18N("语言_c_6354"))
+                    item.spine:setAnimation(0, PlayerAction.action_3, true)
+                    if item.research_num then
+                        item.research_num:setVisible(false)
+                    end
+                else
+                    if self.project_num == model:getResearchProjectNum() and i == model:getResearchClickNum() then
+                        item.stage_bg:setVisible(true)
+                        item.stage_txt:setTextColor(cc.c3b(0x0e,0xa8,0x0e))
+                        item.stage_txt:setString(TI18N("语言_c_6355"))
+                        item.spine:setAnimation(0, PlayerAction.action_1, true)
+                        if item.research_num then
+                            item.research_num:setVisible(false)
+                        end
+                    else
+                        item.stage_bg:setVisible(true)
+                        item.stage_txt:setTextColor(cc.c3b(0xff,0x15,0x15))
+                        item.stage_txt:setString(TI18N("语言_c_6354"))
+                        item.spine:setAnimation(0, PlayerAction.action_3, true)
+                        if item.research_num then
+                            item.research_num:setVisible(false)
+                        end 
+                    end
+                end
+            end
+        end
+    end
+end
+
+--设置构成研发面板
+function TreasureResearchWindow:setRankScroll(is_move)
+    local status = model:ResearchSta(self.project_num,self.click_num)
+    if status == 2 then
+        self:setResearchPanel()
+    else
+        self:setConstitutePanel(is_move)
+    end
+end
+
+--设置研发面板
+function TreasureResearchWindow:setResearchPanel()
+    local status = model:getResearchRankRed()
+    addRedPointToNodeByStatus(self.research_img,status,-73,-4)
+    self.constitute:setVisible(false)
+    self.research:setVisible(true)
+    if model:getFirstInto() then
+        self:setFingerGuide2(self.research_img)
+    else
+        self:setFingerGuide2()
+    end
+    self.name_txt:setString(TI18N("语言_c_6341"))
+    self.flag_txt:setString(TI18N("语言_c_6357"))
+    local config = deepCopy(self.research_cfg[self.project_num][self.click_num])
+    if config.skip_id ~= 0 and config.add_desc ~= "" then
+        self.get_tip:setString(config.add_desc)
+        self.get_bg:setVisible(true)
+        self.schedule_bg:setPositionY(264)
+    else
+        self.get_tip:setString("")
+        self.get_bg:setVisible(false)
+        self.schedule_bg:setPositionY(301)
+    end
+    local list = deepCopy(model:getResearchRankListForItem(self.project_num,self.click_num))
+    local num = 0
+    local need_num = 0
+    if list and next(list.quest_list) then
+        for k, v in pairs(list.quest_list) do
+            need_num = need_num + 1
+            if v.state == 2 then
+                num = num + 1
+            end
+        end
+    else
+        need_num = tableLen(config.achievement_list)
+    end
+    local schedule = num/need_num * 100
+    self.research_bar:setPercent(schedule)
+    self.schedule_num:setString(string.format("(%s/%s)",num,need_num))
+    local list = model:getResearchCanGetItem(self.project_num,self.click_num)
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.item_list = nil
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 10
+    setting.max_count = 3
+    setting.is_center = true
+    self.item_list = commonShowSingleRowItemList(self.item_panel, self.item_list, list, setting)
+end
+
+
+--设置构成面板
+function TreasureResearchWindow:setConstitutePanel(is_move)
+    self.constitute:setVisible(true)
+    self.research:setVisible(false)
+    self.name_txt:setString(TI18N("语言_c_6358"))
+    self.rank_posx = self.rank_container:getPositionX()
+    local cfg = deepCopy(self.research_cfg[self.project_num][self.click_num])
+    for key, value in pairs(self.rank_list) do
+        if value and not tolua.isnull(value) and not tolua.isnull(self.rank_container) then
+            -- self.rank_container:removeChild(value)
+            value:removeFromParent()
+        end
+        value = nil
+    end
+    self.rank_list = {}
+    self.rank_scroll:setInnerContainerSize(cc.size(tableLen(cfg.task_list) * 101,self.rank_scroll:getContentSize().height))
+    for i = 1, tableLen(cfg.task_list) do
+        local item = self:setRankItem(i,cfg.task_list[i],cfg.task_name_list[i][1])
+        self.rank_container:addChild(item)
+        if self.project_num == model:getResearchProjectNum() and self.click_num == model:getResearchClickNum() then
+            local data = model:getConstituteRankList(self.project_num,self.click_num,cfg.task_list[i])
+            if data then
+                local status = data.point == 1 or data.state == 1 or(data.state ~= 2 and model:getResearchRankForItemRed(data.id))
+                addRedPointToNodeByStatus(item.bg,status,10,10)
+            end
+        end
+        self.rank_list[i] = item
+        item.bg:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playTabButtonSound()
+                self:clickRankItem(i,cfg.task_list[i])
+            end
+        end)
+        item:setPosition(cc.p(i*101 - 10,0))
+    end
+    local status = true
+    for i = 1, tableLen(self.rank_list) do
+        if self.rank_list[i].lock:isVisible() then
+            local act_1 = cc.FadeTo:create(1.0, 100)
+            local act_2 = cc.FadeTo:create(1.0, 255)
+            self.rank_list[i].fire_2:runAction(cc.RepeatForever:create(cc.Sequence:create(act_1, act_2)))
+            break
+        end
+    end
+    local _status = true
+    for i = 1, tableLen(self.rank_list) do
+        local data = model:getConstituteRankList(self.project_num,self.click_num,cfg.task_list[i])
+        if (data and data.state and data.state == 0) or (_status and i == tableLen(self.rank_list)) or not data then
+            doStopAllActions(self.rank_list[i].fire)
+            if _status then
+                _status = false
+                if not is_move then
+                    if i > 3 then
+                        self.rank_container:setPositionX(-(i-3)*101)
+                        self.rank_posx = -(i-3)*101
+                    end
+                else
+                    self.rank_container:setPositionX(self.rank_posx)
+                end
+                if self.constitute_id ~= 0 then
+                    if cfg.task_list[i] == self.constitute_id then
+                        self:clickRankItem(i,cfg.task_list[i])
+                    end
+                else
+                    self:clickRankItem(i,cfg.task_list[i])
+                end
+            end
+        end
+    end
+    for i = tableLen(self.rank_list), 1, -1 do
+        if not self.rank_list[i].lock:isVisible() or (status and i == 1) then
+            doStopAllActions(self.rank_list[i].fire)
+            if status then
+                status = false
+                local cfg = self.research_cfg[self.project_num][self.click_num]
+                doStopAllActions(self.time_txt)
+                if self.condition_txt then
+                    self.condition_txt:setVisible(false)
+                end
+                if self.project_num == model:getResearchProjectNum() and self.click_num == model:getResearchClickNum() then
+                    --正在构成中
+                    if cfg.task_name_list[i+1] then
+                        local str = string.format(TI18N("语言_c_6359"),cfg.task_name_list[i+1][1])
+                        local rank_cfg = Config.NinjaTreasureResearchData.data_get[cfg.task_list[i+1]]
+                        local open_time = model:ResearchTimeNum(self.project_num,self.click_num)
+                        local num = rank_cfg.open_time - GameNet:getInstance():getTime() + open_time
+                        commonCountDownTime(self.time_txt,num,{label_type = CommonAlert.type.rich,end_title = str,time_color = "#2ee82e"})
+                        self.time_txt:setVisible(true)
+                    else
+                        self.time_txt:setVisible(false)
+                    end
+                else
+                    self.time_txt:setVisible(false)
+                    if not self.condition_txt then
+                        self.condition_txt = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(0.5,0.5),cc.p(182,666),-4,nil,310)
+                        self.constitute:addChild(self.condition_txt)
+                    end
+                    self.condition_txt:setString("")
+                    self.condition_txt:setVisible(true)
+                    local cfg = deepCopy(Config.NinjaTreasureResearchData.data_base_info[self.project_num][self.click_num])
+                    local limit = cfg.open_limit[1][1]
+                    if limit == "tree_lev" then
+                        local need_num = cfg.open_limit[1][2]
+                        local num = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+                        if num >= need_num then
+                            self.condition_txt:setFontColor(cc.c3b(0x0e,0xa8,0x0e))
+                        else
+                            self.condition_txt:setFontColor(cc.c3b(0xff,0x15,0x15))
+                        end
+                        self.condition_txt:setString(string.format(cfg.open_desc,need_num))
+                    end
+                    -- self.rank_tip_bg:setVisible(false)
+                    local data = model:ResearchStaData(self.project_num,self.click_num)
+                    for j = 1, tableLen(cfg.task_list) do
+                        local rank_cfg = Config.NinjaTreasureResearchData.data_get[cfg.task_list[j]]
+                        if data then
+                            if rank_cfg.open_time >= data.use_time then
+                                self.time_txt:setVisible(true)
+                                local str = string.format(TI18N("语言_c_6360"),TimeTool.GetTimeForFunction(rank_cfg.open_time - data.use_time),cfg.task_name_list[j][1])
+                                self.time_txt:setString(str)
+                                self.condition_txt:setVisible(false)
+                                return
+                            end
+                        else
+                        end
+                    end
+                end
+            end
+        else
+            doStopAllActions(self.rank_list[i].fire)
+        end
+    end 
+    if not is_move then
+        for i = tableLen(self.rank_list), 1, -1 do
+            local data = model:getConstituteRankList(self.project_num,self.click_num,cfg.task_list[i])
+            if data and data.state and data.state == 1 then
+                if i > 3 then
+                    self.rank_container:setPositionX(-(i-3)*101)
+                    self.rank_posx = -(i-3)*101
+                    self:clickRankItem(i,cfg.task_list[i])
+                else
+                    self.rank_container:setPositionX(0)
+                end
+            end
+        end
+    end
+end
+--构成任务点击事件
+function TreasureResearchWindow:clickRankItem(index,id)
+    self.constitute_id = id
+    self.click_rank_index = index
+    local data = model:getConstituteRankList(self.project_num,self.click_num,id)
+    if data and data.point == 1 then
+        controller:sender22342(self.project_num,self.click_num,id)
+    end
+    if (data and data.state == 2) or self.project_num ~= model:getResearchProjectNum() or self.click_num ~= model:getResearchClickNum() then
+        setChildUnEnabled(true,self.submit_btn)
+        self.submit_btn:setTouchEnabled(false)
+    else
+        setChildUnEnabled(false,self.submit_btn)
+        self.submit_btn:setTouchEnabled(true)
+    end
+    local _x = self.rank_list[index]:getPositionX() - self.rank_list[index]:getContentSize().width + self.rank_list[index].bg:getPositionX()
+    local _y = self.rank_list[index]:getPositionY() + self.rank_list[index].bg:getPositionY()
+    self.rank_click:setPosition(cc.p(_x,_y))
+    local cfg = Config.NinjaTreasureResearchData.data_get[id]
+    if not id then return end
+    self.flag_txt:setString(cfg.name)
+    if cfg.pre_txt ~= "" then
+        self.require_bg:setVisible(true)
+        self.finish_tip:setString(cfg.pre_txt)
+        self.rank_txt:setPositionY(337)
+    else
+        self.require_bg:setVisible(false)
+        self.rank_txt:setPositionY(367)
+    end
+    self.rank_txt:setString(cfg.desc)
+    local data = model:getConstituteRankList(self.project_num,self.click_num,id)
+    local num = 0
+    local max_num = 1
+    if data then
+        local list = data.quest_state[1]
+        if list then
+            num = list.num
+            max_num = list.need_num
+        end
+    end
+    local schedule = math.floor(num/max_num*100)
+    if schedule > 100 then
+        schedule = 100
+    elseif schedule < 0 then
+        schedule = 0
+    end
+    self.rank_schedule_txt:setString(string.format(TI18N("语言_c_6361"),schedule))
+    self.constitute_bar:setPercent(schedule)
+    if cfg.progress[1].cli_label == "evt_use_item" then
+        if not self.backItem then
+            self.backItem = BackPackItem.new(true,true,false,0.7,true,true)
+            self.constitute:addChild(self.backItem)
+            self.backItem:setPosition(cc.p(109,140))
+        end
+        self.backItem:setData(cfg.progress[1].param[1])
+        self.backItem:setVisible(true)
+    else
+        if self.backItem then
+            self.backItem:setVisible(false)
+        end
+    end
+    if cfg.progress[1].cli_label == "evt_give_annals" then
+        if not self.trea_item then
+			self.trea_item = TreasureItem.new()
+			self.constitute:addChild(self.trea_item)
+            self.trea_item:setPosition(cc.p(109,154))
+		end
+		self.trea_item:setSwallowTouches(false)
+		self.trea_item:setScale(0.80)
+        local num = cfg.progress[1].param[1][1]
+        local type = cfg.progress[1].param[1][2]
+		self.trea_item:setData({type,0,"sp"})
+		self.trea_item:setRandImg()
+        if not self.trea_num then
+			self.trea_num = createLabel(24,cc.c3b(0xff,0xff,0xff),Config.ColorData.data_color4[9],self.trea_item:getContentSize().width*0.5,0,"",self.trea_item,2,cc.p(0.5,1))
+		end
+		self.trea_num:setTextColor(cc.c3b(0xff,0x00,0x00))
+		self.trea_num:setString(string.format("%s/%s",0,num))
+        self.trea_item:addCallBack(function() 
+			controller:openTreasureWekeChoWindow(true,{type,num},self.submit_treasure_list,TreasureConst.Cho_Item_Type.submit)
+		end)
+        self.trea_item:setVisible(true)
+    else
+        if self.trea_item then
+            self.trea_item:setVisible(false)
+        end
+    end
+end
+--设置构成任务子集
+function TreasureResearchWindow:setRankItem(index,id,txt)
+    local cfg = deepCopy(Config.NinjaTreasureResearchData.data_get[id])
+    local open_time = model:ResearchTimeNum(self.project_num,self.click_num)
+    local size = cc.size(101,210)
+    local item = ccui.Widget:create()
+    item:setContentSize(size)
+    item:setAnchorPoint(1,0)
+    item.f_kuang_2 = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_9"), 73,111,item,cc.p(0.5,0.5))
+    item.f_kuang = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_10"), 73,111,item,cc.p(0.5,0.5))
+    item.bg = createImage(item,PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_15"),73,111,cc.p(0.5,0.5),true)
+    item.bg:setTouchEnabled(true)
+    local sprite = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_16"), 32, 32, nil, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    item.progress = cc.ProgressTimer:create(sprite)
+    item.progress:setType(cc.PROGRESS_TIMER_TYPE_RADIAL)
+    item.bg:addChild(item.progress)
+    local data = model:getConstituteRankList(self.project_num,self.click_num,id)
+    local num = 0
+    local max_num = 1
+    if data then
+        local list = data.quest_state[1]
+        if list then
+            num = list.num
+            max_num = list.need_num
+        end
+    end
+    local schedule = math.floor(num/max_num*100)
+    if schedule > 100 then
+        schedule = 100
+    elseif schedule < 0 then
+        schedule = 0
+    end
+    item.progress:setPercentage(schedule)
+    item.progress:setPosition(cc.p(32,32))
+    item.progress:setScale(-1,1)
+    item.fire_2 = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_11"), 30,-36,item.bg,cc.p(0.5,0.5))
+    item.fire = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_12"), 30,-36,item.bg,cc.p(0.5,0.5))
+    item.fire_2:setScaleY(-1)
+    item.fire:setScaleY(-1)
+    item.line_2 = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_14"), -19,1,item.bg,cc.p(0.5,0.5))
+    item.line = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_26"), -19,1,item.bg,cc.p(0.5,0.5))
+    item.lock = createSprite(PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_8"), 33,-17,item.bg,cc.p(0.5,0.5))
+    item.lock:setVisible(false)
+    item.name = createLabel(24,cc.c3b(0xfb,0xf4,0xe4),cc.c3b(0x00,0x00,0x00),30,34,txt,item.bg,2,cc.p(0.5,0.5))
+    if index % 2 == 0 then
+        item.bg:setPosition(cc.p(68,65))
+        item.f_kuang_2:setPosition(cc.p(68,65))
+        item.f_kuang:setPosition(cc.p(68,65))
+        item.fire_2:setScaleY(1)
+        item.fire:setScaleY(1)
+        item.fire_2:setPosition(cc.p(30,96))
+        item.fire:setPosition(cc.p(30,96))
+        loadSpriteTexture(item.line_2, PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_13"), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(item.line, PathTool.getResFrame("ninja_treasure/treasure_research","treasure_research_25"), LOADTEXT_TYPE_PLIST)
+        item.line_2:setPosition(cc.p(-26,44))
+        item.line:setPosition(cc.p(-26,44))
+    end
+    local status = false
+    if self.project_num == model:getResearchProjectNum() and self.click_num == model:getResearchClickNum() then
+        if open_time ~= 0 and GameNet:getInstance():getTime() - open_time >= cfg.open_time then
+            status = true
+        end    
+    else
+        local list = model:ResearchStaData(self.project_num,self.click_num)
+        if open_time ~= 0 and list.use_time >= cfg.open_time then
+            status = true
+        end
+    end
+    if status then
+        item.fire:setVisible(true)
+        item.fire_2:setVisible(false)
+        item.f_kuang:setVisible(true)
+        item.line:setVisible(true)
+        item.progress:setVisible(true)
+        item.lock:setVisible(false)
+    else
+        item.fire:setVisible(false)
+        item.fire_2:setVisible(true)
+        item.f_kuang:setVisible(false)
+        item.line:setVisible(false)
+        item.progress:setVisible(false)
+        item.lock:setVisible(true)
+    end
+    if index == 1 then
+        item.line_2:setVisible(false)
+        item.line:setVisible(false)
+    end
+    return item
+end
+--构成研发面板进入
+function TreasureResearchWindow:RunRankPanel()
+    doStopAllActions(self.rank_panel)
+    self.rank_panel:setPositionX(1069)
+    local action = cc.Sequence:create(cc.MoveTo:create(0.5, cc.p(720, 388)))
+    self.rank_panel:runAction(action)
+end
+--领奖红点
+function TreasureResearchWindow:updateRewardRed()
+    addRedPointToNodeByStatus(self.reward_btn,model:getResearchRewardRed(self.project_num,self.click_num),10,10)
+end
+function TreasureResearchWindow:updateResearchOnlyRed()
+    for k, v in pairs(self.treasure_list) do
+        addRedPointToNodeByStatus(v,model:getResearchOnlyRed(self.project_num,k),0,-85)
+    end
+    addRedPointToNodeByStatus(self.project_btn,model:getResearchAllRewardRed() or model:getResearchFirstRed(),10,-20)
+end
+--移除
+function TreasureResearchWindow:DeleteMe()
+    doStopAllActions(self.rank_panel)
+    doStopAllActions(self.treasure_icon)
+    if self.treasure_act then
+        GlobalEvent:getInstance():UnBind(self.treasure_act)
+        self.treasure_act = nil
+    end
+	if self.treasure_submit_cho_data then
+        GlobalEvent:getInstance():UnBind(self.treasure_submit_cho_data)
+        self.treasure_submit_cho_data = nil
+    end
+    if self.research_data_event then
+        GlobalEvent:getInstance():UnBind(self.research_data_event)
+        self.research_data_event = nil
+    end
+    if self.research_rank_data_event then
+        GlobalEvent:getInstance():UnBind(self.research_rank_data_event)
+        self.research_rank_data_event = nil
+    end
+    if self.add_goods then
+        GlobalEvent:getInstance():UnBind(self.add_goods)
+        self.add_goods = nil
+    end
+    if self.delete_goods then
+        GlobalEvent:getInstance():UnBind(self.delete_goods)
+        self.delete_goods = nil
+    end
+    if self.modify_goods_num then
+        GlobalEvent:getInstance():UnBind(self.modify_goods_num)
+        self.modify_goods_num = nil
+    end
+    if self.research_first_finish_event then
+        GlobalEvent:getInstance():UnBind(self.research_first_finish_event)
+        self.research_first_finish_event = nil
+    end
+    if self.research_first_into_event then
+        GlobalEvent:getInstance():UnBind(self.research_first_into_event)
+        self.research_first_into_event = nil
+    end
+    if self.research_first_red_event then
+        GlobalEvent:getInstance():UnBind(self.research_first_red_event)
+        self.research_first_red_event = nil
+    end
+    for k, v in pairs(self.treasure_list) do
+        if v and v.spine then 
+            v.spine:removeFromParent()
+            v.spine = nil
+        end
+    end
+    if self.play_effect then
+        self.play_effect:clearTracks()
+        self.play_effect:removeFromParent()
+        self.play_effect = nil
+    end
+    if self.play_effect2 then
+        self.play_effect2:clearTracks()
+        self.play_effect2:removeFromParent()
+        self.play_effect2 = nil
+    end
+end

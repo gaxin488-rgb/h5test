@@ -1,0 +1,238 @@
+-- --------------------------------------------------------------------
+-- 通用获得道具展示显示面板,这边只支持物品样式的不支持其他任何样式的
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+TreasureGainWindow = TreasureGainWindow or BaseClass(BaseView)
+
+local controller = TreasureController:getInstance()
+
+function TreasureGainWindow:__init()
+    self.win_type = WinType.Mini
+    self.layout_name = "treasure/treasure_gain_window"
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.res_list = {
+        -- {path = PathTool.getPlistImgForDownLoad("levupgrade", "levupgrade"), type = ResourcesType.plist},
+    }
+    self.attr_list = {}
+    self.only_attr_list = {}
+    self.eff_list = {}
+    self.exc_list = {}
+end
+
+function TreasureGainWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.center_x = main_container:getContentSize().width * 0.5
+
+    self.title_container = main_container:getChildByName("title_container")
+    self.title_width = self.title_container:getContentSize().width
+    self.title_height = self.title_container:getContentSize().height
+
+    self.back_panel = main_container:getChildByName("back_panel")
+
+    self.base_panel = main_container:getChildByName("base_panel")
+    self.name_bg = self.base_panel:getChildByName("name_bg")
+    self.name = self.base_panel:getChildByName("name")
+    self.attr_panel = main_container:getChildByName("attr_panel")
+    self.atr_tit_bg = self.attr_panel:getChildByName("atr_tit_bg")
+    self.atr_tit = self.attr_panel:getChildByName("atr_tit")
+    self.atr_tit:setString(TI18N("语言_c_6071"))
+    self.only_attr_panel = main_container:getChildByName("only_attr_panel")
+    self.only_attr_panel:setVisible(false)
+    self.only_atr_tit_bg = self.only_attr_panel:getChildByName("only_atr_tit_bg")
+    self.only_atr_tit = self.only_attr_panel:getChildByName("only_atr_tit")
+    self.only_atr_tit:setString(TI18N("语言_c_6721"))
+    self.eff_panel = main_container:getChildByName("eff_panel")
+    self.eff_tit_bg = self.eff_panel:getChildByName("eff_tit_bg")
+    self.eff_tit = self.eff_panel:getChildByName("eff_tit")
+    self.eff_tit:setString(TI18N("语言_c_6072"))
+
+    self.confirm_btn = main_container:getChildByName("confirm_btn")
+    self.main_container = main_container
+end
+
+function TreasureGainWindow:register_event()
+    self.confirm_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            self:finalClose()
+        end
+    end)
+    self.background:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            self:finalClose()
+        end
+    end)
+end
+
+function TreasureGainWindow:openRootWnd(list,type)
+    self.type = type
+    BattleResultMgr:getInstance():setWaitShowPanel(true)
+    self:handleEffect(true)
+    self.vo = TreasureVo.New()
+    self.vo:setUpData(list)
+    self.lev_cfg = Config.NinjaTreasureData.data_lv_info[self.vo.config.quality]
+    self.star_cfg = Config.NinjaTreasureData.data_star_info[self.vo.id][self.vo.star]
+    self.skill_cfg = Config.NinjaTreasureData.data_skill_info[self.star_cfg.skill_id]
+    self:updatePanel()
+end
+
+function TreasureGainWindow:updatePanel()
+    self.base_height = self:setBasePanel()
+    self.attr_height = self:setAttrPanel()
+    self.atr_tit_bg:setPositionY(self.attr_height-22)
+    self.atr_tit:setPositionY(self.attr_height-22)
+    self.only_attr_height = self:setOnlyAttrPanel()
+    self.only_atr_tit_bg:setPositionY(self.only_attr_height-22)
+    self.only_atr_tit:setPositionY(self.only_attr_height-22)
+    self.eff_height = self:setEffPanel()
+    self.eff_tit_bg:setPositionY(self.eff_height-22)
+    self.eff_tit:setPositionY(self.eff_height-22)
+    local _h = self.base_height+self.attr_height+self.eff_height+self.only_attr_height + 32
+    self.main_container:setContentSize(cc.size(self.main_container:getContentSize().width,_h))
+    self.confirm_btn:setPositionY(-32)
+    self.back_panel:setContentSize(cc.size(self.back_panel:getContentSize().width,_h))
+    self.back_panel:setPositionY(_h*0.5)
+    self.title_container:setPositionY(_h - 25)
+    self.base_panel:setPositionY(_h - 32)
+    self.attr_panel:setPositionY(_h - self.base_height - 32)
+    self.only_attr_panel:setPositionY(_h - self.base_height - self.attr_height - 32)
+    self.eff_panel:setPositionY(0)
+end
+
+function TreasureGainWindow:setBasePanel()
+    self.item = TreasureItem.new(false,1)
+    self.item:setData(self.vo)
+    self.item:setPosition(cc.p(self.base_panel:getContentSize().width*0.5,110))
+    self.base_panel:addChild(self.item)
+    self.item:setNum(0)
+    self.item:setLev(false)
+    self.item:setStarStatus(false)
+    self.name:setString(self.vo.config.name)
+    self.name_bg:setContentSize(cc.size(self.name:getContentSize().width + 100,51))
+    return self.base_panel:getContentSize().height
+end
+function TreasureGainWindow:setAttrPanel()
+    local _h = math.max(tableLen(self.vo.attr)*40 + 50,180)
+    local _w = 0
+    self.attr_panel:setContentSize(cc.size(self.attr_panel:getContentSize().width,_h))
+    self.attr_list = {}
+    for key, value in pairs(self.vo.attr) do
+        local str = ""
+        if Config.AttrData.data_key_to_name[key] then
+            str = string.format("%s  <div fontcolor=#35f114>%s</div>", Config.AttrData.data_key_to_name[key], value)
+        end
+        local txt = createRichLabel(22,cc.c3b(0xd3,0xc1,0x8b),cc.p(0,1),cc.p(0,0))
+        self.attr_panel:addChild(txt)
+        txt:setString(str)
+        _w = math.max(_w,txt:getContentSize().width)
+        table.insert(self.attr_list,txt)
+    end
+    local _y = 180 - (tableLen(self.attr_list)*40 + 50)
+    if _y < 0 then
+        _y = 0
+    end
+    for key, value in pairs(self.attr_list) do
+        value:setPositionX((self.attr_panel:getContentSize().width - _w)*0.5)
+        value:setPositionY(40 + (tableLen(self.attr_list) - key)*40 + _y)
+    end
+    return self.attr_panel:getContentSize().height
+end
+function TreasureGainWindow:setOnlyAttrPanel()
+    if self.vo.hero_id == 0 then
+        self.only_attr_panel:setVisible(false)
+        return 0
+    end
+    self.only_attr_panel:setVisible(true)
+    local _h = math.max(tableLen(self.vo.only_attr)*40 + 50,180)
+    local _w = 0
+    self.only_attr_panel:setContentSize(cc.size(self.only_attr_panel:getContentSize().width,_h))
+    self.only_attr_list = {}
+    for key, value in pairs(self.vo.only_attr) do
+        local str = ""
+        if Config.AttrData.data_key_to_name[key] then
+            str = string.format("%s  <div fontcolor=#35f114>%s</div>", Config.AttrData.data_key_to_name[key], value)
+        end
+        local txt = createRichLabel(22,cc.c3b(0xd3,0xc1,0x8b),cc.p(0,1),cc.p(0,0))
+        self.only_attr_panel:addChild(txt)
+        txt:setString(str)
+        _w = math.max(_w,txt:getContentSize().width)
+        table.insert(self.only_attr_list,txt)
+    end
+    local _y = 180 - (tableLen(self.only_attr_list)*40 + 50)
+    if _y < 0 then
+        _y = 0
+    end
+    for key, value in pairs(self.only_attr_list) do
+        value:setPositionX((self.only_attr_panel:getContentSize().width - _w)*0.5)
+        value:setPositionY(40 + (tableLen(self.only_attr_list) - key)*40 + _y)
+    end
+    return self.only_attr_panel:getContentSize().height
+end
+function TreasureGainWindow:setEffPanel()
+    local list = {}
+    if self.type == 3 then--觉醒
+        for key, value in pairs(self.vo.wakeup_effect) do
+            table.insert(list,value)
+        end
+    else--激活 升星
+        for key, value in pairs(self.vo.exclusive_effect) do
+            table.insert(list,value.txt2 or value.txt)
+        end
+    end
+    local _h = math.max(tableLen(list)*40 + 50,180)
+    self.eff_panel:setContentSize(cc.size(self.eff_panel:getContentSize().width,_h))
+    self.eff_list = {}
+    for key, value in pairs(list) do
+        local txt = createLabel(22,cc.c3b(0x35,0xf1,0x14),nil,self.eff_panel:getContentSize().width*0.5,0,value,self.eff_panel,nil,cc.p(0.5,1))
+        txt:setWidth(600)
+        txt:setLineSpacing(-4)
+        txt:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+        table.insert(self.eff_list,txt)
+    end
+    local _y = 180 - (tableLen(list)*40 + 50)
+    if _y < 0 then
+        _y = 0
+    end
+    for k, v in pairs(self.eff_list) do
+        v:setPositionY(40 + (tableLen(self.eff_list) - k)*40 + _y)
+    end
+    return self.eff_panel:getContentSize().height
+end
+function TreasureGainWindow:handleEffect(status)
+    if status == false then
+        if self.play_effect then
+            self.play_effect:clearTracks()
+            self.play_effect:removeFromParent()
+            self.play_effect = nil
+        end
+    else
+        local action = PlayerAction.action_1
+        if self.type == 1 then --升星
+            action = PlayerAction.action_1
+        elseif self.type == 2 then -- 激活
+            action = PlayerAction.action_2
+        elseif self.type == 3 then -- 觉醒
+            action = PlayerAction.action_3
+        end
+        if not tolua.isnull(self.title_container) and self.play_effect == nil then
+            self.play_effect = createEffectSpine("E51307", cc.p(self.title_width * 0.5, self.title_height * 0.5), cc.p(0.5, 0.5), false, action)
+            self.title_container:addChild(self.play_effect, 1)
+        end
+    end
+end 
+
+function TreasureGainWindow:close_callback()
+    self:finalClose()
+end
+
+function TreasureGainWindow:finalClose()
+    self:handleEffect(false)
+    controller:openTreasurGainWindow(false)
+end

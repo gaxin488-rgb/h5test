@@ -1,0 +1,228 @@
+--******** 文件说明 ********
+-- 
+-- @description: 登录赠礼主界面
+-- @DateTime:    2019-12-13 15:12:06
+-- *******************************
+NewReturnLoginGiftPanel = NewReturnLoginGiftPanel or BaseClass(BaseView)
+
+local controller = NewReturnActionController:getInstance()
+local model = controller:getModel()
+
+function NewReturnLoginGiftPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "newreturnaction/newreturnaction_login_gift_window"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable_get"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_holiday_back_bg_2"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_bg_1"), type = ResourcesType.single },
+    }
+    self.login_list = {}
+    self.login_pos_list = {
+        [1] = {cc.p(118, 385),0.65,-110},
+        [2] = {cc.p(250, 296),0.75,3},
+        [3] = {cc.p(370, 415),0.77,-73},
+        [4] = {cc.p(580, 375),1,55},
+        [5] = {cc.p(433, 588),0.88,167},
+        [6] = {cc.p(649, 613),0.86,126},
+        [7] = {cc.p(565, 823),1,0},
+    }
+    self.is_can_click = false
+end
+
+function NewReturnLoginGiftPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.bg = self.main_container:getChildByName("bg")
+    self.hands = self.main_container:getChildByName("hands")
+    self.top_txt = self.main_container:getChildByName("top_txt")
+    self.surplus_bg = self.main_container:getChildByName("surplus_bg")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.rule_btn = self.main_container:getChildByName("rule_btn")
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.receive_btn = self.main_container:getChildByName("receive_btn")
+    self.receive_txt = self.receive_btn:getChildByName("receive_txt")
+    self.receive_txt:setString(TI18N("语言_c_109"))
+end
+
+function NewReturnLoginGiftPanel:register_event()
+    registerButtonEventListener(self.background, function()
+        controller:openNewReturnLoginGiftPanel(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openNewReturnLoginGiftPanel(false)
+    end,true, 2)
+    registerButtonEventListener(self.rule_btn, function(param,sender, event_type)
+        if self.camp_cfg and self.camp_cfg.desc and self.camp_cfg.desc ~= "" then
+            TipsManager:getInstance():showCommonTips(self.camp_cfg.desc, sender:getTouchBeganPosition())
+        end
+    end,true, 2)
+    registerButtonEventListener(self.receive_btn, function()
+        if self.data then
+            if self.is_can_click then
+                controller:sender11505(0)
+            else
+                message(TI18N("语言_c_233"))
+            end
+        end
+    end,true, 2)
+    self:addGlobalEvent(NewReturnActionEvent.LoginGift_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+    self:addGlobalEvent(NewReturnActionEvent.Base_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+end
+
+function NewReturnLoginGiftPanel:openRootWnd()
+    controller:sender11503()
+end
+function NewReturnLoginGiftPanel:setData()
+    self.cycle_index = model:getNowPeriod()
+    if self.cycle_index == 0 then
+        controller:sender11500()
+        return
+    end
+    self.data = model:getLoginGiftInfo()
+    if not self.data then return end
+    local cfg = Config.HolidayBackData.data_get_camp[self.cycle_index]
+    if cfg then
+        for k, v in pairs(cfg) do
+            if v.camp_id == NewReturnActionConstants.ReturnActionType.loginGift then
+                self.camp_cfg = v
+            end
+        end
+    end
+    if not self.camp_cfg then return end
+    local bg_res = PathTool.getPlistImgForDownLoad("holiday_back",self.camp_cfg.panel_res,false)
+    loadSpriteTexture(self.bg, bg_res, LOADTEXT_TYPE)
+    self.other_res_list = self.camp_cfg.show_text
+    self.other_txt_list = self.camp_cfg.sys_text
+    local txt_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[1],false)
+    loadSpriteTexture(self.top_txt, txt_res, LOADTEXT_TYPE)
+    self.start_time = model:getStartTime()
+    local time = self.start_time - GameNet:getInstance():getTime() + self.camp_cfg.max_day*86400
+    commonCountDownTime(self.surplus_time,time,{callback=function(time)
+        if time > 0 then 
+            self.is_can_click = true
+            self.surplus_time:setString(string_format("%s", TimeTool.GetTimeForFunction(time) ))
+        else
+            self.is_can_click = false
+            doStopAllActions(self.surplus_time)
+            self.surplus_time:setString("00:00:00")
+        end
+        local _w = math.max(300,self.surplus_txt:getContentSize().width+self.surplus_time:getContentSize().width+50)
+        self.surplus_bg:setContentSize(cc.size(_w,self.surplus_bg:getContentSize().height))
+        local _x = (720 - self.surplus_txt:getContentSize().width-self.surplus_time:getContentSize().width)/2 + self.surplus_txt:getContentSize().width
+        self.surplus_txt:setPositionX(_x)
+        self.surplus_time:setPositionX(_x)
+    end})
+    self.login_cfg = Config.HolidayBackData.data_get_login[self.cycle_index]
+    if not self.login_list then
+        self.login_list = {}
+    end
+    if not next(self.login_list) then
+        for i = 1, tableLen(self.login_cfg) do
+            local item = self:getActionItem(self.login_cfg[i])
+            self.main_container:addChild(item)
+            if item.index == 7 then
+                item:setLocalZOrder(1)
+            else
+                item:setLocalZOrder(3)
+            end
+            self.login_list[i] = item
+            item:setPosition(self.login_pos_list[i][1])
+        end
+    end
+    self.hands:setLocalZOrder(2)
+
+    local day_num = model:getLoginGiftDay()
+    local red_status = false
+    for k, v in pairs(self.login_list) do
+        local status = 0
+        if v.index > day_num then
+            status = 0
+        else
+            if model:getLoginGiftForId(v.index) then
+                status = 2
+            else
+                status = 1
+            end
+        end
+        if status == 0 then
+            v.status_img:setVisible(false)
+        elseif status == 1 then
+            red_status = true
+            loadSpriteTexture(v.status_img, PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable"), LOADTEXT_TYPE)
+            v.status_img:setVisible(true)
+        elseif status == 2 then
+            loadSpriteTexture(v.status_img, PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable_get"), LOADTEXT_TYPE)
+            v.status_img:setVisible(true)
+        end
+    end
+    addRedPointToNodeByStatus(self.receive_btn,red_status,10,10)
+    setChildUnEnabled(not red_status,self.receive_btn)
+    self.receive_btn:setTouchEnabled(red_status)
+end
+function NewReturnLoginGiftPanel:getActionItem(data)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0.5, 0.5))
+    item:setTouchEnabled(true)
+    local _size = cc.size(165,165)
+    item:setContentSize(_size)
+    local mask_res = PathTool.getResFrame("holiday_back", "holiday_back_2_2")
+    item.mark_bg = createSprite(mask_res, _size.width/2, _size.height/2, item, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 1)
+    item.mark_bg:setScale(1)
+    item.mask = createSprite(mask_res, _size.width/2, _size.height/2, nil, cc.p(0.5, 0.5))--模板
+    item.mask:setScale(1)
+    item.clipNode = cc.ClippingNode:create(item.mask)
+    item.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+    item.clipNode:setContentSize(_size)
+    item.clipNode:setCascadeOpacityEnabled(true)
+    item.clipNode:setPosition(_size.width/2,_size.height/2)
+    item.clipNode:setAlphaThreshold(0)
+    item:addChild(item.clipNode,2)
+
+    item.icon = BackPackItem.new()
+    item.icon:setDefaultTip()
+    item.icon:setSwallowTouches(false)
+    item.icon:setCascadeOpacityEnabled(true)
+    item.icon:setAnchorPoint(0.5,0.5)
+    item.icon:setPosition(_size.width/2,_size.height/2)--底板
+    item.clipNode:addChild(item.icon,3)
+    item.icon:setData({data.reward[1][1],1})
+    local top_res = PathTool.getResFrame("holiday_back", "holiday_back_2_1")
+    item.top_img = createSprite(top_res, _size.width/2, _size.height/2, item, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 4)
+    item.mark_bg:setScale(self.login_pos_list[data.day][2])
+    item.mark_bg:setRotation(self.login_pos_list[data.day][3])
+    item.clipNode:setScale(self.login_pos_list[data.day][2])
+    item.clipNode:setRotation(self.login_pos_list[data.day][3])
+    item.icon:setRotation(-self.login_pos_list[data.day][3])
+    item.top_img:setScale(self.login_pos_list[data.day][2])
+    item.top_img:setRotation(self.login_pos_list[data.day][3])
+
+    item.name = createLabel(28,cc.c3b(0xff,0xff,0xff),cc.c3b(0x00,0x00,0x00),_size.width/2, _size.height-5,string.format(data.title,data.day),item,2,cc.p(0.5,0.5))
+    item.name:setZOrder(5)
+    item.status_img = createSprite(PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable_get"),_size.width/2, _size.height/2,item,cc.p(0.5,0.5),LOADTEXT_TYPE)
+    item.status_img:setVisible(false)
+    item.status_img:setZOrder(6)
+    item.num_txt = createLabel(26,cc.c3b(0xff,0xff,0xff),cc.c3b(0x00,0x00,0x00),125, 31,string.format(data.title,data.day),item,2,cc.p(1,0))
+    item.num_txt:setString(data.reward[1][2])
+    item.num_txt:setZOrder(7)
+
+    item.index = data.day
+    return item
+end
+function NewReturnLoginGiftPanel:close_callback()
+    controller:openNewReturnLoginGiftPanel(false)
+end
+

@@ -1,0 +1,135 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-06-24 15:18:54
+-- @description    : 
+		-- 拼图图鉴属性条组件
+---------------------------------
+local _controller = HomeworldController:getInstance()
+local _model = _controller:getModel()
+
+PuzzleBookAttrItem4 = class("PuzzleBookAttrItem4", function()
+    return ccui.Widget:create()
+end)
+
+function PuzzleBookAttrItem4:ctor(_type)
+	self.attr_type = _type or HomeworldConst.Attr_Type.lev_short
+	self:configUI()
+	self:registerEvent()
+end
+
+function PuzzleBookAttrItem4:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("homeworld/puzzle_book_attr_item4"))
+	if not self.root_wnd then return end
+	self:setCascadeOpacityEnabled(true)
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self:addChild(self.root_wnd)
+	self._ui = getAllCsbExportChildren(self.root_wnd)
+	self._ui._attr_name:setChangeScaleOffWidth(-9999)
+end
+
+function PuzzleBookAttrItem4:registerEvent(  )
+end
+
+function PuzzleBookAttrItem4:setData(book_id,num)
+	self.book_id = book_id
+	self.puzzle_num = num
+	self.data = _model:getOnePuzzleData(book_id)
+	self.puzzle_cfg = Config.PuzzleBookData.data_puzzle_attr[self.book_id]
+	if not self.puzzle_cfg then return end
+	self.cfg = self.puzzle_cfg[self.puzzle_num]
+	if not self.cfg then return end
+	if next(self.cfg.show_attr) then
+		local txt = ""
+		for k, v in ipairs(self.cfg.show_attr) do
+			local _txt = Config.AttrData.data_key_to_name[v[1]]
+			if not _txt then
+				_txt = Config.AttrExtraData.data_key_to_name[v[1]]
+			end
+			local attr_val = v[2]
+			local is_per = PartnerCalculate.isShowPerByStr(v[1])
+			if is_per == true then
+				attr_val = (attr_val/10).."%"
+			end
+			if txt == "" then
+				txt = string.format("%s+%s",_txt,attr_val)
+			else
+				txt = txt .. "," ..string.format("%s+%s",_txt,attr_val)
+			end
+		end
+		self._ui._attr_name:setString(string.format(self.cfg.attr_str, txt))
+	else
+		if self.cfg.special_buff then
+			local attr_val = self.cfg.special_buff[1][2]
+			self._ui._attr_name:setString(string.format(self.cfg.attr_str, attr_val))
+		end
+	end
+	local have_num = 0
+	if self.data and next(self.data) then
+		have_num = tableLen(self.data)
+	end
+	if have_num >= self.puzzle_num then
+		have_num = self.puzzle_num
+		self._ui._attr_value:setTextColor(cc.c4b(0x13,0x93,0x0e,0xff))
+	else
+		self._ui._attr_value:setTextColor(cc.c4b(0xff,0x15,0x15,0xff))
+	end
+	self._ui._attr_value:setString(string.format("%s/%s",have_num,self.puzzle_num))
+	setTextMaxWidth(self._ui._attr_name,450,-8)
+	setTextMaxWidth(self._ui._attr_value,150,-8)
+	local _w = self.root_wnd:getContentSize().width
+	local _h = math.max(self.root_wnd:getContentSize().height,self._ui._attr_name:getContentSize().height+8)
+	self.size = cc.size(_w,_h)
+	self.root_wnd:setContentSize(self.size)
+    self:setAnchorPoint(cc.p(0, 1))
+	self:setContentSize(self.size)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self._ui._main_container:setContentSize(self.size)
+	self._ui._attr_bg:setContentSize(self.size)
+	self._ui._main_container:setPositionY(self.size.height*0.5)
+	self._ui._attr_bg:setPositionY(self.size.height*0.5)
+	self._ui._attr_name:setPositionY(self.size.height*0.5)
+	self._ui._attr_value:setPositionY(self.size.height*0.5)
+
+
+	self:setActSpineData()
+end
+
+--设置激活spine
+function PuzzleBookAttrItem4:setActSpineData()
+	local data = _model:getPuzzleActData(self.book_id)
+	if data and next(data) then
+		local act_num = tableLen(data)
+		local have_num = 0
+		if self.data and next(self.data) then
+			have_num = tableLen(self.data)
+		end
+		local start_num = have_num - act_num + 1
+		if self.puzzle_num >= start_num and self.puzzle_num <= have_num then
+			if not self.act_effect then
+				local size = self._ui._attr_bg:getContentSize()
+				self.act_effect = createEffectSpine("E50231", cc.p(size.width/2,size.height/2), cc.p(0.5, 0.5), false, PlayerAction.action_3)
+				self._ui._attr_bg:addChild(self.act_effect, 1)
+			end
+			self.act_effect:setVisible(true)
+			self.act_effect:setAnimation(0, PlayerAction.action_3, false)
+			local function animationEventFunc(event)
+				if event.animation == PlayerAction.action_3 then
+					self.act_effect:setVisible(false)
+				end
+			end
+			self.act_effect:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_COMPLETE)
+		end
+	end
+end
+
+function PuzzleBookAttrItem4:DeleteMe(  )
+	if self.act_effect then 
+		self.act_effect:setVisible(false)
+		self.act_effect:removeFromParent()
+		self.act_effect = nil
+	end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

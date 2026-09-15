@@ -1,0 +1,626 @@
+-- --------------------------------------------------------------------
+-- 竖版商城子商城
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-5-10
+-- --------------------------------------------------------------------
+MallSkillPanel = class("MallSkillPanel", function()
+    return ccui.Widget:create()
+end)
+
+local treasure_type = 16 --针对探宝的
+local index_treasure_type = 4 --探宝编号
+local index_CrossarenaShop = 7 --跨服竞技编号
+function MallSkillPanel:ctor()
+	self.ctrl = MallController:getInstance()
+    self.role_vo = RoleController:getInstance():getRoleVo()
+	self.tab_list = {}
+	self.cur_index = nil
+	self.cur_tab = nil
+    self.data_list = {}
+	self:createRootWnd()
+	self:configUI()
+	self:register_event()
+    -- 8,6,5,16,17,30,34,36,37
+    self.helpobj = {
+        [MallConst.MallType.OccultShop] = "open_skill_lev",  --秘术商店
+        [MallConst.MallType.TreasureShop3] = "open_nintre_lev",  --编年小铺
+    }
+end
+
+function MallSkillPanel:createRootWnd()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("mall/mall_skill_panel"))
+	self.root_wnd:setPosition(40,0)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0,0)
+end
+
+function MallSkillPanel:configUI()
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.scroll_view = self.main_container:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.scroll_size = self.scroll_view:getContentSize()
+    self.tab_container = self.scroll_view:getChildByName("tab_container")
+    self.tab_container_size = self.scroll_view:getContentSize()
+    -- self.scroll_view:setInnerContainerSize(cc.size(self.tab_container_size.width+1000, 0))
+	for i=1, 2 do
+        local tab_btn = self.tab_container:getChildByName(string.format("tab_btn_%s",i))
+        tab_btn.label = self.tab_container:getChildByName("title_"..i)
+        tab_btn.label:setColor(cc.c3b(0xcf,0xb5,0x93))
+        tab_btn.label:setAnchorPoint(cc.p(0.5,0.5))
+        tab_btn.label:setPositionY(38.5)
+        tab_btn:setBright(false)
+        tab_btn.index = i
+        tab_btn.is_first = true
+        self.tab_list[i] = tab_btn
+        tab_btn.label:setChangeScaleOffWidth(self.tab_container:getContentSize().width - 105)
+        setTextSpacing(tab_btn.label,-10) 
+    end
+    self.refresh_panel = self.main_container:getChildByName("refresh_panel")
+	-- self.refresh_panel:setVisible(false)
+    self.btn_refresh = self.refresh_panel:getChildByName("btn_refresh")
+    self.btn_refresh:setPositionY(self.btn_refresh:getPositionY()+6)
+    self.refresh_time = self.refresh_panel:getChildByName("refresh_time")
+    --self.refresh_time:setPositionY(self.refresh_time:getPositionY()+6)
+    self.refresh_time:setString("")
+
+    local config = Config.ExchangeData.data_shop_list[treasure_type]
+    self.refresh_Sprite_1 = self.btn_refresh:getChildByName("Sprite_1")
+    self.refresh_Sprite_1:setScale(0.5)
+    loadSpriteTexture(self.refresh_Sprite_1, PathTool.getItemRes(Config.ItemData.data_get_data(config.item_bid).icon), LOADTEXT_TYPE)
+    self.refresh_Text_1 = self.btn_refresh:getChildByName("Text_1")
+    local refresh_str = ""
+    if config and config.cost_list and config.cost_list[1] and config.cost_list[1][2] then
+        refresh_str = config.cost_list[1][2]
+    end
+    self.refresh_Text_1:setString(string.format(TI18N("语言_c_4752"),refresh_str))
+    self.refresh_Text_1:setPositionX(55)
+    setTextMaxWidth(self.refresh_Text_1,170)
+    self.bottom_label=self.main_container:getChildByName("bottom_label")
+    self.bottom_label:setVisible(false)
+    local btn_size = self.btn_refresh:getContentSize()
+	self.refresh_btn_label = createRichLabel(26, 1, cc.p(0.5, 0.5), cc.p(btn_size.width/2, btn_size.height/2),-10,nil,170)
+	self.btn_refresh:addChild(self.refresh_btn_label)
+
+    self.last_time_txt = self.refresh_panel:getChildByName("last_time_txt")
+    self.last_time_count = self.refresh_panel:getChildByName("last_time_count")
+    self.last_time_txt:setString(TI18N("语言_c_466"))
+    self.last_time_txt:setVisible(false)
+    self.last_time_count:setVisible(false)
+
+    local last_time_count_pos = self.last_time_txt:getPositionX() + self.last_time_txt:getContentSize().width + 5
+    self.last_time_count:setPositionX(last_time_count_pos)
+
+    self.refresh_panel:getChildByName("Text_1_0"):setString(TI18N("语言_c_403"))
+    local refresh_time_pos = self.refresh_panel:getChildByName("Text_1_0"):getPositionX()+ self.refresh_panel:getChildByName("Text_1_0"):getContentSize().width + 5
+    self.refresh_time:setPositionX(refresh_time_pos)
+
+    self.scrollCon = self.main_container:getChildByName("scrollCon")
+    self.coin = self.main_container:getChildByName("coin")
+    self.coin:setPositionY(self.coin:getPositionY()+2)
+    self.count = self.main_container:getChildByName("count")
+    self.count:setPositionY(self.count:getPositionY()+2)
+    self.add_btn = self.main_container:getChildByName("add_btn")
+    self.add_btn:setVisible(true)
+    local scroll_view_size = cc.size(622,679)
+    local setting = {
+        item_class = MallItem,      -- 单元类
+        start_x = 4.5,                  -- 第一个单元的X起点
+        space_x = 2,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 2,                   -- y方向的间隔
+        item_width = 306,               -- 单元的尺寸width
+        item_height = 143,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 2                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.scrollCon, cc.p(0,8) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+end
+
+function MallSkillPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool)    
+end
+
+function MallSkillPanel:setList( list )
+    local notice_list = {[9]=Config.ExchangeData.data_shop_exchage_cost.open_skill_lev.desc,
+                         [91]=Config.ExchangeData.data_shop_exchage_cost.open_nintre_lev.desc,
+                        }
+    
+    for k,v in pairs(self.tab_list) do
+    	if list[k] then
+    		v:setVisible(true)
+            local data_shop_list_config = Config.ExchangeData.data_shop_list[list[k]]
+            if data_shop_list_config and data_shop_list_config.name then
+                v.label:setString(data_shop_list_config.name)
+            end
+            if v.label:getContentSize().width>150 then
+                setTextMaxWidth(v.label,120)
+                v.label:setScale(0.7)
+            end
+    		v.type = list[k]
+            v.notice = notice_list[v.type]
+            self:setTabBtnTouchStatus(self:checkBtnIsOpen(v.type),k)
+    	else
+    		v:setVisible(false)
+    	end
+    end
+
+    local select_index = 1
+    for i=1,#list do
+        if self:checkBtnIsOpen(self.tab_list[i].type) then
+            select_index = i
+            break
+        end
+    end
+end
+
+function MallSkillPanel:register_event()
+	for k, tab_btn in pairs(self.tab_list) do
+        registerButtonEventListener(tab_btn, function()
+            if tab_btn.type ~= nil then
+                if not self:getShieldStatus(tab_btn.type) then
+                    message(TI18N("语言_c_1891"))
+                    return
+                end
+                if tab_btn.can_touch == false then
+                    if tab_btn.type==55 and ArenaWorldController:getInstance():getModel():isHideArenaWorld() then
+                        message(TI18N("语言_c_1891"))
+                        return
+                    end
+                    if tab_btn.type== 59 and MazeController:getInstance():getModel():isHideMaze() then
+                        message(TI18N("语言_c_1891"))
+                        return
+                    end
+                    message(TI18N(tab_btn.notice))
+                else
+                    self:changeTabView(tab_btn.index)
+                end   
+            end
+        end ,false, 1)
+    end
+
+    registerButtonEventListener(self.add_btn, function()
+        local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+        local data = Config.ItemData.data_get_data(item_bid)
+        BackpackController:getInstance():openTipsSource( true, data )
+    end ,true, 1)
+
+    --获取商品已购买次数(限于购买过的有限购的商品)
+    if not self.update_have_count then
+        self.update_have_count = GlobalEvent:getInstance():Bind(MallEvent.Open_View_Event,function ( data )
+            if not data then return end
+            if self.cur_tab.type == data.type  then
+                local list = self:getConfig(self.cur_tab.type,data)
+                self.data_list[self.cur_index] = list
+                self.item_scrollview:setData(self.data_list[self.cur_index],function ( cell )
+                    self.ctrl:openMallBuyWindow(true,cell:getData())
+                end)
+            else
+                for k,v in pairs(self.tab_list) do
+                    if v.type == data.type then
+                        local list = self:getConfig(self.cur_tab.type,data)
+                        self.data_list[k] = list
+                    end
+                end
+            end
+        end)
+    end
+
+    if self.role_vo then
+        if self.role_update_lev_event == nil then
+            self.role_update_lev_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE,function(key,value)
+                if key == "lev" then
+                    for k,v in pairs(self.tab_list) do
+                        self:setTabBtnTouchStatus(self:checkBtnIsOpen(v.type),k)
+                    end
+                elseif key == "gsrv_id" or key == "gid" then
+                    self:setTabBtnTouchStatus(self:checkBtnIsOpen(5),1)
+                elseif key == "gold" or key == "arena_cent" or key == "guild" or key == "hero_soul" or key == "friend_point" or key=="arena_world_cent" or
+                       key == "arena_guesscent" or key == "star_point" or key == "expedition_medal" or key == "elite_coin" or key == "cluster_coin" or key == "peak_guess_cent" or key == "cluster_guess_cent" or key == "sky_coin" or key == "maze_coin" then
+                    local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+                    if Config.ItemData.data_assets_id2label[item_bid] == key then
+                        loadSpriteTexture(self.coin, PathTool.getItemRes(Config.ItemData.data_get_data(item_bid).icon), LOADTEXT_TYPE)
+                        if self.cur_index == 4 then
+                            self.count:setString(MoneyTool.GetMoneyString(self.role_vo.star_point))
+                        else
+                            if self.cur_index == 1 then
+                                self.count:setString(MoneyTool.GetMoneyString(self.role_vo.expedition_medal))
+                            elseif self.cur_index == 5 then
+                                self.count:setString(MoneyTool.GetMoneyString(self.role_vo.elite_coin))
+                            elseif self.cur_index == 13 then
+                                self.count:setString(MoneyTool.GetMoneyString(self.role_vo.maze_coin))
+                            else
+                                self.count:setString(MoneyTool.GetMoneyString(self.role_vo[Config.ItemData.data_assets_id2label[item_bid]]))
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    --除神秘神格商城以外的购买成功
+    if not self.buy_success_event then
+        self.buy_success_event = GlobalEvent:getInstance():Bind(MallEvent.Buy_Success_Event,function ( data )
+            if self.cur_index and self.data_list and self.data_list[self.cur_index] then
+                for k,v in pairs(self.data_list[self.cur_index]) do
+                    if type(v) ~= "number" then
+                        if v and v.id and v.has_buy then
+                            if v.id == data.eid and next(data.ext or {}) ~= nil then
+                                v.has_buy = data.ext[1].val
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+    if self.Arena_event == nil then
+        self.Arena_event = GlobalEvent:getInstance():Bind(ArenaWorldEvent.UpdateArenaMyBaseInfo, function (  )
+            self:RefreshArenaData()
+        end)
+    end
+----------------------------------------------
+    registerButtonEventListener(self.btn_refresh, function()
+        if self.cur_tab then
+            local list =  Config.ExchangeData.data_shop_list[self.cur_tab.type].cost_list
+            local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+            local need_num = BackpackController:getInstance():getModel():getItemNumByBid(item_bid)
+            if self.is_free_refresh or need_num >= list[1][2] then
+                self.ctrl:sender13405(self.cur_tab.type)
+            else
+                -- message(TI18N("语言_c_4052"))
+                BackpackController:getInstance():openTipsSource(true, item_bid)
+            end
+        end
+    end ,true, 1)
+
+    if not self.update_son_list then
+        self.update_son_list = GlobalEvent:getInstance():Bind(MallEvent.Get_Buy_list,function ( data )
+            self:setLessTime(data.refresh_time - GameNet:getInstance():getTime())
+            self.data_list[self.cur_index] = data
+            self:changeRefreshStata(data)
+            self.item_scrollview:setData(self.data_list[self.cur_index].item_list,function ( cell )
+                self.ctrl:openMallBuyWindow(true,cell:getData())
+            end)
+            local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+            if item_bid then
+                self.count:setString(MoneyTool.GetMoneyString(BackpackController:getInstance():getModel():getItemNumByBid(item_bid)))
+            end 
+       end)
+    end
+    -- 道具数量更新
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.delete_goods_event then
+        self.delete_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,data_list)
+            self:refreshExchangeItemNum(bag_code,data_list)
+        end)
+    end
+
+    if not self.buy_success_one_event then
+		self.buy_success_one_event = GlobalEvent:getInstance():Bind(MallEvent.Buy_One_Success,function ( data )
+            local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+            if item_bid then
+                self.count:setString(MoneyTool.GetMoneyString(BackpackController:getInstance():getModel():getItemNumByBid(item_bid)))
+            end 
+		end)
+	end
+end
+function MallSkillPanel:refreshExchangeItemNum( bag_code, data_list )
+	if bag_code == BackPackConst.Bag_Code.BACKPACK then
+        for key, value in pairs(data_list) do
+            if value.base_id == self.item_bid then
+                self.count:setString(MoneyTool.GetMoneyString(BackpackController:getInstance():getModel():getItemNumByBid(self.item_bid)))
+            end
+        end
+	end
+end
+function MallSkillPanel:RefreshArenaData()
+    self.bottom_label:setVisible(true)
+    local arena_data = ArenaWorldController:getInstance():getModel():getArenaMyBaseInfo()
+    if arena_data and arena_data.season_best_rank and arena_data.season_best_rank>0 then
+        self.bottom_label:setString(string.format(TI18N("语言_c_5886"), arena_data.season_best_rank))
+    else
+        self.bottom_label:setString(TI18N("语言_c_5885"))
+    end 
+end
+
+--设置倒计时
+function MallSkillPanel:setLessTime( less_time )
+    if tolua.isnull(self.refresh_time) then return end
+    doStopAllActions(self.refresh_time)
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.refresh_time:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                doStopAllActions(self.refresh_time)
+            else
+                self:setTimeFormatString(less_time)
+            end
+        end))))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+
+function MallSkillPanel:setTimeFormatString(time)
+    if time > 0 then
+        self.refresh_time:setString(TimeTool.GetTimeFormat(time))
+    else
+        self.refresh_time:setString("00:00:00")
+    end
+end
+
+function MallSkillPanel:changeRefreshStata(data)
+    self.is_free_refresh = false
+    if data then
+        local btn_str = TI18N("语言_c_409")
+        self.refresh_btn_label:setString(btn_str)
+        self.refresh_Sprite_1:setVisible(false)
+        self.refresh_Text_1:setVisible(false)
+        local free_count = data.free_count or 0
+        if free_count <= 0 then
+            local  config = Config.ExchangeData.data_shop_list[self.cur_tab.type]
+            if config then
+                local cost_list = config.cost_list
+                local bid = cost_list[1][1]
+                local num = cost_list[1][2]
+                btn_str = string.format(TI18N("语言_c_467"), PathTool.getItemRes(Config.ItemData.data_get_data(bid).icon), num)
+            end
+        else
+            self.is_free_refresh = true
+            local asset_cfg = Config.ExchangeData.data_shop_exchage_cost["skill_refresh_free"] 
+            if self.cur_tab.type == MallConst.MallType.OccultShop then
+                asset_cfg = Config.ExchangeData.data_shop_exchage_cost["skill_refresh_free"] 
+            elseif self.cur_tab.type == MallConst.MallType.TreasureShop3 then
+                asset_cfg = Config.ExchangeData.data_shop_exchage_cost["nintre_refresh_free"] 
+            end
+            if asset_cfg then
+                btn_str = string.format("<div fontsize=24 outline=2,#6c2b00>%s(%s/%s)</div>", TI18N("语言_c_409"), free_count, asset_cfg.val)
+            end
+        end
+        local config = Config.ExchangeData.data_shop_exchage_cost.cluster_refresh_number
+        local max_count = 0 
+        if config then
+            max_count = config.val
+        end
+        local count = data.count or 0
+        local text = string.format("%s/%s", count, max_count)
+        self.last_time_count:setString(text)
+        self.last_time_txt:setVisible(true)
+        self.last_time_count:setVisible(true)
+        self.refresh_btn_label:setString(btn_str)
+        self.refresh_btn_label:setVisible(true)
+    else
+        self.last_time_txt:setVisible(false)
+        self.last_time_count:setVisible(false)
+        self.refresh_Sprite_1:setVisible(false)
+        self.refresh_Text_1:setVisible(false)
+        self.refresh_btn_label:setVisible(false)
+    end
+end
+
+function MallSkillPanel:changeTabView( index )
+	if self.cur_index == index then return end
+    if self.cur_tab ~= nil then
+        self.cur_tab.label:setColor(cc.c3b(0xcf,0xb5,0x93))
+        self.cur_tab:setBright(false)
+    end
+
+    self.cur_index = index
+    self.cur_tab = self.tab_list[self.cur_index]
+
+    if self.cur_tab ~= nil then
+        self.cur_tab.label:setColor(cc.c3b(0xff,0xed,0xd6))
+        self.cur_tab:setBright(true)
+    end
+    if self.cur_index == 1 then
+        self.item_scrollview:setData({})
+        self.ctrl:sender13403(MallConst.MallType.OccultShop)
+    elseif self.cur_index == 2 then
+        self.item_scrollview:setData({})
+        self.ctrl:sender13403(MallConst.MallType.TreasureShop3)
+    end
+    
+    local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+    if item_bid then
+        self.item_bid = item_bid
+        loadSpriteTexture(self.coin, PathTool.getItemRes(Config.ItemData.data_get_data(item_bid).icon), LOADTEXT_TYPE)
+        -- if self.cur_index == 2 then
+        --     self.count:setString(MoneyTool.GetMoneyString(self.role_vo[Config.ItemData.data_assets_id2label[item_bid]]))
+        -- else
+            self.count:setString(MoneyTool.GetMoneyString(BackpackController:getInstance():getModel():getItemNumByBid(item_bid)))
+        -- end
+    end
+    -- self:changeRefreshStata(nil)
+
+end
+
+--根据商城类型打开
+function MallSkillPanel:openById( id  )
+    for k,v in pairs(self.tab_list) do
+        if v.type == id then
+            if k > 5 then
+                local _x = 0 - (v:getPositionX() - self.scroll_view:getContentSize().width) - 117
+                self.scroll_view:getInnerContainer():setPositionX(_x)
+            end
+            self.cur_index = nil
+            self:changeTabView(v.index)
+            return
+        end
+    end
+end
+
+function MallSkillPanel:getConfig( index,data)
+	local config = {}
+	local list = {}
+
+	if index == 9 then -- 公会
+		config = deepCopy(Config.ExchangeData.data_shop_exchage_guild)
+	elseif index == 10 then -- 竞技
+		config = deepCopy(Config.ExchangeData.data_shop_exchage_arena)
+	end
+
+    local list = deepCopy(data.item_list)
+    local show_list = {}
+    for a,j in pairs(config) do
+        if j.type == self.cur_tab.type then
+            if list and next(list) then
+                for k,v in pairs(list) do --已经买过的限购物品
+                    if j.id == v.item_id then
+                        if v.ext[1].val then --不管是什么限购 赋值已购买次数就好了。。
+                            j.has_buy = v.ext[1].val
+                            table.remove(list,k)
+                        end
+                        break
+                    else
+                        j.has_buy = 0
+                    end
+                end
+            else
+                j.has_buy = 0
+            end
+            if j.open_srv_timestamp and j.open_srv_timestamp ~= 0 then  --竞技商店老服去掉周限购
+                local openServerTime = InviteCodeController:getInstance():getModel():getOpenServerTime()
+                if openServerTime <= j.open_srv_timestamp then
+                    if j["limit_week"] and j.limit_week ~= 0 then
+                        j.limit_week = 0
+                    end
+                end
+            end
+            local is_show = true
+            if self.role_vo then
+                is_show = self:checkShowLev(j.role_lev)
+            end
+            if is_show then
+                table.insert(show_list,j)
+            end
+        end
+    end
+	return show_list
+end
+
+function MallSkillPanel:checkShowLev(role_lev)
+    if role_lev ~= nil and next(role_lev) ~= nil then
+        for i,v in ipairs(role_lev) do
+            if v[1] == "lv" then
+                if self.role_vo.lev and self.role_vo.lev < v[2] then
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
+
+--判断是否开启按钮
+function MallSkillPanel:checkBtnIsOpen( type )
+    local status = self:getShieldStatus(type)
+    if not status then return false end
+    if type == 91 then --编年小铺
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_nintre_lev.val then
+            return true
+        else
+            return false
+        end
+    elseif type == 9 then --技能商店
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_skill_lev.val then
+            return true
+        else
+            return false
+        end
+    end
+    return true
+end
+
+--获取屏蔽表是否屏蔽此商店
+function MallSkillPanel:getShieldStatus(type)
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("skill_shop_data")
+    local cfg = Config.ExchangeData.data_shop_list[type]
+    if cfg and (cfg.shop_show == 1 or (cfg.shop_show == 0 and table.indexof(nohideIds,type))) then
+        return true
+    end
+    return false
+end
+
+--设置按钮是否变灰
+function MallSkillPanel:setTabBtnTouchStatus(status, index)
+    local tab_btn = self.tab_list[index]
+    if tab_btn then
+        if status == true then
+            setChildUnEnabled(false, tab_btn)
+            tab_btn.label:setColor(cc.c3b(0xcf,0xb5,0x93))
+            tab_btn.label:enableOutline(cc.c4b(0x2A,0x16,0x0E,0xff), 2)
+        else
+            setChildUnEnabled(true, tab_btn)
+            tab_btn.label:setColor(cc.c3b(0xd8,0xd7,0xd7))
+            tab_btn.label:enableOutline(cc.c4b(0x40,0x40,0x40,0xff), 2)
+        end       
+        tab_btn.can_touch = status
+    end
+end
+
+function MallSkillPanel:DeleteMe()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    
+    if self.update_have_count then 
+        GlobalEvent:getInstance():UnBind(self.update_have_count)
+        self.update_have_count = nil
+    end
+
+    if self.update_son_list then 
+        GlobalEvent:getInstance():UnBind(self.update_son_list)
+        self.update_son_list = nil
+    end
+    if self.buy_success_event then 
+        GlobalEvent:getInstance():UnBind(self.buy_success_event)
+        self.buy_success_event = nil
+    end
+    if self.buy_success_one_event then 
+        GlobalEvent:getInstance():UnBind(self.buy_success_one_event)
+        self.buy_success_one_event = nil
+    end
+    if self.Arena_event then 
+        GlobalEvent:getInstance():UnBind(self.Arena_event)
+        self.Arena_event = nil
+    end
+    if self.role_vo then
+        if self.role_update_lev_event then
+            self.role_vo:UnBind(self.role_update_lev_event)
+            self.role_update_lev_event = nil
+        end
+        self.role_vo = nil
+    end
+    if self.add_goods_event then
+        GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.delete_goods_event then
+        GlobalEvent:getInstance():UnBind(self.delete_goods_event)
+        self.delete_goods_event = nil
+    end
+    if self.modify_goods_event then
+        GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+
+    doStopAllActions(self.refresh_time)
+end

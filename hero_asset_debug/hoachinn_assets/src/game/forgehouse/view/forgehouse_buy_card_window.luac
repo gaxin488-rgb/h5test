@@ -1,0 +1,152 @@
+--******** 文件说明 ********
+-- 
+-- @description: 秘卷战令购买进阶卡
+-- @DateTime:    2019-06-24 20:08:18
+-- *******************************
+ForgehouseBuyCardWindow = ForgehouseBuyCardWindow or BaseClass(BaseView)
+
+local controller = ForgeHouseController:getInstance()
+local model = controller:getModel()
+function ForgehouseBuyCardWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "battledrama/battle_drama_buy_card_window"
+end
+
+function ForgehouseBuyCardWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_container , 2)
+    local baseCfg = Config.PartnerArtifactData.data_artifact_const
+    self.title = main_container:getChildByName("Text_3")
+    self.title:setString(baseCfg.dungeon_pass_name_desc.desc)
+    local title_bg = main_container:getChildByName("title_bg")
+    local title_width = main_container:getChildByName("Text_3"):getContentSize().width
+    local title_bg_width = math.max(title_width+130, 266)
+    title_bg:setContentSize(cc.size(title_bg_width,44))
+    self.title_1 = main_container:getChildByName("Text_3_0")
+    self.title_1:setString(TI18N("语言_c_742"))
+    self.title_2 = main_container:getChildByName("Text_3_1")
+    self.title_2:setString(TI18N("语言_c_743"))
+    self.title_2:setPositionX(325)
+    setTextMaxWidth(self.title_1, 285 ,-10)
+    setTextMaxWidth(self.title_2, 285, -10)
+
+    -- local label_lock = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff,0xff), cc.p(0.5,0.5), cc.p(325,136), nil, nil, 400)
+    -- local str = string.format(baseCfg.dungeon_pass_introduce.desc)
+    -- label_lock:setString(str)
+    -- main_container:addChild(label_lock)
+    local label_lock = createLabel(20, cc.c4b(0xff,0xff,0xff,0xff),cc.c4b(0,0,0,0),325,135,nil,main_container,2, cc.p(0.5,0.5))
+    label_lock:setWidth(400)
+    local str = string.format(baseCfg.dungeon_pass_introduce.desc)
+    label_lock:setString(str)
+    label_lock:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+
+    self.btn_change = main_container:getChildByName("btn_change")
+    self.btn_change_label = self.btn_change:getChildByName("Text_6")
+    local orderId = baseCfg.dungeon_pass.val
+    local cfg = Config.PartnerArtifactData.data_artifact_war_order[orderId]
+    local chargeId = cfg.charge_id
+    local cdata = Config.ChargeData.data_charge_data[chargeId]
+    local val = 198
+    if cdata then
+        val = GetMoneyNum(cdata,"val")
+    end
+    self.btn_change_label:setString(string.format(TI18N("语言_c_4441"),val))
+
+    if model:getOrderActStatus() ~= 0 then
+        self.btn_change:setTouchEnabled(false)
+        setChildUnEnabled(true, self.btn_change)
+        self.btn_change_label:disableEffect(cc.LabelEffect.OUTLINE)
+    end
+    self.goods_1 = main_container:getChildByName("goods_1")
+    self.goods_1:setScrollBarEnabled(false)
+    self.goods_2 = main_container:getChildByName("goods_2")
+    self.goods_2:setScrollBarEnabled(false)
+    self.btn_close = main_container:getChildByName("btn_close")
+    self:setData()
+end
+
+function ForgehouseBuyCardWindow:setData()
+    local baseCfg = Config.PartnerArtifactData.data_artifact_const 
+	local card_list = Config.PartnerArtifactData.data_artifact_war_order[baseCfg.dungeon_pass.val]
+	if card_list and card_list.reward_1 and card_list.reward_2 then
+		local data_list = card_list.reward_1 or {}
+		local setting = {}
+		setting.scale = 0.7
+        setting.space_x = 3
+		setting.max_count = 4
+		setting.is_center = true
+		self.item_list1 = commonShowSingleRowItemList(self.goods_1, self.item_list1, data_list, setting)
+
+		local data_list = card_list.reward_2 or {}
+		local setting = {}
+		setting.scale = 0.7
+		setting.max_count = 4
+		setting.is_center = true
+		self.item_list2 = commonShowSingleRowItemList(self.goods_2, self.item_list2, data_list, setting)
+	end
+end
+
+function ForgehouseBuyCardWindow:register_event()
+	registerButtonEventListener(self.btn_close, function()
+        controller:openOrderBuyWindow(false)
+    end,true, 2)
+    registerButtonEventListener(self.background, function()
+        controller:openOrderBuyWindow(false)
+    end,false, 2)
+    registerButtonEventListener(self.btn_change, function()
+        self:changeWarn()
+    end,true, 1)
+
+    if not self.update_dram_data_event then
+        self.update_dram_data_event = GlobalEvent:getInstance():Bind(ForgeHouseEvent.UpdataOrdereInfo, function(data)
+            if model:getOrderActStatus() ~= 0 then
+                self.btn_change:setTouchEnabled(false)
+                setChildUnEnabled(true, self.btn_change)
+                self.btn_change_label:disableEffect(cc.LabelEffect.OUTLINE)
+            end
+        end)
+    end
+end
+function ForgehouseBuyCardWindow:changeWarn()
+    local act_status = model:getOrderActStatus()
+    if act_status == 1 then
+    else
+        local baseCfg = Config.PartnerArtifactData.data_artifact_const
+        local orderId = baseCfg.dungeon_pass.val
+        local cfg = Config.PartnerArtifactData.data_artifact_war_order[orderId]
+        local chargeId = cfg.charge_id
+        local cdata = Config.ChargeData.data_charge_data[chargeId]
+        sdkOnPay(cdata.val, nil, cdata.id, cdata.name)
+    end
+end
+
+function ForgehouseBuyCardWindow:openRootWnd()
+end
+
+function ForgehouseBuyCardWindow:close_callback()
+	if self.image_bg_load then
+        self.image_bg_load:DeleteMe()
+    end
+    self.image_bg_load = nil
+	if self.item_list1 then
+        for i,v in pairs(self.item_list1) do
+            v:DeleteMe()
+        end
+        self.item_list1 = nil
+    end
+    if self.item_list2 then
+        for i,v in pairs(self.item_list2) do
+            v:DeleteMe()
+        end
+        self.item_list2 = nil
+    end
+    if self.update_dram_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event)
+        self.update_dram_data_event = nil
+    end
+	controller:openOrderBuyWindow(false)
+end

@@ -1,0 +1,155 @@
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+MinigameCardDesView = MinigameCardDesView or BaseClass(BaseView)
+local controller = MinigameController:getInstance()
+
+local CARD_TYPE_DES = {
+    [1] = {icon = "minigame_mobcontrol_31", des = TI18N("语言_c_g_61")},
+    [2] = {icon = "minigame_mobcontrol_27", des = TI18N("语言_c_g_62")},
+    [3] = {icon = "minigame_mobcontrol_28", des = TI18N("语言_c_g_63")},
+    [4] = {icon = "minigame_mobcontrol_29", des = TI18N("语言_c_g_64")},
+    [5] = {icon = "minigame_mobcontrol_30", des = TI18N("语言_c_g_65")},
+}
+
+function MinigameCardDesView:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Tips
+    self.layout_name = "minigame/minigame_card_des_view"
+    self.effect_cache_list = {}
+
+    self.item_list = {}
+end
+
+function MinigameCardDesView:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    local main_panel = main_container:getChildByName("main_panel")
+    self.Image_2 = main_panel:getChildByName("Image_2")
+    self.win_title = main_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_g_60"))
+    moveTextBg(self.win_title,self.Image_2,60,300)
+
+    self.close_btn = main_panel:getChildByName("close_btn")
+
+    self.container = main_panel:getChildByName("container")
+
+    local bgSize = self.container:getContentSize()
+	local scroll_view_size = cc.size(bgSize.width, bgSize.height-8)
+    local setting = {
+        item_class = MinigameCardDesItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 630,               -- 单元的尺寸width
+        item_height = 154,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+
+    self.des_scrollview = CommonScrollViewLayout.new(self.container, cc.p(0,5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.des_scrollview:setSwallowTouches(false)
+end
+
+function MinigameCardDesView:register_event()
+    self.close_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            controller:openMinigameCardDesView(false)
+        end
+    end)
+    self.background:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            controller:openMinigameCardDesView(false)
+        end
+    end)
+end
+
+function MinigameCardDesView:openRootWnd(index)
+    local index = index or 1
+
+    local list = {[1] = TI18N("语言_c_g_95"),
+    [2] = TI18N("语言_c_g_96"),
+    [3] = TI18N("语言_c_g_98"),
+    [4] = TI18N("语言_c_g_99"),
+    [5] = TI18N("语言_c_g_97"),}
+    self.win_title:setString(list[index])
+    moveTextBg(self.win_title,self.Image_2,60,300)
+
+    local configs = Config.MinigameMobcontrolData.data_strategy_info
+    local list = {}
+    for k, v in pairs(configs) do
+        if v.type == index then
+            list[#list + 1] = v
+        end
+    end
+    table.sort(list, function(a, b)
+        return a.index < b.index
+    end)
+    self.des_scrollview:setData(list)
+end
+
+function MinigameCardDesView:close_callback()
+    if self.des_scrollview then
+		self.des_scrollview:DeleteMe()
+		self.des_scrollview = nil
+	end
+    controller:openMinigameCardDesView(false)
+end
+
+-----------------------------------@ des item
+MinigameCardDesItem = class("MinigameCardDesItem", function()
+    return ccui.Widget:create()
+end)
+
+function MinigameCardDesItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function MinigameCardDesItem:configUI(  )
+	self.size = cc.size(630,154)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("minigame/minigame_card_des_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.sp_icon = self.root_wnd:getChildByName("sp_icon")
+    self.text_level_title = self.root_wnd:getChildByName("text_level_title")
+    self.text_level_title:ignoreContentAdaptWithSize(true)
+    self.text_level_title:setTextAreaSize(cc.size(420,0))
+end
+
+function MinigameCardDesItem:register_event(  )
+	
+end
+
+function MinigameCardDesItem:setData( data )
+	data = data or {}
+    local image_plist = "minigame_mobcontrol"
+    local image_name, image_type, image_plist = controller:getModel():getImageType(data.desc_res)
+    local res = PathTool.getMinigameRes(image_name, image_type, image_plist)
+    loadSpriteTexture(self.sp_icon, res, image_plist)
+
+    local str = ""
+    local str = string.format(data.desc_txt, data.index%10, data.param[2], data.param[3])
+    self.text_level_title:setString(str)
+end
+
+function MinigameCardDesItem:DeleteMe(  )
+	self:removeAllChildren()
+	self:removeFromParent()
+end

@@ -1,0 +1,176 @@
+HeroUpgradeSpStar15to17Item = class("HeroUpgradeSpStar15to17Item", function()
+    return ccui.Layout:create()
+end)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+
+function HeroUpgradeSpStar15to17Item:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function HeroUpgradeSpStar15to17Item:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("hero/hero_upgrade_sp_star_15to17_item"))
+    self:setContentSize(cc.size(630, 100))
+    self:addChild(self.root_wnd)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+    self.rich_node = self.main_container:getChildByName("rich_node")
+    self.label_rich = self.rich_node:getChildByName("label_rich")
+    setTextMaxWidth( self.label_rich, 460, -4)
+    -- self.label_rich = createRichLabel(22,cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0.5), nil,nil,nil,460)
+    -- self.rich_node:addChild(self.label_rich)
+    self.bar_bg = self.main_container:getChildByName("bar_bg")
+    self.bar = self.main_container:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.btn_get:getChildByName("label"):setString(TI18N("语言_c_279"))
+    self.btn_go = self.main_container:getChildByName("btn_go")
+    self.btn_go:getChildByName("label"):setString(TI18N("语言_dun_aby_c_13"))
+    self.progress_txt = self.main_container:getChildByName("progress_txt")
+    self.finish_img = self.main_container:getChildByName("finish_img")
+    self.finish_img:setVisible(false)
+end
+
+function HeroUpgradeSpStar15to17Item:register_event()
+	self.btn_get:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			-- self.touch_end = sender:getTouchEndPosition()
+            playButtonSound2()
+            controller:openSpStarSelectWindow(true,self.cfg, self.hero_vo)
+		elseif event_type == ccui.TouchEventType.began then
+			self.touch_began = sender:getTouchBeganPosition()
+		elseif event_type == ccui.TouchEventType.moved then
+		elseif event_type == ccui.TouchEventType.canceled then
+		end
+	end)
+	self.btn_go:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			-- self.touch_end = sender:getTouchEndPosition()
+            playButtonSound2()
+            local source_id = self.cfg.source_id
+            if source_id ~= 1 then
+                if source_id == 835 or source_id == 836 then
+                    JumpController:getInstance():jumpViewByEvtData({source_id,self.hero_vo})
+                elseif source_id == 833 then
+                    local unlock_star = Config.PartnerSoulData.data_const["open_star_condition"].val
+                    local unlock_tower = Config.PartnerSoulData.data_const["open_tower_layers"].val
+                    local now_tower = StartowerController:getInstance():getModel():getNowTowerId() or 0
+                    local is_lock = (not ((self.hero_vo.star >= unlock_star) and (now_tower >= unlock_tower)))
+                    if is_lock then
+                        message(TI18N("语言_c_6675"))
+                    else
+                        local partner_cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+                        local data = {panel_type = HERO_SOUL_TYPE, hero_vo = self.hero_vo, config = partner_cfg, is_lock = is_lock,show_model_type = HeroConst.BagTab.eBagHero}
+                        local setting = {}
+                        setting.data = data
+                        setting.index = MainuiConst.pros_type.soul
+                        JumpController:getInstance():jumpViewByEvtData({source_id,setting})
+                    end
+                else
+                    JumpController:getInstance():jumpViewByEvtData({source_id})
+                end
+                controller:openSpStar15to17Panel(false)
+            end
+		elseif event_type == ccui.TouchEventType.began then
+			self.touch_began = sender:getTouchBeganPosition()
+		elseif event_type == ccui.TouchEventType.moved then
+		elseif event_type == ccui.TouchEventType.canceled then
+		end
+	end)
+end
+function HeroUpgradeSpStar15to17Item:setExtralData(data)
+    self.hero_vo = data
+end
+
+function HeroUpgradeSpStar15to17Item:setData(data)
+    self.data = data
+    local cfg = Config.PartnerStarTaskData.data_get
+    self.cfg = cfg[self.data]
+    local desc = self.cfg.desc
+    -- self.label_rich:setString(desc)
+    self.label_rich:setTouchEnabled(true)
+    self.label_rich:setString(transformTextToShort(desc, 40))
+    addEvt2showAllTextTips(self.label_rich,desc,40)
+
+    local task_data = model:getSpTaskHeroDataById(self.cfg.id)
+    self.btn_go:setVisible(false)
+    self.btn_get:setVisible(false)
+    if task_data.finish == 1 then
+        self.finish_img:setVisible(true)
+    end
+
+    if self.cfg.source_id == 1 then
+        if task_data.finish == 1 then
+            self.progress_txt:setString("1/1")
+            self.bar:setPercent(100)
+        else
+            self.progress_txt:setString("0/1")
+            self.bar:setPercent(0)
+            self.btn_get:setVisible(true)
+        end
+    else
+        local progress =  self.cfg.progress[1]
+        local target_val = progress.target_val
+        local pro = 0
+        self.bar:setPercent(task_data.value/target_val*100)
+        self.progress_txt:setString(task_data.value.."/"..target_val)
+        if progress.cli_label == "evt_hook_sec2" then
+            local t_value = math.floor(target_val/60)
+            local n_value = math.floor(task_data.value/60)
+            self.progress_txt:setString(n_value.."/"..t_value)
+        end
+        if task_data.finish == 1 then
+        else
+            self.btn_go:setVisible(true)
+        end
+    end 
+    self:checkRed()
+end
+
+function HeroUpgradeSpStar15to17Item:updateSelfSize()
+    local th = self.title:getContentSize().height 
+    self.main_container:setContentSize(cc.size(375,th + 7))
+    local csize = self.main_container:getContentSize()
+    self.root_wnd:setContentSize(csize)
+    self.main_container:setPositionY(csize.height)
+    self.selected = self.main_container:getChildByName("selected")
+    self.selected:setContentSize(csize)
+    self.selected:setPositionY(csize.height/2)
+    self.title:setPositionY(csize.height/2)
+    self.markImg:setPositionY(csize.height/2)
+end
+
+function HeroUpgradeSpStar15to17Item:getRootHeight()
+    local rh = self.root_wnd:getContentSize().height
+    return rh or 30
+end
+
+function HeroUpgradeSpStar15to17Item:updateSelect()
+    self.markImg:setVisible(false)
+    local status = HeroController:getInstance():getModel():getHeroSacrificeNum()
+    if self.selectNum == status then
+        self.markImg:setVisible(true)
+    end
+end
+
+function HeroUpgradeSpStar15to17Item:addCallBack(call_fun)
+    self.call_fun = call_fun
+end
+
+function HeroUpgradeSpStar15to17Item:checkRed()
+    local status = model:checkStarTaskIsCanFinishById(self.data,self.hero_vo.partner_id)
+    addRedPointToNodeByStatus(self.btn_get, status, 5, 5)
+end
+
+function HeroUpgradeSpStar15to17Item:DeleteMe()
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+
+

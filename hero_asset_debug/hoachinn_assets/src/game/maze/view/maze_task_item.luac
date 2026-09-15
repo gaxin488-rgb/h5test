@@ -1,0 +1,159 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      任务和成就使用的单元
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+MazeTaskItem = class("MazeTaskItem", function()
+    return ccui.Layout:create()
+end)
+
+function MazeTaskItem:ctor()
+    -- id = v.id
+    -- name = v.name
+    -- sort = v.sort
+    -- floor = v.floor
+    -- param = v.param
+    -- commit_rewards = v.commit_rewards
+    -- status = 0 -- 0不可领取 1 可领取 2 已领取
+    -- finish_num = 0 -- 当前完成量
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("maze/maze_task_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    self.btn_img_res = PathTool.getResFrame("common", "common_1098")
+    self.container = self.root_wnd:getChildByName("container")
+    self.task_desc = self.container:getChildByName("task_desc")
+    self.task_desc:getVirtualRenderer():setLineSpacing(-6)
+
+    self.btn_container = self.container:getChildByName("btn_container")
+    self.goto_btn = self.btn_container:getChildByName("goto_btn")
+    self.goto_btn_label = self.goto_btn:getChildByName("label")
+    self.goto_btn_label:setString(TI18N("语言_c_1564"))
+
+    self.value = self.btn_container:getChildByName("value")
+    self.value:setString(string.format("%s/%s", 0, 0))
+
+    self.completed_img = self.container:getChildByName("completed_img")
+    self.goods_con = self.container:getChildByName("goods_con")
+    local scroll_view_size = self.goods_con:getContentSize()
+    local setting = {
+        item_class = BackPackItem, -- 单元类
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 8.5, -- x方向的间隔
+        start_y = 11, -- 第一个单元的Y起点
+        space_y = 4, -- y方向的间隔
+        item_width = BackPackItem.Width * 0.7, -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.7, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 0, -- 列数，作用于垂直滚动类型
+        scale = 0.7
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.goods_con, cc.p(0, 0), ScrollViewDir.horizontal,
+        ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+    self.item_list = {}
+    self:registerEvent()
+end
+
+function MazeTaskItem:registerEvent()
+    self.goto_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            if self.data ~= nil then
+                if self.data.status == 1 then -- 可领取
+                    MazeController:getInstance():sender30314(self.data.id)
+                end
+            end
+        end
+    end)
+end
+
+function MazeTaskItem:setData(data)
+    self.data = data
+    if self.data == nil then
+        return
+    end
+    self.id = self.data.id
+    self.des = self.data.name -- 说明
+    self.param = self.data.param -- 目标
+    self.commit_rewards = self.data.commit_rewards -- 物品道具
+    self.status = self.data.status -- 0不可领取 1 可领取 2 已领取
+    self.finish_num = self.data.finish_num -- 已完成数量
+
+    self.completed_img:setVisible(self.data.status == 2)
+    self.btn_container:setVisible(self.data.status ~= 2)
+    setChildUnEnabled(true, self.goto_btn)
+    self.goto_btn:setTouchEnabled(false)
+    local btn_img_res = PathTool.getResFrame("common", "common_1098")
+    if self.data.status == 0 then
+        self.goto_btn_label:setString(TI18N("语言_c_1564"))
+        -- self.goto_btn_label:enableOutline(cc.c4b(24, 49, 91, 0xff),2)
+        -- self.goto_btn_label:setTextColor(cc.c4b(255, 255, 255, 0xff))
+        setChildUnEnabled(true, self.goto_btn)
+    elseif self.data.status == 1 then
+        self.goto_btn_label:setString(TI18N("语言_c_8"))
+        setChildUnEnabled(false, self.goto_btn)
+        self.goto_btn:setTouchEnabled(true)
+        -- btn_img_res = PathTool.getResFrame("common", "common_1027")
+        -- self.goto_btn_label:enableOutline(cc.c4b(92, 39, 5, 0xff),2)
+        -- self.goto_btn_label:setTextColor(cc.c4b(248, 239, 118, 0xff))
+    end
+    -- if self.btn_img_res ~= btn_img_res then
+    --     self.btn_img_res = btn_img_res
+    --     self.goto_btn:loadTexture(btn_img_res, LOADTEXT_TYPE_PLIST)
+    -- end
+
+    if self.data.status ~= 2 then
+        self.value:setString(string.format("%s/%s", self.finish_num, self.param))
+    end
+    local num = 30
+    if judgingLanguage() then
+        num = 15
+    end
+    self.task_desc:setString(transformTextToShort(string.format(self.des, self.param),num))
+    addEvt2showAllTextTips(self.task_desc,string.format(self.des, self.param),num)
+
+    local list = {}
+    for k, v in ipairs(self.commit_rewards) do
+        local vo = deepCopy(Config.ItemData.data_get_data(v[1]))
+        if vo then
+            vo.quantity = v[2]
+            table.insert(list, vo)
+        end
+    end
+    if list ~= nil and next(list) ~= nil and #list <= 2 then
+        self.item_scrollview:setClickEnabled(false)
+    else
+        self.item_scrollview:setClickEnabled(true)
+    end
+    self.item_scrollview:addEndCallBack(function()
+        local list = self.item_scrollview:getItemList()
+        for k, v in pairs(list) do
+            v.effect = false
+            v:setDefaultTip()
+            v:setSwallowTouches(false)
+        end
+    end)
+    self.item_scrollview:setData(list)
+end
+
+function MazeTaskItem:DeleteMe()
+    for i, v in ipairs(self.item_list) do
+        v:DeleteMe()
+    end
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    self.item_list = nil
+    self:removeAllChildren()
+    self:removeFromParent()
+end

@@ -1,0 +1,260 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      古树属性tips
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+HeroElfinTipsPanel = HeroElfinTipsPanel or BaseClass(BaseView)
+
+local controller = ElfinController:getInstance()
+
+function HeroElfinTipsPanel:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/hero_elfin_tips_panel"
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+end
+
+function HeroElfinTipsPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+        -- self.background:setSwallowTouches(false)
+    end
+    self.container = self.root_wnd:getChildByName("main_panel")
+    self.panel_bg = self.container:getChildByName("panel_bg") 
+    self.panel_bg_size = self.panel_bg:getContentSize()
+    self.base_attr = self.container:getChildByName("base_attr") 
+    self.base_attr:setString(TI18N("语言_c_844"))
+    self.bottom_btn = self.container:getChildByName("bottom_btn") 
+    self.bottom_btn:setVisible(false)
+    self.details_list = self.container:getChildByName("details_list") 
+    
+end
+
+function HeroElfinTipsPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn) ,false, 1)    
+end
+
+--关闭
+function HeroElfinTipsPanel:onClickCloseBtn()
+    controller:openHeroElfinTipsPanel(false)
+end
+
+function HeroElfinTipsPanel:openRootWnd()
+    self:setData()
+end
+
+function HeroElfinTipsPanel:setData()
+    self.list_data = {}
+    local cfg = Config.SpriteData.data_tree_step
+    for i=1,tableLen(cfg) do
+        table.insert(self.list_data,cfg[i])
+    end
+    self:updateList()
+
+    local num = ElfinController:getInstance():getModel():getTreeOrder() + 1
+    self.child_scrollview:jumpToMoveByIndex(num)
+    
+end
+function HeroElfinTipsPanel:updateList()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.details_list:getContentSize()
+        self.setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 556,                -- 单元的尺寸width
+            item_height = 250,               -- 单元的尺寸height
+            -- row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.details_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, self.setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    self.child_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroElfinTipsPanel:createNewCell(width, height)
+    local cell = HeroElfinTipsItem.new()
+	return cell
+end
+
+--获取数据数量
+function HeroElfinTipsPanel:numberOfCells()
+    if not self.list_data then return 0 end
+    return #self.list_data
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroElfinTipsPanel:updateCellByIndex(cell, index)
+    if not self.list_data then return end
+    cell.index = index
+    if self.tab ~= nil and cell.setExtendData ~= nil then
+        cell:setExtendData(self.tab)
+    end
+    local cell_data = self.list_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+function HeroElfinTipsPanel:close_callback()
+    controller:openHeroElfinTipsPanel(false)
+end
+--子项
+HeroElfinTipsItem = class("HeroElfinTipsItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeroElfinTipsItem:ctor()
+    self.tree_attr_list = {}
+    self.tree_hero_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function HeroElfinTipsItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_elfin_tips_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(556,250))
+	self:setTouchEnabled(true)
+    self.main_container = self.root_wnd:getChildByName("main_panel")
+    self.bg = self.main_container:getChildByName("bg")
+    self.special_attr = self.main_container:getChildByName("special_attr")
+    self.ancient_trees = self.main_container:getChildByName("ancient_trees")
+    self.ancient_trees:ignoreContentAdaptWithSize(true)
+    self.ancient_trees:setTextAreaSize(cc.size(110,0))
+    self.ancient_trees:setString(TI18N("语言_c_4683"))
+    self.hero_addition = self.main_container:getChildByName("hero_addition")
+    self.hero_addition:setString(TI18N("语言_c_4682"))
+    self.hero_addition:ignoreContentAdaptWithSize(true)
+    self.hero_addition:setTextAreaSize(cc.size(110,0))
+    self.ancient_trees:setPositionY(195)
+    self.ancient_trees:setFontSize(20)
+    setTextSpacing(self.ancient_trees)
+    self.hero_addition:setFontSize(20)
+    setTextSpacing(self.hero_addition)
+    -- end
+    self.now = self.main_container:getChildByName("now")
+    
+end
+
+function HeroElfinTipsItem:setData( data )
+    self.cfg = Config.SpriteData.data_tree_attr[1]
+    self.lv = data.lev_max
+    self.level = ElfinController:getInstance():getModel():getTreeOrder()
+    local strs = {
+        [1] = "add_hp", 	-- 气血
+        [2] = "add_atk", -- 攻击
+        [3] = "add_def",	-- 防御
+        [4] = "add_speed",	-- 出手速度
+    }
+    local attributes = {}
+    for key, value in pairs(data.all_attr) do
+        local attribute1 = self.cfg[value[1]] --基础属性
+        local attribute2 = value[2]  -- 进阶属性
+        local attribute3 = self.lv * self.cfg[strs[key]] * data[strs[key]] / 1000000 -- 成长属性
+        local attribute = mathRound(attribute1 + attribute2 + attribute3)
+        attributes[value[1]] = attribute
+        -- table.insert(attributes,value[1],attribute)
+    end
+    if data.count == self.level then
+        self.bg:setVisible(true)
+        self.now:setVisible(true)
+    else
+        self.bg:setVisible(false)
+        self.now:setVisible(false)
+    end
+    local jie = string.format(TI18N("语言_c_4725"),StringUtil.numToChinese(data.count),data.lev_max)
+    local str = TI18N("语言_c_1948")..jie
+    self.special_attr:setString(str)
+    --古树属性
+    if tableLen(data.all_attr) ~= 0 then
+        for i,attr_key in ipairs(ElfinConst.Tree_Attrs) do
+            local attr_val = attributes[attr_key]
+            local txt = ElfinConst.Tree_Attrs_Txt[i]
+            -- 是否为百分比
+            if PartnerCalculate.isShowPerByStr(attr_key) then
+                attr_val = (attr_val/100).."%"
+            end
+            local attr_txt = self.tree_attr_list[i]
+            if not attr_txt then
+                attr_txt = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), nil, nil, nil, 380)
+                self.main_container:addChild(attr_txt)
+                self.tree_attr_list[i] = attr_txt
+            end
+            attr_txt:setVisible(true)
+            local pos_x = 120 + (1-i%2)*220
+            local pos_y = 175 - (math.ceil(i/2)-1)*50
+            attr_txt:setPosition(cc.p(pos_x, pos_y))
+            local attr_icon = PathTool.getAttrIconByStr(attr_key)
+            local strs = txt..":"..attr_val
+            if data.count == self.level then
+                attr_txt:setString(string.format("<img src='%s' scale=1 /><div fontcolor=#157E22> %s</div>", PathTool.getResFrame("common", attr_icon), strs))
+            else
+                attr_txt:setString(string.format("<img src='%s' scale=1 /><div fontcolor=#ffffff> %s</div>", PathTool.getResFrame("common", attr_icon), strs))
+            end
+        end 
+    end
+    -- 英雄加成
+    if tableLen(data.partner_attr) ~= 0 then
+        for i,attr_key in ipairs(ElfinConst.Tree_Hero_Attrs) do
+            local attr_val = data.partner_attr[i][2]
+            local txt = ElfinConst.Tree_Hero_Attrs_Txt[i]
+            -- 是否为百分比
+            if PartnerCalculate.isShowPerByStr(attr_key) then
+                attr_val = (attr_val/100).."%"
+            end
+            local attr_txt = self.tree_hero_list[i]
+            if not attr_txt then
+                attr_txt = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), nil, nil, nil, 380)
+                self.main_container:addChild(attr_txt)
+                self.tree_hero_list[i] = attr_txt
+            end
+            attr_txt:setVisible(true)
+            local pos_x = 120 + (1-i%2)*220
+            local pos_y = 75 - (math.ceil(i/2)-1)*50
+            attr_txt:setPosition(cc.p(pos_x, pos_y))
+            local attr_icon = PathTool.getAttrIconByStr(attr_key)
+            local strs
+            if i <= 2 then
+                attr_val = attr_val/10
+                strs = txt.."+"..attr_val.."%"
+            else
+                strs = txt.."+"..attr_val
+            end
+            if data.count == self.level then
+                attr_txt:setString(string.format("<img src='%s' scale=1 /><div fontcolor=#157E22> %s</div>", PathTool.getResFrame("common", attr_icon), strs))
+            else
+                attr_txt:setString(string.format("<img src='%s' scale=1 /><div fontcolor=#ffffff> %s</div>", PathTool.getResFrame("common", attr_icon), strs))
+            end
+        end 
+    end
+end
+
+function HeroElfinTipsItem:register_event( )
+    
+end
+
+function HeroElfinTipsItem:DeleteMe()
+
+end

@@ -1,0 +1,616 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 密卷战令主界面
+-- @DateTime:    2020-2-20
+-- *******************************
+ForgehouseOrderWindow = ForgehouseOrderWindow or BaseClass(BaseView)
+
+local controller = ForgeHouseController:getInstance()
+local model = controller:getModel()
+local table_sort = table.sort
+local table_insert = table.insert
+function ForgehouseOrderWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Full
+
+    self.layout_name = "forgehouse/forgehouse_order_window"
+    self.res_list = {{
+        path = PathTool.getPlistImgForDownLoad("planesafkorderaction", "planesafkorderaction"),
+        type = ResourcesType.plist
+    }, {
+        path = PathTool.getPlistImgForDownLoad("oncewarorder", "oncewarorder"),
+        type = ResourcesType.plist
+    }}
+
+    self.reward_list = {}
+end
+
+function ForgehouseOrderWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    -- if self.background ~= nil then
+    --     self.background:loadTexture(PathTool.getPlistImgForDownLoad("bigbg", "bigbg_99", true), LOADTEXT_TYPE)
+    -- end
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    self.icon_img = self.main_container:getChildByName("icon_img")
+    -- 解锁奖励总览
+    self.btn_open_lock = self.main_container:getChildByName("btn_open_lock")
+    self.btn_open_lock_label = self.btn_open_lock:getChildByName("name")
+    setTextSpacing(self.btn_open_lock_label)
+    self.btn_open_lock_label:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    self.btn_open_lock_label:setString(TI18N("语言_c_5001"))
+
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.btn_close = self.main_container:getChildByName("btn_close")
+    local Image_1 = self.main_container:getChildByName("Image_1")
+    local medal_title = Image_1:getChildByName("medal_title")
+    medal_title:setString(TI18N("语言_c_5002"))
+    setTextMaxWidth(medal_title, 260, -6)
+    self.medal_num = Image_1:getChildByName("medal_num")
+    self.medal_num:setString("")
+    local Image_4 = self.main_container:getChildByName("Image_4")
+    self.desc_txt = Image_4:getChildByName("Text_33")
+    self.desc_txt:setString(TI18N("语言_c_5111"))
+    setTextMaxWidth(self.desc_txt,330)
+    self.go_btn = self.main_container:getChildByName("go_btn")--前往按钮
+    self.go_btn:getChildByName("name_0"):setString(TI18N("语言_c_108"))
+    local Image_7 = self.main_container:getChildByName("Image_7")
+    Image_7:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    local Image_15 = self.main_container:getChildByName("Image_15")
+    self.title_txt = Image_15:getChildByName("Text_33_0")
+    self.title_txt:setString(TI18N("语言_c_5000"))
+    self.goods_item = self.main_container:getChildByName("goods_item")
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 720, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+        checkovercallback = handler(self, self.updateSlideShowByVertical)
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    ---进度条相关
+    local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+    local setting = {
+        start_x = 8, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 100, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.reward_num_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size2, setting)
+    self.reward_num_item:setClickEnabled(false)
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+
+    -- self:createProgress()
+    self:initAwardConfig()
+    controller:sender24711()
+    -- self:adaptationScreen()
+    -- self:updatePercent()
+    -- self:updateIconImg() -- 背景
+    -- self:upDataTips() -- 领奖提示
+end
+
+function ForgehouseOrderWindow:upDataTips()
+    local order_info = model:getForgeHouseOrderInfo() or {}
+    local now_score = order_info.id or 0
+    local next_info = model:getNextForgeHouseRewardInfo()
+    local str = string_format(TI18N("%d/%d"),now_score,next_info.progress[2])
+    self.medal_num:setString(str)
+end
+
+-- 奖励列表
+function ForgehouseOrderWindow:createTaskCell()
+    local cell = ForgehouseOrderItem.new()
+    return cell
+end
+
+function ForgehouseOrderWindow:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function ForgehouseOrderWindow:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+-- 进度条
+-- 功勋数数列表
+function ForgehouseOrderWindow:createTaskCell2()
+    local cell = ForgehouseRewardItem.new()
+    return cell
+end
+
+function ForgehouseOrderWindow:numberOfTaskCells2()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function ForgehouseOrderWindow:updateTaskCellByIndex2(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+-- 进度条
+function ForgehouseOrderWindow:createProgress()
+    if self.comp_bar == nil then
+        local size = cc.size(315, 27)
+        local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+        local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+        if self.reward_goods_item and not tolua.isnull(self.reward_goods_item) and self.reward_goods_item.container and
+            not tolua.isnull(self.reward_goods_item.container) then
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.reward_goods_item.container:addChild(bar_layout, 999)
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar = createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true,0,1)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+        end
+    end
+end
+
+function ForgehouseOrderWindow:register_event()
+    if not self.update_dram_data_event then
+        self.update_dram_data_event = GlobalEvent:getInstance():Bind(ForgeHouseEvent.UpdataOrdereInfo, function(data)
+            self:initAwardConfig()
+            self:updateIconImg() -- 背景
+            self:upDataTips() -- 领奖提示
+            self:setChangeLevelStatus()
+        end)
+    end
+
+    registerButtonEventListener(self.btn_open_lock, function()
+        controller:openOrderBuyWindow(true)
+    end, true, 1)
+
+    -- 关闭按钮
+    registerButtonEventListener(self.btn_close, function()
+        controller:openOrderWindow(false)
+    end, true, 2)
+
+    registerButtonEventListener(self.go_btn, function()
+        controller:openOrderWindow(false)
+        ForgeHouseController:getInstance():openForgeHouseView(true, ForgeHouseConst.Tab_Index.Artifact)
+    end, true, 2)
+
+    -- 帮助说明
+    registerButtonEventListener(self.btn_rule, function(param, sender, event_type)
+        local config = Config.PartnerArtifactData.data_artifact_const.dungeon_pass_rule_desc
+        if config then
+            local config_desc = config.desc
+            TipsManager:getInstance():showCommonTips(config_desc, sender:getTouchBeganPosition(), nil, nil, 500)
+        end
+    end, false, 1)
+end
+
+-- 滑动的时候处理显示
+function ForgehouseOrderWindow:updateSlideShowByVertical()
+    local container_y = self.reward_goods_item:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+
+function ForgehouseOrderWindow:updateIconImg()
+    local status = model:getOrderActStatus()
+    if self.icon_img then
+        local basecfg = Config.PartnerArtifactData.data_artifact_const
+        local res = basecfg.dungeon_pass_icon.desc
+        loadSpriteTexture(self.icon_img, PathTool.getResFrame("oncewarorder", res), LOADTEXT_TYPE_PLIST)
+    end
+    if status ~= 0 then
+        setChildUnEnabled(false, self.icon_img)
+    else
+        setChildUnEnabled(true, self.icon_img)
+    end
+    if self.btn_open_lock then
+        if status ~= 0 then
+            self.btn_open_lock:setVisible(false)
+        else
+            self.btn_open_lock:setVisible(true)
+        end
+    end
+end
+-- 
+function ForgehouseOrderWindow:setChangeLevelStatus()
+    local getnum = 1
+    local order_status = ForgeHouseController:getInstance():getModel():getOrderActStatus()
+    local cfg = Config.PartnerArtifactData.data_artifact_war_order_level
+    local order_info = model:getForgeHouseOrderInfo() or {}
+    local now_score = order_info.id or 0
+    for i, v in ipairs(cfg) do
+        local s_score = v.progress[2]
+        if now_score >= s_score then
+            local get_status = ForgeHouseController:getInstance():getModel():getOrderRewardStatus(v.lev)
+            if order_status ~= 0 then --战令已经解锁
+                if get_status == 1 or get_status == 2 then -- 可领取
+                    getnum = v.lev
+                    break
+                end
+            else
+                if get_status == 1 then -- 可领取
+                    getnum = v.lev
+                    break
+                end
+            end
+        else
+            getnum = v.lev - 1
+            if getnum < 1 then
+                getnum  = 1
+            end
+            break
+        end
+    end
+    self:jumpToMoveByY(139 * (getnum - 1))
+end
+
+function ForgehouseOrderWindow:jumpToMoveByY(y)
+    if not y then
+        return
+    end
+    local pos = y
+    if pos < 0 then
+        pos = 0
+    end
+    local len = #self.reward_list or 1
+    local scroll_view_size = self.goods_item:getContentSize()
+    local pos_per = pos * 100 / (len * 139 - scroll_view_size.height)
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_goods_item:scrollToPercentVertical(pos_per, 0.5, true)
+    self.reward_num_item:scrollToPercentVertical(pos_per, 0.5, true)
+end
+
+function ForgehouseOrderWindow:initAwardConfig()
+    self.reward_list = {}
+    local reward_data = Config.PartnerArtifactData.data_artifact_war_order_level
+    self.reward_list = deepCopy(reward_data)
+    self.reward_goods_item:reloadData(nil,nil,true)
+    self.reward_num_item:reloadData(nil,nil,true)
+    if self.comp_bar_bg and not tolua.isnull(self.comp_bar_bg) and self.comp_bar and not tolua.isnull(self.comp_bar) and
+        self.bar_layout and not tolua.isnull(self.bar_layout) then
+        local len = #self.reward_list or 1
+        self.comp_bar_bg:setContentSize(cc.size(139 * (len - 1), 27))
+        self.comp_bar:setContentSize(cc.size(139 * (len - 1), 15))
+        self.bar_layout:setPosition(cc.p(57, 139 * (len - 1) + 139 / 2))
+    end
+end
+
+function ForgehouseOrderWindow:openRootWnd()
+
+end
+
+function ForgehouseOrderWindow:close_callback()
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    if self.reward_num_item then
+        self.reward_num_item:DeleteMe()
+        self.reward_num_item = nil
+    end
+    if self.update_dram_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event)
+        self.update_dram_data_event = nil
+    end
+    controller:openOrderWindow(false)
+end
+
+------------------------------------------
+-- 奖励子项
+ForgehouseOrderItem = class("ForgehouseOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function ForgehouseOrderItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ForgehouseOrderItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("forgehouse/forgehouse_order_item"))
+    self:setContentSize(cc.size(720, 139))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.goods_item = main_container:getChildByName("goods_item") -- 付费礼物
+    self.goods_item:setScrollBarEnabled(false)
+    self.free_goods_item = main_container:getChildByName("free_goods_item") -- 免费礼物
+    self.free_goods_item:setScrollBarEnabled(false)
+    self.finish_img = main_container:getChildByName("finish_img")
+    self.finish_img:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_name = self.btn_get:getChildByName("name")
+    self.btn_name:setString("")
+end
+
+function ForgehouseOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local order_status =  ForgeHouseController:getInstance():getModel():getOrderActStatus()
+        local get_status = ForgeHouseController:getInstance():getModel():getOrderRewardStatus(self.data.lev)
+        if order_status ~= 0 then --战令已经解锁
+            if get_status == 1 or get_status == 2 then -- 可领取
+                controller:sender24712(self.data.lev)
+            elseif get_status == 0 then--前往过关
+                controller:openOrderWindow(false)
+                ForgeHouseController:getInstance():openForgeHouseView(true, ForgeHouseConst.Tab_Index.Artifact)
+            end
+        else --战令未解锁时
+            if get_status == 1 then --可领取
+                controller:sender24712(self.data.lev)
+            elseif get_status == 0 then --前往过关
+                controller:openOrderWindow(false)
+                ForgeHouseController:getInstance():openForgeHouseView(true, ForgeHouseConst.Tab_Index.Artifact)
+            elseif get_status == 2 then
+                controller:openOrderBuyWindow(true)
+            end
+        end
+    end, true, 1)
+end
+
+function ForgehouseOrderItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    local order_status = ForgeHouseController:getInstance():getModel():getOrderActStatus()
+    local get_status = ForgeHouseController:getInstance():getModel():getOrderRewardStatus(self.data.lev)
+    local free_effect_id
+    local free_get_status = false
+    local free_lock_ststus = false
+
+    local pay_effect_id
+    local is_pay_status = false
+    local pay_lock_status = false
+    if order_status ~= 0 then -- 战令已解锁
+        if get_status == 0 then
+            pay_lock_status = false
+            free_lock_ststus = true
+        elseif get_status == 1 then
+            pay_effect_id = 263
+            free_effect_id = 263
+        elseif get_status == 2 then
+            free_get_status = true
+            pay_effect_id = 263
+        elseif get_status == 3 then
+            free_get_status = true
+            is_pay_status = true
+        end
+    else
+        if get_status == 0 then
+            pay_lock_status = true
+            free_lock_ststus = true
+        elseif get_status == 1 then
+            pay_lock_status = true
+            free_effect_id = 263
+        elseif get_status == 2 then
+            free_get_status = true
+            pay_lock_status = true
+        elseif get_status == 3 then
+            free_get_status = true
+            is_pay_status = true
+        end
+    end
+    --免费道具
+    local free_data_list = self.data.reward or {}
+    local setting1 = {}
+    setting1.start_x = 10
+    setting1.scale = 0.7
+    setting1.is_tip = true
+    setting1.show_effect_id = free_effect_id
+    setting1.is_get_status = free_get_status
+    setting1.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.free_item_list = commonShowSingleRowItemList(self.free_goods_item, self.free_item_list, free_data_list,setting1)
+    -- 付费道具
+    local data_list = self.data.rmb_reward or {}
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.lock = pay_lock_status
+    setting.is_tip = true
+    setting.max_count = 2
+    setting.show_effect_id = pay_effect_id
+    setting.is_get_status = is_pay_status
+    setting.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.item_list = commonShowSingleRowItemList(self.goods_item, self.item_list, data_list, setting)
+    if self.btn_get then
+        addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+        if order_status ~= 0 then --战令已经解锁
+            if get_status == 1 or get_status == 2 then -- 可领取
+                self.btn_name:enableOutline(Config.ColorData.data_color4[264], 2)
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            elseif get_status == 3 then--已领取
+                self.btn_get:setVisible(false)
+                self.finish_img:setVisible(true)
+            elseif get_status == 0 then--前往过关
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+            end
+        else --战令未解锁时
+            if get_status == 1 then --可领取
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            elseif get_status == 0 then --前往过关
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+            elseif get_status == 2 then
+                self.btn_name:setString(TI18N("语言_c_2684"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+            elseif get_status == 3 then
+                self.btn_get:setVisible(false)
+                self.finish_img:setVisible(true)
+            end
+        end
+    end
+end
+
+function ForgehouseOrderItem:DeleteMe()
+    if self.item_list then
+        for i, v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+    if self.free_item_list then
+        for i, v in pairs(self.free_item_list) do
+            v:DeleteMe()
+        end
+        self.free_item_list = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+------------------------------------------
+-- 功勋子项
+ForgehouseRewardItem = class("ForgehouseRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function ForgehouseRewardItem:ctor()
+    self.size = cc.size(100, 139)
+    self:configUI()
+    self:register_event()
+end
+
+function ForgehouseRewardItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    self.select_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_2"),
+                         self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_1"),
+                          self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img:setVisible(false)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+                      self.size.width / 2, self.size.height / 5 + 11, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+                       self.size.height / 5 + 11, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function ForgehouseRewardItem:register_event()
+end
+
+function ForgehouseRewardItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    local get_status = ForgeHouseController:getInstance():getModel():getOrderRewardStatus(self.data.lev)
+    self.num_txt:setString(data.progress[2])
+    if get_status ~= 0 then
+        self.select_img:setVisible(true)
+    else
+        self.select_img:setVisible(false)
+    end
+    -- 进度条相关
+    local cfg = Config.PartnerArtifactData.data_artifact_war_order_level
+    local id = self.data.lev
+    local last_id = id + 1
+    if cfg[last_id] then
+        if self.comp_bar == nil then
+            local size = cc.size(139, 27)
+            local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+            local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.root_wnd:addChild(bar_layout, 1)
+                bar_layout:setPosition(cc.p(50, 77))
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =
+                createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 0, 0)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+            self.comp_bar_bg:setContentSize(cc.size(139, 27))
+            self.comp_bar:setContentSize(cc.size(139, 15))
+        end
+        if self.bar_layout then
+            self.bar_layout:setVisible(true)
+        end
+        local order_info = model:getForgeHouseOrderInfo() or {}
+        local now_score = order_info.id or 0
+        -- print(now_score,self.data.lev)
+        -- 上一条数据的相关
+        local last_cfg = cfg[last_id]
+        local last_limit = last_cfg.progress[2]
+        if self.data.progress[2] <= now_score then
+            local total = last_limit - self.data.progress[2]
+            local now_pas = now_score - self.data.progress[2]
+            self.comp_bar:setPercent(now_pas / total * 100)
+        else
+            self.comp_bar:setPercent(0)
+        end
+    else
+        if self.bar_layout then
+            self.bar_layout:setVisible(false)
+        end
+    end
+    self.select_bg:setLocalZOrder(9)
+    self.select_img:setLocalZOrder(10)
+    self.num_bg:setLocalZOrder(11)
+    self.num_txt:setLocalZOrder(12)
+    self:setLocalZOrder(id)
+end
+
+function ForgehouseRewardItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

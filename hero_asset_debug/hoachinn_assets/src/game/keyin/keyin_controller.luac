@@ -1,0 +1,220 @@
+-- --------------------------------------------------------------------
+-- --------------------------------------------------------------------
+KeyinController = KeyinController or BaseClass(BaseController)
+
+function KeyinController:config()
+    self.model = KeyinModel.New(self)
+    self.dispather = GlobalEvent:getInstance()
+    self.is_first_init = true
+end
+
+function KeyinController:getModel()
+    return self.model
+end
+
+function KeyinController:registerEvents()
+
+end
+
+function KeyinController:registerProtocals()
+    self:RegisterProtocal(11470, "handle11470")     --推送刻印改变
+    self:RegisterProtocal(11471, "handle11471")     --刻印强化
+    self:RegisterProtocal(11472, "handle11472")     --刻印重置获取物品请求
+    self:RegisterProtocal(11473, "handle11473")     --刻印重置
+    self:RegisterProtocal(11474, "handle11474")     --刻印一键强化
+    self:RegisterProtocal(11475, "handle11475")     --批量请求刻印数据
+end
+--刻印信息更新
+function KeyinController:sender11470(partner_id)
+    local protocal ={}
+    protocal.partner_id = partner_id
+    self:SendProtocal(11470,protocal)
+end
+function KeyinController:handle11470( data )
+    -- self.model:shwoPowerChange(data)
+    self.model:setKiyinData(data)
+    GlobalEvent:getInstance():Fire(HeroEvent.Hero_Update_Keyin_Event,data)
+end
+--批量请求刻印数据
+function KeyinController:sender11475(id_list)
+    local protocal = {}
+    protocal.partner_ids = id_list
+    self:SendProtocal(11475,protocal)
+end
+function KeyinController:handle11475(data)
+    self.model:setKiyinListData(data)
+end
+--刻印强化
+function KeyinController:sender11471(partner_id,type,expend1,expend2,item_expend)
+    local protocal ={}
+    protocal.partner_id = partner_id
+    protocal.type = type
+    protocal.expend1 = expend1
+    protocal.expend2 = expend2
+    protocal.item_expend = item_expend
+    -- print("handle11471$",vardump(protocal))
+    self.partner_id = partner_id
+    self:SendProtocal(11471,protocal)
+end
+function KeyinController:handle11471( data )
+    -- print("handle11471$",vardump(data))
+    if data.result ~= 0 then
+        -- print("self.partner_id",self.partner_id)
+        self.model:checkShowSkillUnlock(self.partner_id)
+        self.partner_id = nil
+    end
+end
+
+--刻印重置获取物品请求
+function KeyinController:sender11472( partner_id )
+    local protocal ={}
+    protocal.partner_id = partner_id
+    self:SendProtocal(11472,protocal)
+end
+function KeyinController:handle11472( data )
+    -- print("handle11472$",vardump(data))
+    GlobalEvent:getInstance():Fire(HeroEvent.Hero_Keyin_Reset_Offer_Event ,data)
+end
+--刻印重置"
+function KeyinController:sender11473( partner_id )
+    local protocal ={}
+    protocal.partner_id = partner_id
+    self:SendProtocal(11473,protocal)
+end
+function KeyinController:handle11473( data )
+    -- print("handle11473$",vardump(data))
+end
+--刻印一键强化
+function KeyinController:sender11474( partner_id,type )
+    local protocal ={}
+    protocal.partner_id = partner_id
+    protocal.type = type
+    self.partner_id = partner_id
+    self.old_lv = self.model:getNowTotalKeyinLv(partner_id)
+    self:SendProtocal(11474,protocal)
+end
+function KeyinController:handle11474( data )
+    if data.result ~= 0 then
+        self.model:checkShowSkillUnlock(self.partner_id,self.old_lv )
+        self.partner_id = nil
+        self.old_lv = nil
+    end
+end
+
+function KeyinController:openKeyinUpgradeSelectPanel(bool,item,sle_list,from_type,setting)
+    if bool == true then
+        if not self.keyin_select_window then
+            self.keyin_select_window = KeyinUpgradeSelectPanel.New()
+        end
+        if self.keyin_select_window and self.keyin_select_window:isOpen() == false then
+            self.keyin_select_window:open(item,sle_list,from_type,setting)
+        end
+    else
+        if self.keyin_select_window then
+            self.keyin_select_window:close()
+            self.keyin_select_window = nil
+        end
+    end
+end
+
+function KeyinController:openKeyinPreviewPanel(bool,partner_id)
+    if bool == true then
+        if not self.keyin_preview_window then
+            self.keyin_preview_window = KeyinDetailPanel.New()
+        end
+        if self.keyin_preview_window and self.keyin_preview_window:isOpen() == false then
+            self.keyin_preview_window:open(partner_id)
+        end
+    else
+        if self.keyin_preview_window then
+            self.keyin_preview_window:close()
+            self.keyin_preview_window = nil
+        end
+    end
+end
+function KeyinController:openKeyinResetOfferPanel(bool,data,call_back)
+    if bool == true then
+        if not self.keyin_reset_window then
+            self.keyin_reset_window = KeyinResetOfferPanel.New()
+        end
+        if self.keyin_reset_window and self.keyin_reset_window:isOpen() == false then
+            self.keyin_reset_window:open(data,call_back)
+        end
+    else
+        if self.keyin_reset_window then
+            self.keyin_reset_window:close()
+            self.keyin_reset_window = nil
+        end
+    end
+end
+--刻印技能解锁
+function KeyinController:openKeyinSkillUnlockWindow(bool,skill_id,setting)
+    if bool == true then
+        if not self.keyin_skill_unlock_window then
+            self.keyin_skill_unlock_window = KeyinSkillUnlockWindow.New(skill_id,setting)
+        end
+        if self.keyin_skill_unlock_window and self.keyin_skill_unlock_window:isOpen() == false then
+            self.keyin_skill_unlock_window:open()
+        end
+    else
+        if self.keyin_skill_unlock_window then
+            self.keyin_skill_unlock_window:close()
+            self.keyin_skill_unlock_window = nil
+        end
+    end
+end
+--刻印技能tips
+function KeyinController:openKeyinSkilltipsWindow(bool,cfg,setting)
+    if bool == true then
+        if not self.keyin_skill_tips_window then
+            self.keyin_skill_tips_window = KeyinSkillTips.New()
+        end
+        if self.keyin_skill_tips_window and self.keyin_skill_tips_window:isOpen() == false then
+            self.keyin_skill_tips_window:open(cfg,setting)
+        end
+    else
+        if self.keyin_skill_tips_window then
+            self.keyin_skill_tips_window:close()
+            self.keyin_skill_tips_window = nil
+        end
+    end
+end
+--刻印说明tips
+function KeyinController:openKeyinRuletipsWindow(bool)
+    if bool == true then
+        if not self.keyin_rule_tips_window then
+            self.keyin_rule_tips_window = KeyinRuleTips.New()
+        end
+        if self.keyin_rule_tips_window and self.keyin_rule_tips_window:isOpen() == false then
+            self.keyin_rule_tips_window:open()
+        end
+    else
+        if self.keyin_rule_tips_window then
+            self.keyin_rule_tips_window:close()
+            self.keyin_rule_tips_window = nil
+        end
+    end
+end
+--刻印满级预览tips
+function KeyinController:openKeyinPreviewTipsWindow(bool,bid)
+    if bool == true then
+        if not self.keyin_preview_tips_window then
+            self.keyin_preview_tips_window = KeyinMaxAttrTips.New()
+        end
+        if self.keyin_preview_tips_window and self.keyin_preview_tips_window:isOpen() == false then
+            self.keyin_preview_tips_window:open(bid)
+        end
+    else
+        if self.keyin_preview_tips_window then
+            self.keyin_preview_tips_window:close()
+            self.keyin_preview_tips_window = nil
+        end
+    end
+end
+
+function KeyinController:__delete()
+    if self.model ~= nil then
+        self.model:DeleteMe()
+        self.model = nil
+    end
+end

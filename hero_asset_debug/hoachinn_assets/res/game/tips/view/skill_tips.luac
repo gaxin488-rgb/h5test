@@ -1,0 +1,429 @@
+-- --------------------------------------------------------------------
+-- 技能tips
+-- --------------------------------------------------------------------
+
+SkillTips = SkillTips or BaseClass(BaseView) 
+
+local string_format = string.format
+
+function SkillTips:__init( ... )
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "tips/skill_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+    self.win_type = WinType.Tips   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+
+    -- refs ของสไปรต์ไอคอน
+    self._buff_icons_cur  = {}
+    self._buff_icons_next = {}
+
+    -- ===== ปรับแค่ค่าที่เกี่ยวกับไอคอน/ข้อความบัฟ =====
+    self._BUFF_ICON_SIZE      = 33    -- ขยายไอคอนให้ใหญ่ชัด
+    self._LEFT_PADDING        = 22    -- ระยะซ้ายของคอนเทนต์
+    self._TEXT_GAP_TO_ICON    = 2     -- ข้อความชิดไอคอน
+    self._BUFF_ICON_GAPY      = 8     -- ช่องไฟแนวตั้งระหว่างบล็อกบัฟ
+    self._BUFF_TEXT_OFFSET_X  = self._BUFF_ICON_SIZE + self._TEXT_GAP_TO_ICON
+end
+
+-- 构建UI
+function SkillTips:open_callback( ... )
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+    self.container = self.main_panel:getChildByName("container")
+    self.container_init_size = self.container:getContentSize()
+
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.base_panel_height = self.base_panel:getContentSize().height
+
+    self.Sprite_3 = self.base_panel:getChildByName("Sprite_3")
+    self.skill_icon = self.base_panel:getChildByName("skill_icon")
+    self.Sprite_3:setVisible(false)
+    self.skill_icon:setVisible(false)
+    self.skill_item = SkillItem.new(false,false,false,nil,nil,false)
+    self.skill_item:setPosition(76, 68)
+    self.base_panel:addChild(self.skill_item)
+    self.skill_name = self.base_panel:getChildByName("name")
+    self.skill_type = self.base_panel:getChildByName("skill_type")
+
+    self.line = self.container:getChildByName("line")
+    self.line:setVisible(false)
+end
+
+function SkillTips:register_event()
+    if self.background then 
+        self.background:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                self:close()
+            end
+        end)
+    end
+end
+
+-- utils --------------
+local function _clear_icon_nodes(t)
+    for _, n in ipairs(t) do
+        if n and n.removeFromParent then n:removeFromParent() end
+    end
+    for k in pairs(t) do t[k] = nil end
+end
+
+local function _icon_path(icon_id)
+    if not icon_id or icon_id=="" then return nil end
+    return string.format("resource/bigbufficon/%s.png", tostring(icon_id))
+end
+
+-- scale ไอคอนให้ได้ “ขนาดพิกเซลจริง” ตามที่กำหนด
+local function _apply_icon_size(sp, size)
+    if not sp then return end
+    local w = sp:getContentSize().width
+    if w and w > 0 then
+        local s = size / w
+        sp:setScale(s)
+    end
+    sp:setAnchorPoint(cc.p(0.5,0.5))
+end
+
+-- วัดความสูง rich text ด้วยความกว้างที่กำหนด
+local function _measure_rich(parent, rich_text, max_w, font_size)
+    local tmp = createRichLabel(font_size or 20, cc.c4b(0xff,0xee,0xdd,0xff), cc.p(0,1), cc.p(-10000, -10000), 0, nil, max_w)
+    parent:addChild(tmp)
+    tmp:setString(rich_text)
+    local h = tmp:getContentSize().height
+    tmp:removeFromParent()
+    return h
+end
+
+-- แยกเป็น name/desc เพื่อจับตำแหน่งไอคอนเท่ากับบรรทัด "ชื่อ"
+local function _build_blocks(ids, cfg_map)
+    local blocks = {}
+    if not ids or not next(ids) then return blocks end
+    for _, bid in ipairs(ids) do
+        local c = cfg_map[bid]
+        if c then
+            local name = c.name or ""
+            local desc = c.desc or ""
+            local icon_id = c.icon or c.icon_id
+            local full = string_format("<div fontcolor=#ffeedd>[%s]</div><div fontcolor=#a1978b>\n%s</div>", name, desc)
+            table.insert(blocks, {name=name, desc=desc, icon=icon_id, full=full})
+        end
+    end
+    return blocks
+end
+-- --------------------
+
+function SkillTips:updateVo( skill_vo, is_lock, not_show_next, hide_flag, fire_cd, hallows_atk_val )
+    _clear_icon_nodes(self._buff_icons_cur)
+    _clear_icon_nodes(self._buff_icons_next)
+
+    self.skill_vo = skill_vo
+    local level = skill_vo.level or 1
+    if skill_vo.client_lev and skill_vo.client_lev>0 then level = skill_vo.client_lev end
+
+    if not hide_flag then
+        self.skill_name:setString(string.format(TI18N("语言_c_4726"),skill_vo.name,level))
+    else
+        self.skill_name:setString(skill_vo.name)
+    end
+    self.skill_name:ignoreContentAdaptWithSize(true)
+    self.skill_name:setTextAreaSize(cc.size(255,0))  
+    self.skill_item:setData(skill_vo)
+
+    self.skill_type:setVisible(true)
+    if skill_vo.type == "active_skill" then 
+        self.skill_type:setString(TI18N("语言_c_1729"))
+    else 
+        self.skill_type:setString(TI18N("语言_c_1730")) 
+    end
+
+    local scrollmax   = 500
+    local total_max   = 650
+    local total_width = 422
+    self.skill_scroll = createScrollView(total_width,scrollmax,0,0,self.container,ccui.ScrollViewDir.vertical)
+    self.skill_scroll:setTouchEnabled(true)
+
+    local total_height = 4 + self.base_panel_height
+
+    local skill_des_height = 0
+    if self.skill_vo.des ~= "" then
+        if self.skill_desc == nil then
+            self.skill_desc = createRichLabel(22,cc.c4b(0xfe,0xee,0xba,0xff),cc.p(0,1),cc.p(22,10),0,nil,370)
+            self.skill_scroll:addChild(self.skill_desc)
+        end
+        if self.skill_vo.hallows_atk and self.skill_vo.hallows_atk > 0 and hallows_atk_val then
+            local total_atk_val = self.skill_vo.hallows_atk + hallows_atk_val
+            local str = string.format(self.skill_vo.des, total_atk_val, hallows_atk_val)
+            self.skill_desc:setString(str)
+        else
+            self.skill_desc:setString(self.skill_vo.des)
+        end
+        skill_des_height = self.skill_desc:getContentSize().height 
+        total_height  = total_height + skill_des_height + 2
+    end
+
+    local extend_desc_height = 0
+    if self.extend_desc == nil then
+        self.extend_desc = createRichLabel(22,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),nil,nil,370)
+        self.skill_scroll:addChild(self.extend_desc)
+    end
+    if not hide_flag then
+        local extend_str = ""
+        if self.skill_vo.cd == 0 then
+            extend_str = TI18N("语言_c_1731")
+        else
+            extend_str = string_format(TI18N("语言_c_4894"), TI18N("语言_c_1732"),self.skill_vo.cd, TI18N("语言_c_1733") )
+        end
+        if fire_cd and fire_cd ~= 0 then
+            fire_cd = fire_cd
+        else
+            fire_cd = self.skill_vo.fire_cd or 0
+        end
+        if fire_cd ~= 0 then
+            extend_str = extend_str..string_format(TI18N("语言_c_4894"), TI18N("语言_c_1734"), fire_cd, TI18N("语言_c_1735")) 
+        end
+        self.extend_desc:setString(extend_str)
+    end
+    extend_desc_height = self.extend_desc:getContentSize().height
+    total_height  = total_height + extend_desc_height + 18
+
+    ----------------------------------------------------------------
+    -- บัฟของสกิลปัจจุบัน (แก้เฉพาะไอคอน+ตำแหน่งข้อความ)
+    ----------------------------------------------------------------
+    local buff_config = Config.SkillData.data_get_buff 
+    local cur_blocks, cur_name_heights, cur_full_heights = {}, {}, {}
+    local text_max_w = 370 - self._BUFF_TEXT_OFFSET_X  -- ลดความกว้างเพื่อไม่ให้ล้นขอบ
+    if self.skill_vo.buff_des and self.skill_vo.buff_des[1] and next(self.skill_vo.buff_des[1]) then
+        cur_blocks = _build_blocks(self.skill_vo.buff_des[1], buff_config)
+        for _, b in ipairs(cur_blocks) do
+            local name_only = string_format("<div fontcolor=#ffeedd>[%s]</div>", b.name or "")
+            table.insert(cur_name_heights, _measure_rich(self.skill_scroll, name_only, text_max_w, 20))
+            table.insert(cur_full_heights, _measure_rich(self.skill_scroll, b.full,     text_max_w, 20))
+        end
+    end
+
+    local buff_desc_str, buff_desc_height = "", 0
+    if #cur_blocks > 0 then
+        if self.line_1 == nil then
+            self.line_1 = createSprite(PathTool.getResFrame("tips","tips_8"), self.container_init_size.width/2, 0, self.skill_scroll, cc.p(0.5, 1), LOADTEXT_TYPE_PLIST)
+            self.line_1:setScaleX(7.6)
+        end
+        for i, b in ipairs(cur_blocks) do
+            if i > 1 then buff_desc_str = buff_desc_str.."<div fontcolor=#a1978b>\n</div>" end
+            buff_desc_str = buff_desc_str..b.full
+        end
+        if self.buff_desc == nil then
+            self.buff_desc = createRichLabel(20,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),
+                cc.p(self._LEFT_PADDING + self._BUFF_TEXT_OFFSET_X,10),0,nil,text_max_w)
+            self.skill_scroll:addChild(self.buff_desc)
+        else
+            self.buff_desc:setMaxWidth(text_max_w)
+            self.buff_desc:setPositionX(self._LEFT_PADDING + self._BUFF_TEXT_OFFSET_X)
+        end
+        self.buff_desc:setString(buff_desc_str)
+        buff_desc_height = self.buff_desc:getContentSize().height
+        total_height  = total_height + buff_desc_height + 10
+    end
+
+    -- 下级描述 (คงเดิม)
+    local next_skill_des_height, next_buff_desc_height, next_extend_desc_height = 0,0,0
+    local next_blocks, next_name_heights, next_full_heights = {}, {}, {}
+    local next_buff_desc_str = ""
+
+    if self.skill_vo.open_desc ~= "" and not not_show_next and not hide_flag then
+        if self.line_2 == nil then
+            self.line_2 = createSprite(PathTool.getResFrame("tips","tips_8"), self.container_init_size.width/2, 0, self.skill_scroll, cc.p(0.5, 1), LOADTEXT_TYPE_PLIST)
+            self.line_2:setScaleX(7.6)
+        end
+        local next_skill_des = ""
+        if is_lock then
+            next_skill_des = self.skill_vo.open_desc
+        elseif self.skill_vo.next_id == 0 then
+            next_skill_des = string_format(TI18N("语言_c_1736"))
+        else
+            next_skill_des = self.skill_vo.skill_desc
+        end
+        if self.next_skill_txt == nil then
+            self.next_skill_txt = createRichLabel(22,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),0,nil,370)
+            self.skill_scroll:addChild(self.next_skill_txt)
+        end
+        
+        if self.skill_vo.next_id then
+            local nextskillvo = Config.SkillData.data_get_skill(self.skill_vo.next_id)
+            if nextskillvo and nextskillvo.des ~= "" then
+                next_skill_des = next_skill_des.."\n"..TI18N("语言_c_1737")
+                if nextskillvo.hallows_atk and nextskillvo.hallows_atk > 0 and hallows_atk_val then
+                    local total_atk_val = nextskillvo.hallows_atk + hallows_atk_val
+                    local str = string.format(nextskillvo.des, total_atk_val, hallows_atk_val)
+                    next_skill_des = next_skill_des.."\n"..str
+                else
+                    next_skill_des = next_skill_des.."\n"..nextskillvo.des
+                end
+                next_skill_des = next_skill_des.."</div>"
+            end
+            self.next_skill_txt:setString(next_skill_des)
+            next_skill_des_height = self.next_skill_txt:getContentSize().height
+            total_height  = total_height + next_skill_des_height + 25
+            
+            if nextskillvo then
+                if self.next_extend_desc == nil then
+                    self.next_extend_desc = createRichLabel(22,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),nil,nil,370)
+                    self.skill_scroll:addChild(self.next_extend_desc)
+                end
+                local next_fire_cd = nextskillvo.fire_cd
+                local next_extend_str = (nextskillvo.cd == 0) and TI18N("语言_c_1731") or string_format(TI18N("语言_c_4894"), TI18N("语言_c_1732"),nextskillvo.cd, TI18N("语言_c_1733"))
+                next_fire_cd = next_fire_cd ~= 0 and next_fire_cd or (nextskillvo.next_fire_cd or 0)
+                if next_fire_cd ~= 0 then
+                    next_extend_str = next_extend_str..string_format(TI18N("语言_c_4894"), TI18N("语言_c_1734"), next_fire_cd, TI18N("语言_c_1735"))
+                end
+                self.next_extend_desc:setString(next_extend_str)
+                next_extend_desc_height = self.next_extend_desc:getContentSize().height
+                total_height  = total_height + next_extend_desc_height + 18
+            
+                if nextskillvo.buff_des and nextskillvo.buff_des[1] and next(nextskillvo.buff_des[1]) then
+                    if self.line_3 == nil then
+                        self.line_3 = createSprite(PathTool.getResFrame("tips","tips_8"), self.container_init_size.width/2, 0, self.skill_scroll, cc.p(0.5, 1), LOADTEXT_TYPE_PLIST)
+                        self.line_3:setScaleX(7.6)
+                    end
+
+                    local next_buff_config = Config.SkillData.data_get_buff 
+                    next_blocks = _build_blocks(nextskillvo.buff_des[1], next_buff_config)
+                    for _, b in ipairs(next_blocks) do
+                        local name_only = string_format("<div fontcolor=#ffeedd>[%s]</div>", b.name or "")
+                        table.insert(next_name_heights, _measure_rich(self.skill_scroll, name_only, text_max_w, 20))
+                        table.insert(next_full_heights, _measure_rich(self.skill_scroll, b.full,     text_max_w, 20))
+                        if next_buff_desc_str ~= "" then next_buff_desc_str = next_buff_desc_str.."<div fontcolor=#a1978b>\n</div>" end
+                        next_buff_desc_str = next_buff_desc_str..b.full
+                    end
+                end
+                if next_buff_desc_str ~= "" then
+                    if self.next_buff_desc == nil then
+                        self.next_buff_desc = createRichLabel(20,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),
+                            cc.p(self._LEFT_PADDING + self._BUFF_TEXT_OFFSET_X,10),0,nil,text_max_w)
+                        self.skill_scroll:addChild(self.next_buff_desc)
+                    else
+                        self.next_buff_desc:setMaxWidth(text_max_w)
+                        self.next_buff_desc:setPositionX(self._LEFT_PADDING + self._BUFF_TEXT_OFFSET_X)
+                    end
+                    self.next_buff_desc:setString(next_buff_desc_str)
+                    next_buff_desc_height = self.next_buff_desc:getContentSize().height
+                    total_height  = total_height + next_buff_desc_height + 10
+                end
+            end
+        else
+            self.next_skill_txt:setString(next_skill_des)
+            total_height  = total_height + self.next_skill_txt:getContentSize().height + 25
+        end
+    end
+    total_height = total_height + 20
+
+    -- ===== Layout / Position =====
+    local x_base_top  = 4
+    local x_base_sp   = 2
+    local x_base_down = 10
+    local x_s_all     = x_base_top + x_base_sp + x_base_down
+    local container_heigth = (total_height > total_max) and total_max or total_height
+    local scrollHeight = container_heigth - x_s_all - self.base_panel_height - 20
+
+    self.skill_scroll:setContentSize(cc.size(total_width, scrollHeight))
+    self.skill_scroll:setPosition(cc.p(0, x_base_down))
+
+    local x_change = -20
+    self.container:setContentSize(cc.size(self.container_init_size.width, container_heigth))
+    self.base_panel:setPositionY(container_heigth-4)
+    local moveY = self.base_panel_height
+
+    if self.skill_desc then
+        self.skill_desc:setPositionY(total_height-6-moveY + x_change)
+    end
+    moveY = moveY + skill_des_height
+    if self.extend_desc then
+        self.extend_desc:setPositionY(total_height-24-moveY+ x_change)
+    end
+    moveY = moveY + extend_desc_height
+
+    if self.line_1 then self.line_1:setPositionY(total_height-30-moveY+ x_change) end
+
+    -- วางข้อความ + ไอคอน “ปัจจุบัน”
+    if self.buff_desc and #cur_blocks > 0 then
+        local cur_block_top = total_height-38-moveY + x_change
+        self.buff_desc:setPositionY(cur_block_top)
+
+        local acc = 0
+        for i, b in ipairs(cur_blocks) do
+            local name_h = math.max(cur_name_heights[i] or (self._BUFF_ICON_SIZE*0.6), 1)
+            local full_h = cur_full_heights[i] or (name_h + self._BUFF_ICON_GAPY)
+            local path   = _icon_path(b.icon)
+            if path then
+                local icon_x = self._LEFT_PADDING + self._BUFF_ICON_SIZE/2
+                local icon_y = cur_block_top - acc - (name_h*0.5)
+                local sp = createSprite(path, icon_x, icon_y, self.skill_scroll, cc.p(0.5,0.5), LOADTEXT_TYPE)
+                _apply_icon_size(sp, self._BUFF_ICON_SIZE)
+                table.insert(self._buff_icons_cur, sp)
+            end
+            acc = acc + full_h + self._BUFF_ICON_GAPY
+        end
+    end
+    moveY = moveY + (self.buff_desc and self.buff_desc:getContentSize().height or 0)
+
+    if self.line_2 then self.line_2:setPositionY(total_height-44-moveY+ x_change) end
+    if self.next_skill_txt then self.next_skill_txt:setPositionY(total_height-52-moveY+ x_change) end
+
+    moveY = moveY + next_skill_des_height
+    if self.next_extend_desc then self.next_extend_desc:setPositionY(total_height-62-moveY+ x_change) end
+    moveY = moveY + next_extend_desc_height
+    if self.line_3 then self.line_3:setPositionY(total_height-70-moveY+x_change) end
+
+    -- วางข้อความ + ไอคอน “ถัดไป”
+    if self.next_buff_desc and #next_blocks > 0 then
+        local next_block_top = total_height-80-moveY + x_change
+        self.next_buff_desc:setPositionY(next_block_top)
+
+        local acc2 = 0
+        for i, b in ipairs(next_blocks) do
+            local name_h = math.max(next_name_heights[i] or (self._BUFF_ICON_SIZE*0.6), 1)
+            local full_h = next_full_heights[i] or (name_h + self._BUFF_ICON_GAPY)
+            local path   = _icon_path(b.icon)
+            if path then
+                local icon_x = self._LEFT_PADDING + self._BUFF_ICON_SIZE/2
+                local icon_y = next_block_top - acc2 - (name_h*0.5)
+                local sp = createSprite(path, icon_x, icon_y, self.skill_scroll, cc.p(0.5,0.5), LOADTEXT_TYPE)
+                _apply_icon_size(sp, self._BUFF_ICON_SIZE)
+                table.insert(self._buff_icons_next, sp)
+            end
+            acc2 = acc2 + full_h + self._BUFF_ICON_GAPY
+        end
+    end
+
+    local s_info_height = total_height - x_s_all - self.base_panel_height
+    self.skill_scroll:setInnerContainerSize(cc.size(self.skill_scroll:getContentSize().width,s_info_height))
+end
+
+function SkillTips:updatePosition()
+    self.root_wnd:setContentSize(cc.size(504,self.max_height))
+    self.back:setContentSize(cc.size(504,self.max_height))
+    self.skill_type:setPositionY(self.max_height-115)
+    self.skill_back:setPositionY(self.max_height-145)
+    self.skill_name:setPositionY(self.max_height-45)
+    self.skill_lev:setPositionY(self.max_height-80)
+    self.desc3:setPositionY(self.max_height-170)
+    self.desc1:setPositionY(self.max_height-170)
+    self.line1:setPositionY(self.max_height-155)
+end
+
+function SkillTips:setPosition(x, y) end
+function SkillTips:setPos(x, y) end
+function SkillTips:getContentSize() return self.root_wnd:getContentSize() end
+
+function SkillTips:openRootWnd( config, is_lock, not_show_next, hide_flag, fire_cd, hallows_atk_val )
+    self:updateVo(config, is_lock, not_show_next, hide_flag, fire_cd, hallows_atk_val)
+    delayRun(self.root_wnd, 114, function() TipsManager:getInstance():hideTips() end)
+end
+
+function SkillTips:close_callback( ... ) end

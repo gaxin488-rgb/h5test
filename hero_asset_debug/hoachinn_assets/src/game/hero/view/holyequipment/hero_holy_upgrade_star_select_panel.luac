@@ -1,0 +1,261 @@
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      选择神器界面
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+HeroHolyUpgradeStarSelectPanel = HeroHolyUpgradeStarSelectPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_remove = table.remove
+local clickCell
+
+function HeroHolyUpgradeStarSelectPanel:__init()
+    self.cell_pos = 0
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/hero_upgrade_star_select_panel"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("hero","txt_cn_hero_temp_01"), type = ResourcesType.single },
+        -- { path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_3"), type = ResourcesType.single }
+    }
+
+end
+
+function HeroHolyUpgradeStarSelectPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+    self.title = self.main_container:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_6555"))
+    autoSizeTitleBg(self.title,self.main_container:getChildByName("imgTitleBg"))
+
+    self.label_select = self.main_container:getChildByName("label_select")
+    self.label_select:setVisible(false)
+    self.label_tip = self.main_container:getChildByName("label_tip")
+    self.label_tip:setTouchEnabled(true)
+    self.label_tip:setString(transformTextToShort(TI18N("语言_c_6556"),50))
+    addEvt2showAllTextTips(self.label_tip,TI18N("语言_c_6556"),50)
+
+    self.lay_scrollview = self.main_container:getChildByName("lay_scrollview")
+
+    self.select_btn = self.main_container:getChildByName("select_btn")
+    self.select_btn_label = self.select_btn:getChildByName("label")
+    self.select_btn_label:setString(TI18N("语言_c_1318"))
+
+    self.right_btn = self.main_container:getChildByName("right_btn")
+    self.right_btn:setVisible(false)
+    self.right_btn_label = self.right_btn:getChildByName("label")
+    self.right_btn_label:setString(TI18N("语言_c_261"))
+end
+
+function HeroHolyUpgradeStarSelectPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.select_btn, handler(self, self.onClickBtnRight) ,true, 2)
+
+    self:addGlobalEvent(TipsEvent.TipsGoToEvent, function( )
+        self:onClickBtnClose()
+    end)
+    self.update_fun_form = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Sacrifice_bttom_Event,function()
+        local hero_vo = self.holy_list[self.cell_pos]
+        if hero_vo and hero_vo.is_lock and hero_vo:isLock() then
+            -- message(TI18N("语言_c_3286"))
+        else
+            if clickCell then
+                clickCell:showUnLockIcon()
+            end
+        end
+    end)
+end
+
+--关闭
+function HeroHolyUpgradeStarSelectPanel:onClickBtnClose()
+    controller:openHeroHolyUpgradeStarSelectPanel(false)
+end
+
+--确定
+function HeroHolyUpgradeStarSelectPanel:onClickBtnRight()
+    if not self.dic_cur_select_list then return end
+    GlobalEvent:getInstance():Fire(HeroEvent.Hero_Holy_Equipment_Select_Event,self.dic_cur_select_list)
+    self:onClickBtnClose()
+end
+
+--@ setting.target 目标
+--@ setting.select_data 已经选择的
+function HeroHolyUpgradeStarSelectPanel:openRootWnd(setting)
+    if not setting then return end
+    self.target = setting.target or {}
+    self.dic_cur_select_list = setting.select_data or {}
+    self.holy_list = {}
+    local list = BackpackController:getInstance():getModel():getAllBackPackArray(BackPackConst.item_tab_type.HOLYEQUIPMENT)  or {}
+    for k, v in pairs(list) do
+        --策划需求 排除金色以上
+        if v.eqm_star == self.target[1] and v.eqm_jie == self.target[2] and v.quality <= BackPackConst.quality.red then
+            local eqm_cfg_data = Config.PartnerHolyEqmData.data_step_info(v.base_id)
+            if eqm_cfg_data and eqm_cfg_data.step == self.target[4] then
+                table.insert(self.holy_list,v)
+            end
+        end
+    end
+
+    self:updateHeroList()
+    self:updateSelectLabel()
+end
+
+--创建神器列表 
+function HeroHolyUpgradeStarSelectPanel:updateHeroList()
+    if self.list_view == nil then
+        if tolua.isnull(self.lay_scrollview) then return end
+        local scroll_view_size = cc.size(640,550)
+        local list_setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 0,
+            space_y = 5,
+            item_width = 128,
+            item_height = 140,
+            row = 0,
+            col = 5,
+            need_dynamic = true
+        }
+        local size = self.lay_scrollview:getContentSize()
+        self.list_view = CommonScrollViewSingleLayout.new(self.lay_scrollview, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0, 0)) 
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+
+    self.list_view:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroHolyUpgradeStarSelectPanel:createNewCell(width, height)
+    local cell = BackPackItem.new(0.9, true)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    local back = function()
+        HeroController:getInstance():openEquipTips(true, cell:getData().config)
+    end
+    cell:addLongTimeTouchCallback(back)
+    return cell
+end
+--获取数据数量
+function HeroHolyUpgradeStarSelectPanel:numberOfCells()
+    return #self.holy_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroHolyUpgradeStarSelectPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local x, y = cell:getPosition()
+    cell:setPosition(x, y + 10)
+    local list = self.holy_list[index]
+    if list then
+        cell:setData(list)
+        --设置选中状态 
+        if self.dic_cur_select_list[list.id] then
+            cell:setCommonStatus(true)
+        else
+            cell:setCommonStatus(false)
+        end
+        cell:showAddIcon(false)
+        local count = 0
+        for k,v in pairs(list.extra) do
+            if v.extra_k == 10 then
+                count = v.extra_v
+            end
+        end
+        if count > 0 then
+            cell:setGoodsName(string.format("(%s)",count))
+        else
+            cell:setGoodsName("")
+        end
+    else
+        cell:setData(nil) 
+        --空表示最后的加号
+        cell:showAddIcon(true)
+        cell:setCommonStatus(false)
+        cell:setGoodsName("")
+    end
+
+end
+function HeroHolyUpgradeStarSelectPanel:selectHero(cell)
+    local data = cell:getData()
+    if self.dic_cur_select_list[data.id] then
+        cell:setCommonStatus(false)
+        self.dic_cur_select_list[data.id] = nil  
+    else
+        local count = 0
+        for k,v in pairs(self.dic_cur_select_list) do
+            count = count + 1
+        end
+        if count >= self.target[3] then
+            message(TI18N("语言_c_3039"))
+            return
+        end
+
+        self.dic_cur_select_list[data.id] = data
+        cell:setCommonStatus(true)
+    end
+    self:updateSelectLabel()
+end
+--点击cell .需要在 createNewCell 设置点击事件
+function HeroHolyUpgradeStarSelectPanel:onCellTouched(cell)
+    local status = false
+    for k,v in pairs(cell:getData().extra) do
+        if v.extra_k == 10 and v.extra_v > 0 then
+            status = true
+        end
+    end
+    local function back()
+        local index = cell.index
+        local list = self.holy_list[index]
+        self.cell_pos = index
+        clickCell = cell
+        self:selectHero(cell)
+    end
+    if status and not self.dic_cur_select_list[cell:getData().id] then
+        local str = TI18N("语言_c_6557")
+        CommonAlert.show( str, TI18N("语言_c_63"), function()
+            back()
+        end, TI18N("语言_c_62"),nil,nil,nil,{timer=3, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+    else
+        back()
+    end
+end
+
+function HeroHolyUpgradeStarSelectPanel:updateSelectLabel()
+    if not self.label_select then return end
+    if not self.target then return end
+    local count = tableLen(self.dic_cur_select_list)
+    self.label_select:setString(string_format("%s:%s/%s", TI18N("语言_c_3038"), count, self.target[3]))
+    self.label_select:setVisible(true)
+end
+
+function HeroHolyUpgradeStarSelectPanel:close_callback()
+    if self.list_view then 
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+    clickCell = nil
+    self.cell_pos = -100
+    if self.update_fun_form then 
+        GlobalEvent:getInstance():UnBind(self.update_fun_form)
+        self.update_fun_form = nil
+    end
+    controller:openHeroHolyUpgradeStarSelectPanel(false)
+end

@@ -1,0 +1,640 @@
+﻿LoginModel = LoginModel or BaseClass()
+
+function LoginModel.__init(arg_1_0, arg_1_1)
+	arg_1_0.ctrl = arg_1_1
+
+	arg_1_0:config()
+end
+
+function LoginModel.config(arg_2_0)
+	arg_2_0.dispatcher = GlobalEvent:getInstance()
+	arg_2_0.loginInfo = nil
+	arg_2_0.world_lev = -1
+	arg_2_0.serverlist_completed = false
+	arg_2_0.default_completed = false
+	arg_2_0.request_server_time = 0
+	arg_2_0.loginData = {}
+	arg_2_0.loginData.platform = PLATFORM_NAME
+	arg_2_0.loginData.ip = ""
+	arg_2_0.loginData.port = ""
+	arg_2_0.loginData.role_count = 0
+	arg_2_0.loginData.status = 0
+	arg_2_0.loginData.isNew = false
+	arg_2_0.loginData.isClose = false
+	arg_2_0.loginData.host = ""
+	arg_2_0.loginData.open_time = 0
+	arg_2_0.loginData.srv_name = ""
+	arg_2_0.loginData.srv_id = ""
+	arg_2_0.loginData.main_srv_id = ""
+	arg_2_0.loginData.rid = 0
+	arg_2_0.loginData.usrName = ""
+	arg_2_0.loginData.password = ""
+	arg_2_0.loginData.platform_flag = ""
+	arg_2_0.loginData.usrName = SysEnv:getInstance():getStr(SysEnv.keys.usrName)
+	arg_2_0.loginData.password = SysEnv:getInstance():getStr(SysEnv.keys.password)
+
+	if IS_TEST_SERVER then
+		arg_2_0.loginData.usrNameList = SysEnv:getInstance():getTable(SysEnv.keys.usrNameList)
+	end
+
+	arg_2_0.loginData.newNameList = SysEnv:getInstance():getTable(SysEnv.keys.user_proto_name_list)
+	arg_2_0.total_server_data = ""
+	arg_2_0.is_in_handle = false
+
+	InitMoneyConfig()
+end
+
+function LoginModel.getLoginData(arg_3_0)
+	return arg_3_0.loginData
+end
+
+function LoginModel.cacheNearLoginData(arg_4_0, arg_4_1, arg_4_2, arg_4_3)
+	if arg_4_1 then
+		arg_4_0.loginData.usrName = arg_4_1
+
+		SysEnv:getInstance():set(SysEnv.keys.usrName, arg_4_1, true)
+	end
+
+	if arg_4_3 then
+		arg_4_0.loginData.srv_id = arg_4_3
+
+		SysEnv:getInstance():set(SysEnv.keys.srv_id, arg_4_3, true)
+	end
+
+	if arg_4_2 then
+		arg_4_0.loginData.rid = arg_4_2
+
+		SysEnv:getInstance():set(SysEnv.keys.rid, arg_4_2, true)
+	end
+end
+
+function LoginModel.requestDefaultServerList(arg_5_0, arg_5_1, arg_5_2)
+	arg_5_1 = arg_5_1 or arg_5_0.loginData.usrName or ""
+	arg_5_2 = arg_5_2 or PLATFORM_NAME
+
+	local var_5_0 = LoginPlatForm:getInstance():getChannel()
+	local var_5_1 = cc.UserDefault:getInstance():getStringForKey("local_srv_id")
+	local var_5_2, var_5_3 = get_servers_url(arg_5_1, PLATFORM_NAME, var_5_0, var_5_1, 0, 1)
+
+	if not var_5_2 then
+		return
+	end
+
+	local var_5_4 = string.format
+	local var_5_5 = cc.XMLHttpRequest:new()
+
+	var_5_5.responseType = cc.XMLHTTPREQUEST_RESPONSE_JSON
+
+	var_5_5:open("POST", var_5_2)
+
+	local function var_5_6()
+		if var_5_5.readyState == 4 and var_5_5.status >= 200 and var_5_5.status < 207 then
+			local var_6_0 = var_5_5.response
+			local var_6_1 = loadstring("return " .. var_6_0)
+
+			print("requestDefaultServerList_back")
+
+			if var_6_1 == nil then
+				var_6_1 = {}
+			else
+				var_6_1 = var_6_1()
+			end
+
+			arg_5_0:managerDefualtServerListByJsonObj(var_6_1, arg_5_1, arg_5_2)
+		else
+			print("requestDefaultServerList_back2", var_5_5.readyState, var_5_5.status)
+			delayRun(ViewManager:getInstance():getLayerByTag(ViewMgrTag.MSG_TAG), 2, function()
+				if arg_5_0:useLocalServerData() == false then
+					arg_5_0:requestDefaultServerList(arg_5_1, arg_5_2)
+				end
+			end)
+		end
+	end
+
+	var_5_3 = var_5_3 and arg_5_0:getRequestExtend(var_5_3, var_5_0, arg_5_1)
+
+	var_5_5:registerScriptHandler(var_5_6)
+	var_5_5:send(var_5_3)
+end
+
+function LoginModel.getServerData(arg_8_0, arg_8_1, arg_8_2)
+	if arg_8_0.isRequestServerDataing then
+		return
+	end
+
+	arg_8_1 = arg_8_1 or arg_8_0.loginData.usrName or ""
+	arg_8_2 = arg_8_2 or PLATFORM_NAME
+
+	local var_8_0 = LoginPlatForm:getInstance():getChannel()
+	local var_8_1 = cc.UserDefault:getInstance():getStringForKey("local_srv_id")
+	local var_8_2, var_8_3 = get_servers_url(arg_8_1, PLATFORM_NAME, var_8_0, var_8_1)
+
+	if not var_8_2 then
+		return
+	end
+
+	arg_8_0.serverlist_completed = false
+	arg_8_0.isRequestServerDataing = true
+
+	local var_8_4 = string.format
+	local var_8_5 = cc.XMLHttpRequest:new()
+
+	var_8_5.responseType = cc.XMLHTTPREQUEST_RESPONSE_JSON
+
+	var_8_5:open("POST", var_8_2)
+
+	local function var_8_6()
+		arg_8_0.isRequestServerDataing = false
+
+		if var_8_5.readyState == 4 and var_8_5.status >= 200 and var_8_5.status < 207 then
+			print("Http Status Code:" .. var_8_5.statusText, var_8_5.readyState)
+
+			arg_8_0.total_server_data = var_8_5.response
+		else
+			delayRun(ViewManager:getInstance():getLayerByTag(ViewMgrTag.MSG_TAG), 2, function()
+				arg_8_0:getServerData(arg_8_1, arg_8_2)
+			end)
+		end
+	end
+
+	var_8_3 = var_8_3 and arg_8_0:getRequestExtend(var_8_3, var_8_0, arg_8_1)
+
+	var_8_5:registerScriptHandler(var_8_6)
+	var_8_5:send(var_8_3)
+end
+
+function LoginModel.handleTotalServerInfo(arg_11_0)
+	if arg_11_0.total_server_data == nil or arg_11_0.total_server_data == "" then
+		arg_11_0:getServerData()
+	else
+		if arg_11_0.is_in_handle == true then
+			return
+		end
+
+		arg_11_0.is_in_handle = true
+
+		local var_11_0 = loadstring("return " .. arg_11_0.total_server_data)
+
+		if var_11_0 == nil then
+			var_11_0 = {}
+		else
+			var_11_0 = var_11_0()
+		end
+
+		arg_11_0:managerServerListByJsonObj(var_11_0, account, platform)
+	end
+end
+
+function LoginModel.getRequestExtend(arg_12_0, arg_12_1, arg_12_2, arg_12_3)
+	local var_12_0 = string.format
+	local var_12_1 = os.time()
+	local var_12_2 = TimeTool.getTimeZone() + 100
+	local var_12_3 = log_url_encode(var_12_2)
+	local var_12_4 = var_12_0("%s&time=%s&timeZone=%s", arg_12_1, var_12_1, var_12_3)
+	local var_12_5 = var_12_0("%s%s%s%s%s", arg_12_2, var_12_1, var_12_3, arg_12_3, "232fgD0f3afBa1Tst88bH05727DFc")
+	local var_12_6 = cc.CCGameLib:getInstance():md5str(var_12_5)
+	local var_12_7 = var_12_0("%s&sign=%s", var_12_4, var_12_6)
+
+	if var_12_2 < 0 and error_log_report then
+		error_log_report(string.format("@请求默认服务器异常, MD5之后的数据, 地址===>%s", var_12_7))
+	end
+
+	return var_12_7
+end
+
+function LoginModel.managerDefualtServerListByJsonObj(arg_13_0, arg_13_1, arg_13_2, arg_13_3)
+	if not LoginEvent then
+		return "not LoginEvent"
+	end
+
+	arg_13_1 = arg_13_1 or {}
+
+	local var_13_0 = arg_13_1.data or arg_13_1.msg
+
+	if var_13_0 == nil or var_13_0.default_zone == nil then
+		return "default_zone null"
+	end
+
+	local var_13_1 = var_13_0.default_zone
+
+	if var_13_1.zone_id == nil then
+		return "zone_id null"
+	end
+
+	if arg_13_0.default_completed == true then
+		return true
+	end
+
+	arg_13_0.default_completed = true
+	arg_13_0.new_account_flag = var_13_0.new_account
+	arg_13_0.php_ip = var_13_0.ip
+
+	local function var_13_2(arg_14_0)
+		if arg_14_0.roles then
+			ACCOUNT_HAS_ROLE = ACCOUNT_HAS_ROLE or #arg_14_0.roles > 0
+
+			return #arg_14_0.roles
+		end
+
+		return 0
+	end
+
+	local function var_13_3(arg_15_0)
+		local var_15_0 = {}
+		local var_15_1 = 0
+
+		if arg_15_0.roles then
+			for iter_15_0 = 1, #arg_15_0.roles do
+				if var_15_1 < arg_15_0.roles[iter_15_0].login_time then
+					var_15_1 = arg_15_0.roles[iter_15_0].login_time
+				end
+			end
+		end
+
+		return var_15_1
+	end
+
+	local var_13_4 = {
+		srv_name = MAKELIFEBETTERSERVERNAME or var_13_1.name or var_13_1.srv_name,
+		srv_id = var_13_1.srv_id or var_13_1.platform .. "_" .. var_13_1.zone_id,
+		ip = var_13_1.ip or var_13_1.host,
+		port = var_13_1.port or var_13_1.erl_port,
+		host = var_13_1.host or "",
+		zone_id = var_13_1.zone_id,
+		platform_flag = var_13_1.platform_flag or ""
+	}
+
+	var_13_1.main_platform = var_13_1.main_platform or var_13_1.platform
+	var_13_1.main_zone_id = var_13_1.main_zone_id or var_13_1.zone_id
+	var_13_4.main_srv_id = var_13_1.main_srv_id or var_13_1.main_platform .. "_" .. var_13_1.main_zone_id
+	var_13_4.isClose = var_13_1.maintain == 1
+	var_13_4.isTry = tonumber(var_13_1.first_zone or "0") == 1
+	var_13_4.isRecomed = var_13_1.recomed == 1
+	var_13_4.isNew = var_13_1.isnew == 1
+	var_13_4.open_time = tonumber(var_13_1.open_time or var_13_1.begin_time) or 0
+	var_13_4.role_count = var_13_2(var_13_1)
+	var_13_4.role_logintime = var_13_3(var_13_1)
+	var_13_4.usrName = arg_13_2
+	var_13_4.platform = arg_13_3
+
+	arg_13_0:setCurSrv(var_13_4)
+	arg_13_0.dispatcher:Fire(LoginEvent.DEFAULE_SERVER_SUCCESS, var_13_0.sign)
+
+	return true
+end
+
+function LoginModel.setCurSrv(arg_16_0, arg_16_1, arg_16_2)
+	arg_16_0.loginData.ip = arg_16_1.ip or ""
+	arg_16_0.loginData.port = arg_16_1.port or ""
+	arg_16_0.loginData.role_count = arg_16_1.role_count or "0"
+	arg_16_0.loginData.status = arg_16_1.status or 0
+	arg_16_0.loginData.isNew = arg_16_1.isNew or false
+	arg_16_0.loginData.isClose = arg_16_1.isClose or false
+	arg_16_0.loginData.host = arg_16_1.host or ""
+	arg_16_0.loginData.open_time = arg_16_1.open_time or 0
+	arg_16_0.loginData.srv_name = arg_16_1.srv_name or ""
+	arg_16_0.loginData.srv_id = arg_16_1.srv_id or ""
+	arg_16_0.loginData.main_srv_id = arg_16_1.main_srv_id or ""
+	arg_16_0.loginData.isTry = arg_16_1.isTry or false
+	arg_16_0.loginData.platform_flag = arg_16_1.platform_flag or ""
+	arg_16_0.loginData.rid = tonumber(arg_16_1.rid or 0)
+
+	if arg_16_1.usrName then
+		arg_16_0.loginData.usrName = arg_16_1.usrName
+	end
+
+	if arg_16_1.platform then
+		arg_16_0.loginData.platform = arg_16_1.platform
+	end
+
+	arg_16_0.no_local_serverdata = nil
+	arg_16_0.request_server_time = 0
+
+	if arg_16_2 then
+		arg_16_0:saveCurSrv(arg_16_1)
+	end
+end
+
+function LoginModel.saveLoginDataToLocal(arg_17_0)
+	SysEnv:getInstance():set(SysEnv.keys.default_server_data, arg_17_0.loginData, true)
+end
+
+function LoginModel.useLocalServerData(arg_18_0)
+	if arg_18_0.request_server_time <= 5 then
+		arg_18_0.request_server_time = arg_18_0.request_server_time + 1
+
+		return false
+	end
+
+	if arg_18_0.no_local_serverdata == false then
+		return arg_18_0.no_local_serverdata
+	end
+
+	local var_18_0 = SysEnv:getInstance():getTable(SysEnv.keys.default_server_data, {})
+
+	if var_18_0 and next(var_18_0) ~= nil then
+		arg_18_0:setCurSrv(var_18_0, true)
+		arg_18_0.dispatcher:Fire(LoginEvent.DEFAULE_SERVER_SUCCESS)
+
+		return true
+	else
+		arg_18_0.no_local_serverdata = false
+
+		return false
+	end
+end
+
+function LoginModel.saveCurSrv(arg_19_0, arg_19_1)
+	local var_19_0 = arg_19_1 or arg_19_0.loginData
+
+	cc.UserDefault:getInstance():setStringForKey("local_srv_id", var_19_0.srv_id)
+	cc.UserDefault:getInstance():setBoolForKey("is_enter_try_srv", var_19_0.isTry)
+	cc.UserDefault:getInstance():flush()
+end
+
+function LoginModel.checkReloadServerData(arg_20_0, arg_20_1)
+	local var_20_0 = GameNet:getInstance():getTime()
+
+	if NEED_CHECK_CLOSE == true then
+		arg_20_1 = arg_20_1 or arg_20_0.loginData
+
+		if SHOW_NOTICE ~= false and (arg_20_1.isClose or var_20_0 < arg_20_1.open_time) then
+			serverData = arg_20_1
+
+			NoticeController:getInstance():openNoticeView()
+
+			serverData = nil
+		elseif arg_20_1.isClose then
+			CommonAlert.show(TI18N("语言_c_1455"), TI18N("语言_c_63"))
+		elseif var_20_0 < arg_20_1.open_time then
+			arg_20_0:showSrvOpen(arg_20_1)
+		end
+	end
+
+	arg_20_0.check_time = arg_20_0.check_time or 0
+
+	if var_20_0 - arg_20_0.check_time > 10 then
+		arg_20_0.check_time = var_20_0
+
+		if arg_20_0.total_server_data == nil or arg_20_0.total_server_data == "" then
+			arg_20_0:getServerData()
+		else
+			arg_20_0:handleTotalServerInfo()
+		end
+	elseif arg_20_0.total_server_data and arg_20_0.total_server_data ~= "" then
+		arg_20_0:handleTotalServerInfo()
+	end
+end
+
+function LoginModel.showSrvOpen(arg_21_0, arg_21_1)
+	NoticeController:getInstance():openNoticeView()
+end
+
+function LoginModel.managerServerListByJsonObj(arg_22_0, arg_22_1, arg_22_2, arg_22_3, arg_22_4)
+	if not LoginEvent then
+		return
+	end
+
+	arg_22_0.server_list = {}
+	arg_22_1 = arg_22_1 or {}
+
+	local var_22_0 = arg_22_1.data or arg_22_1.msg
+
+	if var_22_0 == nil or var_22_0.server_list == nil or next(var_22_0.server_list) == nil then
+		return
+	end
+
+	local var_22_1 = var_22_0.server_list
+	local var_22_2 = var_22_0.default_zone
+
+	local function var_22_3(arg_23_0)
+		if arg_23_0.roles then
+			ACCOUNT_HAS_ROLE = ACCOUNT_HAS_ROLE or #arg_23_0.roles > 0
+
+			return #arg_23_0.roles
+		end
+
+		return 0
+	end
+
+	local function var_22_4(arg_24_0)
+		local var_24_0 = {}
+		local var_24_1 = 0
+
+		if arg_24_0.roles then
+			for iter_24_0 = 1, #arg_24_0.roles do
+				if var_24_1 < arg_24_0.roles[iter_24_0].login_time then
+					var_24_1 = arg_24_0.roles[iter_24_0].login_time
+				end
+			end
+		end
+
+		return var_24_1
+	end
+
+	if IS_TEST_SERVER and SpecialServerList then
+		for iter_22_0, iter_22_1 in pairs(SpecialServerList) do
+			table.insert(var_22_1, iter_22_1)
+		end
+	end
+
+	local var_22_5 = cc.UserDefault:getInstance():getStringForKey("local_srv_id")
+	local var_22_6
+	local var_22_7
+
+	for iter_22_2, iter_22_3 in ipairs(var_22_1) do
+		local var_22_8 = {
+			srv_name = MAKELIFEBETTERSERVERNAME or iter_22_3.name or iter_22_3.srv_name,
+			srv_id = iter_22_3.srv_id or iter_22_3.platform .. "_" .. iter_22_3.zone_id
+		}
+
+		iter_22_3.main_platform = iter_22_3.main_platform or iter_22_3.platform
+		iter_22_3.main_zone_id = iter_22_3.main_zone_id or iter_22_3.zone_id
+		var_22_8.main_srv_id = iter_22_3.main_srv_id or iter_22_3.main_platform .. "_" .. iter_22_3.main_zone_id
+		var_22_8.zone_id = iter_22_3.zone_id
+		var_22_8.ip = iter_22_3.ip or iter_22_3.host
+		var_22_8.port = iter_22_3.port or iter_22_3.erl_port
+		var_22_8.host = iter_22_3.host or ""
+		var_22_8.platform_flag = iter_22_3.platform_flag or ""
+		var_22_8.isClose = iter_22_3.maintain == 1
+		var_22_8.isTry = tonumber(iter_22_3.first_zone or "0") == 1
+		var_22_8.isRecomed = iter_22_3.recomed == 1
+		var_22_8.isNew = iter_22_3.isnew == 1
+		var_22_8.open_time = tonumber(iter_22_3.open_time or iter_22_3.begin_time) or 0
+		var_22_8.role_count = var_22_3(iter_22_3)
+		var_22_8.role_logintime = var_22_4(iter_22_3)
+		var_22_8.group_id = iter_22_3.group_id or 1
+		var_22_8.group_num = iter_22_3.group_num or 1
+		var_22_8.usrName = arg_22_2
+		var_22_8.platform = arg_22_3
+
+		table.insert(arg_22_0.server_list, var_22_8)
+
+		if var_22_8.srv_id == var_22_5 then
+			var_22_6 = var_22_8
+		end
+
+		if var_22_7 == nil and var_22_2 and var_22_2.srv_id == var_22_8.srv_id then
+			var_22_7 = var_22_8
+		end
+	end
+
+	if var_22_6 then
+		arg_22_0:setCurSrv(var_22_6)
+	elseif var_22_7 then
+		arg_22_0:setCurSrv(var_22_7)
+	elseif arg_22_0.loginData.srv_id == "" then
+		local var_22_9 = arg_22_0.server_list[1]
+
+		arg_22_0:setCurSrv(var_22_9)
+	end
+
+	arg_22_0.serverlist_completed = true
+
+	arg_22_0.dispatcher:Fire(LoginEvent.REQUEST_SERVERLIST_SUCCESS)
+end
+
+function LoginModel.isNeedReload(arg_25_0, arg_25_1, arg_25_2, arg_25_3)
+	if not UPDATE_TRY_VERSION_MAX or UPDATE_VERSION_MAX == UPDATE_TRY_VERSION_MAX then
+		return false
+	end
+
+	if arg_25_2.isTry == (cc.UserDefault:getInstance():getBoolForKey("is_enter_try_srv") or false) then
+		return false
+	end
+
+	if arg_25_1 == nil then
+		if arg_25_2.isTry then
+			arg_25_1 = string.format(TI18N("[%s]为优先体验服，与其它服务器相互切换需要重新加载资源"), arg_25_2.srv_name)
+		else
+			arg_25_1 = string.format(TI18N("[%s]为优先体验服，与其它服务器相互切换需要重新加载资源"), arg_25_0.loginData.srv_name)
+		end
+	end
+
+	CommonAlert.show(arg_25_1, TI18N("确定"), function()
+		arg_25_0:saveCurSrv(arg_25_2)
+		arg_25_3()
+	end, TI18N("取消"))
+
+	return true
+end
+
+function LoginModel.setGatewayCallState(arg_27_0, arg_27_1)
+	arg_27_0.gatewayCallState = arg_27_1
+end
+
+function LoginModel.getGatewayCallState(arg_28_0)
+	return arg_28_0.gatewayCallState
+end
+
+function LoginModel.getServerList(arg_29_0)
+	return arg_29_0.server_list
+end
+
+function LoginModel.getSverListStatus(arg_30_0)
+	return arg_30_0.serverlist_completed
+end
+
+function LoginModel.setLoginInfo(arg_31_0, arg_31_1)
+	arg_31_0.loginInfo = arg_31_1
+end
+
+function LoginModel.getLoginInfo(arg_32_0)
+	return arg_32_0.loginInfo
+end
+
+function LoginModel.setWorldLev(arg_33_0, arg_33_1)
+	arg_33_0.world_lev = arg_33_1
+end
+
+function LoginModel.getWorldLev(arg_34_0)
+	return arg_34_0.world_lev
+end
+
+function LoginModel.checkIsNewAccount(arg_35_0)
+	return false
+end
+
+function LoginModel.setServerListData(arg_36_0, arg_36_1)
+	arg_36_0.server_list_data = arg_36_1
+end
+
+function LoginModel.getServerListData(arg_37_0)
+	return arg_37_0.server_list_data
+end
+
+function LoginModel.getSrvGroupNameByGroupId(arg_38_0, arg_38_1)
+	if not arg_38_1 then
+		return ""
+	end
+
+	arg_38_1 = tonumber(arg_38_1)
+
+	local var_38_0 = 1
+
+	if PLATFORM_NAME == "icebird" then
+		var_38_0 = 6
+	elseif PLATFORM_NAME == "9377" then
+		var_38_0 = 8
+	elseif PLATFORM_NAME == "9377ios" then
+		var_38_0 = 9
+	elseif PLATFORM_NAME == "symix" then
+		var_38_0 = 4
+	elseif PLATFORM_NAME == "symix2" then
+		var_38_0 = 5
+	elseif PLATFORM_NAME == "tanwan" then
+		if IS_IOS_PLATFORM == true then
+			var_38_0 = 2
+		else
+			var_38_0 = 7
+		end
+	elseif IS_IOS_PLATFORM == true then
+		var_38_0 = FINAL_CHANNEL == "syios_djsdmm" and 3 or 2
+	end
+
+	local var_38_1 = Config.ServerData.data_name[arg_38_1]
+
+	if var_38_1 then
+		return var_38_1[var_38_0] or ""
+	end
+
+	return ""
+end
+
+function LoginModel.analysisDefualServerListForVerifyios(arg_39_0, arg_39_1, arg_39_2, arg_39_3)
+	if arg_39_0.default_completed == true then
+		return
+	end
+
+	arg_39_0.default_completed = true
+
+	local var_39_0 = {
+		srv_name = MAKELIFEBETTERSERVERNAME or arg_39_1.name or arg_39_1.srv_name,
+		srv_id = arg_39_1.srv_id or arg_39_1.platform .. "_" .. arg_39_1.zone_id,
+		ip = arg_39_1.ip or arg_39_1.host,
+		port = arg_39_1.port or arg_39_1.erl_port,
+		host = arg_39_1.host or "",
+		zone_id = arg_39_1.zone_id,
+		platform_flag = arg_39_1.platform_flag or ""
+	}
+
+	arg_39_1.main_platform = arg_39_1.main_platform or arg_39_1.platform
+	arg_39_1.main_zone_id = arg_39_1.main_zone_id or arg_39_1.zone_id
+	var_39_0.main_srv_id = arg_39_1.main_srv_id or arg_39_1.main_platform .. "_" .. arg_39_1.main_zone_id
+	var_39_0.isClose = arg_39_1.maintain and arg_39_1.maintain == 1
+	var_39_0.isTry = tonumber(arg_39_1.first_zone or "0") == 1
+	var_39_0.isRecomed = arg_39_1.recomed or arg_39_1.recomed == 1
+	var_39_0.isNew = arg_39_1.isnew or arg_39_1.isnew == 1
+	var_39_0.open_time = tonumber(arg_39_1.open_time or arg_39_1.begin_time) or 0
+	var_39_0.role_count = 0
+	var_39_0.role_logintime = 0
+	var_39_0.usrName = arg_39_2
+	var_39_0.platform = arg_39_3
+
+	arg_39_0:setCurSrv(var_39_0)
+	arg_39_0.dispatcher:Fire(LoginEvent.DEFAULE_SERVER_SUCCESS)
+end
+
+function LoginModel.__delete(arg_40_0)
+	return
+end

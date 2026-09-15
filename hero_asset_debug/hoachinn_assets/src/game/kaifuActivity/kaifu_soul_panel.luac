@@ -1,0 +1,507 @@
+----------------------------
+-- 
+-- @Date:   2020-4-10
+-- @Description:开服武魂试炼
+----------------------------
+KaifuSoulPanel = class( "KaifuSoulPanel",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+function KaifuSoulPanel:ctor(bid)
+    self.holiday_bid = bid
+    self:loadResources()
+    self.select_boss = 1
+    self.fubenItemList = {}
+end
+
+function KaifuSoulPanel:loadResources()
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("actionpractisetower", "actionpractisetower"), type = ResourcesType.plist},
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(
+        self.res_list,
+        function()
+            if self.configUI then
+                self:configUI()
+            end
+            if self.register_event then
+                self:register_event()
+            end
+        end
+    )
+end
+
+function KaifuSoulPanel:configUI()
+    MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.HolidaySoul)
+    
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("kaifuactivity/kaifu_soul_panel"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setPosition(-40, -80)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    local bg_res = PathTool.getPlistImgForDownLoad("bigbg/action", "txt_cn_pt")
+    if not self.background_load then
+        -- self.background_load = loadSpriteTextureFromCDN(self.image_bg, bg_res, ResourcesType.single, self.background_load)
+    end
+    
+    self.title_lab = self.main_container:getChildByName("title_lab")
+    self.title_lab:setString(TI18N("语言_c_30"))--@通关奖励文字
+    
+    self.fight_btn = self.main_container:getChildByName("fight_btn")
+    self.btn_label = self.fight_btn:getChildByName("label")
+    self.btn_label:setString(TI18N("语言_lev_up_01_d_56"))
+    
+    self.rank_container = self.main_container:getChildByName("rank_container")
+    self.heroimg = self.main_container:getChildByName("heroimg")
+    self.item_container = self.main_container:getChildByName("item_container")
+    self.item_container:setScrollBarEnabled(false)
+    
+    self.time_layer = self.main_container:getChildByName("time_layer")
+    self.tip1 = self.time_layer:getChildByName("tip1")
+    self.tip1:setString(TI18N("语言_c_4769"))
+    self.time_txt = self.time_layer:getChildByName("time_txt")
+    self.btn_tips = self.time_layer:getChildByName("btn_tips")
+
+    self.name_layer = self.main_container:getChildByName("name_layer")
+    self.herotype = self.name_layer:getChildByName("herotype")
+    self.hero_name = self.name_layer:getChildByName("hero_name")
+
+    self.power_layer = self.main_container:getChildByName("power_layer")
+    self.power_txt = self.power_layer:getChildByName("power_txt")
+
+    self.video_btn = self.main_container:getChildByName("video_btn")--观看通关录像
+    self.video_btn:getChildByName("label"):setString(TI18N("语言_c_1605"))
+    --道具列表
+    local scroll_view_size = self.item_container:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 5,                  -- 第一个单元的X起点
+        space_x = 10,                    -- x方向的间隔
+        start_y = 5,                    -- 第一个单元的Y起点
+        space_y = 4,                   -- y方向的间隔
+        item_width = BackPackItem.Width * 0.8,               -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.8,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.8
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.item_container, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+
+    self:setInitData()
+    controller:sender29108() --请求一下相关数据
+end
+function KaifuSoulPanel:updateRed(list)
+    for k, v in pairs(list) do
+        if model:getFubenIsPassById(v.id) <= 0 then
+            return true
+        end
+    end
+    return false
+end
+function KaifuSoulPanel:setInitData()
+    local fubenList = model:getSoulDataByDay()
+    if not fubenList or tableLen(fubenList) == 0 then
+        return
+    end
+    local status = self:updateRed(fubenList)
+    controller:setHolidayStatus(self.holiday_bid, status)
+    self:setFubenList(fubenList)
+    self.select_boss = fubenList[3].id --设置进入页面默认选择的副本 
+    local id = self.select_boss%3
+    if id == 0 then
+        id = 1
+    elseif id == 1 then
+        id = 3
+    end
+    local selectCfg = fubenList[id]
+    if selectCfg == nil then return end
+    self:setMasterData(selectCfg)
+end
+
+function KaifuSoulPanel:setFubenList(data)
+    if not self.fubenItemList then
+        self.fubenItemList = {}
+    end
+    local size = 130
+    for i = 1,tableLen(data) do
+        local _y = size * (i-1)
+        local _x = 2
+        if self.fubenItemList[i] == nil then
+            self.fubenItemList[i] = KaifuSoulItem.new()
+            self.rank_container:addChild(self.fubenItemList[i])
+            self.fubenItemList[i]:setVisible(false)
+        end
+        if self.fubenItemList[i] then
+            self.fubenItemList[i]:setData(data[i],i)
+            self.fubenItemList[i]:setPosition(_x,_y)
+            self.fubenItemList[i]:setVisible(true)
+        end
+    end
+end
+
+function KaifuSoulPanel:setMasterData(data)
+    self.power_txt:setString(data.power)
+    local cfg = Config.UnitData3.data_unit1(data.boss_id)
+    if not cfg then return end
+    local temp_config = Config.UnitData3.data_unit2(cfg.monster3)
+    local camp_type = temp_config.camp_type
+    local camp_res = PathTool.getHeroCampTypeIcon(camp_type)
+    loadSpriteTexture(self.herotype, camp_res, LOADTEXT_TYPE_PLIST)
+    -- local name = temp_config.name
+    self.hero_name:setString(cfg.name)
+    if self.hero_name:getContentSize().width > 170 then
+        self.name_layer:setPositionX(499 - (self.hero_name:getContentSize().width - 170))
+    else
+        self.name_layer:setPositionX(499)
+    end
+    
+    local drawId = data.draw
+    local res_id = PathTool.getPlistImgForDownLoad("herodraw/herodrawres",drawId)
+	self.item_load = createResourcesLoad(res_id, ResourcesType.single, function()
+        if self.heroimg then
+			loadSpriteTexture(self.heroimg, res_id, LOADTEXT_TYPE)
+        end
+    end, self.item_load)
+    
+    --设置奖励
+    -- if self.rewardList then
+    --     for i=1,tableLen(self.rewardList) do
+    --         self.rewardList[i]:setVisible(false)
+    --     end
+    -- else 
+    --     self.rewardList = {}
+    -- end
+    -- local reward = data.reward
+    -- for i = 1, tableLen(reward) do
+    --     local _x = 105 * i - 105 * 0.5 + 10
+	-- 	local _y = 105 * 0.5
+    --     if not self.rewardList[i] then
+    --         self.rewardList[i] = BackPackItem.new(false, true, false, 0.8, false, true)
+    --         self.item_container:addChild(self.rewardList[i])
+    --         if self.rewardList[i] then
+    --             self.rewardList[i]:setPosition(_x, _y)
+    --             self.rewardList[i]:setBaseData(reward[i][1],reward[i][2])
+    --             self.rewardList[i]:setVisible(true)
+    --         end
+    --     else
+    --         self.rewardList[i]:setBaseData(reward[i][1],reward[i][2])
+    --         self.rewardList[i]:setVisible(true)
+    --     end
+    -- end
+    local list = {}
+    local reward = data.reward
+    for k, v in pairs(reward) do
+        local vo = deepCopy(Config.ItemData.data_get_data(v[1]))
+        vo.quantity = v[2]
+        table.insert(list, vo)
+    end
+    if tableLen(list) > 5 then
+        self.item_scrollview:setPositionX(0)
+    else
+        self.item_scrollview:setPositionX((5 - tableLen(list)) * 10 + (4 - tableLen(list)) * 55)
+    end
+    self.item_scrollview:setData(list)
+    self.item_scrollview:addEndCallBack(function()
+        local list = self.item_scrollview:getItemList()
+        for k,v in pairs(list) do
+            v:setDefaultTip()
+        end
+    end)
+    --刷新一下选择
+    self:updateSelect()
+    self:acTimeUpdate()
+    self:setBattleStatus()
+    controller:sender29111(self.select_boss) --请求一下录像数据
+end
+
+function KaifuSoulPanel:setBattleStatus()
+    local isPass = model:getFubenIsPassById(self.select_boss)
+    if isPass > 0 then -- 表示已经通关
+        self.fight_btn:getChildByName("label"):setString(TI18N("语言_c_59"))
+        setChildUnEnabled(true,self.fight_btn)
+        self.fight_btn:setTouchEnabled(false)
+    else
+        self.fight_btn:getChildByName("label"):setString(TI18N("语言_lev_up_01_d_56"))
+        setChildUnEnabled(false,self.fight_btn)
+        self.fight_btn:setTouchEnabled(true)
+    end
+end
+
+function KaifuSoulPanel:acTimeUpdate()
+    local endtime = model:getSoulEndTime()
+    if endtime<=0 then
+        return
+    else
+        local time = endtime - GameNet:getInstance():getTime()
+        controller:getModel():setCountDownTime(self.time_txt, time)
+    end
+end
+
+function KaifuSoulPanel:register_event()
+    if not self.selectEvent then
+        self.selectEvent = GlobalEvent:getInstance():Bind(ActionEvent.KaifuSoulSelect ,function(data)
+                self.select_boss = data
+                local fubenList = model:getSoulDataByDay()
+                local id = self.select_boss % 3
+                if id == 0 then
+                    id = 1
+                elseif id == 1 then
+                    id = 3
+                end
+                local selectCfg = fubenList[id]
+                if selectCfg == nil then return end
+                self:setMasterData(selectCfg)
+            end
+        )
+    end
+    --更新数据
+    if not self.updateEvent then
+        self.updateEvent = GlobalEvent:getInstance():Bind(ActionEvent.KaifuSoulUpdateData ,function(data)
+                self:setInitData()
+            end
+        )
+    end
+    if not self.updateVideoEvent then
+        self.updateVideoEvent = GlobalEvent:getInstance():Bind(ActionEvent.KaifuSoulUpdateVideo ,function(data)
+                self.video_data = data
+            end
+        )
+    end
+
+    if self.btn_tips then
+        self.btn_tips:addTouchEventListener(function( sender,event_type )
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                TipsManager:getInstance():showCommonTips(Config.HolidaySoulData.data_const["game_rule1"].desc, sender:getTouchBeganPosition())
+            end
+        end)
+    end
+
+    self.video_btn:addTouchEventListener(function(sender, event_type) 
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            if not self.video_data then return end
+            if not self.video_data.holiday_soul_trial_replay_data or tableLen(self.video_data.holiday_soul_trial_replay_data) <= 0 then 
+                message(TI18N("语言_c_4098"))
+                return
+            end
+            controller:openVideoWindow(true,self.video_data,self.select_boss)
+        end
+    end)
+
+    registerButtonEventListener(self.fight_btn,function()
+        self:clickFight()
+    end,true,1)
+
+end
+
+-- function KaifuSoulPanel:openVideoWindow(bool,data)
+--     if bool == true then
+--         if not self.video_window then 
+--             self.video_window = SoulVideoWindow.New(self.video_data,self.select_boss)
+--         end
+--         if self.video_window and self.video_window:isOpen() == false then
+--             self.video_window:open()
+--         end
+--     else 
+--         if self.video_window then
+--             self.video_window:close()
+--             self.video_window = nil
+--         end
+--     end
+-- end
+
+function KaifuSoulPanel:clickFight()
+    local setting = {}
+    setting.fbId = self.select_boss
+    HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.kaifuSoul, setting, 1)
+end
+
+function KaifuSoulPanel:updateSelect()
+    if self.fubenItemList then
+        for i=1,tableLen(self.fubenItemList) do
+            self.fubenItemList[i]:setSelectStatus(false)
+            if self.fubenItemList[i].config.id == self.select_boss then
+                self.fubenItemList[i]:setSelectStatus(true)
+            end
+        end
+    end
+end
+
+function KaifuSoulPanel:dataHandler(arr)
+    
+end
+
+function KaifuSoulPanel:DeleteMe()
+    doStopAllActions(self.time_txt)
+    if self.background_load then
+        self.background_load:DeleteMe()
+        self.background_load = nil
+    end
+    if self.resources_load ~= nil then
+        self.resources_load:DeleteMe()
+        self.resources_load = nil
+    end
+    self.select_boss = 1
+    if self.selectEvent then
+        GlobalEvent:getInstance():UnBind(self.selectEvent)
+        self.selectEvent = nil
+    end
+
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+
+    if self.updateVideoEvent then
+        GlobalEvent:getInstance():UnBind(self.updateVideoEvent)
+        self.updateVideoEvent = nil
+    end
+
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+
+    if self.fubenItemList then
+        for i, v in pairs(self.fubenItemList) do
+            v:DeleteMe()
+        end
+        self.fubenItemList = nil
+    end
+end
+
+--开服武魂试炼item
+KaifuSoulItem = class("KaifuSoulItem", function() 
+    return ccui.Layout:create()
+end)
+
+function KaifuSoulItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("kaifuactivity/kaifu_soul_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setTouchEnabled(true)
+    self:setAnchorPoint(0,0)
+    self:setContentSize(self.size)
+    self.root_wnd:setPosition(0, 0)
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.bg = self.main_panel:getChildByName("bg")
+    self.hero_icon = self.main_panel:getChildByName("hero_icon")
+    self.camp_icon = self.main_panel:getChildByName("camp_icon")
+    self.level = self.main_panel:getChildByName("level")
+    self.level_name = self.main_panel:getChildByName("level_name")
+    self.effect = self.main_panel:getChildByName("select_img")
+    self:registerEvent()
+end
+
+function KaifuSoulItem:registerEvent()
+    self.main_panel:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            GlobalEvent:getInstance():Fire(ActionEvent.KaifuSoulSelect ,self.config.id)
+        end
+    end)
+end
+
+--@config 结构是 Config.PartnerData.data_partner_base
+function KaifuSoulItem:setData(config)
+    if not config then return end
+    self.config = config
+    --英雄头像
+    local res = PathTool.getHeadIcon(config.face_id)
+    loadSpriteTexture(self.hero_icon,res,LOADTEXT_TYPE)
+
+    local cfg = Config.UnitData3.data_unit1(config.boss_id)
+    if not cfg then return end
+    local temp_config = Config.UnitData3.data_unit2(cfg.monster3)
+    local camp_type = temp_config.camp_type
+    local camp_res = PathTool.getHeroCampTypeIcon(camp_type)
+    loadSpriteTexture(self.camp_icon, camp_res, LOADTEXT_TYPE_PLIST)
+
+    if config.mode == 1 then
+        self.level_name:setString(TI18N("语言_c_243"))
+        self.level_name:setColor(cc.c4b(255,255,255,255))
+    elseif config.mode == 2 then
+        self.level_name:setString(TI18N("语言_c_244"))
+        self.level_name:setColor(cc.c4b(255,0,255,255))
+    elseif config.mode == 3 then
+        self.level_name:setString(TI18N("语言_c_246"))
+        self.level_name:setColor(cc.c4b(255,25,25,255))
+    end
+    self:setPassMark()
+end
+
+function KaifuSoulItem:setSelectStatus(status)
+    self.effect:setVisible(status)
+    -- if self.effect then
+    -- else
+    -- self.effect:setScale(1)
+    -- self.main_panel:addChild(self.effect)
+    --     self.effect:setVisible(status)
+    -- end
+end
+--@判断是否已经通关
+function KaifuSoulItem:setPassMark()
+    local isPass = model:getFubenIsPassById(self.config.id)
+    if isPass>0 then
+        addRedPointToNodeByStatus(self.main_panel,false)
+        if self.passEffect then
+            self.passEffect:setVisible(true)
+        else
+            self.passEffect = createEffectSpine("E50068", cc.p(self.main_panel:getContentSize().width/2,self.main_panel:getContentSize().height/2), cc.p(0.5, 0.5), false,  PlayerAction.action_3)
+            self.passEffect:setVisible(true)
+            self.main_panel:addChild(self.passEffect)
+            local function eventFunc(event)
+                self:showPassMv(true)
+            end
+            self.passEffect:registerSpineEventHandler(eventFunc, sp.EventType.ANIMATION_COMPLETE)
+        end
+    else
+        addRedPointToNodeByStatus(self.main_panel,true,10,10)
+        if self.passEffect then
+            self.passEffect:setVisible(false)
+        end
+    end
+end
+
+function KaifuSoulItem:showPassMv(status)
+    if status == true then
+        if self.pass_mv == nil then
+            self.pass_mv = createEffectSpine("E50068", cc.p(self.main_panel:getContentSize().width/2,self.main_panel:getContentSize().height/2), cc.p(0.5, 0.5), true, PlayerAction.action_3)
+            self.main_panel:addChild(self.pass_mv)
+        end
+        self.pass_mv:setVisible(true)
+    else
+        if self.pass_mv then
+            self.pass_mv:clearTracks()
+            self.pass_mv:removeFromParent()
+            self.pass_mv = nil
+        end
+    end
+end
+
+function KaifuSoulItem:DeleteMe()
+    if self.passEffect then
+        self.passEffect:clearTracks()
+        self.passEffect:removeFromParent()
+        self.passEffect = nil
+    end
+    self:showPassMv(false)
+    self:removeAllChildren()
+    self:removeFromParent()
+end

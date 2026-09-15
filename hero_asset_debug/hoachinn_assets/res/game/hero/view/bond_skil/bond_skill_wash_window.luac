@@ -1,0 +1,488 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      羁绊技主界面 
+-- <br/>Create: 2019年7月31日
+--
+-- --------------------------------------------------------------------
+BondSkillWashWindow = BondSkillWashWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function BondSkillWashWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.layout_name = "skill/bond_skill_wash_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("bondskill", "bondskill"), type = ResourcesType.plist}
+    }
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.cost_list = {}
+    self.left_attr = {}
+    self.right_attr = {}
+    self.lock_list = {}
+    self.lock_num = 0
+    self.cost_status = 0
+    self.bond_atr_list = {}
+end
+
+function BondSkillWashWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    -- self:setBackgroundImg("hero_resonate_bg1")
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setZOrder(2)
+    -- self.main_container:setScale(display.getMaxScale())
+    self.base_panel = self.main_container:getChildByName("base_panel")
+    self.attr_panel = self.main_container:getChildByName("attr_panel")
+    self.left_panel = self.attr_panel:getChildByName("left_panel")
+    self.title_txt_1 = self.left_panel:getChildByName("title_txt_1")
+    self.title_txt_1:setString(TI18N("语言_c_6211"))
+    self.lock_txt = self.left_panel:getChildByName("lock_txt")
+    self.lock_txt:setString(TI18N("语言_c_6212"))
+    self.attr_panel1 = self.left_panel:getChildByName("attr_panel1")
+    for i = 1, 5 do
+        self.lock_list[i] = {}
+        self.lock_list[i].lock = self.attr_panel1:getChildByName("lock_"..i)
+        self.lock_list[i].status = false
+    end
+    self.lock_look = self.attr_panel1:getChildByName("lock_look")
+    self.cost_label = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(1,0),cc.p(240,10),-4,nil,200)
+    self.attr_panel1:addChild(self.cost_label)
+    self.right_panel = self.attr_panel:getChildByName("right_panel")
+    self.title_txt_2 = self.right_panel:getChildByName("title_txt_2")
+    self.title_txt_2:setString(TI18N("语言_c_6213"))
+    self.attr_panel2 = self.right_panel:getChildByName("attr_panel2")
+    self.score_lab = self.attr_panel2:getChildByName("score_lab")
+    self.score_lab:setString(TI18N("语言_c_3234"))
+    self.tip = self.attr_panel:getChildByName("tip")
+    self.tip:setString(transformTextToShort(TI18N("语言_c_3230"),70))
+    addEvt2showAllTextTips(self.tip,TI18N("语言_c_3230"),70)
+    self.cost_panel = self.main_container:getChildByName("cost_panel")
+    self.cost_title = self.cost_panel:getChildByName("cost_title")
+    self.cost_title:setString(TI18N("语言_c_4803"))
+    setTextMaxWidth(self.cost_title,80,-10)
+    for i = 1, 2 do
+        self.cost_list[i] = self.cost_panel:getChildByName("cost_bg_"..i)
+        self.cost_list[i].icon = self.cost_list[i]:getChildByName("cost_icon_"..i)
+        self.cost_list[i].txt = self.cost_list[i]:getChildByName("cost_txt_"..i)
+    end
+    self.title_panel = self.main_container:getChildByName("title_panel")
+    self.Image_2 = self.title_panel:getChildByName("Image_2")
+    self.win_title = self.title_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6214"))
+    self.Image_2:setContentSize(cc.size(math.max(self.win_title:getContentSize().width+100,332),63))
+    self.close_btn = self.title_panel:getChildByName("close_btn")
+    self.btn_panel = self.main_container:getChildByName("btn_panel")
+    self.wash_btn = self.btn_panel:getChildByName("wash_btn")
+    self.wash_txt = self.wash_btn:getChildByName("label")
+    self.wash_txt:setString(TI18N("语言_c_3049"))
+    self.ok_btn = self.btn_panel:getChildByName("ok_btn")
+    self.ok_txt = self.ok_btn:getChildByName("label")
+    self.ok_txt:setString(TI18N("语言_c_325"))
+    self.wash_tip = self.btn_panel:getChildByName("wash_tip")
+
+    self.tip_panel = self.root_wnd:getChildByName("tip_panel")
+    self.tip_panel:setZOrder(3)
+    self.tip_panel:setVisible(false)
+    self.tip_bg = self.tip_panel:getChildByName("tip_bg")
+    self.atr_panel = self.tip_panel:getChildByName("atr_panel")
+    self.atr_panel:setScrollBarEnabled(false)
+    --查看全部
+    if not self.look_all_btn then
+        self.look_all_btn = createRichLabel(20,cc.c3b(0x0e,0xa8,0x0e),cc.p(1,0),cc.p(640,35))
+        self.base_panel:addChild(self.look_all_btn)
+    end
+    self.look_all_btn:setString(string_format("<div href=xxx>%s</div>", TI18N("语言_c_3048")))   
+end
+
+function BondSkillWashWindow:register_event()
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.lock_look, handler(self, self.onClickBtnLockLook) ,false, 2)
+    self.tip_panel:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.tip_panel:setVisible(false)
+        end
+    end)
+    for i = 1, 5 do
+        registerButtonEventListener(self.lock_list[i].lock, function()
+            if self.lock_list[i].status then
+                self.lock_list[i].lock:loadTexture(PathTool.getResFrame("hero","hero_info_6"), LOADTEXT_TYPE_PLIST)
+                self.lock_list[i].status = false
+                self.lock_num = self.lock_num - 1
+            else
+                self.lock_list[i].lock:loadTexture(PathTool.getResFrame("hero","hero_info_5"), LOADTEXT_TYPE_PLIST)
+                self.lock_list[i].status = true
+                self.lock_num = self.lock_num + 1
+            end
+            if self.lock_num <= 0 then
+                self.cost_label:setVisible(false)
+            else
+                self.cost_label:setVisible(true)
+                local num = tableLen(self.left_attr)
+                local cfg = Config.PartnerBondSkillData.data_const["lock_pay_diamon"..num].val
+                local data = cfg[self.lock_num]
+                if data then
+                    self.cost_label:setString(string.format(TI18N("语言_c_6261"),data[2],PathTool.getItemRes(3)))
+                end
+            end
+        end ,false, 2)
+    end
+    registerButtonEventListener(self.wash_btn, function()
+        if self.cost_status == 0 then
+            local pos = {}
+            for i = 1, 5 do
+                if self.lock_list[i].status == true then
+                    local list = {}
+                    list.pos = i
+                    table.insert(pos,list)
+                end
+            end
+            
+            if self.bond_id == model.bond_id and model.bond_id ~= 0 then
+                controller:sender11405(model.bond_par_id,self.bond_id,pos)
+            else
+                controller:sender11405(0,self.bond_id,pos)
+            end
+        else
+            local bond_lev = self.bond_data.b_lev
+            local cfg = Config.PartnerBondSkillData.data_base_info[self.bond_id][bond_lev].reset_price
+            local item_id = cfg[self.cost_status][1]
+            local item_config = Config.ItemData.data_get_data(item_id)
+            BackpackController:getInstance():openTipsSource(true, item_config)
+        end
+    end ,false, 2)
+    
+    registerButtonEventListener(self.ok_btn, function()
+        if self.bond_id == model.bond_id and model.bond_id ~= 0 then
+            controller:sender11406(model.bond_par_id,self.bond_id,1)
+        else
+            controller:sender11406(0,self.bond_id,1)
+        end
+    end ,false, 2)
+
+    
+    --刷新数据
+    if not self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Bond_Skill_Event,function ( data )
+			if not data then return end
+			self:setData()
+        end)
+    end
+
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type) 
+        local config =  Config.HolidayConvertData.data_const.game_rule
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        end
+        local config = Config.PartnerData.data_partner_const.game_rule1
+    end ,true, 1)
+
+    self.look_all_btn:addTouchLinkListener(function(type, value, sender, pos)
+        local bond_lev = self.bond_data.b_lev
+        local data = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bond_id][bond_lev])
+        TipsManager:getInstance():showCommonTips(data.tips_info,pos)
+    end, { "click", "href" })
+end
+
+function BondSkillWashWindow:onClickBtnClose()
+    controller:openBondSkillWashWindow(false)
+end
+function BondSkillWashWindow:onClickBtnLockLook()
+    self.tip_panel:setVisible(true)
+    self:setAtrPanel()
+end
+function BondSkillWashWindow:setAtrPanel()
+    local _h = 20
+    if self.top_item then
+        if not tolua.isnull(self.top_item) and not tolua.isnull(self.atr_panel) then
+			self.tip_panel:removeChild(self.top_item)
+		end
+        self.top_item = nil
+    end
+    self.top_item = ccui.Layout:create()
+    self.top_item:setAnchorPoint(cc.p(0.5, 0))
+    self.top_item:setContentSize(cc.size(400,40))
+    local title = createLabel(24,cc.c3b(0xfe,0xee,0xba),nil,self.top_item:getContentSize().width*0.5,self.top_item:getContentSize().height-5,TI18N("语言_c_6326"),self.top_item,nil,cc.p(0.5,1))
+    local line = createImage(self.top_item,PathTool.getResFrame("common_2", "tips_8"),self.top_item:getContentSize().width*0.5,0,cc.p(0.5,0),true,nil,true)
+    line:setContentSize(cc.size(340,2))
+    self.tip_panel:addChild(self.top_item)
+
+    
+    local bond_cfg = Config.PartnerBondSkillData.data_const
+    for key, value in pairs(self.bond_atr_list) do
+		if value and not tolua.isnull(value) and not tolua.isnull(self.atr_panel) then
+			self.atr_panel:removeChild(value)
+		end
+		value = nil
+	end
+    for i = 1, 5 do
+        local is_line = i ~= 5
+        local item = self:setAtrItem(i,deepCopy(bond_cfg["lock_pay_diamon"..i].val),is_line)
+        self.atr_panel:addChild(item)
+        self.bond_atr_list[i] = item
+        _h = _h + item:getContentSize().height
+    end
+    self.atr_panel:setContentSize(cc.size(400,math.min(_h,500)))
+    self.atr_panel:setInnerContainerSize(cc.size(400,_h))
+    self.tip_bg:setContentSize(cc.size(405,math.min(_h,500)+15 + self.top_item:getContentSize().height))
+    self.tip_bg:setPositionY(640 + self.top_item:getContentSize().height*0.5)
+    local _y = self.atr_panel:getContentSize().height*0.5+self.atr_panel:getPositionY()
+    self.top_item:setPosition(cc.p(360,_y))
+    for i = 1, tableLen(self.bond_atr_list) do
+        self.bond_atr_list[i]:setPositionY(_h)
+        _h = _h - self.bond_atr_list[i]:getContentSize().height
+    end
+end
+function BondSkillWashWindow:setAtrItem(i,data,is_line)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 1))
+    local _h = 20
+    local lv_txt = createLabel(22,cc.c3b(0xfe,0xee,0xba),nil,10,0,string.format(TI18N("语言_c_6260"),i),item,nil,cc.p(0,1))
+    _h = _h + lv_txt:getContentSize().height + i*40
+    item:setContentSize(cc.size(400,_h))
+    lv_txt:setPositionY(_h)
+    local _y = 50
+    for i = tableLen(data), 1,-1 do
+        local txt = createRichLabel(22,cc.c3b(0xff,0xff,0xff),cc.p(0,1),cc.p(10,_y),nil,nil,500)
+        item:addChild(txt)
+        txt:setString(string.format(TI18N("语言_c_6259"),PathTool.getResFrame("common","common_lock"),data[i][1],data[i][2]))
+        _y = _y + 40
+    end
+    if is_line then
+        local line = createImage(item,PathTool.getResFrame("common_2", "tips_8"),item:getContentSize().width*0.5,5,cc.p(0.5,0),true,nil,true)
+        line:setContentSize(cc.size(340,2))
+    end
+    return item
+end
+function BondSkillWashWindow:openRootWnd(id)
+    self.bond_id = id
+    self:setData()
+end
+function BondSkillWashWindow:setData()
+    self.bond_data = model:getBondDataForId(self.bond_id)
+    if not self.bond_data then return end
+    local attr_data = deepCopy(self.bond_data.b_attr)
+    self.is_can_save = false
+    local dic_holy_eqm_attr = {}
+    for i,v in ipairs(attr_data) do
+        dic_holy_eqm_attr[v.pos] = v
+        --后端协议  如果 101 表示 1 位置上面有洗练属性没有保存
+        if v.pos >= 100 then
+            self.is_can_save = true
+        end
+    end
+    self:setBasePanel()
+    self:setAttrPanel(dic_holy_eqm_attr)
+    self:setCostPanel(dic_holy_eqm_attr)
+    --洗练属性
+    self.wash_tip:setString(string_format(TI18N("语言_c_6256"), self.bond_data.b_ref_time))
+    if self.is_can_save then
+        self.wash_btn:setPositionX(195)
+        self.ok_btn:setVisible(true)
+    else
+        self.wash_btn:setPositionX(326)
+        self.ok_btn:setVisible(false)
+    end
+end
+function BondSkillWashWindow:setBasePanel()
+    local bond_lev = self.bond_data.b_lev
+    local data = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bond_id][bond_lev])
+    data.data = self.bond_data
+    if self.bond_skill then
+        self.bond_skill:DeleteMe()
+        self.bond_skill = nil
+    end
+    if not self.bond_skill then
+        self.bond_skill = BondSkillItem.new(false,1,false)
+        self.base_panel:addChild(self.bond_skill)
+        self.bond_skill:setPosition(cc.p(326,100))
+        self.bond_skill:setIsWash(true)
+    end
+    self.bond_skill:setData(data)
+    self.bond_skill:setbondParVis(false)
+    self.bond_skill:setequipSta(false)
+    self.bond_skill:setnameY(-20)
+end
+function BondSkillWashWindow:setAttrPanel(data)
+    local old_attr_list = {}--旧的随机属性
+    local new_attr_list = {}--新的随机属性
+    local bond_lev = self.bond_data.b_lev
+    
+    
+    for key, value in pairs(data) do
+        if value.pos > 100 then
+            table.insert(new_attr_list,value)
+        else
+            table.insert(old_attr_list,value)
+        end
+    end
+    for key, value in pairs(old_attr_list) do
+        local status = true
+        for k, v in pairs(new_attr_list) do
+            if value.pos + 100 == v.pos then
+                status = false
+            end
+        end
+        if status then
+            local attr_list = deepCopy(value)
+            attr_list.pos = attr_list.pos + 100
+            table.insert(new_attr_list,attr_list)
+        end
+    end
+    table.sort(old_attr_list,function(a,b) return a.pos < b.pos end)
+    table.sort(new_attr_list,function(a,b) return a.pos < b.pos end)
+    for key, value in pairs(self.left_attr) do
+        if value and not tolua.isnull(value) and not tolua.isnull(self.attr_panel1) then
+            self.attr_panel1:removeChild(value)
+        end
+        value = nil
+    end
+    self.left_attr = {}
+    for key, value in pairs(self.right_attr) do
+        if value and not tolua.isnull(value) and not tolua.isnull(self.attr_panel2) then
+            self.attr_panel2:removeChild(value)
+        end
+        value = nil
+    end
+    self.right_attr = {}
+    local left_h = self.attr_panel1:getContentSize().height
+    local right_h = self.attr_panel2:getContentSize().height
+
+    for i=1,tableLen(old_attr_list) do
+        self.left_attr[i] = self:setAttrItem(old_attr_list[i])
+        if i > bond_lev then
+            setChildUnEnabled(true,self.left_attr[i].attr_icon,cc.c3b(0x7f,0x7f,0x7f))
+        else
+            setChildUnEnabled(false,self.left_attr[i].attr_icon)
+        end
+        self.attr_panel1:addChild(self.left_attr[i])
+        self.left_attr[i]:setPosition(cc.p(10,left_h-10))
+        left_h = left_h - self.left_attr[i]:getContentSize().height
+
+        
+        self.right_attr[i] = self:setAttrItem(new_attr_list[i])
+        if i > bond_lev then
+            setChildUnEnabled(true,self.right_attr[i].attr_icon,cc.c3b(0x7f,0x7f,0x7f))
+        else
+            setChildUnEnabled(false,self.right_attr[i].attr_icon)
+        end
+        self.attr_panel2:addChild(self.right_attr[i])
+        self.right_attr[i]:setPosition(cc.p(10,right_h-10))
+        right_h = right_h - self.right_attr[i]:getContentSize().height
+    end
+    for i = 1, 5 do
+        if not old_attr_list[i] then
+            self.lock_list[i].lock:setVisible(false)
+            self.lock_list[i].status = false
+        end
+    end
+
+
+    if new_attr_list and #new_attr_list>0 then
+        local old_score = HeroCalculate.BondSkillPower(old_attr_list) or 0
+        local new_score = HeroCalculate.BondSkillPower(new_attr_list) or 0
+        local num = 0
+
+        local base_config = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bond_id][bond_lev])
+        if base_config then
+            num = base_config.score
+        end
+        local sum_score = new_score+num
+        local add_score = sum_score-(old_score+num)
+        if add_score > 0 then
+            add_score = "+"..add_score
+        else
+            add_score = ""..add_score
+        end
+        self.score_lab:setString(string_format(TI18N("语言_c_3233"),sum_score,add_score))
+    else
+        self.score_lab:setString(TI18N("语言_c_3234"))
+    end
+
+
+end
+function BondSkillWashWindow:setAttrItem(data)
+    if data then
+        local attr_key = Config.AttrData.data_id_to_key[data.attr_id]
+        local attr_val = deepCopy(data.attr_val)
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        local item = ccui.Layout:create()
+        item:setAnchorPoint(cc.p(0, 1))
+        item:setContentSize(cc.size(200, 55))
+        if attr_name then
+            local icon = PathTool.getAttrIconByStr(attr_key)
+            local res = PathTool.getResFrame("common", icon)
+            local attr_icon = createSprite(res,0,30,item,cc.p(0,0.5),LOADTEXT_TYPE_PLIST)
+            attr_icon:setScale(1.2)
+            item.attr_icon = attr_icon
+            local label = createLabel(22,cc.c4b(0x7c,0x55,0x36,0xff),nil,40,28,"",item,nil,cc.p(0,0))
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val*0.1).."%"
+            end
+            local attr_str = string.format(" %s：", attr_name)
+            label:setString(transformTextToShort(attr_str,15))
+            addEvt2showAllTextTips(label,attr_str,15,false,false,false,false,true)
+            local res = PathTool.getResFrame("common","common_90005")
+            local res1 = PathTool.getResFrame("common","common_90006")
+            local size = cc.size(160, 18)
+            local bg,comp_bar = createLoadingBar(res, res1, size, item, cc.p(0,1), 40, 28, true, true)
+            local quality = HeroController:getInstance():getModel():getBondQualityByItemIdAttrKey(self.bond_id, self.bond_data.b_lev, attr_key, data.attr_val)
+            local res = PathTool.getBarQualityBg(quality)
+            comp_bar:loadTexture(res,LOADTEXT_TYPE_PLIST)
+            local max_count = model:getBondMaxAttrByItemIdAttrKey(self.bond_id, self.bond_data.b_lev, attr_key)
+            local per = data.attr_val/max_count * 100
+            comp_bar:setPercent(per)
+            item.comp_bar_label = createLabel(18, cc.c3b(255,255,255), cc.c3b(0,0,0), size.width/2, size.height/2, "", comp_bar, 2, cc.p(0.5, 0.5))
+            item.comp_bar_label:setString(attr_val)
+            item.comp_bar = comp_bar
+            item.comp_bar_bg = bg
+            if data.attr_val >= max_count then
+                label:setString(label:getString().." (max)")
+            end
+        end
+        return item
+    else
+        local item = ccui.Layout:create()
+        item:setAnchorPoint(cc.p(0, 1))
+        item:setContentSize(cc.size(300, 55))
+        local txt1 = createLabel(24,cc.c4b(0x7c,0x55,0x36,0xff),nil,0,33,TI18N("语言_c_2942"),item,nil,cc.p(0,0.5))
+        local txt2 = createLabel(24,cc.c4b(0x7c,0x55,0x36,0xff),nil,250,33,TI18N("？？？"),item,nil,cc.p(1,0.5))
+        item.txt1 = txt1
+        item.txt2 = txt2
+        return item
+    end
+end
+function BondSkillWashWindow:setCostPanel(data)
+    -- local bond_lev = self.bond_data.b_lev
+    local bond_lev = 0
+    for k, v in pairs(data) do
+        if v.pos < 100 then
+            bond_lev = bond_lev + 1
+        end
+    end
+    local cfg = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bond_id][bond_lev].reset_price)
+    for i = 1, 2 do
+        local cost = cfg[i]
+        self.cost_list[i].icon:loadTexture(PathTool.getItemRes(cost[1]), LOADTEXT_TYPE)
+        local have_num = BackpackController:getInstance():getModel():getItemNumByBid(cost[1])
+        self.cost_list[i].txt:setString(string.format("%s/%s",MoneyTool.GetMoneyString(have_num,true),cost[2]))
+        if have_num >= cost[2] then
+            self.cost_list[i].txt:setColor(cc.c3b(0xff,0xff,0xff))
+        else
+            self.cost_status = i
+            self.cost_list[i].txt:setColor(cc.c3b(0xff,0x15,0x15))
+        end
+    end
+end
+function BondSkillWashWindow:close_callback()
+    controller:openBondSkillWashWindow(false)
+    if self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():UnBind(self.updateBond)
+        self.updateBond = nil
+    end
+end

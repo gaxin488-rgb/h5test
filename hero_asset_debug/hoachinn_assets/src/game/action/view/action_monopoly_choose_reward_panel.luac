@@ -1,0 +1,300 @@
+----------------------------
+-- 
+-- @Date:   2019-12-12 14:52:22
+-- @Description:   自选礼包活动定制
+----------------------------
+ActionMonopolyChooseRewardPanel = ActionMonopolyChooseRewardPanel or BaseClass(BaseView)
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionMonopolyChooseRewardPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "action/action_monopoly_choose_reward_panel"
+    -- self.select_camp = 1
+end
+
+function ActionMonopolyChooseRewardPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.main_container = self.root_wnd:getChildByName("container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.image_title = self.main_container:getChildByName("image_title")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_4780"))
+    self.image_title:setContentSize(cc.size(self.win_title:getContentSize().width + 100,63))
+    self.image_bottom = self.main_container:getChildByName("image_bottom")
+    self.right_btn = self.main_container:getChildByName("right_btn")
+    self.right_label = self.right_btn:getChildByName("label")
+    self.right_label:setString(TI18N("语言_c_3"))
+    self.left_btn = self.main_container:getChildByName("left_btn")
+    self.left_label = self.left_btn:getChildByName("label")
+    self.left_label:setString(TI18N("语言_act_02_5"))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.list_info_panel = self.main_container:getChildByName("list_info_panel")
+    self.name_txt = self.list_info_panel:getChildByName("name_txt")
+    self.name_txt:setTouchEnabled(true)
+    self.name_txt:setString(transformTextToShort(TI18N("语言_c_4513"),50))
+    addEvt2showAllTextTips(self.name_txt,TI18N("语言_c_4513"),50)
+    self.hero_list = self.list_info_panel:getChildByName("hero_list")
+    self.tips_txt = self.list_info_panel:getChildByName("tips_txt")
+    self.tips_txt:setString(TI18N("语言_c_5288"))
+end
+
+function ActionMonopolyChooseRewardPanel:register_event()
+    registerButtonEventListener(self.background, function()
+        self:clickClose()
+    end,true, 1)
+    registerButtonEventListener(self.close_btn, function()
+        self:clickClose()
+    end,true, 1)
+    registerButtonEventListener(self.right_btn, function()
+        if self.select_camp then
+            -- body
+            local a = {}
+            a.pos = self.select_camp
+            -- printLuaTable(a)
+            controller:sender29301({a})
+        else
+            message(TI18N("语言_c_4770"))
+        end
+    end,true, 1)
+    registerButtonEventListener(self.left_btn, function()
+        self:clickClose()
+    end,true, 1)
+    
+    if not self.update_option_event then
+        self.update_option_event = GlobalEvent:getInstance():Bind(ActionEvent.OptionalSelectData,function (data)
+            self.select_camp = data["pos"]
+        end)
+    end  
+    if not self.close_self then
+        self.close_self = GlobalEvent:getInstance():Bind(ActionEvent.OptionalFireData,function(data)
+            if data.code ~= 0 then
+                self:clickClose()
+            else
+                message(data.msg)
+            end
+        end)
+    end
+end
+
+function ActionMonopolyChooseRewardPanel:openRootWnd(id,list,list1)
+	self:setData(id,list,list1)
+end
+function ActionMonopolyChooseRewardPanel:setData(id,list,list1)
+    self.holiday_bid = id
+    self.choose_list = list
+    self.now_list = list1 or {}
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local v_id = Config.WonderlandData.data_wonderland_act_list[campid].group_id -- 活动版本id
+    self.cfg = Config.WonderlandData.data_choose_reward[v_id]
+    local reward1 = deepCopy(self.cfg)
+    self.reward1 = {}
+    local now_choose = nil
+    if self.now_list[1] then
+        now_choose = self.now_list[1].index
+        self.select_camp = now_choose
+    end
+    for index, value in ipairs(reward1) do
+        local pos = value[1].index
+        local is_select = self:checkItemIsSelect(pos)
+        if is_select then --已经选过了
+        else
+            local temp = {}
+            temp[1] = value[1].reward[1][1]
+            temp[2] = value[1].reward[1][2]
+            temp.pos = pos
+            temp.now_choose = now_choose
+            table.insert(self.reward1,temp)
+        end
+    end
+    self:updateList()
+end
+--判断道具是否已经购买过了
+function ActionMonopolyChooseRewardPanel:checkItemIsSelect(index)
+    if self.choose_list and next(self.choose_list) then
+        for i, v in ipairs(self.choose_list) do
+            if v.index == index then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function ActionMonopolyChooseRewardPanel:updateList()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.hero_list:getContentSize()
+        local setting = {
+            item_class = ActionMonopolyItem,
+            start_x = 30,                     -- 第一个单元的X起点
+            space_x = 20,                     -- x方向的间隔
+            start_y = 10,                     -- 第一个单元的Y起点
+            space_y = 5,                     -- y方向的间隔
+            item_width = 120,                -- 单元的尺寸width
+            item_height = 148,               -- 单元的尺寸height
+            col = 4,                         -- 列数，作用于垂直滚动类型
+        }
+        self.item_scrollview = CommonScrollViewLayout.new(self.hero_list,cc.p(0,0),ScrollViewDir.vertical,ScrollViewStartPos.top,scroll_view_size,setting)
+        self.item_scrollview:setSwallowTouches(false)
+    end
+    self.item_scrollview:setData(self.reward1)
+    -- self.item_scrollview:addEndCallBack(function()
+    --     local item_list = self.item_scrollview:getItemList()
+    --     local now_choose = self.now_list[1].index
+    --     for k, v in pairs(item_list) do
+    --         local item_data = v:getItemData()
+    --         if item_data and item_data.pos == now_choose then
+    --             v:setSelected(true)
+    --         else
+    --             v:setSelected(false)
+    --         end
+    --     end
+    -- end)
+end
+function ActionMonopolyChooseRewardPanel:clickClose()
+    controller:openMonopolySelectRewardPanel(false)
+end
+function ActionMonopolyChooseRewardPanel:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.update_option_event then
+        GlobalEvent:getInstance():UnBind(self.update_option_event)
+        self.update_option_event = nil
+    end
+    self.node_list = {}
+    self.image_list = {}
+    if self.close_self then
+        GlobalEvent:getInstance():UnBind(self.close_self)
+        self.close_self = nil
+    end
+    controller:openMonopolySelectRewardPanel(false)
+end
+
+ActionMonopolyItem = class("ActionMonopolyItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionMonopolyItem:ctor(width, height)
+	self.size = cc.size(width,height)
+	self:configUI(width, height)
+	self:register_event()
+end
+
+function ActionMonopolyItem:configUI( width, height )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_optional_gift_chose_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:setContentSize(cc.size(width, height))
+	self:setTouchEnabled(false)
+    
+	self:addChild(self.root_wnd)
+	self.container = self.root_wnd:getChildByName("container")
+    self.Node_1 = self.container:getChildByName("Node_1")
+    self.select = self.container:getChildByName("select")
+    self.select_1 = self.container:getChildByName("select_1")
+    self.select:setVisible(false)
+    -- self.item_name_txt = self.container:getChildByName("item_name_txt")
+    -- self.item_name_txt:setString("")
+
+    self.item_node = BackPackItem.new(false, true, false, 1, nil, nil, false)
+    self.Node_1:addChild(self.item_node)
+end
+--==============================--
+--desc:设置选中状态
+--time:2017-07-03 09:07:12
+--@status:
+--==============================--
+function ActionMonopolyItem:setSelected(status)
+    if status then
+        self.select:setVisible(true)
+    else
+        self.select:setVisible(false)
+    end
+end
+function ActionMonopolyItem:clearTimeTicket()
+    if self.sequence_action then
+        self.item_node:stopActionByTag(10086)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+function ActionMonopolyItem:register_event(  )
+    -- registerButtonEventListener(self.item_node, function()
+    self.item_node:addTouchEventListener(function (sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            GlobalEvent:getInstance():Fire(ActionEvent.OptionalSelectData,self.data)
+            local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                TipsManager:getInstance():showGoodsTips(self.data[1])
+            end))
+            self.sequence_action = self.item_node:runAction(action)
+            self.sequence_action:setTag(10086)
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+            -- GlobalEvent:getInstance():Fire(ActionEvent.OptionalSelectData,self.data)
+        end
+    end)
+    if not self.update_option_event then
+        self.update_option_event = GlobalEvent:getInstance():Bind(ActionEvent.OptionalSelectData,function (data)
+            self.data.now_choose = data["pos"]
+            if data["pos"] == self.data["pos"] then
+                self:setSelected(true)
+            else
+                self:setSelected(false)
+            end
+        end)
+    end
+end
+
+-- function ActionMonopolyItem:addCallBack( callback )
+-- 	self.callback = callback
+-- 	if self.item_node then
+-- 		self.item_node:addCallBack(callback)
+--     end
+-- end
+function ActionMonopolyItem:getItemData()
+	return self.data
+end
+
+function ActionMonopolyItem:setData(data)
+    self.data = data
+    -- printLuaTable(data)
+	if self.item_node then
+		self.item_node:setBaseData(data[1], data[2])
+        local cfg = Config.ItemData.data_get_data(data[1])
+        if cfg.type == BackPackConst.item_type.HERO_HUN then
+            self.item_node:initCamp(cfg.camp_type)
+        end
+	end
+    local item_txt = Config.ItemData.data_get_data(data[1]).name
+    -- self.item_name_txt:setString(item_txt)
+    if self.data.now_choose == self.data.pos then
+        self:setSelected(true)
+    else
+        self:setSelected(false)
+    end
+end
+
+function ActionMonopolyItem:DeleteMe(  )
+    self:clearTimeTicket()
+    if self.update_option_event then
+        GlobalEvent:getInstance():UnBind(self.update_option_event)
+        self.update_option_event = nil
+    end
+    if self.update_sele then
+        GlobalEvent:getInstance():UnBind(self.update_sele)
+        self.update_sele = nil
+    end
+    if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+end

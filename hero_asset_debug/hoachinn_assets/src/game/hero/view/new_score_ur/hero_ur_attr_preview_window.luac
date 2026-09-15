@@ -1,0 +1,175 @@
+-- --------------------------------------------------------------------
+-- 竖版神装装备穿戴
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-2-27
+-- --------------------------------------------------------------------
+HeroUrAttrPreviewWindow = HeroUrAttrPreviewWindow or BaseClass(BaseView)
+    
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+--@holy_data 神装方案数据 结构参考 协议25220
+function HeroUrAttrPreviewWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.layout_name = "hero/hero_ur_attr_preview_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("proscription","soul"), type = ResourcesType.plist },
+    }
+end 
+
+function HeroUrAttrPreviewWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 1)
+    self.img_title_bg = self.main_container:getChildByName("img_title_bg")
+    self.wnd_title = self.main_container:getChildByName("wnd_title")
+    self.wnd_title:setString(TI18N("语言_par_ult_3"))
+    autoSizeTitleBg(self.wnd_title,self.img_title_bg,120,320)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.scroll = self.main_container:getChildByName("scroll")
+    self.scroll:setScrollBarEnabled(false)
+    self.tab_container = self.main_container:getChildByName("tab_container")
+    self.btn_list = {}
+    local tab_list = {
+        [1]=TI18N("语言_par_ult_4"),
+        [2]=TI18N("语言_par_ult_5")
+    }
+    for i=1,2 do
+        local tab = self.tab_container:getChildByName("tab_btn_"..i)
+        tab.unselect_bg = tab:getChildByName("unselect_bg")
+        tab.select_bg = tab:getChildByName("select_bg")
+        tab.title = tab:getChildByName("title")
+        tab.title:setString(tab_list[i])
+        tab.index = i
+        self.btn_list[i] = tab
+    end
+end
+
+function HeroUrAttrPreviewWindow:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        controller:openHeroUrAttrPreviewWindow(false)
+    end, true, 2)
+    registerButtonEventListener(self.background, function()
+        controller:openHeroUrAttrPreviewWindow(false)
+    end, false, 2)
+    for key,value in pairs(self.btn_list) do
+        registerButtonEventListener(value, function()
+            self:onClickBtn(value.index)
+        end, false, 2)
+    end
+end
+
+function HeroUrAttrPreviewWindow:onClickBtn(index)
+    if self.click_index == index then return end
+    self.click_index = index
+    for key,value in pairs(self.btn_list) do
+        value.unselect_bg:setVisible(true)
+        value.select_bg:setVisible(false)
+        value.title:setTextColor(cc.c4b(0x92,0xb1,0xdc,0xff))
+        value.title:enableOutline(cc.c4b(0x34,0x4c,0x5f,0xff),2)
+    end
+    self.btn_list[index].unselect_bg:setVisible(false)
+    self.btn_list[index].select_bg:setVisible(true)
+    self.btn_list[index].title:setTextColor(cc.c4b(0xf8,0xef,0x76,0xff))
+    self.btn_list[index].title:enableOutline(cc.c4b(0x5c,0x27,0x05,0xff),2)
+    self:updateScroll()
+end
+function HeroUrAttrPreviewWindow:updateScroll()
+    if self.attr_panel_list and next(self.attr_panel_list) then
+        for key,value in pairs(self.attr_panel_list) do
+            value:removeFromParent()
+            value=nil
+        end
+    end
+    self.attr_panel_list = {}
+    local cfg = {}
+    if self.click_index == 1 then
+        for key,value in pairs(Config.PartnerUltraData.data_ene_attr[2]) do
+            table.insert(cfg,value)
+        end
+    else
+        for key,value in pairs(Config.PartnerUltraData.data_ene_attr[1]) do
+            table.insert(cfg,value)
+        end
+    end
+    table.sort(cfg,function(a,b) return a.star < b.star end)
+    local _h = 0
+    for key,value in pairs(cfg) do
+        local item = self:getScrollItem(value)
+        table.insert(self.attr_panel_list,item)
+        _h = _h + item:getContentSize().height + 12
+        self.scroll:addChild(item)
+    end
+    _h = math.max(_h,self.scroll:getContentSize().height)
+    self.scroll:setInnerContainerSize(cc.size(self.scroll:getContentSize().width,_h))
+    for key,value in ipairs(self.attr_panel_list) do
+        value:setPositionY(_h)
+        _h = _h - value:getContentSize().height - 12
+    end
+end
+function HeroUrAttrPreviewWindow:getScrollItem(data)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(0,1)
+    local _w = 624
+    local _h = math.ceil(#data.attr/2)*40+60
+    item:setContentSize(cc.size(_w, _h))
+    item.bg = createImage(item,PathTool.getResFrame("common", "common_1029"),_w*0.5,_h*0.5,cc.p(0.5,0.5),true,nil,true)
+    item.bg:setContentSize(cc.size(_w, _h))
+    item.line_1 = createSprite(PathTool.getResFrame("common","common_1033"),186,_h-25,item,cc.p(0.5,0.5))
+    local txt = string.format(TI18N("语言_par_ult_6"),data.star)
+    item.title = createLabel(22,cc.c3b(0x6d,0x3c,0x2d),nil,312,_h-25,txt,item,nil,cc.p(0.5,0.5))
+    item.line_2 = createSprite(PathTool.getResFrame("common","common_1033"),436,_h-25,item,cc.p(0.5,0.5))
+    item.line_2:setScaleX(-1)
+    setLeftRightImg(item.line_1,item.title,item.line_2,40)
+    for key,value in pairs(data.attr) do
+        local _item = self:getAttrItem(value)
+        local _x = 12 + (key-1)%2*312
+        local _y = _h - 46 -math.floor((key-1)/2)*40
+        _item:setPosition(cc.p(_x,_y))
+        item:addChild(_item)
+    end
+    return item
+end
+function HeroUrAttrPreviewWindow:getAttrItem(data)
+    local item = ccui.Layout:create()
+    item:setContentSize(cc.size(289, 36))
+    item:setAnchorPoint(0,1)
+    item:setPosition(0, 0)
+    item.bg = createImage(item,PathTool.getResFrame("common", "common_1002"),0,0,cc.p(0,0),true,nil,true)
+    item.bg:setContentSize(cc.size(289, 36))
+    local attr_key = data[1]
+    local attr_val = data[2]
+    local icon = PathTool.getAttrIconByStr(attr_key)
+    local icon_res = PathTool.getResFrame("common", icon)
+    item.icon = createSprite(icon_res,28,18,item,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+    local attr_name = Config.AttrData.data_key_to_name[attr_key]
+    if not attr_name then
+        attr_name = Config.AttrExtraData.data_key_to_name[attr_key]
+    end
+    item.name_txt = createLabel(20,cc.c3b(0x6d,0x3c,0x2d),nil,52,18,attr_name,item,nil,cc.p(0,0.5))
+    local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+    if is_per == true then
+        attr_val = (attr_val/10) .."%"
+    end
+    item.value_txt = createLabel(20,cc.c3b(0x6d,0x3c,0x2d),nil,267,18,attr_val,item,nil,cc.p(1,0.5))
+    return item
+end
+function HeroUrAttrPreviewWindow:openRootWnd()
+    self:onClickBtn(1)
+end
+function HeroUrAttrPreviewWindow:close_callback()
+    controller:openHeroUrAttrPreviewWindow(false)
+    if self.attr_panel_list and next(self.attr_panel_list) then
+        for key,value in pairs(self.attr_panel_list) do
+            value:removeFromParent()
+            value=nil
+        end
+    end
+end

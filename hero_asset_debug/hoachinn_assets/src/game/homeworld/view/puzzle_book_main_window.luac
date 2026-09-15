@@ -1,0 +1,213 @@
+--******** 文件说明 ********
+-- 
+-- @description: 拼图图鉴主页面
+-- @DateTime:    2020-02-20
+-- *******************************
+PuzzleBookMainWindow = PuzzleBookMainWindow or BaseClass(BaseView)
+
+local controller = HomeworldController:getInstance()
+local model = controller:getModel()
+function PuzzleBookMainWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "homeworld/puzzle_book_main_window"
+    self.res_list = {
+        
+    }
+    self.show_list = {}
+    self.tab_name = {
+        [1] = TI18N("语言_c_7623"),
+        [2] = TI18N("语言_c_7624"),
+    }
+    self.bottom_tab_list = {}
+end
+
+function PuzzleBookMainWindow:open_callback()
+	self._ui = self:getExportUI()
+    self._ui._background:setScale(display.getMaxScale())
+    self:playEnterAnimatianByObj(self._ui._main_container , 2)
+    self._ui._bar:setScale9Enabled(true)
+    self._ui._bar:setPercent(0)
+    self._book_level = CommonNum.new(20, self._ui._book_level_bg, 99999, 0, cc.p(0.5, 0.5), 4)
+    self._book_level:setPosition(22, 34)
+    self._book_level:setNum(0)
+    self._book_level:setScale(1.4)
+    self._ui._bar_txt:setString(string.format("%s/%s",0,Config.PuzzleBookData.data_level[1].need_exp))
+    setTextMaxWidth(self._ui._play_rule_txt,100,-8)
+    self._ui._play_rule_txt:setString(TI18N("语言_c_7638"))
+    setTextMaxWidth(self._ui._attr_show_txt,100,-8)
+    self._ui._attr_show_txt:setString(TI18N("语言_c_7639"))
+    self._ui._title:setString(TI18N("语言_c_7640"))
+    setTextMaxWidth(self._ui._level_tip,100,-8)
+    self._ui._level_tip:setString(TI18N("语言_c_7641"))
+
+    if not self.list_view then
+        local scroll_view_size = self._ui._book_panel:getContentSize()
+        local setting = {
+            start_x = 3,                  -- 第一个单元的X起点
+            space_x = 46,                    -- x方向的间隔
+            start_y = 2,                    -- 第一个单元的Y起点
+            space_y = -2,                   -- y方向的间隔
+            item_width = 276,               -- 单元的尺寸width
+            item_height = 320,              -- 单元的尺寸height
+            delay = 1,
+            -- row = 1,                        -- 行数，作用于水平滚动类型
+            col = 2,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true
+        }
+        self.list_view = CommonScrollViewSingleLayout.new(self._ui._book_panel, cc.p(scroll_view_size.width * 0.5, scroll_view_size.height * 0.5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0.5,0.5))
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    for i = 1, #self.tab_name, 1 do
+        local tab_btn = {}
+        local item = self._ui._botton_panel:getChildByName("tab_btn_"..i)
+        tab_btn.btn = item
+        tab_btn.index = i
+        tab_btn.select_bg = item:getChildByName("select_bg")
+        -- tab_btn.select_bg:setVisible(false)
+        tab_btn.select_img = item:getChildByName("select_img")
+        -- tab_btn.select_img:setVisible(false)
+        tab_btn.normal_img = item:getChildByName("normal_img")
+        tab_btn.label = item:getChildByName("label")
+        setTextSpacing(tab_btn.label,-8)
+        tab_btn.label:setString(self.tab_name[i])
+        tab_btn.red_point = item:getChildByName("red_point")
+        tab_btn.red_point:setVisible(false)
+        -- tab_btn.btn:setVisible(false)
+        self.bottom_tab_list[i] = tab_btn
+    end
+
+    
+    local bottom_y = display.getBottom()
+    self._ui._botton_panel:setPositionY(bottom_y)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function PuzzleBookMainWindow:createNewCell(width, height)
+    local cell = PuzzleBookMainItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function PuzzleBookMainWindow:numberOfCells()
+    return #self.show_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function PuzzleBookMainWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local book_id = self.show_list[index]
+    if book_id then
+        cell:setData(book_id.id)
+    end
+
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function PuzzleBookMainWindow:onCellTouched(cell)
+    local index = cell.index
+    local book_id = self.show_list[index]
+    if book_id and book_id.id then
+        controller:openPuzzleBookDetailsWindow(true,book_id.id)
+    end
+end
+function PuzzleBookMainWindow:register_event()
+    registerButtonEventListener(self._ui._background,function()
+        controller:openPuzzleBookMainWindow(false)
+    end,false,2)
+    registerButtonEventListener(self._ui._close_btn,function()
+        controller:openPuzzleBookMainWindow(false)
+    end,false,2)
+    registerButtonEventListener(self._ui._level_panel,function()
+        controller:openPuzzleBookLevWindow(true)
+    end,true,2)
+    registerButtonEventListener(self._ui._play_rule_btn,function()
+        MainuiController:getInstance():openCommonRuleWindow(true, MainuiConst.CommonRuleIdList.puzzle_book)
+    end,true,2)
+    registerButtonEventListener(self._ui._attr_show_btn,function()
+        controller:openPuzzleBookAttrWindow(true)
+    end,true,2)
+    for index, tab_btn in ipairs(self.bottom_tab_list) do
+        registerButtonEventListener(tab_btn.btn, function() self:changeTabFun(index, true, tab_btn.btn) end ,false, 1) 
+    end
+    self:addGlobalEvent(HomeworldEvent.Update_Puzzle_Book_Data, function() 
+        self:setData()
+   end)
+   self:addGlobalEvent(HomeworldEvent.Update_One_Puzzle_Book_Data, function() 
+       self:updateLevel()
+  end)
+end
+
+function PuzzleBookMainWindow:changeTabFun(index)
+    -- if self.select_bottom_tab and self.select_bottom_tab.index == index then return end
+    -- if self.select_bottom_tab then 
+    --     self.select_bottom_tab.select_bg:setVisible(false)
+    --     self.select_bottom_tab.select_img:setVisible(false)
+    --     self.select_bottom_tab.normal_img:setVisible(true)
+    --     self.select_bottom_tab.label:setTextColor(cc.c4b(255,255,255,255))
+    --     self.select_bottom_tab.label:enableOutline(cc.c4b(0x00,0x00,0x00,0xff),2)
+    -- end
+
+    -- self.select_bottom_tab = self.bottom_tab_list[index]
+    -- if self.select_bottom_tab then
+    --     self.select_bottom_tab.select_bg:setVisible(true)
+    --     self.select_bottom_tab.select_img:setVisible(true)
+    --     self.select_bottom_tab.normal_img:setVisible(false)
+    --     self.select_bottom_tab.label:setTextColor(cc.c4b(0xf5,0xd2,0x69,0xff))
+    --     self.select_bottom_tab.label:enableOutline(cc.c4b(0x00,0x00,0x00,0xff),2)
+    -- end
+
+    if index == 1 then
+        controller:openPuzzleBookMainWindow(false)
+        ActionController:getInstance():openActionTurkeyBookPanel(true)
+    end
+end
+function PuzzleBookMainWindow:openRootWnd()
+    if not model.puzzle_book_list then
+        controller:sender26024()
+    end
+    self:setData()
+    self:changeTabFun(2)
+end
+function PuzzleBookMainWindow:updateLevel()
+    self.book_level = model:getPuzzleBookLev()
+    self._book_level:setNum(self.book_level)
+    self.lev_cfg = Config.PuzzleBookData.data_level[self.book_level+1]
+    if not self.lev_cfg then
+        self.lev_cfg = Config.PuzzleBookData.data_level[#Config.PuzzleBookData.data_level]
+    end
+    self._ui._bar:setPercent(model:getPuzzleBookExp()/self.lev_cfg.need_exp*100)
+    self._ui._bar_txt:setString(string.format("%s/%s",model:getPuzzleBookExp(),self.lev_cfg.need_exp))
+end
+function PuzzleBookMainWindow:setData()
+    self:updateLevel()
+    local list = model:getPuzzleBookListData()
+    self.show_list = {}
+    for k, v in pairs(list) do
+        local is_act = model:getOnePuzzleIsInAct(v)
+        table.insert(self.show_list, {is_act = is_act and 1 or 2,id=v})
+    end
+    
+    local sort_func = SortTools.tableCommonSorter({{"is_act", false}, {"id", true}})
+    table.sort(self.show_list, sort_func)
+    self.list_view:reloadData()
+end
+function PuzzleBookMainWindow:close_callback()
+    if self._book_level then
+        self._book_level:DeleteMe()
+    end
+    self._book_level = nil
+    if self.list_view then
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+    controller:openPuzzleBookMainWindow(false)
+end

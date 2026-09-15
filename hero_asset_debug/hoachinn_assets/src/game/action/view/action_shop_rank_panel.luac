@@ -1,0 +1,303 @@
+-- @Date:   2019-04-24 15:26:48
+-- @description:	--神忍商店+排行合集
+--
+ActionShopRankPanel = class("ActionShopRankPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionShopRankPanel:ctor(bid,id,remain_sec)
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.holiday_bid = bid
+    self.remain_sec = remain_sec
+    self.btn_line_list = {}
+    self.click_item = nil
+
+    if self.loadResListCompleted then
+        self:loadResListCompleted()
+    end
+end
+
+function ActionShopRankPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionShopRankPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_shop_rank_panel"))
+    self.root_wnd:setPosition(cc.p(-40, -80))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.show_panel = self.main_container:getChildByName("show_panel")
+    self.show_panel = self.main_container:getChildByName("show_panel")
+    self.hero_img = self.show_panel:getChildByName("hero_img")
+    self.time_panel = self.show_panel:getChildByName("time_panel")
+    self.time_bg = self.time_panel:getChildByName("time_bg")
+    self.time_txt = self.time_panel:getChildByName("time_txt")
+    self.time_txt:setString(TI18N("语言_c_13"))
+    self.time_value = self.time_panel:getChildByName("time_value")
+    self.time_value:setPositionX(self.time_txt:getPositionX() + self.time_txt:getContentSize().width + 10)
+    self.reward_panel = self.show_panel:getChildByName("reward_panel")
+    self.reward_bg = self.reward_panel:getChildByName("reward_bg")
+    self.reward_title = self.reward_panel:getChildByName("reward_title")
+    self.reward_title:setString(TI18N("语言_c_728"))
+    setTextMaxWidth(self.reward_title,130,-10)
+    self.reward_list = self.reward_panel:getChildByName("reward_list")
+    self.reward_list:setScrollBarEnabled(false)
+    self.jump_btn = self.reward_panel:getChildByName("jump_btn")
+    self.jump_txt = self.jump_btn:getChildByName("jump_txt")
+    self.jump_txt:setString(TI18N("语言_c_7"))
+    self.item_icon = self.reward_panel:getChildByName("item_icon")
+    self.item_num = self.reward_panel:getChildByName("item_num")
+    self.btn_panel_bg = self.main_container:getChildByName("btn_panel_bg")
+    self.btn_panel_line = self.main_container:getChildByName("btn_panel_line")
+    self.btn_panel = self.main_container:getChildByName("btn_panel")
+    self.title_img = self.main_container:getChildByName("title_img")
+
+    self.btn_item = self.root_wnd:getChildByName("btn_item")
+    self.line_item = self.root_wnd:getChildByName("line_item")
+    self:showPanel()
+end
+
+function ActionShopRankPanel:register_event()
+	registerButtonEventListener(self.jump_btn, function()
+        if self.click_item and self.click_item.data then
+            local data = self.click_item.data
+            self:_onCLickBtnFun(data)
+        end
+	end, true)
+    --物品道具增加 判断红点
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK and self.click_item then 
+                for i,item in pairs(temp_add) do
+                    if item.config and item.config.id == self.click_item.data.item_id then
+                        self:updateItemNum(self.click_item.data)
+                    end
+                end
+            end
+        end)
+    end
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK and self.click_item then 
+                for i,item in pairs(temp_del) do
+                    if item.config and item.config.id == self.click_item.data.item_id then
+                        self:updateItemNum(self.click_item.data)
+                    end
+                end
+            end
+        end)
+    end
+
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK and self.click_item then 
+                for i,item in pairs(temp_list) do
+                    if item.config and item.config.id  == self.click_item.data.item_id then
+                        self:updateItemNum(self.click_item.data)
+                    end
+                end
+            end
+        end)
+    end
+    if self.role_assets_event == nil then
+        self.role_assets_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ACTION_ASSETS, function(key, value)
+            if self.click_item and self.click_item.data and self.click_item.data.item_id then
+                if key == self.click_item.data.item_id then
+                    self:updateItemNum(self.click_item.data)
+                end
+            end
+        end)
+    end
+end
+function ActionShopRankPanel:_onCLickBtnFun(data)
+    local jump_id = data.link
+    local cfg = Config.SourceData.data_source_data[jump_id]
+    if cfg then
+        BackpackController:getInstance():gotoItemSources(cfg.evt_type, cfg.extend)
+    end
+end
+function ActionShopRankPanel:showPanel()
+    self.tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if not self.tab_vo then return end
+    local res = PathTool.getPlistImgForDownLoad("holiday_og_rank", self.tab_vo.aim_title)
+    loadSpriteTexture(self.image_bg, res, LOADTEXT_TYPE)
+    local res = PathTool.getPlistImgForDownLoad("holiday_og_rank", self.tab_vo.reward_title)
+    loadSpriteTexture(self.title_img, res, LOADTEXT_TYPE)
+    self.camp_id = self.tab_vo.camp_id
+    local cfg = Config.HolidayShopGatherData.data_act_type_info[self.camp_id]
+    if not cfg then return end
+    local config = {}
+    self.btn_cfg = {}
+    for key, value in pairs(cfg) do
+        for k, v in pairs(value) do
+            local tab_vo = controller:getActionSubTabVo(v[1].bid)
+            if tab_vo and tab_vo.camp_id == v[1].camp_id then
+                if not config[key] then
+                    config[key] = {}
+                end
+                table.insert(config[key],v[1])
+            end
+        end
+        if config[key] and next(config[key]) and tableLen(config[key]) > 1 then
+            table.sort(config[key],function(a,b) return a.sort < b.sort end)
+        end
+    end
+    for key, value in pairs(config) do
+        table.insert(self.btn_cfg,value)
+    end
+    table.sort(self.btn_cfg,function(a,b) return a[1].type < b[1].type end)
+    self:setBtnPanel()
+end
+--设置类型容器列表
+function ActionShopRankPanel:setBtnPanel()
+    if not self.btn_panel_list then
+        self.btn_panel_list = {}
+    end
+    if #self.btn_cfg == 1 then
+        self.reward_panel:setPositionY(0)
+        self.time_panel:setPositionY(-111)
+        self.btn_panel_line:setPositionY(212)
+        self.btn_panel_bg:setContentSize(cc.size(self.btn_panel_bg:getContentSize().width,202))
+        self.btn_panel:setContentSize(cc.size(self.btn_panel:getContentSize().width,171))
+    else
+        self.reward_panel:setPositionY(41)
+        self.time_panel:setPositionY(60)
+        self.btn_panel_line:setPositionY(383)
+        self.btn_panel_bg:setContentSize(cc.size(self.btn_panel_bg:getContentSize().width,373))
+        self.btn_panel:setContentSize(cc.size(self.btn_panel:getContentSize().width,342))
+    end
+    local _y = self.btn_panel:getContentSize().height - 5
+    local first_item = nil
+    for i, v in ipairs(self.btn_cfg) do
+        local line_item = self.line_item:clone()
+        line_item.line_name = line_item:getChildByName("line_name")
+        line_item.btn_panel = line_item:getChildByName("btn_panel")
+        line_item.btn_panel:setScrollBarEnabled(false)
+        self.btn_line_list[i] = line_item
+        if v[1].type == 1 then
+            line_item.line_name:setString(TI18N("语言_hol_ro_4_998032_1"))
+        elseif v[1].type == 2 then
+            line_item.line_name:setString(TI18N("语言_c_271"))
+        end
+        line_item:setPosition(cc.p(0,_y))
+        _y = _y - line_item:getContentSize().height-6
+        local _w = math.max(line_item.btn_panel:getContentSize().width,#v*120+16)
+        if _w > line_item.btn_panel:getContentSize().width then
+            line_item.btn_panel:setTouchEnabled(true)
+        else
+            line_item.btn_panel:setTouchEnabled(false)
+        end
+        line_item.btn_panel:setInnerContainerSize(cc.size(_w,line_item.btn_panel:getContentSize().height))
+        self.btn_panel:addChild(line_item)
+        for key, value in ipairs(v) do
+            local btn_item = self.btn_item:clone()
+            btn_item.icon = btn_item:getChildByName("icon")
+            btn_item.icon:ignoreContentAdaptWithSize(true)
+            btn_item.name = btn_item:getChildByName("name")
+            btn_item.name:setChangeScaleOffWidth(0)
+            btn_item.name:getVirtualRenderer():setLineSpacing(-10)
+            btn_item.clect_img = btn_item:getChildByName("clect_img")
+            btn_item.clect_img:setVisible(false)
+            if v[1].type == 1 and key == 1 then
+                first_item = btn_item
+            end
+            btn_item.data = value
+            line_item.btn_panel:addChild(btn_item)
+            btn_item:setPosition(cc.p(63+(key-1)*120,line_item.btn_panel:getContentSize().height*0.5))
+            local tab_vo = controller:getActionSubTabVo(value.bid)
+            if tab_vo then
+                btn_item.name:setString(tab_vo.title)
+            end
+            local res = PathTool.getTargetRes("welfare/action_icon",value.icon,false,false)
+            btn_item.icon:loadTexture(res,LOADTEXT_TYPE)
+            btn_item.icon:setPosition(cc.p(55+value.icon_offset[1],78+value.icon_offset[2]))
+
+            registerButtonEventListener(btn_item,function()
+                self:_onCLickBtn(btn_item)
+            end,true)
+        end
+    end
+    self:_onCLickBtn(first_item)
+end
+--按钮点击事件
+function ActionShopRankPanel:_onCLickBtn(item)
+    if self.click_item == item then return end
+    if item.data.type == 1 then
+        if self.click_item then
+            self.click_item.clect_img:setVisible(false)
+        end
+        self.click_item = item
+        item.clect_img:setVisible(true)
+        self:updateShowPanel(item.data)
+    elseif item.data.type == 2 then
+        self:_onCLickBtnFun(item.data)
+    end
+end
+function ActionShopRankPanel:updateShowPanel(data)
+    local show_img_list = data.show_img
+    local res = PathTool.getTargetRes("ninjacontract",show_img_list[1],false)
+    loadSpriteTexture(self.hero_img, res, LOADTEXT_TYPE)
+    self.hero_img:setPosition(cc.p(show_img_list[2],show_img_list[3]))
+    self.hero_img:setScale(show_img_list[4])
+    local setting = {}
+    setting.scale = 0.8
+    setting.max_count = 3
+    setting.is_center = true
+    self.item_list = commonShowSingleRowItemList(self.reward_list, self.item_list, data.rewards, setting)
+    self:updateItemNum(data)
+    local tab_vo = controller:getActionSubTabVo(data.bid)
+    if tab_vo then
+        model:setCountDownTime(self.time_value,tab_vo.remain_sec or 0)
+        local _w = self.time_txt:getContentSize().width + self.time_value:getContentSize().width + 60
+        self.time_bg:setContentSize(cc.size(_w, self.time_bg:getContentSize().height))
+    end
+end
+function ActionShopRankPanel:updateItemNum(data)
+    local item_cfg = Config.ItemData.data_get_data(data.item_id)
+    if item_cfg then
+        local res = PathTool.getItemRes(item_cfg.icon)
+        loadSpriteTexture(self.item_icon,res,LOADTEXT_TYPE)
+        local have_num = BackpackController:getInstance():getModel():getItemNumByBid(item_cfg.id)
+        if have_num == 0 then
+            have_num = self.role_vo:getActionAssetsNumByBid(item_cfg.id)
+        end
+        self.item_num:setString("x"..have_num)
+    end
+end
+function ActionShopRankPanel:DeleteMe()
+    if self.btn_panel_list and next(self.btn_panel_list) then
+        for i, v in ipairs(self.btn_panel_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    if self.role_assets_event then
+        if self.role_vo then
+            self.role_vo:UnBind(self.role_assets_event)
+        end
+        self.role_assets_event = nil
+        self.role_vo = nil
+    end
+    if self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():UnBind(self.del_goods_event)
+        self.del_goods_event = nil
+    end
+    if self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+end

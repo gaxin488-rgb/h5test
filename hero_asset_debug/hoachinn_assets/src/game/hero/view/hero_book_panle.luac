@@ -1,0 +1,458 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-03-07 20:52:12
+-- @description    : 
+		-- 忍者图鉴
+---------------------------------
+HeroBookPanle = class("HeroBookPanle",function()
+    return ccui.Layout:create()
+end)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local camp_type_list = {
+    senior=1,
+    urhero=2,
+}
+local camp_name_list = {
+    [1]=TI18N("语言_par_ult_1"),
+    [2]=TI18N("语言_c_7939"),
+}
+
+function HeroBookPanle:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_book_panle"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5-7, self.size.height * 0.5+24)
+    self:addChild(self.root_wnd)
+
+    local res_list = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("hero", "hero"), type = ResourcesType.single})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+-- 资源加载完成
+function HeroBookPanle:loadResListCompleted(  )
+    self.dic_pokedex_info = model:getHeroNewPokedexList()
+    
+    self.col = 5 --列数
+    self.item_width     = 132  --item的宽高
+    self.item_height    = 136
+    self.cacheList = {} --对象池
+    self.cacheMaxSize = 0 --最大池数
+
+    -- 到时间显示的索引
+    self.time_show_index = 0
+    self.first_title_height = 63 --第一个的高度
+    self.title_height = 90 --职业名字的高
+
+    --列表职业对应信息
+    self.career_info_list = {}
+    
+    self:initView()
+    self:registerEvent()
+end
+
+function HeroBookPanle:initView(  )
+    self.container = self.root_wnd:getChildByName("container")
+    self.lay_scrollview = self.container:getChildByName("lay_scrollview")
+    self:updateHeroList(0,0,0)
+end
+function HeroBookPanle:setData(  )
+    
+end
+function HeroBookPanle:updateHeroList(select_camp,select_career,select_other)
+    if not self.lay_scrollview then return end
+    local select_camp = select_camp or self.select_camp or 0
+    local select_career = select_career or self.select_career or 0
+    local select_other = select_other or self.select_other or 0
+    if select_camp == self.select_camp and select_career == self.select_career and select_other == self.select_other then 
+        return
+    end
+    if not self.list_view then
+        local size = self.lay_scrollview:getContentSize()
+        --方法里面定义了 self.list_view
+        self:createLibraryScrollView(size, size.width * 0.5, size.height * 0.5)
+    end
+    self.select_camp = select_camp
+    self.select_career = select_career
+    self.select_other = select_other
+    local size = 0
+    local list = self.dic_pokedex_info[self.select_camp] or {}
+    local show_list = {}
+    size = #list
+    if size > 0 then
+        show_list = {}
+        for k, hero_vo in pairs(list) do
+            if select_career == 0 or (select_career + 1 == hero_vo.type) then
+                local function_status = false
+                if select_other == 1 then--禁术
+                    function_status = model:getProsIsVis(hero_vo)
+                elseif select_other == 2 then--刻印
+                    function_status = KeyinController:getInstance():getModel():heroIsOpen(hero_vo)
+                elseif select_other == 3 then--宝石
+                    function_status = GemstoneController:getInstance():getModel():GemstoneOpenstatus(hero_vo)
+                elseif select_other == 4 then--卷轴
+                    function_status = RollerController:getInstance():getModel():checkEquipOpenStatus(hero_vo.bid)
+                end
+                if select_other == 0 or function_status then
+                    table.insert(show_list, hero_vo)
+                end
+            end
+        end
+    else
+        show_list = {}
+    end 
+    local sort_func = SortTools.tableCommonSorter({{"show_order", true},{"is_ur", true},{"star", true}, {"power", true}, {"lev", true}})
+    table.sort(show_list, sort_func)
+    local content_y = 0 
+    local start_x = (self.scrollview_size.width - self.item_width * self.col) * 0.5 
+    --获取下一个位置根据当前数量
+    local function _getNextPositionBySize(size)
+        local count = size % self.col 
+        if count == 0 then
+            --换行
+            content_y = content_y + self.item_height
+        end
+        local x = start_x + self.item_width * count + self.item_width * 0.5
+        local y = content_y + self.item_height * 0.5 
+        return x, y
+    end
+
+    local title_pos_list = {}
+    self.hero_library_list = {}
+    self.hero_library_config_list = {}
+    local career_type = nil
+    for i,v in ipairs(show_list) do
+        local score = model:heroBidScore(v.bid)
+        local _type = camp_type_list.senior
+        if score == 11 then
+            _type = camp_type_list.urhero
+        end
+        if career_type == nil then
+            career_type = _type
+            --(之所以减一个高度是因为下面计算第一次时会加一个高度)
+            content_y = self.first_title_height - self.item_height 
+            table.insert(title_pos_list , {career_type = career_type, pos_y = 0})
+        end
+        if career_type ~= _type then
+            --算出多出的空位置 用{}去填补
+            local count = self.col - #self.hero_library_list % self.col
+            if count < self.col and count ~= 0 then
+                for i=1,count do
+                    local x, y = _getNextPositionBySize(#self.hero_library_list)
+                    table.insert(self.hero_library_list, {x = x, y = y}) 
+                end
+            end
+            career_type = _type
+            table.insert(title_pos_list ,{career_type = career_type, pos_y = content_y + self.item_height})
+            --遇到新职业..加title高度
+            content_y = content_y + self.title_height
+        end    
+        local x, y = _getNextPositionBySize(#self.hero_library_list)
+        table.insert(self.hero_library_list, {config = v, x = x, y = y})
+        table.insert(self.hero_library_config_list, v)
+    end
+    --内容的高度
+    local container_height 
+    if #self.hero_library_list > 0 then
+        container_height  = content_y + self.item_height
+    else
+        container_height = 0
+    end
+    self.list_view:stopAutoScroll()
+    container_height = math.max(container_height,self.lay_scrollview:getContentSize().height)
+    self:updateCareerUI(title_pos_list, container_height, start_x)
+    self:reloadData(container_height)
+    self:checkOverShowByVertical()
+end
+--获取数据数量
+function HeroBookPanle:numberOfCells()
+    return #self.hero_library_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroBookPanle:updateCellByIndex(cell, index)
+    local model = controller:getModel()
+    local hero_bag_list = model:getAllHeroArray()
+    cell.index = index
+    local cell_data = self.hero_library_list[index]
+    for i=1,#hero_bag_list.items do
+        if cell_data.config and hero_bag_list.items[i] then
+            if hero_bag_list.items[i].bid == cell_data.config.bid then
+                -- cfg = hero_bag_list[i]
+                cell_data.config.isHave = 0
+                break
+            end
+        end
+    end
+    if cell_data.config then
+        cell:setVisible(true)
+        cell:setData(cell_data.config)
+    else
+        cell:setVisible(false)
+    end
+end
+
+function HeroBookPanle:registerEvent(  )
+    
+end
+--更新职业的ui
+--title_pos_list 结构: title_pos_list[n] = {career_type = career_type, pos_y = xx}
+function HeroBookPanle:updateCareerUI(title_pos_list, container_height, start_x)
+    for i,career_info in ipairs(self.career_info_list) do
+        career_info.bg:setVisible(false)
+    end
+
+    local start_x  = start_x or 0
+    for i, info in ipairs(title_pos_list) do
+        local career_type = info.career_type or camp_type_list.senior
+        local pos_y = info.pos_y or 0
+        local name  = camp_name_list[career_type] or TI18N("语言_par_ult_1")
+        local bg_y 
+        if i == 1 then
+            bg_y = container_height - pos_y
+        else
+            bg_y = container_height - (pos_y + 25)
+        end
+        if self.career_info_list[i] == nil then
+            local career_info = {}
+            local res = PathTool.getResFrame("common","common_1_532", false, "common_1")
+            career_info.bg = createImage(self.list_view, res, self.list_view:getContentSize().width*0.5, bg_y-10, cc.p(0.5, 1), true)
+            local bg_width = career_info.bg:getContentSize().width
+            local bg_hegit = career_info.bg:getContentSize().height
+            career_info.label = createLabel(30, cc.c4b(0xff,0xf0,0xaa,0xff), cc.c4b(0x3f,0x15,0x0c,0xff), bg_width*0.5, bg_hegit * 0.5+4, name, career_info.bg, 2, cc.p(0.5,0.5))
+            self.career_info_list[i] = career_info
+        else
+            local career_info = self.career_info_list[i]
+            career_info.bg:setVisible(true)
+            career_info.bg:setPositionY(bg_y-10)
+            career_info.label:setString(name)
+        end
+        -- local career_info = self.career_info_list[i]
+        -- local _w = math.max(240,career_info.label:getContentSize().width+90)
+        -- career_info.bg:setContentSize(cc.size(_w,career_info.bg:getContentSize().height))
+    end
+end
+
+--------------------------------开始-------------------------  
+--内内部写一个无限的scrollview 
+function HeroBookPanle:createLibraryScrollView(size, x, y)
+    self.scrollview_size = size
+    self.list_view = createScrollView(size.width, size.height, x, y, self.lay_scrollview, ScrollViewDir.vertical) 
+    self.list_view:setAnchorPoint(cc.p(0.5, 0.5))
+    self.scrollview_container = self.list_view:getInnerContainer() 
+
+    self.cacheMaxSize = (math.ceil(size.height / self.item_height) + 1) * self.col
+    self.list_view:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            self:checkOverShowByVertical()
+        end
+    end)
+end
+--==============================--
+--desc:竖直方向的监测判断
+--time:2018-07-20 03:11:13
+--@return 
+--==============================--
+function HeroBookPanle:checkOverShowByVertical()
+    if not self.cellList then return end
+    local container_y = self.scrollview_container:getPositionY()
+    --计算 视图的上部分和下部分在self.container 的位置
+    local bot = -container_y
+    local top = self.scrollview_size.height + bot
+    local col_count = math.ceil(#self.cellList/self.col)
+    --下面因为 self.cellList 是一维数组 所以要换成二维来算
+    --活跃cell开始行数
+    local activeCellStartRow = 1
+    for i=1, col_count do
+        local index = 1 + (i-1)* self.col
+        local cell = self.cellList[index]
+        activeCellStartRow = i
+        if cell and cell.y - self.item_height * 0.5 <= top then
+            break
+        end
+    end
+    --活跃cell结束行数
+    local activeCellEndRow = col_count
+    if bot > 0 then
+        for i = activeCellStartRow, col_count do
+            local index = 1 + (i-1)* self.col
+            local cell = self.cellList[index]
+            if cell and cell.y + self.item_height * 0.5 < bot then
+                activeCellEndRow = i - 1
+                break
+            end
+        end
+    end
+    -- print("@保留--> top --> :"..top .." self.col:"..self.col)
+    -- print("@保留--> bot --> :"..bot )
+    -- print("@保留--> 开始行: "..activeCellStartRow.."@结束行: "..activeCellEndRow)
+    local max_count = self:numberOfCells()
+    for i=1, col_count do
+        if i >= activeCellStartRow and i <= activeCellEndRow then
+            for k=1, self.col do
+                local index = (i-1) * self.col + k
+                if not self.activeCellIdx[index] then
+                    if index <= max_count then
+                        self:updateCellAtIndex(index)
+                        self.activeCellIdx[index] = true
+                    end
+                end    
+            end
+        else
+            for k=1, self.col do
+                local index = (i-1) * self.col + k
+                if index <= max_count then
+                    self.activeCellIdx[index] = false
+                end
+            end
+        end
+    end
+end
+
+function HeroBookPanle:reloadData(container_height)
+    self.cellList = {}
+    self.activeCellIdx = {}
+    for k, v in ipairs(self.cacheList) do
+        --相当于隐藏
+        v:setPositionX(-10000)
+    end
+    
+    local container_height = math.max(container_height, self.scrollview_size.height)
+    self.container_size = cc.size(self.scrollview_size.width, container_height)
+    self.list_view:setInnerContainerSize(self.container_size)
+    -- self.list_view:jumpToTop()
+    -- self.list_view:jumpToPercentVertical(50)
+
+    local number = self:numberOfCells()
+    local setting = {
+        text=TI18N("语言_c_6217"),
+        scale=2,
+        offset_y=-70,
+    }
+    commonShowEmptyIcon(self.lay_scrollview,number == 0,setting)
+    if number == 0 then
+        return
+    end
+
+    for i = 1, number do
+        local data = self.hero_library_list[i]
+        if data ~= nil then
+            local cell = nil 
+            if i <= self.time_show_index then
+                cell = self:getCacheCellByIndex(i)
+            end
+            local count = #self.cellList
+            local x = data.x
+            local y = container_height - data.y
+            local cellData = {cell = cell, x = x, y = y}
+            table.insert(self.cellList, cellData)
+        end
+    end
+    
+    -- if self.is_first_init then
+    --     self:startTimeTicket()
+    -- else
+    --     --如果时间显示索引小于总数 应该显示继续当前定时器 让下面的能显示出来
+    --     if self.time_show_index <= number then
+    --         self:startTimeTicket()
+    --     end
+    -- end
+    -- if select_index == nil then
+        local maxRefreshNum = self.cacheMaxSize - self.col
+        local refreshNum = number < maxRefreshNum and number or maxRefreshNum
+        for i = 1, refreshNum do
+            local index = i
+            delayRun(self.list_view,index / display.DEFAULT_FPS,function ()
+                if self.time_show_index < index then
+                    self.time_show_index = index
+                end
+                self:updateCellAtIndex(index)
+                if self.time_show_index == refreshNum then
+                    self.time_show_index = 9999
+                end
+            end)
+            self.activeCellIdx[i] = true
+        end
+    -- else
+    --     self:selectCellByIndex(select_index)
+    -- end   
+
+     
+end
+
+--获得格子下标对应的缓存itemCell
+function HeroBookPanle:getCacheCellByIndex(index)
+    local cacheIndex = (index - 1) % self.cacheMaxSize + 1
+    if not self.cacheList[cacheIndex] then
+        local newCell = HeroExhibitionItem.new()
+        newCell:addCallBack(function() self:onCellTouched(newCell) end)
+        newCell:setAnchorPoint(cc.p(0.5, 0.5))
+        newCell:setPositionX(-10000)--隐藏
+        self.cacheList[cacheIndex] = newCell
+        self.list_view:addChild(newCell, 2)
+        return newCell
+    else
+        return self.cacheList[cacheIndex]
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function HeroBookPanle:onCellTouched(cell)
+    local index = cell.index
+    local hero_vo = self.hero_library_list[index]
+    if hero_vo and hero_vo.config then
+        self:selectHero(cell, hero_vo.config)
+    end
+end
+
+function HeroBookPanle:selectHero(item, hero_vo)
+    if not hero_vo  then return end
+    if not item then return end
+    local show_model_type = HeroConst.BagTab.eBagPokedex
+    --打开英雄信息ui
+    HeroController:getInstance():openHeroMainInfoWindow(true, hero_vo, self.hero_library_config_list, {show_model_type = show_model_type})
+end
+--更新格子，并记为活跃
+function HeroBookPanle:updateCellAtIndex(index)
+    if index > self.time_show_index then
+        return
+    end
+    if not self.cellList[index] then return end
+    local cellData = self.cellList[index]
+    if cellData.cell == nil then
+        cellData.cell = self:getCacheCellByIndex(index)
+    end
+    cellData.cell:setPosition(cellData.x, cellData.y)
+    self:updateCellByIndex(cellData.cell, index)
+end
+
+
+--------------------------scrollview结束-------------------------
+
+function HeroBookPanle:DeleteMe(  )
+    doStopAllActions(self.list_view)
+    if self.cacheList and next(self.cacheList) then
+        for k, item in ipairs(self.cacheList) do
+            if item.DeleteMe then
+                item:DeleteMe()
+            end
+        end
+    end
+end

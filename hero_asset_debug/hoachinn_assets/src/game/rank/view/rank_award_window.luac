@@ -1,0 +1,300 @@
+--------------------------------------------
+-- @Author  : xhj
+-- @Editor  : 
+-- @Date    :  2020-4-25
+-- @description    : 
+		-- 排行奖励
+---------------------------------
+local _controller = RankController:getInstance()
+local _model = _controller:getModel()
+local table_sort = table.sort
+
+RankAwardWindow = RankAwardWindow or BaseClass(BaseView)
+
+function RankAwardWindow:__init()
+	self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "rank/rank_award_window"
+    self.res_list = {
+    }
+
+	self.cur_tab_data = {}
+end
+
+function RankAwardWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(container, 2)
+	
+	container:getChildByName("win_title"):setString(TI18N("奖  励"))
+	self.btn_close = container:getChildByName("btn_close")
+
+    local item_list = container:getChildByName("item_list")
+    local scroll_view_size = item_list:getContentSize()
+    local setting = {
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 5,                   -- y方向的间隔
+        item_width = 600.00,               -- 单元的尺寸width
+        item_height = 150,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewSingleLayout.new(item_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self._createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self._numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self._updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+
+  
+end
+
+function RankAwardWindow:_createNewCell(  )
+	local cell = RankAwardItem.new(self.rank_type)
+    return cell
+end
+
+function RankAwardWindow:_numberOfCells(  )
+	if not self.cur_tab_data then return 0 end
+	return #self.cur_tab_data
+end
+
+function RankAwardWindow:_updateCellByIndex( cell, index )
+	cell.index = index
+    local data = self.cur_tab_data[index]
+    if data then
+		cell:setData(data)
+    end
+end
+
+
+function RankAwardWindow:updateCurTabData(  )
+
+	local temp_cfg = Config.RankData.data_rank_award_by_type[self.rank_type]
+	self.cur_tab_data = {}
+	if temp_cfg then
+		self.cur_tab_data = deepCopy(temp_cfg) 
+	end
+
+	for k,v in pairs(self.cur_tab_data) do
+		local temp_data =  _model:getRankAwardData(v.id)
+		if not temp_data then--未完成
+			v.sort = 3
+		elseif _model:getRankAwardStatus(temp_data.id) == true then -- 已领取
+			v.sort = 2
+		else--可领取
+			v.sort = 1
+		end
+	end
+	
+	table_sort(self.cur_tab_data, SortTools.tableLowerSorter({"sort","id"}))
+	self.item_scrollview:reloadData()
+end
+
+function RankAwardWindow:register_event(  )
+	registerButtonEventListener(self.background, function (  )
+		_controller:openRankAwardView(false)
+	end, false, 2)
+	registerButtonEventListener(self.btn_close, function (  )
+		_controller:openRankAwardView(false)
+	end, true, 2)
+
+	
+    self:addGlobalEvent(RankEvent.RankEvent_Award_Rank_data,function()
+       self:updateCurTabData()
+    end)
+end
+
+
+function RankAwardWindow:openRootWnd( type )
+	if not type then
+		return
+	end
+	self.rank_type = type
+	_controller:send_12905(type)
+end
+
+function RankAwardWindow:close_callback(  )
+
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+	_controller:openRankAwardView(false)
+end
+
+
+RankAwardItem = class("RankAwardItem",function()
+    return ccui.Layout:create()
+end)
+
+function RankAwardItem:ctor(type)
+	self.rank_type = type
+    self.item_list = {}
+
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("rank/rank_award_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+	self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+	self.play_head = PlayerHead.new(PlayerHead.type.circle)
+    self.play_head:setHeadLayerScale(0.9)
+    self.play_head:setPosition(65, 60)
+	self.main_panel:addChild(self.play_head)
+	
+	self.get_item = BackPackItem.new(nil,true,nil,0.8)
+    self.main_panel:addChild(self.get_item)
+	self.get_item:setPosition(cc.p(535, 60))
+	
+	self.info_btn = self.main_panel:getChildByName("info_btn")
+	self.tips_lab = createRichLabel(18, cc.c4b(0x95,0x53,0x22,0xff), cc.p(0.5, 0.5), cc.p(85, self.info_btn:getContentSize().height*0.5),nil,nil,100)
+    self.info_btn:addChild(self.tips_lab)
+	self.tips_lab:setString(TI18N("<div  href=detial>查看详情</div>"))
+	
+	self.title_lab = self.main_panel:getChildByName("title_lab")
+	self.title_lab:setFontSize(16)
+	self.title_lab:setPositionX(0)
+	self.name_lab = self.main_panel:getChildByName("name_lab")
+	self.tips_lab = self.main_panel:getChildByName("tips_lab")
+	self.tips_lab:setString(TI18N("虚位以待..."))
+	self.tips_lab:setVisible(false)
+	
+    self:registerEvent()
+end
+
+function RankAwardItem:registerEvent()
+	self.get_item:addCallBack( function()
+		self:clickCallBack()
+	end)
+
+	self.play_head:addCallBack( function()
+		if self.data ~= nil and self.data.reward_rc[1] then
+			local play_info = self.data.reward_rc[1]
+			local role_vo = RoleController:getInstance():getRoleVo()
+            if role_vo and play_info.rid == role_vo.rid and play_info.srv_id == role_vo.srv_id  then 
+                message(TI18N("这是你自己~"))
+                return
+            end
+            FriendController:getInstance():openFriendCheckPanel(true, {srv_id = play_info.srv_id, rid = play_info.rid})
+        end
+	end,false)
+	
+	registerButtonEventListener(self.info_btn, function()
+		if not self.data then return end
+        _controller:openAwardRankWindow(true,self.data)
+	end ,true, 1)
+	
+	
+    if not self.award_get_event then 
+		self.award_get_event =  GlobalEvent:getInstance():Bind(RankEvent.RankEvent_Award_Get_data,function(data)
+			if data and self.data and data.id == self.data.id then
+				self:updateAwardStatus()
+			end
+        end)
+	end
+	
+end
+
+
+--点击的事件
+function RankAwardItem:clickCallBack()
+	if  self.data and _model:getRankAwardStatus(self.data.id) == false then
+		_controller:send_12906(self.rank_type,self.data.id)
+	end
+end
+
+function RankAwardItem:setData(data)
+	if not data then
+		return
+	end
+	
+	self.config_data = data
+	self.data = _model:getRankAwardData(data.id)
+
+	self.title_lab:setString(data.title)
+	
+	if self.data and #self.data.reward_rc >0 then
+		table_sort(self.data.reward_rc, SortTools.KeyLowerSorter("idx"))
+		local role_info = self.data.reward_rc[1]
+		if role_info then
+			self.name_lab:setString(role_info.name)
+
+			local face_id = role_info.face_id or role_info.face
+			local avatar_bid = role_info.avatar_bid
+			local vo = Config.AvatarData.data_avatar[avatar_bid]
+			if vo then
+				local res_id = vo.res_id or 1
+				local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+				self.play_head:showBg(res, nil, false, vo.offy)
+			end
+
+			self.play_head:setHeadRes(face_id, false, LOADTEXT_TYPE, role_info.face_file, role_info.face_update_time)
+			self.play_head:setLev(role_info.lev)
+		end
+		self.play_head:setVisible(true)
+		self.tips_lab:setVisible(false)
+		self.info_btn:setVisible(true)
+	else
+		self.name_lab:setString("")
+		self.play_head:setVisible(false)
+		self.tips_lab:setVisible(true)
+		self.info_btn:setVisible(false)
+	end
+	
+	self:updateAwardStatus()
+end
+
+function RankAwardItem:updateAwardStatus( )
+	if not self.config_data then return end
+
+	if self.config_data.reward[1] then
+		self.get_item:setBaseData(self.config_data.reward[1][1], self.config_data.reward[1][2])
+		if not self.data then
+			self.get_item:grayStatus(true,150)
+			self.get_item:setGotIcon(false)
+			self.get_item:showRedPoint(false)
+		elseif _model:getRankAwardStatus(self.data.id) == true then
+			self.get_item:setGotIcon(true)
+			self.get_item:grayStatus(false)
+			self.get_item:showRedPoint(false)
+		else
+			self.get_item:showRedPoint(true)
+			self.get_item:setGotIcon(false)
+			self.get_item:grayStatus(false)
+		end
+	end
+end
+
+function RankAwardItem:DeleteMe()
+    if self.get_item then 
+		self.get_item:DeleteMe()
+		self.get_item = nil
+	end
+
+	if self.play_head then 
+		self.play_head:DeleteMe()
+		self.play_head = nil
+	end
+	 
+	if self.award_get_event then 
+        GlobalEvent:getInstance():UnBind(self.award_get_event)
+        self.award_get_event = nil
+    end
+
+    self:removeAllChildren()
+    self:removeFromParent()
+end

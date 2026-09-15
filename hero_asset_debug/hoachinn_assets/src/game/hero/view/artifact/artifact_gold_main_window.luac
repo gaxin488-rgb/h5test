@@ -1,0 +1,173 @@
+-- --------------------------------------------------------------------
+-- 金色秘卷主界面
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ArtifactGoldMainWindow = ArtifactGoldMainWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function ArtifactGoldMainWindow:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/artifact_gold_main_window"
+    self.res_list = {
+    }
+
+    self.win_type = WinType.Full
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.panel_list = {}
+    self.tab_list = {}
+    self.click_index = 0
+end
+
+function ArtifactGoldMainWindow:open_callback()
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg = self.main_container:getChildByName("bg")
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.help_btn = self.main_container:getChildByName("help_btn")
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.container_size = self.main_panel:getContentSize()
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.title_txt_list = {
+        [1] = TI18N("语言_c_4967"),
+        [2] = TI18N("语言_c_7545"),
+    }
+    for i = 1, #self.title_txt_list do
+        local list = {}
+        list.btn = self.bottom_panel:getChildByName("tab_btn_"..i)
+        list.normal_img = list.btn:getChildByName("normal_img")
+        list.select_bg = list.btn:getChildByName("select_bg")
+        list.select_img = list.btn:getChildByName("select_img")
+        list.label = list.btn:getChildByName("label")
+        list.label:setString(self.title_txt_list[i])
+        list.red_point = list.btn:getChildByName("red_point")
+        list.red_point:setVisible(false)
+        self.tab_list[i] = list
+    end
+
+    self.player_info_panel = PlayerInfoPanel.new()
+    self.root_wnd:addChild(self.player_info_panel)
+    local top_y = display.getTop()
+    self.player_info_panel:setPositionY(top_y)
+
+    local top_y = display.getTop(self.main_panel)
+    local bottom_y = display.getBottom(self.main_panel)
+
+    local tab_y = self.bottom_panel:getPositionY()
+    self.bottom_panel:setPositionY(bottom_y + tab_y)
+    local tab_y = self.bg:getPositionY()
+    self.bg:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.main_panel:getPositionY()
+    self.main_panel:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.help_btn:getPositionY()
+    self.help_btn:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.close_btn:getPositionY()
+    self.close_btn:setPositionY(bottom_y + tab_y)
+end
+
+function ArtifactGoldMainWindow:register_event()
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 1) 
+    registerButtonEventListener(self.help_btn, function(param,sender, event_type)
+        local cfg = Config.PartnerArtifactGoldenData.data_const["game_rule1"]
+        local desc = cfg.desc
+        local array = {
+            [1] = {funct=4, lable=1, title=TI18N("语言_gui_ma_03_1"), desc=desc},
+        }
+        MainuiController:getInstance():openCommonExplainView(true, array)
+    end ,true, 2)
+    for i=1,#self.tab_list do
+        registerButtonEventListener(self.tab_list[i].btn, function() 
+            self:changeTabType(i)
+        end ,true, 1) 
+    end
+    
+    self:addGlobalEvent(HeroEvent.Gold_Artifact_Update_Data_Event, function()
+        self:updateRed()
+    end)
+    self:addGlobalEvent(HeroEvent.Hero_Data_Update, function(hero_vo)
+        self:updateRed()
+    end)
+end
+
+function ArtifactGoldMainWindow:onClickCloseBtn()
+    controller:openArtifactGoldMainWindow(false)
+end
+
+function ArtifactGoldMainWindow:openRootWnd(hero_vo,pos_id,index)
+	if not hero_vo or not hero_vo then
+		return
+	end
+    index = index or 1
+	self.hero_vo = hero_vo
+	self.pos_id = pos_id
+    self:changeTabType(index)
+    self:updateRed()
+end
+
+function ArtifactGoldMainWindow:updateRed()
+    for i=1,#self.tab_list do
+        local status = false
+        if i == 1 then
+            local artifact_list = self.hero_vo.golden_artifact[self.pos_id] or {}
+            status = HeroCalculate.checkSingleHeroArtifactGoldStrongRedPoint(artifact_list)
+        else
+            local artifact_list = self.hero_vo.golden_artifact[self.pos_id] or {}
+            status = HeroCalculate.checkSingleHeroArtifactGoldSkillUpRedPoint(artifact_list.skill_id)
+        end
+        self.tab_list[i].red_point:setVisible(status)
+    end
+end
+
+function ArtifactGoldMainWindow:changeTabType(index)
+    if index == 0 then index = 1 end
+    if self.click_index == index then return end
+    self.click_index = index
+    for i = 1, 2 do
+        if i == index then
+            self.tab_list[i].select_bg:setVisible(true)
+            self.tab_list[i].normal_img:setVisible(false)
+            self.tab_list[i].select_img:setVisible(true)
+        else
+            self.tab_list[i].select_bg:setVisible(false)
+            self.tab_list[i].normal_img:setVisible(true)
+            self.tab_list[i].select_img:setVisible(false)
+        end
+    end
+    if self.select_panel then
+		self.select_panel:addToParent(false)
+		self.select_panel = nil
+	end
+	self.select_panel = self.panel_list[index]
+	if self.select_panel == nil then
+		if index == 1 then
+			self.select_panel = ArtifactGoldStrongPanel.new(self.hero_vo,self.pos_id)
+		elseif index == 2 then
+			self.select_panel = ArtifactGoldSkillPanel.new(self.hero_vo,self.pos_id)
+		end
+		if self.select_panel then
+			self.main_panel:addChild(self.select_panel)
+			self.panel_list[index] = self.select_panel
+		end
+	end
+	if self.select_panel then
+		self.select_panel:addToParent(true)
+	end
+end
+
+function ArtifactGoldMainWindow:close_callback()
+    for k, v in pairs(self.panel_list) do
+        v:DeleteMe()
+        v = nil
+    end
+    if self.player_info_panel then
+        self.player_info_panel:DeleteMe()
+        self.player_info_panel = nil
+    end
+    controller:openArtifactGoldMainWindow(false)
+end

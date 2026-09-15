@@ -1,0 +1,899 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      生存挑战扫荡
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+MopupWindow = MopupWindow or BaseClass(BaseView)
+
+local controller = AdventureController:getInstance()
+local model = AdventureController:getInstance():getUiModel()
+
+function MopupWindow:__init()
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.win_type = WinType.Big
+	self.index = 2
+	self.layout_name = "adventure/mopup_window"
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("form", "form"), type = ResourcesType.plist},
+		{path = PathTool.getPlistImgForDownLoad("primus_element", "primus_element_3"), type = ResourcesType.single},
+	}
+    self.skill_list = {}
+    self.box_effect = nil
+	self.now_have_list = {}--当前扫荡已经获得
+	self.reward_all_list = {} --本次扫荡分次获取的道具列表  显示飞物品用
+	self.mopup_status = 0 -- 扫荡状态
+	self.cfg = deepCopy(Config.AdventureData.data_adventure_const)
+	--扫荡一次用的时间
+	self.mopup_one = math.ceil(self.cfg["sweep_time"].val / self.cfg["max_sweeping_times"].val)
+	-- self.skill_data = {{1,10},{2,5},{3,7}}
+	self.skill_all_data = {}
+	self.skill_info_data = {}
+	self.bg_list = {}
+	self.hero_id = 0
+	self.monster_id = 0
+	self.node1red = true
+	self.hitAction = PlayerAction.action_1
+end 
+
+function MopupWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_container, 1)
+	self.imgTitleBg = main_container:getChildByName("imgTitleBg")
+	self.win_title = main_container:getChildByName("win_title")
+	self.win_title:setString(TI18N("语言_c_5406"))
+	autoSizeTitleBg(self.win_title,self.imgTitleBg)
+
+	self.close_btn = main_container:getChildByName("close_btn")
+	self.top_panel = main_container:getChildByName("top_panel")
+	self.imgbox_1039 = self.top_panel:getChildByName("imgbox_1039")
+	self.box_2014 = self.top_panel:getChildByName("box_2014")
+	self.lay_scrollview = self.top_panel:getChildByName("lay_scrollview")
+	self.tip_label = self.top_panel:getChildByName("tip_label")
+	self.tip_label:setString(transformTextToShort(TI18N("语言_c_5344"),60))
+	addEvt2showAllTextTips(self.tip_label,TI18N("语言_c_5344"),60)
+	self.no_vedio_image = self.top_panel:getChildByName("no_vedio_image")
+	self.no_vedio_tips = self.top_panel:getChildByName("no_vedio_tips")
+	self.no_vedio_tips:setString(TI18N("语言_c_215"))
+	self.no_vedio_image:setVisible(false)
+	self.no_vedio_tips:setVisible(false)
+	self.available_tip_label = self.top_panel:getChildByName("available_tip_label")
+	self.available_tip_label:setString(TI18N("语言_c_5342"))
+	self.floor_num = self.top_panel:getChildByName("floor_num")
+	self.floor_num:setString(TI18N("语言_c_5343"))
+	self.bottom_panel = main_container:getChildByName("bottom_panel")
+	self.box_2006 = self.bottom_panel:getChildByName("box_2006")
+	self.shop = self.bottom_panel:getChildByName("shop")
+	self.shop_txt = self.shop:getChildByName("label")
+	self.shop_txt:setString(TI18N("语言_adv_06_4"))
+
+	local base_config = Config.AdventureData.data_skill_data 
+	for i=1,3 do
+        local buff_node = self.bottom_panel:getChildByName("buff_"..i)
+        if buff_node then
+            local object = {}
+            object.node = buff_node
+            object.index = i
+            object.num = buff_node:getChildByName("num")
+            object.num:setString(0)
+            object.Sprite_4 = buff_node:getChildByName("Sprite_4")
+            object.label = buff_node:getChildByName("label")
+            object.num_value = 0
+            object.use_count = 0
+			object.expected_label = buff_node:getChildByName("expected_label")
+			object.expected_label:setString(TI18N("语言_c_5345"))
+            self.skill_list[i] = object
+            local config = base_config[i]
+            if config then
+                object.config = config
+                object.label:setString(config.name)
+                setTextBg(object.label,object.Sprite_4,120,-5)
+            end
+        end
+    end
+	self.fight_btn = self.bottom_panel:getChildByName("fight_btn")
+	self.fight_btn_txt = self.fight_btn:getChildByName("label")
+	self.fight_btn_txt:setString(TI18N("语言_c_2517"))
+	self.fight_btn:setVisible(true)
+	self.receive_btn = self.bottom_panel:getChildByName("receive_btn")
+	self.receive_btn_txt = self.receive_btn:getChildByName("label")
+	self.receive_btn_txt:setString(TI18N("语言_c_8"))
+	addRedPointToNodeByStatus(self.receive_btn,true,10,15)
+	self.receive_btn:setVisible(false)
+	self.reward_panel = self.bottom_panel:getChildByName("reward_panel")
+	self.reward = self.reward_panel:getChildByName("reward")
+	self.reward_panel = self.bottom_panel:getChildByName("reward_panel")
+	self.reward_txt = self.reward_panel:getChildByName("reward_txt")
+	self.reward_txt:setString(TI18N("语言_c_4786"))
+	setTextMaxWidth(self.reward_txt,130,-10)
+	self.bar_panel = self.bottom_panel:getChildByName("bar_panel")
+	self.mopup_text = self.bottom_panel:getChildByName("mopup_text")
+	self.mopup_text:setString(TI18N("语言_c_5347"))
+	self.mopup_text:setVisible(false)
+	self.Panel_5 = self.bottom_panel:getChildByName("Panel_5")
+	for i=1,2 do
+		local bg = self.Panel_5:getChildByName("bg_"..i)
+		bg:setPositionX((i-1)*bg:getContentSize().width)
+		self.bg_list[i] = bg
+	end
+	self.bar_bg = self.bar_panel:getChildByName("bar_bg")
+	self.mopupTimeBar = self.bar_panel:getChildByName("mopupTimeBar")
+    self.mopupTimeBar:setScale9Enabled(true)
+	self.mopupTimeBar:setPercent(0)
+	self.mopup_txt = self.bar_panel:getChildByName("mopup_txt")
+	self.mopup_txt:setString(TI18N("语言_c_5348"))
+	setTextSpacing(self.mopup_txt,-10)
+	self.mopup_time = self.bar_panel:getChildByName("mopup_time")
+	self.mopup_time:setPositionX(self.mopup_txt:getPositionX() + self.mopup_txt:getContentSize().width+5)
+	self.mopupTimeBar:setPositionX(self.mopup_time:getPositionX() + self.mopup_time:getContentSize().width+20)
+	self.bar_bg:setPositionX(self.mopupTimeBar:getPositionX())
+	self.bar_panel:setVisible(false)
+	self.mopup_reset_panel = self.bottom_panel:getChildByName("mopup_reset_panel")
+	self.mopup_reset_time = self.mopup_reset_panel:getChildByName("mopup_reset_time")
+	self.mopup_reset_txt = self.mopup_reset_panel:getChildByName("mopup_reset_txt")
+	self.mopup_reset_txt:setString(TI18N("语言_c_75"))
+	self.mopup_reset_panel:setVisible(false)
+	self.line_1 = main_container:getChildByName("line_1")
+	self.line_1_0 = main_container:getChildByName("line_1_0")
+end
+
+function MopupWindow:register_event()    
+    registerButtonEventListener(self.background, function()
+        controller:openMopupWindow(false)
+    end, false, 2)
+
+	registerButtonEventListener(self.fight_btn, function()
+		local str = TI18N("语言_c_5319")
+        CommonAlert.show( str, TI18N("语言_c_63"), function()
+			controller:requestSetForm(self.plist, self.max_floor,1)
+			controller:send20662()
+			controller:send20604()
+        end, TI18N("语言_c_62"),nil,nil,nil,{timer=5, timer_for=true, off_y = 10, title = TI18N("语言_c_5346"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+    end, false, 2)
+	registerButtonEventListener(self.receive_btn, function()
+		controller:send20663()
+    end, false, 2)
+	registerButtonEventListener(self.close_btn, function()
+        controller:openMopupWindow(false)
+    end, true, 2)
+
+	--飞道具结束
+	if self.get_time_execute_fly_shake_event == nil then
+		self.get_time_execute_fly_shake_event = GlobalEvent:getInstance():Bind(MainuiEvent.GET_ITEM_EXECUTE_FLY_SHAKE_EVENT, function() 
+			if self.mopup_status == 2 and not tolua.isnull(self.list_view) then
+				self.list_view:setData(self.now_have_list)
+				self:setNoVedioStatus(self.now_have_list)
+			end
+		end)
+	end
+	registerButtonEventListener(self.skill_list[1].node, function()
+		addRedPointToNodeByStatus(self.skill_list[1].node,false)
+        message(TI18N("语言_c_5323"))
+    end, false, 2)
+	registerButtonEventListener(self.skill_list[2].node, function()
+		addRedPointToNodeByStatus(self.skill_list[2].node,false)
+        message(TI18N("语言_c_5323"))
+    end, false, 2)
+	registerButtonEventListener(self.skill_list[3].node, function()
+		self:shopClick()
+    end, false, 2)
+	registerButtonEventListener(self.shop, function()
+        controller:openAdventrueShopWindow(true)
+    end, false, 2)
+	registerButtonEventListener(self.reward_panel, function()
+		if self.mopup_status == 2 then
+			message(TI18N("语言_c_5413"))
+			return 
+		end
+        if self.box_tesk_data and self.box_tesk_data.kill_mon then
+            -- 有奖励可领时，点击宝箱直接全部领完
+            if self.cur_box_status and self.cur_box_status == 1 then
+                controller:send20635(0)
+            else
+                controller:openAdventureBoxRewardView(true,self.box_tesk_data.kill_mon)
+            end
+        end
+    end,false,1)
+	self:addGlobalEvent(AdventureEvent.UpdateBoxTeskEvent,function(data)
+        self:updateBoxTeskList(data)
+    end)
+
+	self:addGlobalEvent(AdventureEvent.UpdateSkillInfo, function(data)
+		self.skill_info_data = data
+		self:updateSkillData(data)
+	end)
+	--生存挑战扫荡基本信息
+    self:addGlobalEvent(AdventureEvent.ADVENTURE_MOPUP_INFO, function(data)
+        if not data then return end
+		if data.current_id == 0 then data.current_id = 1 end
+        self:setData(data)
+    end)
+	--生存挑战扫荡结束领取
+    self:addGlobalEvent(AdventureEvent.ADVENTURE_MOPUP_END, function(data)
+        if not data then return end
+		self.mopup_status = 4
+		self:endRewardMopup()
+		controller:send20609()
+    end)
+end
+function MopupWindow:setNoVedioStatus(list)
+	if list and tableLen(list) ~= 0 then
+		self.no_vedio_image:setVisible(false)
+		self.no_vedio_tips:setVisible(false)
+	else
+		self.no_vedio_image:setVisible(true)
+		self.no_vedio_tips:setVisible(true)
+	end
+end
+function MopupWindow:shopClick()
+	if self.mopup_status ~= 2 and self.mopup_status ~= 3 then
+		controller:send20607(3, 0)
+		self.node1red = false
+	else
+		message(TI18N("语言_c_5351"))
+	end
+end
+--==============================--
+--desc:更新技能信息
+--time:2019-01-24 05:05:47
+--@data:
+--@return 
+--==============================--
+function MopupWindow:updateSkillData(data_list)
+    if data_list then
+        for i,v in ipairs(data_list) do
+            local object = self.skill_list[v.bid]
+            if object then
+                object.num_value = v.num
+                object.use_count = v.use_count
+                object.num:setString(v.num)
+				if v.bid == 3 and v.num ~= 0 and self.mopup_status ~= 2 and self.mopup_status ~= 3 then
+					addRedPointToNodeByStatus(object.node,true)
+				else
+					addRedPointToNodeByStatus(object.node,false)
+				end
+            end
+        end
+		-- if self.data and self.mopup_status == 4 and self.node1red then
+		-- 	for key, value in pairs(self.data.sp_rewards) do
+		-- 		if value.item_type == 1 and value.item_num ~= 0 then
+		-- 			addRedPointToNodeByStatus(self.skill_list[value.item_type].node,true)
+		-- 		elseif value.item_type == 2 and value.item_num ~= 0 then
+		-- 			addRedPointToNodeByStatus(self.skill_list[value.item_type].node,true)
+		-- 		end
+		-- 	end
+		-- end
+		self.node1red = true
+    end
+end
+function MopupWindow:updateBoxTeskList(data)
+    if data == nil then return end
+    self.box_tesk_data = data
+    local status_index = 0
+    for i,v in pairs(data.list) do
+        if v.status == 1 then
+            status_index = 1 --可领取的时候
+            break
+        end
+    end
+    --判断是否全部领取完毕
+    local is_all_get = false
+    if status_index == 0 then
+        for i,v in pairs(data.list) do
+            if v.status == 0 then
+                is_all_get = true
+                break
+            end
+        end
+        if is_all_get == false then
+            status_index = 2
+        end
+    end
+
+    if self.cur_box_status ~= status_index then
+        self.cur_box_status = status_index
+        --宝箱状态
+        local action = PlayerAction.action_1
+        if status_index == 1 and self.mopup_status ~= 2 then
+            action = PlayerAction.action_2
+        elseif status_index == 2 then
+            action = PlayerAction.action_3
+        end
+
+        if self.box_effect then
+			self.box_effect:clearTracks()
+			self.box_effect:removeFromParent()
+			self.box_effect = nil
+		end
+		if not tolua.isnull(self.reward) and self.box_effect == nil then
+			self.box_effect = createEffectSpine(PathTool.getEffectRes(602), cc.p(self.reward:getContentSize().width * 0.5, self.reward:getContentSize().height * 0.5-20), cc.p(0, 0), true, action)
+			self.reward:addChild(self.box_effect)
+		end
+    end
+end
+--更新宝箱的任务
+function MopupWindow:getNextLevelNumber(list,length,cur_count)
+    if list[length] == nil then return 1 end
+    local num = 0
+    if cur_count >= list[length].count then
+        num = list[length].id
+    else
+        for i,v in pairs(list) do
+            local cur_id = v.id
+            cur_id = cur_id + 1
+            if cur_id >= length then
+                cur_id = length
+            end
+            if cur_count >= v.count and cur_count <= list[cur_id].count then
+                num = v.id
+                break
+            end
+        end
+        num = num + 1
+        if num >= length then
+           num = length
+        end
+    end
+    return num
+end
+function MopupWindow:openRootWnd(plist,max_floor)
+    controller:send20602()
+    controller:send20634()
+    controller:send20609()
+	controller:send20661()
+	self.plist = plist
+	self.max_floor = max_floor
+end
+function MopupWindow:setRewardList(data)
+	local list = deepCopy(data)
+	local data = deepCopy(self.skill_data)
+	local reward_list = {}
+	local mopup_num = self.cfg["max_sweeping_times"].val
+	local skill_list = {}
+	for i=1,mopup_num do
+		local reward_list_list = {}
+		for key, value in pairs(list) do
+			local index = value[1]
+			local num = math.floor(value[2] / (mopup_num + 1 - i))
+			if i == mopup_num then
+				num = value[2]
+			end
+			if num > 0 then
+				table.insert(reward_list_list, {index,num})
+			end
+			value[2] = value[2] - num
+			if value[2] <= 0 and i ~= mopup_num then
+				table.remove(reward_list_list, key)
+			end
+		end
+		table.insert(reward_list, i, reward_list_list)
+		local skill_list = {}
+		for key, value in pairs(data) do
+			local num = math.floor(value.item_num / (mopup_num + 1 - i))
+			if i == mopup_num then
+				num = value.item_num
+			end
+			value.item_num = value.item_num - num
+			if value.item_num < 0 then
+				value.item_num = 0
+			end
+			table.insert(skill_list,value.item_type,num)
+		end
+		table.insert(self.skill_all_data, i, skill_list)
+	end
+	self.reward_all_list = reward_list
+end
+
+--循环扫荡图
+function MopupWindow:setMopupBG()
+	local function setbg(i,v)
+		local action = cc.MoveTo:create(10*i, cc.p(-v:getContentSize().width, -654))
+		v:runAction(cc.Sequence:create(action,cc.CallFunc:create(function()
+			if v:getPositionX() == -v:getContentSize().width then
+				-- local action = cc.MoveTo:create(0,cc.p(1500, -654))
+				-- v:runAction(cc.Sequence:create(action))
+				v:setPositionX(v:getPositionX() + v:getContentSize().width * 2 - 20)
+				-- doStopAllActions(v)
+				setbg(2,v)
+			end
+		end)))
+	end
+	for key, value in pairs(self.bg_list) do
+		doStopAllActions(value)
+		setbg(key,value)
+	end
+end
+
+function MopupWindow:changeHero(show_id,action,status,cp_x,cp_y)
+	local function animationEventFunc(event)
+		if event.animation == self.hitAction then
+			self:endMonsterSpine()
+			-- self:changeMonster(show_id,PlayerAction.hurt,false,200, self.Panel_5:getContentSize().height * 0.5-100)
+			self:MonsterDie(true)
+			local action = cc.MoveBy:create(0.1, cc.p(0, 0))
+			self.spine:runAction(cc.Sequence:create(action, cc.CallFunc:create(function()
+				doStopAllActions(self.spine)
+				self.spine:removeFromParent()
+				self.spine = nil
+				self:endMonsterSpine()
+				self:changeHero(self.hero_id,PlayerAction.run,true,200, self.Panel_5:getContentSize().height * 0.5-100)
+			end)))
+		end
+	end
+	local function animationEventFunc2(event)
+		if event.eventData.name == "attack" then
+			AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.BATTLE, self.hitting_sound,false)
+		end
+	end
+	if not self.spine then
+		if self.skin_id ~= 0 then
+			self.spine = BaseRole.new(BaseRole.type.skin, self.skin_id, action, {scale = 1,isshow = 1})
+		else
+			self.spine = BaseRole.new(BaseRole.type.partner, show_id, action, {scale = 1})
+		end
+		self.spine:setAnimation(0,action,status) 
+		self.spine:setCascade(true)
+		self.spine:setPosition(cc.p(cp_x,cp_y))
+		self.spine:setAnchorPoint(cc.p(0,0.5)) 
+		self.spine:setScale(1)
+		self.Panel_5:addChild(self.spine)
+		self.spine:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_COMPLETE)
+		self.spine:registerSpineEventHandler(animationEventFunc2, sp.EventType.ANIMATION_EVENT)
+	end
+end
+function MopupWindow:setHeroSpine(show_id)
+    if self.spine then
+        self:endHeroSpine()
+		self:changeHero(show_id,self.hitAction,false,200, self.Panel_5:getContentSize().height * 0.5-100)
+    else
+		self:changeHero(show_id,PlayerAction.run,true,200, self.Panel_5:getContentSize().height * 0.5-100)
+		local action = cc.MoveBy:create(0.1, cc.p(0, 0))
+        self.spine:runAction(cc.Sequence:create(action, cc.CallFunc:create(function()
+                doStopAllActions(self.spine)
+                self.spine:removeFromParent()
+                self.spine = nil
+				self:changeHero(show_id,self.hitAction,false,200, self.Panel_5:getContentSize().height * 0.5-100)
+        end)))
+    end
+end
+function MopupWindow:endHeroSpine()
+    if self.spine then
+		self.spine:setCascade(true)
+		doStopAllActions(self.spine)
+		self.spine:removeFromParent()
+		self.spine = nil
+	end
+end
+
+function MopupWindow:MonsterDie(status)
+	if not tolua.isnull(self.effect) then
+		self.effect:removeFromParent() 
+		self.effect = nil		
+	end
+	if status then
+		self.effect = createSpineByName("E532200")
+		self.effect:setAnimation(0, PlayerAction.action, false)
+		self.effect:setAnchorPoint(cc.p(0,0.5))
+		self.effect:setPosition(cc.p(self.Panel_5:getContentSize().width -250, self.Panel_5:getContentSize().height * 0.5-100))
+		self.Panel_5:addChild(self.effect)
+		
+		local function animationEventFunc(event)
+			if event.animation == PlayerAction.action then     
+				if not tolua.isnull(self.effect) then
+					self.effect:runAction(cc.RemoveSelf:create(true))
+					self.effect = nil		
+				end		
+			end
+		end
+		self.effect:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_END)
+	end
+end
+
+function MopupWindow:changeMonster(show_id,action,status,cp_x,cp_y)
+	if not self.monsterSpine then
+		self.monsterSpine = BaseRole.new(BaseRole.type.partner, show_id, action, {scale = 1})
+		self.monsterSpine:setAnimation(0,action,status) 
+		self.monsterSpine:setCascade(true)
+		self.monsterSpine:setPosition(cc.p(cp_x,cp_y))
+		self.monsterSpine:setAnchorPoint(cc.p(0,0.5)) 
+		self.monsterSpine:setScale(-1,1)
+		self.Panel_5:addChild(self.monsterSpine)
+	end
+end
+function MopupWindow:setMonsterSpine(show_id)
+    if self.monsterSpine then
+        self:endMonsterSpine()
+    else
+		self:changeMonster(show_id,PlayerAction.run,true,800, self.Panel_5:getContentSize().height * 0.5-100)
+		local action = cc.MoveBy:create(2, cc.p(-300, 0))
+        self.monsterSpine:runAction(cc.Sequence:create(action))
+    end
+end
+function MopupWindow:endMonsterSpine()
+	if self.monsterSpine then
+		AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.BATTLE, self.beaten_sound,false)
+		self.monsterSpine:setCascade(true)
+		doStopAllActions(self.monsterSpine)
+		self.monsterSpine:removeFromParent()
+		self.monsterSpine = nil
+	end
+end
+
+function MopupWindow:setData(data)
+	self.data = data
+	local rewards = {}
+	for key, value in pairs(data.rewards) do
+		local list = {}
+		list[1] = value.item_id
+		list[2] = value.item_num
+		table.insert(rewards, list)
+	end
+	self.data.rewards = rewards
+	-- self.skill_data = data.sp_rewards
+	self.skill_data = {}
+	for i=1,3 do
+		for key, value in pairs(data.sp_rewards) do
+			if value.item_type == i then
+				table.insert(self.skill_data, i, value)
+			end
+		end
+		if not self.skill_data[i] then
+			self.skill_data[i] = {}
+			self.skill_data[i].item_type = i
+			self.skill_data[i].item_num = 0
+		end
+	end
+	self:setRewardList(self.data.rewards)
+	self:setMopupStatus()
+	local cfg = Config.AdventureData.data_get_rewards[self.data.current_id]
+	self.skill_list[1].expected_label:setString(string.format(TI18N("语言_c_5345"),cfg.hp_drug[1]*6,cfg.hp_drug[2]*6))
+	self.skill_list[2].expected_label:setString(string.format(TI18N("语言_c_5345"),cfg.bane_drug[1]*6,cfg.bane_drug[2]*6))
+	self.skill_list[3].expected_label:setString(string.format(TI18N("语言_c_5345"),cfg.store[1]*6,cfg.store[2]*6))
+	self.floor_num:setString(string.format(TI18N("语言_c_5343"),self.data.current_id))
+	if not self.list_view then
+		local scroll_view_size = self.lay_scrollview:getContentSize()
+		local setting = {
+			item_class = BackPackItem,      -- 单元类
+			start_x = 0,                    -- 第一个单元的X起点
+			space_x = 8,                    -- x方向的间隔
+			start_y = 0,                    -- 第一个单元的Y起点
+			space_y = 10,                   -- y方向的间隔
+			item_width = 119,               -- 单元的尺寸width
+			item_height = 119,              -- 单元的尺寸height
+			row = 5,                        -- 行数，作用于水平滚动类型
+			col = 5,                        -- 列数，作用于垂直滚动类型
+			once_num = 5,
+			scale = 0.8,
+			need_dynamic = true
+		}
+		self.list_view = CommonScrollViewLayout.new(self.lay_scrollview, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting) 
+	end
+	self.list_view:addEndCallBack(
+        function()
+            local list = self.list_view:getItemList()
+            for k, v in pairs(list) do
+                v:setDefaultTip()
+            end
+        end
+    )
+	self:setMopupReward()
+end
+--设置获取物品栏显示
+function MopupWindow:setMopupReward()
+	self:updateBoxTeskList(self.box_tesk_data)
+	if self.mopup_status == 1 then --未开始扫荡
+		self.preview_list = Config.AdventureData.data_rewards[self.data.current_id].rewards[1]
+		self.list_view:setData(self.preview_list)
+		self:setNoVedioStatus(self.preview_list)
+		self.available_tip_label:setString(TI18N("语言_c_5342"))
+	elseif self.mopup_status == 2 then -- 扫荡中
+		local num = math.floor((GameNet:getInstance():getTime() - self.data.start_time) / self.mopup_one)
+		for i=1,num do
+			self:setMopupNowHaveList(i)
+			self:setMopupSkillNowHaveList(i)
+		end
+		self:MopupIng()
+	elseif self.mopup_status == 3 then -- 完成扫荡
+		self:endMopup()
+	elseif self.mopup_status == 4 then -- 已经扫荡
+		self:endRewardMopup()
+	end
+end
+--结束扫荡
+function MopupWindow:endMopup()
+	-- self.reward_panel:setVisible(true)
+	self:endHeroSpine()
+	self:endMonsterSpine()
+	doStopAllActions(self.bg_list[1])
+	doStopAllActions(self.bg_list[2])
+	self.bar_panel:setVisible(false)
+	self.mopup_text:setVisible(false)
+	self.fight_btn:setVisible(false)
+	self.receive_btn:setVisible(true)
+	self.list_view:setData(self.data.rewards)
+	self:setNoVedioStatus(self.data.rewards)
+	for key, value in pairs(self.skill_list) do
+		value.expected_label:setVisible(false)
+	end
+	local list = deepCopy(self.skill_info_data)
+	for i=1,3 do
+		if not list[i] then
+			list[i] = {}
+			list[i].bid = i
+			list[i].num = 0
+			list[i].use_count = 0
+		end
+	end
+	self:updateSkillData(list)
+	for i=1,3 do
+		local data = deepCopy(self.skill_data[i])
+		local object = self.skill_list[i]
+		if data and data.item_num and object then
+			object.num_value = object.num:getString() + data.item_num
+			object.num:setString(object.num:getString() + data.item_num)
+			addRedPointToNodeByStatus(object.node,false)
+		end
+	end
+	if self.box_effect then
+		self.box_effect:clearTracks()
+		self.box_effect:removeFromParent()
+		self.box_effect = nil
+	end
+	local action = PlayerAction.action_1
+	if self.cur_box_status and self.cur_box_status == 1 then
+		action = PlayerAction.action_2
+	else
+		action = PlayerAction.action_3
+	end
+	if not tolua.isnull(self.reward) and self.box_effect == nil then
+		self.box_effect = createEffectSpine(PathTool.getEffectRes(602), cc.p(self.reward:getContentSize().width * 0.5, self.reward:getContentSize().height * 0.5-20), cc.p(0, 0), true, action)
+		self.reward:addChild(self.box_effect)
+	end
+end
+--结束扫荡已经领取
+function MopupWindow:endRewardMopup()
+	self:endHeroSpine()
+	self:endMonsterSpine()
+	self.fight_btn:setVisible(false)
+	self.receive_btn:setVisible(false)
+	self.mopup_reset_panel:setVisible(true)
+	self.no_vedio_tips:setString(TI18N("语言_c_5414"))
+	self.base_data = model:getAdventureBaseData()	
+	-- local end_time = self.base_data.end_time - GameNet:getInstance():getTime()
+	-- if end_time <= 0 then
+	-- 	end_time = 0
+	-- end
+	for key, value in pairs(self.skill_list) do
+		value.expected_label:setVisible(false)
+	end
+	-- doStopAllActions(self.mopup_reset_time)
+	-- self.mopup_reset_time:setString(TimeTool.GetTimeFormat(end_time))
+	-- commonCountDownTime(self.mopup_reset_time,end_time)
+	-- self.list_view:setData(self.data.rewards)
+	self.list_view:setVisible(false)
+	self:updateEndTime()
+	self:setNoVedioStatus()
+end
+function MopupWindow:updateEndTime()
+	if self.timeticket == nil then
+		self:countDownEndTime()
+		self.timeticket = GlobalTimeTicket:getInstance():add(function()
+			self:countDownEndTime()
+		end, 1)
+	end
+end
+--==============================--
+--desc:计时器
+--time:2019-01-25 09:32:43
+--@return 
+--==============================--
+function MopupWindow:countDownEndTime()
+	if self.base_data == nil then
+		self:clearEneTime()
+		return
+	end
+	local end_time = self.base_data.end_time - GameNet:getInstance():getTime()
+	if end_time <= 0 then
+		end_time = 0
+		self:clearEneTime()
+	end
+	self.mopup_reset_time:setString(TimeTool.GetTimeFormat(end_time))
+    -- self.mopup_reset_time:setPositionX( self.end_time_title:getPositionX()+7+self.end_time_title:getContentSize().width)--
+end
+--==============================--
+--desc:清理计时器
+--time:2019-01-25 09:32:50
+--@return 
+--==============================--
+function MopupWindow:clearEneTime()
+	if self.timeticket then
+		GlobalTimeTicket:getInstance():remove(self.timeticket)
+		self.timeticket = nil
+	end
+end 
+--获取当前处于什么状态 --1 未开始扫荡 2 扫荡中 3 扫荡完成  4 已领取
+function MopupWindow:setMopupStatus()
+	if self.data and self.data.start_time ~= 0 then
+		if GameNet:getInstance():getTime() >= self.data.start_time + self.cfg["sweep_time"].val then -- 完成扫荡
+			if self.data.is_reward == 1 then
+				self.mopup_status = 4  --已领取
+			else
+				self.mopup_status = 3
+			end
+		else -- 扫荡中
+			self.mopup_status = 2
+		end
+	else 
+		if self.data then  --未开始
+			self.mopup_status = 1
+		end
+	end
+end
+--
+function MopupWindow:setMopupSkillNowHaveList(index)
+	if self.skill_all_data[index] then
+		local data = self.skill_all_data[index]
+		for i,v in ipairs(data) do
+            local object = self.skill_list[i]
+            if object then
+                object.num_value = v
+                object.num:setString(object.num:getString() + v)
+				addRedPointToNodeByStatus(object.node,false)
+            end
+        end
+	end
+end
+
+function MopupWindow:setMopupNowHaveList(index)
+	if not self.reward_all_list[index] then return end
+	local all_list = deepCopy(self.reward_all_list[index])
+	for k, v in pairs(all_list) do
+		local isCan = true
+		for key, value in pairs(self.now_have_list) do
+			if value[1] == v[1] then
+				isCan = false
+				self.now_have_list[key] = {v[1],v[2]+value[2]}
+			end
+		end
+		if isCan then
+			table.insert(self.now_have_list, {v[1],v[2]})
+		end
+	end
+end	
+--扫荡中
+function MopupWindow:MopupIng()
+    local hero_list = model:getFormList()
+	self.hero_id = hero_list[1].bid
+	self.skin_id = hero_list[1].use_skin
+	self.skill_id = hero_list[1].skills[1].skill_bid
+	self.hitting_sound = ""
+	self.beaten_sound = ""
+	local data_get_skill = Config.SkillData.data_get_skill(self.skill_id)
+	if data_get_skill then
+		local list = data_get_skill.effect_list
+		local data_get_effect = Config.SkillData1.data_get_effect(list[1])
+		if data_get_effect then
+			self.hitAction = data_get_effect.anime_res
+			self.hitting_sound = data_get_effect.attack_sound
+			self.beaten_sound = data_get_effect.hit_sound
+		end
+	end
+	self.fight_btn:setVisible(false)
+	self.available_tip_label:setString(TI18N("语言_c_5352"))
+	self.bar_panel:setVisible(true)
+	self.mopup_text:setVisible(true)
+	self.list_view:setData(self.now_have_list)
+	self:setNoVedioStatus(self.now_have_list)
+	self:setMopupBG()
+	self:changeHero(self.hero_id,PlayerAction.run,true,200, self.Panel_5:getContentSize().height * 0.5-100)
+	local starttime = self.data.start_time
+	-- local mopuptime = self.cfg["sweep_time"].val
+	local mopuptime = self.cfg["sweep_time"].val + 20
+	local endtime = starttime + mopuptime
+	local Time = endtime - GameNet:getInstance():getTime()
+	doStopAllActions(self.mopup_time)
+	doStopAllActions(self.mopupTimeBar)
+	commonCountDownTime(self.mopup_time,Time,{callback = function(Time) self:setBarReward(Time) end})
+
+	for key, value in pairs(self.skill_list) do
+		value.expected_label:setVisible(false)
+	end
+	
+	addRedPointToNodeByStatus(self.skill_list[3].node,false)
+end
+function MopupWindow:setBarReward(time)
+	if ((time - 20 ) % self.mopup_one) % (self.mopup_one / 5) == 1 then
+		self:setHeroSpine(self.hero_id)
+	elseif ((time - 20 ) % self.mopup_one) % (self.mopup_one / 5) == 3 then
+		local list = Config.AdventureData.data_get_rewards[self.data.current_id].monsters
+		local index = 5-math.floor(((time-20) % self.mopup_one) / (self.mopup_one / 5))
+		self:setMonsterSpine(list[index])
+	elseif (time-20) % self.mopup_one == 0 and (time-20) ~= self.cfg["sweep_time"].val then
+		self:finishMopup(math.floor((GameNet:getInstance():getTime() - self.data.start_time) / self.mopup_one)+1)
+	end
+
+	if time > 0 then
+		local mopuptime = self.cfg["sweep_time"].val + 20
+		self.mopupTimeBar:setPercent((mopuptime - time)/mopuptime*100)
+		self.mopup_time:setString(TimeTool.GetTimeForFunction(time))
+	else
+		doStopAllActions(self.mopupTimeBar)
+		self.mopupTimeBar:setPercent(100)
+		doStopAllActions(self.mopup_time)
+		self.mopup_time:setString("00:00:00")
+		self:endMopup()
+		self.mopup_status = 3
+		controller:send20634()
+	end
+end
+--完成一次扫荡  增加物品
+function MopupWindow:finishMopup(index)
+	if index < 1 then return end
+	if self.reward_all_list[index] then
+		self:setMopupNowHaveList(index)
+		self.reward_list = self:dataConversion(self.reward_all_list[index])
+		FlyManager:getInstance():flyRwards(self.Panel_5, self.reward_list)
+	end
+	self:setMopupSkillNowHaveList(index)
+end
+--将物品格式转换为飞道具需要的格式
+function MopupWindow:dataConversion(data)
+	local fly_reward_list = {}
+	for key, value in pairs(data) do
+		local list = {}
+		list.bid = value[1]
+		list.num = value[2]
+		list.w_pos = {x = 550,y = 240}
+		list.endPos = {x = 350,y = 600}
+		table.insert(fly_reward_list,list)
+	end
+	return fly_reward_list
+end
+
+function MopupWindow:setBar()
+	local starttime = self.data.start_time
+	local mopuptime = self.cfg["sweep_time"].val
+	self.mopupTimeBar:setPercent((GameNet:getInstance():getTime()-starttime)/mopuptime*100)
+end
+function MopupWindow:close_callback()
+	doStopAllActions(self.mopup_time)
+	doStopAllActions(self.mopupTimeBar)
+	doStopAllActions(self.mopup_reset_time)
+	if self.get_time_execute_fly_shake_event ~= nil then
+		GlobalEvent:getInstance():UnBind(self.get_time_execute_fly_shake_event)
+		self.get_time_execute_fly_shake_event = nil
+	end
+	
+    if self.box_effect then
+        self.box_effect:clearTracks()
+        self.box_effect:removeFromParent()
+        self.box_effect = nil
+    end
+	
+    if self.list_view then
+		self.list_view:DeleteMe()
+	end
+	self.list_view = nil
+	self.skill_info_data = {}
+
+
+	if not tolua.isnull(self.spine) then
+        self.spine:runAction(cc.RemoveSelf:create(true))
+        self.spine = nil
+    end
+
+	self:endHeroSpine()
+	self:endMonsterSpine()
+	if self.effect ~= nil then
+		self.effect:removeFromParent() 
+		self.effect = nil		
+	end
+	doStopAllActions(self.bg_list[1])
+	doStopAllActions(self.bg_list[2])
+	self:clearEneTime()
+	controller:openMopupWindow(false)
+end

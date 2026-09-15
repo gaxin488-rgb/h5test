@@ -1,0 +1,221 @@
+----------------------------------
+-- 
+-- @Date:   2019-05-05 10:40:13
+-- @Description:	一键合成碎片
+----------------------------------
+BackPackSynDebrisWindow = BackPackSynDebrisWindow or BaseClass(BaseView)
+
+local partner_data = Config.PartnerData.data_get_compound_info
+local controller = BackpackController:getInstance()
+local model = controller:getModel()
+
+function BackPackSynDebrisWindow:__init()
+	self.win_type = WinType.Mini
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "backpack/backpack_syndebris_window"
+    self.click_list = {}
+    self.show_list = {}
+end
+
+function BackPackSynDebrisWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(self.container, 2)
+
+    self.cancel_btn = self.container:getChildByName("cancel_btn")
+    self.cancel_btn:getChildByName("label"):setString(TI18N("语言_c_62"))
+    self.confirm_btn = self.container:getChildByName("confirm_btn")
+    self.confirm_btn:getChildByName("label"):setString(TI18N("语言_c_63"))
+
+	
+    self.img_title_bg = self.container:getChildByName("img_title_bg")
+    self.win_title = self.container:getChildByName("win_title")
+	self.win_title:setString(TI18N("语言_c_g_306"))
+	moveTextBg(self.win_title,self.img_title_bg,60)
+    self.sell_title = self.container:getChildByName("sell_title")
+	self.sell_title:setString(TI18N("语言_c_g_309"))
+    setTextMaxWidth(self.win_title,550)
+    self.item_panel = self.container:getChildByName("item_panel")
+
+    if not self.list_view then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            -- item_class = BackPackItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 4,                    -- 第一个单元的Y起点
+            space_y = 30,                   -- y方向的间隔
+            item_width = 128,               -- 单元的尺寸width
+            item_height = 122,              -- 单元的尺寸height
+            delay = 1,
+            scale = 0.9,
+            -- row = 1,                        -- 行数，作用于水平滚动类型
+            col = 5,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true,
+            once_num = 5,
+            is_backpack_item = true
+        }
+        self.list_view = CommonScrollViewSingleLayout.new(self.item_panel, cc.p(scroll_view_size.width * 0.5, scroll_view_size.height * 0.5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0.5,0.5))
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        -- self.list_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end
+    
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function BackPackSynDebrisWindow:createNewCell(width, height)
+    local cell = BackPackItem.new(true, true,nil,0.9)
+    cell:setLongTimeTouchEffect(true)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    local ext = {is_comp_num = true}
+    cell:setExtendData(ext)
+    return cell
+end
+--获取数据数量
+function BackPackSynDebrisWindow:numberOfCells()
+    return #self.show_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function BackPackSynDebrisWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.show_list[index]
+    cell:setData(data)
+    local function clickItem()
+        TipsManager:getInstance():showGoodsTips(data.base_id, true, true,nil)
+    end
+    cell:addLongTimeTouchCallback(clickItem)
+    cell:showRedPoint(false)
+    if self.click_list[data.config.id] and next(self.click_list[data.config.id]) then
+        cell:setCommonStatus(false,nil,PathTool.getResFrame("common","common_90009_1"))
+        self.click_list[data.config.id] = data
+    else
+        cell:setCommonStatus(true,nil,PathTool.getResFrame("common","common_90009_1"))
+        self.click_list[data.config.id] = {}
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function BackPackSynDebrisWindow:onCellTouched(cell)
+    local index = cell.index
+    local data = self.show_list[index]
+    if data then
+        self:selectHero(cell, data)
+    end
+end
+function BackPackSynDebrisWindow:selectHero(cell, data)
+    if data.config and data.config.id then
+        if self.click_list[data.config.id] and next(self.click_list[data.config.id]) then
+            cell:setCommonStatus(true,nil,PathTool.getResFrame("common","common_90009_1"))
+            self.click_list[data.config.id] = {}
+        else
+            cell:setCommonStatus(false,nil,PathTool.getResFrame("common","common_90009_1"))
+            self.click_list[data.config.id] = data
+        end
+    end
+end
+function BackPackSynDebrisWindow:register_event()
+    registerButtonEventListener(self.background, function()
+		controller:openBackPackSynDebrisWindow(false)
+	end, false, 2)
+    registerButtonEventListener(self.cancel_btn, function()
+		controller:openBackPackSynDebrisWindow(false)
+	end, true, 2)
+
+	registerButtonEventListener(self.confirm_btn, function()
+		self:onClickConfirmBtn()
+	end, true, 1,nil,nil,1)
+
+end
+
+function BackPackSynDebrisWindow:openRootWnd()
+	self:setData()
+end
+function BackPackSynDebrisWindow:onClickConfirmBtn()
+    local list = {}
+    for k, v in pairs(self.click_list) do
+        if v and next(v) then
+            local _list = {}
+            _list.bid = v.config.id
+            _list.num = v.syn_num
+            table.insert(list, _list)
+        end
+    end
+    controller:sender11008(list)
+end
+function BackPackSynDebrisWindow:setData()
+    local list = deepCopy(model:getAllBackPackArray(BackPackConst.item_tab_type.HERO, true))
+    for k, v in pairs(list) do
+        if v.config.type == BackPackConst.item_type.PARTNER_DEBRIS then
+            local comp_num = 1
+            if partner_data[v.config.id] then
+                comp_num = partner_data[v.config.id].num
+                local item_data = BackpackController:getModel():getBackPackItemNumByBid(v.config.id)
+                v.syn_num = math.floor(item_data/comp_num)
+                if v.syn_num > 0 then
+                    if v.config and v.config.id then
+                        self.click_list[v.config.id] = v
+                        table.insert(self.show_list, v)
+                    end
+                end
+            end
+        end
+    end
+    self.list_view:reloadData()
+    local count = #self.show_list
+
+    
+    if count == 0 then
+        self:showEmptyIcon(true)
+    else
+        self:showEmptyIcon(false)
+    end 
+end
+
+--显示空白
+function BackPackSynDebrisWindow:showEmptyIcon(bool)
+    if not self.empty_con and bool == false then
+        return
+    end
+    
+    if not self.empty_con then
+        local img_box_0 = self.container:getChildByName("img_title_bg_2")
+        local x, y = img_box_0:getPosition()
+
+        local size = cc.size(200, 200)
+        self.empty_con = ccui.Widget:create()
+        self.empty_con:setContentSize(size)
+        self.empty_con:setAnchorPoint(cc.p(0.5, 0.5))
+        self.empty_con:setPosition(x, y)
+
+        self.container:addChild(self.empty_con, 10)
+        local res = PathTool.getPlistImgForDownLoad('bigbg', 'bigbg_3')
+        local bg = createImage(self.empty_con, res, size.width / 2, size.height / 2, cc.p(0.5, 0.5), false)
+        local login_data = LoginController:getInstance():getModel():getLoginData()
+        local str
+        self.empty_label = createLabel(26, cc.c3b(0x6c,0x40,0x2c), nil, size.width / 2, 20, '', self.empty_con, -4, cc.p(0.5, 1)) 
+        self.empty_label:setWidth(600)
+        self.empty_label:setLineSpacing(-4)
+        self.empty_label:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    end
+
+    self.empty_label:setString(TI18N("语言_c_g_311"))
+    self.empty_con:setVisible(bool)
+end
+
+function BackPackSynDebrisWindow:close_callback()
+    if self.list_view then
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+	controller:openBackPackSynDebrisWindow(false)
+end

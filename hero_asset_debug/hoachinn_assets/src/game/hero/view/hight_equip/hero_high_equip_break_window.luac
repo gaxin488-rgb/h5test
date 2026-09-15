@@ -1,0 +1,216 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description: 金色装备突破页面
+-- <br/>Create: 2018年11月14日
+--
+-- --------------------------------------------------------------------
+HeroHighEquipBreakWindow = HeroHighEquipBreakWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+function HeroHighEquipBreakWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "hero/hero_high_equip_break_window"
+end
+
+function HeroHighEquipBreakWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.mainContainer = self.root_wnd:getChildByName("main_panel")
+    self.mainContainer:getChildByName("tip1"):setString(TI18N("语言_c_6793"))
+    self.mainContainer:getChildByName("tip"):setString(TI18N("语言_c_6792"))
+    self:playEnterAnimatianByObj(self.mainContainer , 1)  
+
+    self.equip_node = self.mainContainer:getChildByName("equip_node")
+    self.equip_item = BackPackItem.new()
+    self.equip_node:addChild(self.equip_item)
+    -- self.equip_name = self.mainContainer:getChildByName("name")
+    local equip_name = self.mainContainer:getChildByName("name")
+    equip_name:setVisible(false)
+    local posx = equip_name:getPositionX()
+    local posy = equip_name:getPositionY()
+    self.equip_name = createRichLabel(22, cc.c4b(0xff, 0xdd, 0x68, 0xff), cc.p(0.5, 0.5), cc.p(posx,posy))
+    self.mainContainer:addChild(self.equip_name)
+    
+    self.attr_icon = self.mainContainer:getChildByName("attr_icon")
+    self.attr_name1 = self.mainContainer:getChildByName("attr_name1")
+    self.attr_name2 = self.mainContainer:getChildByName("attr_name2")
+    self.old_attr1 = self.mainContainer:getChildByName("old_attr1")
+    self.old_attr2 = self.mainContainer:getChildByName("old_attr2")
+    self.new_attr1 = self.mainContainer:getChildByName("new_attr1")
+    self.new_attr2 = self.mainContainer:getChildByName("new_attr2")
+
+    self.close_btn = self.mainContainer:getChildByName("close_btn")
+    self.confirm_btn = self.mainContainer:getChildByName("confirm_btn")
+    self.confirm_btn:getChildByName("label"):setString(TI18N("语言_c_6791"))
+    self.cost_list = self.mainContainer:getChildByName("cost_list")
+
+    self.plan_list = self.mainContainer:getChildByName("plan_list")
+    local title_container = self.mainContainer:getChildByName("title_container")
+    title_container:getChildByName("title_label"):setString(TI18N("语言_c_6791"))
+
+end
+
+function HeroHighEquipBreakWindow:createNewCell(width, height)
+    local cell = CostItem.new()
+    return cell
+end
+ --获取数据数量
+function HeroHighEquipBreakWindow:numberOfCells()
+    if not self.cell_data_list then return 0 end
+    return #self.cell_data_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function HeroHighEquipBreakWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.cell_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function HeroHighEquipBreakWindow:register_event()
+    registerButtonEventListener(self.confirm_btn, function() self:changeTabIndex() end ,false, 2)
+    registerButtonEventListener(self.close_btn, function() self:_onClickBtnClose() end ,false, 2)
+end
+
+function HeroHighEquipBreakWindow:_onClickBtnClose()
+    controller:openHighEquipBreakWindow(false)
+end
+
+function HeroHighEquipBreakWindow:changeTabIndex()
+    if self.is_enough then
+        controller:sender11442(self.partner_id, self.equip_data.id)
+    else
+        local config = Config.ItemData.data_get_data(self.not_enough_id)
+        BackpackController:getInstance():openTipsSource(true, config)
+        controller:openHighEquipBreakWindow(false)
+    end
+end
+
+function HeroHighEquipBreakWindow:openRootWnd(equip_data,partner_id)
+    if not equip_data then
+        return
+    end
+    self.equip_data = equip_data
+    self.partner_id = partner_id
+    self:updateInfo()
+end
+
+function HeroHighEquipBreakWindow:updateInfo()
+    self.gold_info = BackpackController:getInstance():getModel():getGoldEquipData(self.equip_data.id)
+    if not self.gold_info then
+        return
+    end
+    local eqm_jie = self.gold_info.refine_level
+    local eqm_name = self.equip_data.config.name
+    local soul_level = self.gold_info.soul_level
+    -- self.equip_name:setString(eqm_name .. "+" .. eqm_jie)
+    self.equip_name:setString(string.format("<div outline=2,#3e1200>%s</div><div fontcolor=#13ff13 fontsize=26 outline=2,#3e1200> +%s</div>",eqm_name,eqm_jie))
+
+    local equip_bid = self.equip_data.config.id
+    self.equip_item:setBaseData(equip_bid)
+    
+    local res 
+    if soul_level >=5 and soul_level<10 then
+        res =  PathTool.getResFrame("common","common_1_215",false,"common_1")
+    elseif soul_level >= 10 then
+        res =  PathTool.getResFrame("common","common_1_216",false,"common_1")
+    end
+    self.equip_item:setStarCount(true, self.gold_info.star_level,res)
+    self.equip_item:setJieTxt(true, self.gold_info.refine_level)
+
+    local now_lv = self.gold_info and self.gold_info.refine_level or 0
+    local key = getNorKey(equip_bid, now_lv)
+    local next_key = getNorKey(equip_bid, (now_lv + 1))
+    local cfg = Config.PartnerGoldeqmData.data_get_eqm_refine
+    if cfg(next_key) then -- 未满级
+        local now_cfg = cfg(key)
+        local next_cfg = cfg(next_key)
+        self.attr_name1:setString(TI18N("语言_c_6824"))
+        self.old_attr1:setString(now_cfg.enchant_max_lev)
+        local cost = now_cfg.cost
+
+        self.cell_data_list = deepCopy(cost)
+        self:createCostScroll(#cost)
+        self.item_scrollview:reloadData()
+        self:checkIsEnough()
+
+        local now_attr = now_cfg.attr
+        local attr_key 
+        if now_attr and next(now_attr) then
+            attr_key = now_attr[1][1]
+            local attr_val = now_attr[1][2]
+            self.old_attr2:setString(attr_val)
+        else
+            self.old_attr2:setString(0)
+        end
+
+        self.new_attr1:setString(next_cfg.enchant_max_lev)
+        local next_attr = next_cfg.attr
+        if next_attr and next(next_attr) then
+            attr_key = next_attr[1][1]
+            local attr_name = Config.AttrData.data_key_to_name[attr_key]
+            self.attr_name2:setString(attr_name)
+            local next_val = next_attr[1][2]
+            self.new_attr2:setString(next_val)
+            loadSpriteTexture(self.attr_icon, PathTool.getResFrame("common", PathTool.getAttrIconByStr(attr_key)), LOADTEXT_TYPE_PLIST)
+        else
+            self.new_attr2:setString("语言_c_6533")
+        end
+    else -- 已满级
+    end
+end
+
+function HeroHighEquipBreakWindow:checkIsEnough()
+    self.is_enough = true
+    for k, v in pairs(self.cell_data_list) do
+        local item_id = v[1]
+	    local need_num = v[2]
+        local own_num =  BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+        if own_num < need_num then
+            self.is_enough = false
+            self.not_enough_id = item_id
+            break
+        end
+    end
+end
+
+function HeroHighEquipBreakWindow:createCostScroll(num)
+    local _width =( 130 + 10) * num
+    self.plan_list:setContentSize(cc.size(_width, 148))
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.plan_list:getContentSize()
+        local setting = {
+            start_x = 0, -- 第一个单元的X起点
+            space_x = 10, -- x方向的间隔
+            start_y = 0, -- 第一个单元的Y起点
+            space_y = 0, -- y方向的间隔
+            item_width = 130, -- 单元的尺寸width
+            item_height = 155, -- 单元的尺寸height
+            row = 1, -- 行数，作用于水平滚动类型
+            col = 4, -- 列数，作用于垂直滚动类型s
+            once_num = 1 -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.plan_list, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+end
+
+function HeroHighEquipBreakWindow:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    controller:openHighEquipBreakWindow(false)
+end

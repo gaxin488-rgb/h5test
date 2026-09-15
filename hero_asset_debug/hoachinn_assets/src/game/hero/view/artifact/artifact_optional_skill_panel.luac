@@ -1,0 +1,174 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-01-16 21:22:19
+-- @description    : 
+		-- 重铸自选
+---------------------------------
+ArtifactOptionalSkillPanel = ArtifactOptionalSkillPanel or BaseClass(BaseView)
+
+local string_format = string.format
+local table_insert = table.insert
+local controller = HeroController:getInstance()
+local model =  controller:getModel()
+
+function ArtifactOptionalSkillPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "hero/artifact_optional_skill_panel"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("artifact", "artifact"), type = ResourcesType.plist},
+	}
+end
+
+function ArtifactOptionalSkillPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container , 1) 
+	self.image_bg_1 = main_container:getChildByName("image_bg_1")
+	self.container = main_container:getChildByName("container")
+	self.select_bg = self.container:getChildByName("select_bg")
+	self.bg_1 = self.container:getChildByName("bg_1")
+	self.bg_2 = self.container:getChildByName("bg_2")
+	self.bg_3 = self.container:getChildByName("bg_3")
+	self.bg_4 = self.container:getChildByName("bg_4")
+	self.bg_list = {self.bg_1,self.bg_2,self.bg_3,self.bg_4}
+	self.Image_2 = main_container:getChildByName("Image_2")
+	self.win_title = main_container:getChildByName("win_title")
+	self.win_title:setString(TI18N("语言_c_5329"))
+	self.Image_2:setContentSize(cc.size(self.win_title:getContentSize().width + 100,self.Image_2:getContentSize().height))
+	self.confirm_btn = main_container:getChildByName("confirm_btn")
+	self.confirm_txt = self.confirm_btn:getChildByName("label")
+	self.confirm_txt:setString(TI18N("语言_c_2"))
+	self.close_btn = main_container:getChildByName("close_btn")
+
+	self.tips = createRichLabel(22,cc.c4b(0x70,0x40,0x30,0xff),cc.p(0.5,0.5),cc.p(326,440),nil,nil,650)
+	self.main_container:addChild(self.tips)
+end
+
+function ArtifactOptionalSkillPanel:setData(partner_id,item_id,item_bid)
+	self.item_id = item_id
+	self.partner_id = partner_id
+	self.item_bid = item_bid
+	if self.item_bid > 10456 then
+		self.tips:setString(TI18N("语言_c_5189"))
+	else
+		self.tips:setString(TI18N("语言_c_5190"))
+	end
+	self.data = model:getRecastOptionalList(item_bid)
+	table.insert(self.data.val,0)
+	for i=1,4 do
+		self:setSkill(self.bg_list[i],self.data.val[i],i)
+	end
+	self:setSelect(1)
+end
+function ArtifactOptionalSkillPanel:register_event(  )
+	registerButtonEventListener(self.close_btn, function ( )
+		controller:openArtifactOptionalSkillPanel(false)
+    end)
+	registerButtonEventListener(self.confirm_btn, function ( )
+		controller:sender11049(self.partner_id,self.item_id,self.select_id)
+    end)
+    
+	registerButtonEventListener(self.background, function ( )
+		controller:openArtifactOptionalSkillPanel(false)
+	end)
+	for i=1,4 do
+		registerButtonEventListener(self.bg_list[i], function ( )
+			self:setSelect(i)
+		end)
+	end
+end
+function ArtifactOptionalSkillPanel:setSelect(i)
+	self.select_bg:setPositionX(self.bg_list[i]:getPositionX())
+	self.select_id = self.data.val[i]
+end
+function ArtifactOptionalSkillPanel:setSkill(parents,id,index)
+	local config = Config.SkillData.data_get_skill(id)
+	local skill_item = self:createSkillItem(parents,67,220)
+	if config then
+		skill_item.skill:setData(config)
+        skill_item.name:setString(transformTextToShort(config.name, 10))
+        addEvt2showAllTextTips(skill_item.name,config.name, 10, nil, nil, nil, true, true)
+		skill_item.desc:setString(config.des)
+		skill_item.random_icon:setVisible(false)
+		local temp_lev = config.level
+		if config.client_lev and config.client_lev>0 then
+			temp_lev = config.client_lev
+		end
+
+		local name_color = PartnerConst.SkillColor[temp_lev]
+		name_color = name_color or cc.c3b(104,69,42)
+		skill_item.name:setTextColor(name_color)
+
+		local is_unusual = false
+		local type = 1
+		if model:checkIsUnusualSkillById(config.bid) then -- 稀有      
+			is_unusual = true
+		elseif model:checkIsUnusualSkillById2(config.bid) then --强力
+			is_unusual = true
+			type = 2
+		elseif model:checkIsUnusualSkillById3(config.bid) then --超稀有
+			is_unusual = true
+			type = 3
+		elseif model:checkIsUnusualSkillById4(config.bid) then --超强力
+			is_unusual = true
+			type = 4
+		end	
+    	skill_item.skill:showUnusualIcon(is_unusual,type)
+	else
+		if self.item_bid > 10456 then
+			skill_item.skill:showUnusualIcon(true,4)
+			skill_item.name:setString(transformTextToShort(TI18N("语言_c_5284"), 10))
+			addEvt2showAllTextTips(skill_item.name,TI18N("语言_c_5284"), 10, nil, nil, nil, true, true)
+			skill_item.desc:setString(TI18N("语言_c_5285"))
+		else
+			skill_item.name:setString(transformTextToShort(TI18N("语言_c_5191"), 10))
+			addEvt2showAllTextTips(skill_item.name,TI18N("语言_c_5191"), 10, nil, nil, nil, true, true)
+			skill_item.desc:setString(TI18N("语言_c_5192"))
+			skill_item.skill:showUnusualIcon(true,2)
+		end
+	end
+	if skill_item.desc:getContentSize().height >= skill_item.scroll:getContentSize().height then
+		skill_item.desc:setPositionY(skill_item.desc:getContentSize().height)
+	else
+		skill_item.desc:setPositionY(skill_item.scroll:getContentSize().height)
+	end
+	skill_item.scroll:setInnerContainerSize(cc.size(skill_item.desc:getContentSize().width,skill_item.desc:getContentSize().height))
+end
+function ArtifactOptionalSkillPanel:createSkillItem(parent, x, y)
+	local item = {}
+    local skill = SkillItem.new(true,true,true,0.8)
+    parent:addChild(skill)
+	local pos_x = x
+    local pos_y = y
+    skill:setPosition(pos_x, pos_y)
+    local name = createLabel(22,cc.c4b(0x4e,0x1e,0x0c,0xff),nil,pos_x, pos_y-50,"",parent,1,cc.p(0.5,1))
+    local scroll = createScrollView(130,65,pos_x-60,pos_y-150,parent,ccui.ScrollViewDir.vertical)
+    scroll:setBounceEnabled(false)
+    scroll:setSwallowTouches(false)
+    local desc = createRichLabel(18,cc.c4b(0x7c,0x55,0x36,0xff),cc.p(0,1),cc.p(0, 0),0,nil,120)
+    scroll:addChild(desc)
+	local icon_res = PathTool.getResFrame("artifact","artifact_1003")
+    local random_icon = createSprite(icon_res, 67, pos_y, parent, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    item.skill = skill
+    item.name = name
+    item.desc = desc
+	item.random_icon = random_icon
+    item.scroll = scroll
+    return item
+end
+function ArtifactOptionalSkillPanel:openRootWnd(partner_id,item_id,item_bid)
+	self:setData(partner_id,item_id,item_bid)
+end
+
+function ArtifactOptionalSkillPanel:close_callback(  )
+	controller:openArtifactOptionalSkillPanel(false)
+end

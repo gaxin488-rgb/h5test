@@ -1,0 +1,222 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-21 15:06:56
+-- @description    : 
+		-- 精灵tips
+---------------------------------
+ElfinTipsView2 = ElfinTipsView2 or BaseClass(BaseView)
+
+local _string_format = string.format
+local _controller = ElfinController:getInstance()
+local _table_insert = table.insert
+
+function ElfinTipsView2:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "tips/elfin_tips_view2"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+	self.show_index = 0
+	self.base_list = {}
+    self.win_type = WinType.Tips   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+end
+
+function ElfinTipsView2:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.container = self.root_wnd:getChildByName("container")
+    self.title = self.container:getChildByName("title")
+	self.title:setString(TI18N("语言_spr_01_15"))
+	self.base_attr = self.container:getChildByName("base_attr")
+
+end
+
+function ElfinTipsView2:createNewCell(width, height)
+    local cell = ElfinTipsView2Item.new()
+    return cell
+end
+
+function ElfinTipsView2:numberOfCells()
+    if not self.cell_data_list then
+        return 0
+    end
+    return #self.cell_data_list
+end
+-- 更新cell(拖动的时候.刷新数据时候会执行次方法)
+-- cell :createNewCell的返回的对象
+-- index :数据的索引
+function ElfinTipsView2:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.cell_data_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+function ElfinTipsView2:register_event(  )
+	registerButtonEventListener(self.background, function (  )
+		self:close()
+	end, false, 2)
+end
+
+function ElfinTipsView2:openRootWnd(elfin_bid)
+	if not elfin_bid then return end
+	--判断是哪一系列通灵兽
+	local elfin_list_cfg = Config.SpriteData.data_sprite_list
+	for k, v in pairs(elfin_list_cfg) do
+		local list = v.id_list[1]
+		for k, v in pairs(list) do
+			if elfin_bid == v then
+				self.show_list = deepCopy(list) 
+				break
+			end
+		end
+	end
+	local function sortFunc( objA, objB )
+		return objA < objB
+	end
+	table.sort(self.show_list, sortFunc)
+	self.is_active = false
+	for k, v in pairs(self.show_list) do
+		local id = v
+		local status = ElfinController:getInstance():getModel():checkElfinActStatus(id)
+		if status then
+			self.is_active = true
+			break
+		end
+	end
+	local cfg = Config.SpriteData.data_sprite_score
+	self.cell_data_list = {}
+	for k, v in pairs(self.show_list) do
+		local _temp = cfg[v]
+		if _temp then
+			local a = {id = v, socre = _temp.score, elfin_bid = elfin_bid,is_active = self.is_active}
+			table.insert(self.cell_data_list, a)
+		end
+	end
+
+	local num = #self.cell_data_list
+	local total_hight = num*40 + 90 + 40
+	self.container:setContentSize(cc.size(590, total_hight))
+	self.base_attr:setContentSize(cc.size(590, num*40))
+	self.base_attr:setPositionY(num*40 + 40)
+	self.title:setPositionY(total_hight-45)
+
+	if self.item_scrollview == nil then
+        local scroll_view_size = self.base_attr:getContentSize()
+        local setting = {
+            start_x = 0, -- 第一个单元的X起点
+            space_x = 0, -- x方向的间隔
+            start_y = 0, -- 第一个单元的Y起点
+            space_y = 0, -- y方向的间隔
+            item_width = 580, -- 单元的尺寸width
+            item_height = 40, -- 单元的尺寸height
+			col = 1,
+            once_num = 1 -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.base_attr, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createNewCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    end
+	self.item_scrollview:reloadData()
+end
+
+-- function ElfinTipsView2:setData( elfin_bid )
+-- 	if not elfin_bid then return end
+-- 	--判断是哪一系列通灵兽
+-- 	local elfin_list_cfg = Config.SpriteData.data_sprite_list
+-- 	for k, v in pairs(elfin_list_cfg) do
+-- 		local list = v.id_list[1]
+-- 		for k, v in pairs(list) do
+-- 			if elfin_bid == v then
+-- 				self.show_list = deepCopy(list) 
+-- 				break
+-- 			end
+-- 		end
+-- 	end
+-- 	local function sortFunc( objA, objB )
+-- 		return objA < objB
+-- 	end
+-- 	table.sort(self.show_list, sortFunc)
+
+-- 	for i = 1, #self.elfin_id_list do
+-- 		if self.elfin_id_list[i] == self.elfin_id then
+-- 			self.show_index = i
+-- 			break
+-- 		end
+-- 	end
+-- end
+
+function ElfinTipsView2:close_callback(  )
+	if self.power_label then
+        self.power_label:DeleteMe()
+        self.power_label = nil
+	end
+	
+	if self.elfin_item then
+		self.elfin_item:DeleteMe()
+		self.elfin_item = nil
+	end
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+	ElfinController:getInstance():openElfinView2Window(false)
+end
+
+
+ElfinTipsView2Item = class("ElfinTipsView2Item", function() 
+	return ccui.Layout:create()
+end)
+
+function ElfinTipsView2Item:ctor()
+	self.base_list = {}
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("tips/elfin_tips_view_item2"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self.bg = self.main_container:getChildByName("bg")
+	self.bg:setVisible(false)
+	self.attr_tltle = self.main_container:getChildByName("attr_tltle")
+	self.tag = self.main_container:getChildByName("tag")
+	local tag_pos = self.tag:getPositionX()
+	self.attr_tltle:setPositionX(tag_pos-4)
+	self.tag:setVisible(false)
+	self.lv_txt = self.main_container:getChildByName("lv_txt")
+end
+
+function ElfinTipsView2Item:setData(data)
+	self.data = data
+	-- {id = v, socre = _temp.socre, elfin_bid = elfin_bid}
+	local elfin_item_cfg = Config.ItemData.data_get_data(data.id)
+	local star = elfin_item_cfg.eqm_jie
+	self.lv_txt:setString(string.format(TI18N("语言_spr_01_17"), elfin_item_cfg.name, star)) --(elfin_item_cfg.name..star.."星")
+	self.attr_tltle:setString(TI18N("语言_spr_01_16")..(data.socre or 0))
+
+	if data.id == data.elfin_bid and data.is_active then
+		self.bg:setVisible(true)
+		self.tag:setVisible(true)
+	else
+		self.bg:setVisible(false)
+		self.tag:setVisible(false)
+	end
+end
+
+function ElfinTipsView2Item:DeleteMe()
+	self:removeAllChildren()
+    self:removeFromParent()
+end

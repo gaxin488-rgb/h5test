@@ -1,0 +1,212 @@
+-- Author: nieming
+-- Date: Mon Jun 17 2024 20:30:40 GMT+0800 (中国标准时间)
+-- Describle： 
+ElfinAttachSkillPop = ElfinAttachSkillPop or BaseClass(BaseView)
+-- desc: 
+function ElfinAttachSkillPop:__init()
+	self.is_full_screen = false
+	self.layout_name = "elfin/elfin_attach_skill_pop"
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("guildwar","guildwar"), type = ResourcesType.plist },
+	}
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.win_type = WinType.Big
+	self.background_mask_enable = true
+end
+-- desc: 
+function ElfinAttachSkillPop:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+	self.background:setScale(display.getMaxScale())
+
+	self._root = self.root_wnd:getChildByName("_root")
+	self.bg_panel = self._root:getChildByName("bg_panel")
+	self._closeBtn = self._root:getChildByName("_closeBtn")
+	self.imgTitleBg = self._root:getChildByName("imgTitleBg")
+	self._title = self._root:getChildByName("_title")
+	self._headBg = self._root:getChildByName("_headBg")
+	self._elfinNode = self._headBg:getChildByName("_elfinNode")
+	self._skillNode = self._headBg:getChildByName("_skillNode")
+	self._skillName = self._headBg:getChildByName("_skillName")
+	self._attackLockRichParent = self._headBg:getChildByName("_attackLockRichParent")
+	self._scrollBg = self._root:getChildByName("_scrollBg")
+	self._skillList = self._scrollBg:getChildByName("_skillList")
+	self._item = self._root:getChildByName("_item")
+
+	self._ui = self
+	local ui = self
+	ui._title:setString(TI18N("语言_c_d_260"))
+	autoSizeTitleBg(ui._title, self.imgTitleBg, 120, 265)
+	-- ui._descLabel:getVirtualRenderer():setLineSpacing(-4)
+	-- ui._descLabel:setString(TI18N("语言_c_d_55"))
+	
+	ui._skillList:setScrollBarEnabled(false)
+	self:playEnterAnimatianByObj(ui._root, 2)
+	self._itemSize = ui._item:getContentSize()
+	ui._item:setVisible(false)
+
+	ui._elfinItem = BackPackItem.new(false, true, nil, 0.87, nil, true)
+	ui._elfinNode:addChild(self._ui._elfinItem)
+
+	ui._skillItem = SkillItem.new(true, true, true,  0.78, true)
+	ui._skillNode:addChild(ui._skillItem)
+
+
+end
+-- desc: 
+function ElfinAttachSkillPop:register_event()
+	registerButtonEventListener(self._closeBtn, handler(self, self.close), true, 2)
+	registerButtonEventListener(self.background, handler(self, self.close), false, 2)
+end
+-- desc: 
+function ElfinAttachSkillPop:openRootWnd(elfinId)
+	self._elfinId = elfinId
+	local elfin_cfg = Config.SpriteData.data_elfin_data(elfinId)
+	self._elfinCfg = elfin_cfg
+	self:refresh()
+end
+
+
+
+function ElfinAttachSkillPop:_refreshHead()
+	local ui = self._ui
+	local attachLabel = createRichLabel(22, cc.c4b(0x7c, 0x55, 0x36, 0xff), cc.p(0, 1), cc.p(0,0), 0, nil, 320)
+	ui._attackLockRichParent:addChild(attachLabel)
+	local itemCfg = Config.ItemData.data_get_data(self._elfinId)
+	if itemCfg then
+
+		attachLabel:setString(string.format(TI18N("语言_c_d_270"), itemCfg.name))
+	end
+
+	ui._elfinItem:setData({bid = self._elfinCfg.id})
+
+	local skillCfg = Config.SkillData.data_get_skill(self._elfinCfg.soul_skill)
+	if skillCfg then
+		-- ui._skillName:setString(skillCfg.name)
+		ui._skillName:setString(transformTextToShort(skillCfg.name,30))
+		addEvt2showAllTextTips(ui._skillName,skillCfg.name,30)
+		ui._skillItem:showLevel(true, -15)
+		ui._skillItem:setData(skillCfg)
+	end
+
+end
+
+function ElfinAttachSkillPop:refresh()
+	if not self._elfinCfg then
+		print("error self._elfinCfg is nil id = "..(self._elfinId or "nil"))
+		return
+	end
+	local ui = self._ui
+	self:_refreshHead()
+
+	ui._skillList:removeAllChildren()
+	-- 获取 精灵列表
+	local sprite_type = self._elfinCfg.sprite_type
+	local config_list = Config.SpriteData.data_elfin_data_table
+	local elfinList = {}
+	for k, v in pairs(config_list) do
+        local sprite_cfg = Config.SpriteData.data_elfin_data(k)
+        if sprite_cfg.sprite_type == sprite_type then
+            table.insert(elfinList, sprite_cfg)
+        end
+    end
+	local sort_func = SortTools.tableLowerSorter({"step"})
+    table.sort(elfinList,sort_func)
+	--
+	local listData = {}
+	local skillCfg, buffCfg
+	local newDes
+	local s = ui._skillList:getContentSize()
+
+	local isActive = false
+	for k, v in ipairs(elfinList) do
+		skillCfg = Config.SkillData.data_get_skill(v.soul_skill)
+		if skillCfg then
+			-- 
+			local itemUI = ui._item:clone()
+			itemUI:setVisible(true)
+			itemUI:setPositionX(s.width/2)
+			ui._skillList:addChild(itemUI)
+
+			itemUI._skillLock = itemUI:getChildByName("_skillLock")
+			itemUI._curSkillTipBg = itemUI:getChildByName("_curSkillTipBg")
+			itemUI._curSkillLabel =  itemUI._curSkillTipBg:getChildByName("_curSkillLabel")
+			itemUI._skillTitleBg = itemUI:getChildByName("_skillTitleBg")
+			itemUI._skillLevel = itemUI._skillTitleBg:getChildByName("_skillLevel")
+			itemUI._skillDescPanel = itemUI:getChildByName("_skillDescPanel")
+
+
+			itemUI._skillLevel:setString(string.format(TI18N("语言_c_4520"), skillCfg.level or 0))
+			local maxWidth = itemUI._skillDescPanel:getContentSize().width
+
+			local skillDesc =  createRichLabel(20, cc.c4b(0x57, 0x57, 0x57, 0xff), cc.p(0, 0), cc.p(0,0), 0, nil, maxWidth)
+			itemUI._skillDescPanel:addChild(skillDesc)
+
+			isActive = v.step > self._elfinCfg.step
+			if isActive then 
+				newDes = string.gsub(skillCfg.des, "([%d%.]+%%)", "<div fontcolor=fe6060>%1</div>")
+			else
+				newDes = string.gsub(skillCfg.des, "([%d%.]+%%)", "<div fontcolor=009f00>%1</div>")
+			end
+			skillDesc:setString(newDes)
+			-- buff 说明
+			if skillCfg.buff_des then
+				for k1, v1 in ipairs(skillCfg.buff_des) do
+					for _, buffId in ipairs(v1) do
+						buffCfg = Config.SkillData.data_get_buff[buffId]
+						if buffCfg then
+							if isActive then 
+								newDes = string.gsub(buffCfg.desc, "([%d%.]+%%)", "<div fontcolor=fe6060>%1</div>")
+							else
+								newDes = string.gsub(buffCfg.desc, "([%d%.]+%%)", "<div fontcolor=009f00>%1</div>")
+							end
+							local buff_desc_str = string_format("<div fontcolor=#653825>【%s】</div><div fontcolor=#8f5a31>\n%s</div>", buffCfg.name, newDes)
+							local buffDesc =  createRichLabel(20, cc.c4b(0x57, 0x57, 0x57, 0xff), cc.p(0, 0), cc.p(0,0), 0, nil, maxWidth)
+							itemUI._skillDescPanel:addChild(buffDesc)
+							buffDesc:setString(buff_desc_str)
+						end
+					end
+				end
+			end
+
+			local panelHeight = doVerticalLayoutNode(itemUI._skillDescPanel:getChildren(), {gap = 10})
+			-- itemUI._skillDescPanel:setContentSize(cc.size(600, panelHeight))
+
+			local itemHeight = panelHeight + 13 + 43 
+
+			-- 解锁条件
+			if v.step == self._elfinCfg.step then
+				itemUI._curSkillTipBg:setVisible(true)
+				itemUI._skillLock:setVisible(false)
+				itemUI._curSkillLabel:setString(TI18N("语言_c_1294"))
+			elseif v.step > self._elfinCfg.step then
+				itemUI._curSkillTipBg:setVisible(false)
+				itemUI._skillLock:setVisible(true)
+				itemUI._skillLock:setString(string.format(TI18N("语言_c_6934"), v.step))
+				itemHeight = itemHeight + 40
+			else
+				itemUI._curSkillTipBg:setVisible(false)
+				itemUI._skillLock:setVisible(false)
+			end
+			
+			itemUI._skillTitleBg:setPositionY(itemHeight + 4)
+			itemUI._curSkillTipBg:setPositionY(itemHeight)
+			itemUI._skillLock:setPositionY(10)
+			
+			itemUI:setContentSize(cc.size(self._itemSize.width, itemHeight))
+			if v.step > self._elfinCfg.step then
+				itemUI._skillDescPanel:setPositionY(40)
+			end
+		end
+	end
+	local totalHeight = doVerticalLayoutNode(ui._skillList:getChildren(), {minHeight = s.height, headGap = 20,  gap = 25})
+	-- if totalHeight > s.height then
+		ui._skillList:setInnerContainerSize(cc.size(s.width, totalHeight))
+	-- end
+
+end
+
+
+-- desc: 
+function ElfinAttachSkillPop:close_callback()
+	ElfinController:getInstance():openElfinAttachSkillPop(false)
+end

@@ -1,0 +1,400 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      小助手
+-- <br/>Create: 2018-05-15
+-- --------------------------------------------------------------------
+TrainingResultWindow = TrainingResultWindow or BaseClass(BaseView)
+
+local controller = RoleController:getInstance()
+local model = controller:getModel()
+
+function TrainingResultWindow:__init()
+    self.is_full_screen = false
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big
+    self.layout_name = "roleinfo/training_result_window"
+
+    self.cacheList = {} --对象池
+    -- self.cacheMaxSize = 0 --最大池数
+    self.cacheMaxSize = Config.TrainingCampData.data_assi_info_length --最大池数
+    self.item_height = 174
+    -- 到时间显示的索引
+    self.time_show_index = 0
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("face","face"), type = ResourcesType.plist },
+    }
+end
+
+function TrainingResultWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+	self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 1)
+    self.title = self.main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_c_7411"))
+    self.result_panel = self.main_container:getChildByName("result_panel")
+    self.no_panel = self.main_container:getChildByName("no_panel")
+    self.result_panel:setVisible(false)
+    self.no_panel:setVisible(true)
+    self.no_txt = self.no_panel:getChildByName("no_txt")
+    self.no_txt:setString(TI18N("语言_c_130"))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+end
+function TrainingResultWindow:openRootWnd(data)
+    if not data or not next(data) then return end
+    self.data = data
+    self:updateTrainingScroll()
+end
+
+--刷新滑动列表
+function TrainingResultWindow:updateTrainingScroll()
+    self.result_panel:setVisible(true)
+    self.no_panel:setVisible(false)
+    if not self.list_view then
+        local size = self.result_panel:getContentSize()
+        --方法里面定义了 self.list_view
+        self:createLibraryScrollView(size, size.width * 0.5, size.height * 0.5)
+    end
+
+    local list = self.data
+    table.sort(list,function(a,b) return a.id < b.id end)
+    local _h = 0
+    for i=1,#list do
+        local data = list[i]
+        if tableLen(data.reward_list) <= 6 then
+            _h = _h + 174
+            data._h = 174
+        else
+            local _add_h = 174 + math.ceil((tableLen(data.reward_list)-6)/6)*96
+            _h = _h + _add_h
+            data._h = _add_h
+        end
+    end
+    self.max_h = math.max(self.result_panel:getContentSize().height,_h)
+    local _max_h = self.max_h
+    for i=1,#list do
+        local data = list[i]
+        data.x = 313
+        data.y = _max_h
+        _max_h = _max_h - data._h
+    end
+    self.list_view:stopAutoScroll()
+    -- self:updateCareerUI(title_pos_list, _h, 313)
+    self:reloadData(self.max_h)
+    self:checkOverShowByVertical()
+end
+--获取数据数量
+function TrainingResultWindow:numberOfCells()
+    return #self.data
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function TrainingResultWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.data[index]
+    if cell_data then
+        cell:setVisible(true)
+        cell:setData(cell_data)
+    else
+        cell:setVisible(false)
+    end
+end
+
+--------------------------------开始-------------------------  
+--内内部写一个无限的scrollview 
+function TrainingResultWindow:createLibraryScrollView(size, x, y)
+    self.scrollview_size = size
+    self.list_view = createScrollView(size.width, size.height, x, y, self.result_panel, ScrollViewDir.vertical) 
+    self.list_view:setAnchorPoint(cc.p(0.5, 0.5))
+    self.scrollview_container = self.list_view:getInnerContainer()
+
+    -- self.cacheMaxSize = math.ceil(size.height / self.item_height) + 1
+    self.list_view:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            self:checkOverShowByVertical()
+        end
+    end)
+end
+--==============================--
+--desc:竖直方向的监测判断
+--time:2018-07-20 03:11:13
+--@return 
+--==============================--
+function TrainingResultWindow:checkOverShowByVertical()
+    if not self.cellList then return end
+    local container_y = self.scrollview_container:getPositionY()
+    --计算 视图的上部分和下部分在self.container 的位置
+    local bot = -container_y
+    local top = self.scrollview_size.height + bot
+    local col_count = #self.cellList
+    --下面因为 self.cellList 是一维数组 所以要换成二维来算
+    --活跃cell开始行数
+    local activeCellStartRow = 1
+    for i=1, col_count do
+        local index = 1 + (i-1)
+        local cell = self.cellList[index]
+        activeCellStartRow = i
+        if cell and cell.y - self.item_height * 0.5 <= top then
+            break
+        end
+    end
+    --活跃cell结束行数
+    local activeCellEndRow = col_count
+    if bot > 0 then
+        for i = activeCellStartRow, col_count do
+            local index = 1 + (i-1)
+            local cell = self.cellList[index]
+            if cell and cell.y + self.item_height * 0.5 < bot then
+                activeCellEndRow = i - 1
+                break
+            end
+        end
+    end
+    local max_count = self:numberOfCells()
+    for i=1, col_count do
+        if i >= activeCellStartRow and i <= activeCellEndRow then
+            local index = (i-1)
+            if not self.activeCellIdx[index] then
+                if index <= max_count then
+                    self:updateCellAtIndex(index)
+                    self.activeCellIdx[index] = true
+                end
+            end
+        else
+            local index = (i-1)
+            if index <= max_count then
+                self.activeCellIdx[index] = false
+            end
+        end
+    end
+end
+
+function TrainingResultWindow:reloadData(container_height)
+    self.cellList = {}
+    self.activeCellIdx = {}
+    for k, v in ipairs(self.cacheList) do
+        --相当于隐藏
+        v:setPositionX(-10000)
+    end
+    
+    local container_height = math.max(container_height, self.scrollview_size.height)
+    self.container_size = cc.size(self.scrollview_size.width, container_height)
+    self.list_view:setInnerContainerSize(self.container_size)
+    local number = self:numberOfCells()
+    local setting = {
+        text=TI18N("语言_c_6217"),
+        pos=cc.p(330,530),
+    }
+    commonShowEmptyIcon(self.result_panel,number == 0,setting)
+    if number == 0 then
+        return
+    end
+    local max_h = -self.max_h
+    for i = 1, number do
+        local data = self.data[i]
+        if data ~= nil then
+            local cell = nil 
+            if i <= self.time_show_index then
+                cell = self:getCacheCellByIndex(i)
+            end
+            local x = data.x
+            local y = data.y
+            local cellData = {cell = cell, x = x, y = y}
+            table.insert(self.cellList, cellData)
+            --滑动
+        end
+    end
+    doStopAllActions(self.scrollview_container)
+    local act_move = cc.MoveTo:create(0.5,cc.p(0,0))
+    self.scrollview_container:runAction(cc.Sequence:create(act_move))
+    
+    local maxRefreshNum = self.cacheMaxSize - 1
+    local refreshNum = number < maxRefreshNum and number or maxRefreshNum
+    for i = 1, refreshNum do
+        local index = i
+        delayRun(self.list_view,index / display.DEFAULT_FPS,function ()
+            if self.time_show_index < index then
+                self.time_show_index = index
+            end
+            self:updateCellAtIndex(index)
+            if self.time_show_index == refreshNum then
+                self.time_show_index = 9999
+            end
+        end)
+        self.activeCellIdx[i] = true
+    end
+end
+
+--获得格子下标对应的缓存itemCell
+function TrainingResultWindow:getCacheCellByIndex(index)
+    local cacheIndex = (index - 1) % self.cacheMaxSize + 1
+    if not self.cacheList[cacheIndex] then
+        local newCell = TrainingResultItem.new()
+        newCell:setAnchorPoint(cc.p(0.5, 1))
+        newCell:setPositionX(-10000)--隐藏
+        self.cacheList[cacheIndex] = newCell
+        self.list_view:addChild(newCell, 2)
+        return newCell
+    else
+        return self.cacheList[cacheIndex]
+    end
+end
+
+--更新格子，并记为活跃
+function TrainingResultWindow:updateCellAtIndex(index)
+    if index > self.time_show_index then
+        return
+    end
+    if not self.cellList[index] then return end
+    local cellData = self.cellList[index]
+    if cellData.cell == nil then
+        cellData.cell = self:getCacheCellByIndex(index)
+    end
+    cellData.cell:setPosition(cellData.x, cellData.y)
+    self:updateCellByIndex(cellData.cell, index)
+end
+--------------------------scrollview结束-------------------------
+
+function TrainingResultWindow:register_event()
+     if self.background then
+        self.background:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                controller:openTrainingResultWindow(false)
+            end
+        end)
+    end
+    self.close_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(self.close_btn, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            controller:openTrainingResultWindow(false)
+        end
+    end)
+end
+
+function TrainingResultWindow:close_callback()
+	controller:openTrainingResultWindow(false)
+end
+
+
+
+TrainingResultItem = class("TrainingResultItem", function()
+    return ccui.Widget:create()
+end)
+
+function TrainingResultItem:ctor()
+	self:configUI()
+	self:register_event()
+
+	self.elfin_step_list = {}
+	self.elfin_step_list.star_list = {}
+end
+
+function TrainingResultItem:configUI(  )
+	self.size = cc.size(626, 174)
+    self:setAnchorPoint(cc.p(0.5,1))
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("roleinfo/training_result_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container:setSwallowTouches(false)
+    self.bg = self.main_container:getChildByName("bg")
+    self.title_panel = self.main_container:getChildByName("title_panel")
+    self.title = self.title_panel:getChildByName("title")
+    self.title:setSwallowTouches(false)
+    self.title_line = self.title_panel:getChildByName("title_line")
+    self.finish_img = self.main_container:getChildByName("finish_img")
+    self.msg_txt = self.main_container:getChildByName("msg_txt")
+    self.msg_txt:setSwallowTouches(false)
+end
+
+function TrainingResultItem:register_event()
+
+end
+
+function TrainingResultItem:setData( data )
+    self.data = data
+    self.size = cc.size(self.size.width, self.data._h)
+    self:setContentSize(self.size)
+    self.main_container:setContentSize(self.size)
+    self.bg:setContentSize(self.size)
+    self.title_panel:setPositionY(self.data._h)
+    -- self.finish_img:setPositionY((self.data._h-self.title_panel:getContentSize().height)*0.5)
+    self.finish_img:setPositionY(77)
+
+    self.cfg = Config.TrainingCampData.data_assi_info[self.data.id]
+    local str = self.cfg.func_name
+    if transformTextToShortByWidth(self.title,str,600) then
+        addEvt2showAllTextTips(self.title,str,0)
+    else
+        addEvt2showAllTextTips(self.title,"",0)
+    end
+    if self.data.msg then
+        local str = self.data.msg
+		if transformTextToShortByWidth(self.msg_txt,str,600) then
+			addEvt2showAllTextTips(self.msg_txt,str,0)
+		else
+			addEvt2showAllTextTips(self.msg_txt,"",0) 
+		end
+    end
+    if not self.item_list then
+        self.item_list = {}
+    end
+    for k, v in pairs(self.item_list) do
+        v:setVisible(false)
+    end
+    local start_x = 63
+    local space_x = 96
+    local start_y = self.data._h - 99
+    local space_y = 96
+    if self.data.reward_list and next(self.data.reward_list) then
+        for i=1,#self.data.reward_list do
+            if not self.item_list[i] then
+                local item = BackPackItem.new(true, true,false,0.77,true,true,false)
+                item:setAnchorPoint(0.5, 0.5)
+                self.main_container:addChild(item)
+                self.item_list[i] = item
+            end
+            local item = self.item_list[i]
+            local _x = start_x + (i-1)%6 * space_x
+            local _y = start_y - math.floor((i-1)/6) * space_y
+            item:setPosition(cc.p(_x,_y))
+            local item_bid = self.data.reward_list[i].item_id
+            local item_num = self.data.reward_list[i].item_num
+            item:grayStatus(false)
+            item:setData({item_bid,item_num})
+            if self.data.id == RoleConst.training_fun_index.elfin then
+                if ElfinController:getInstance():getModel():getAutoRemove() ~= 0 then
+                    local item_cfg = Config.ItemData.data_get_data(item_bid)
+                    if item_cfg and item_cfg.type == BackPackConst.item_type.ELFIN and item_cfg.quality <= BackPackConst.quality.purple then
+                        item:grayStatus(true,157,TI18N("语言_c_7386"),cc.c4b(0x00,0x00,0x00))
+                    end
+                end
+            end
+            item:setVisible(true)
+        end
+        self.finish_img:setVisible(false)
+    else
+        self.finish_img:setVisible(true)
+    end
+end
+function TrainingResultItem:DeleteMe(  )
+    for k, v in pairs(self.item_list) do
+        v:DeleteMe()
+        v=nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+

@@ -1,0 +1,168 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-13 15:36:39
+-- @description    : 
+		-- 时空争霸赛   常驻商店
+---------------------------------
+MallPanel = class("MallPanel",function()
+    return ccui.Layout:create()
+end)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function MallPanel:ctor()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/mall_panel"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+    -- 资源加载
+    local res_list = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("tips", "tips"), type = ResourcesType.plist})
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("common", "common_1"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.stronghold_list = {}
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function MallPanel:loadResListCompleted( )
+	self:initView()
+    self:registerEvent()
+    MallController:getInstance():sender13401(MallConst.MallType.WorldBullyShop)    
+end
+
+
+-- 初始化数据
+function MallPanel:initElfinData(  )
+end
+
+-- 初始化界面
+function MallPanel:initView(  )
+	self.container = self.root_wnd:getChildByName("container")
+    self.scrollCon = self.container:getChildByName("scrollCon")
+    self.coin = self.container:getChildByName("coin")
+    self.count = self.container:getChildByName("count")
+	self.count:setString(role_vo.arena_world_p_cent)
+    self.add_btn = self.container:getChildByName("add_btn")
+    self.refresh_count = self.container:getChildByName("refresh_count")
+    self.good_cons = self.container:getChildByName("good_cons")
+    local setting = {
+        item_class = MallItem,
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 2, -- y方向的间隔
+        item_width = 306, -- 单元的尺寸width
+        item_height = 143, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 2                         -- 列数，作用于垂直滚动类
+    }
+    self.item_scroll_view = CommonScrollViewLayout.new(self.good_cons, nil, nil, nil, cc.size(self.good_cons:getContentSize().width, self.good_cons:getContentSize().height), setting)
+    self.item_scroll_view:setPosition(0, 0)
+    local shop_list = Config.ExchangeData.data_shop_list[MallConst.MallType.WorldBullyShop]
+    loadSpriteTexture(self.coin,PathTool.getItemRes(shop_list.item_bid),LOADTEXT_TYPE)
+end
+
+function MallPanel:registerEvent(  )
+
+    self.add_btn:addTouchEventListener(function ( sender,event_type )
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local item_bid = Config.ExchangeData.data_shop_list[MallConst.MallType.WorldBullyShop].item_bid
+            local data = Config.ItemData.data_get_data(item_bid)
+            BackpackController:getInstance():openTipsSource( true,data )
+        end
+    end)
+
+    if not self.update_have_count then
+        self.update_have_count = GlobalEvent:getInstance():Bind(MallEvent.Open_View_Event, function(data)
+            if self.getConfig then
+                local list = self:getConfig(data)
+                self.item_scroll_view:setData(list, function(cell)
+                    MallController:getInstance():openMallBuyWindow(true, cell:getData())
+                end)
+            end
+        end)
+    end
+
+    if role_vo ~= nil then
+        if self.role_assets_event == nil then
+            self.role_assets_event = role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+                if key == "arena_world_p_cent" then
+                    self.count:setString(value)
+                end
+            end)
+        end
+    end
+end
+
+function MallPanel:getConfig(data)
+    local item_list = {}
+    local config = Config.ExchangeData.data_shop_exchage_arena_world_champion
+    if config then
+        local list = deepCopy(data.item_list)
+        for a, j in pairs(config) do
+            if list and next(list or {}) ~= nil  then
+                for k, v in pairs(list) do --已经买过的限购物品
+                    if j.id == v.item_id then
+                        if v.ext[1].val then --不管是什么限购 赋值已购买次数就好了。。
+                            j.has_buy = v.ext[1].val
+                            table.remove(list, k)
+                        end
+                        break
+                    else
+                        j.has_buy = 0
+                    end
+                end
+            else
+                j.has_buy = 0
+            end
+            table.insert(item_list, j)
+        end
+    end
+    table.sort(item_list ,function (a,b)
+        if a.limit_count and a.limit_count > 0 and a.has_buy >= a.limit_count and (not b.limit_count or b.limit_count == 0 or b.has_buy < b.limit_count) then
+            return false
+        elseif b.limit_count and b.limit_count > 0 and b.has_buy >= b.limit_count and (not a.limit_count or a.limit_count == 0 or a.has_buy < a.limit_count) then
+            return true
+        else
+            return  a.order < b.order
+        end
+    end)
+    return item_list
+end
+
+function MallPanel:DeleteMe(  )
+    if self.item_scroll_view then
+        self.item_scroll_view:DeleteMe()
+        self.item_scroll_view = nil
+    end
+
+	if self.update_have_count then
+        GlobalEvent:getInstance():UnBind(self.update_have_count)
+        self.update_have_count = nil
+    end
+    if role_vo ~= nil then
+        if self.role_assets_event ~= nil then
+            role_vo:UnBind(self.role_assets_event)
+            self.role_assets_event = nil
+        end
+    end
+end

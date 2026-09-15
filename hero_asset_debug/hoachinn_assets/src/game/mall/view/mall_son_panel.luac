@@ -1,0 +1,616 @@
+-- --------------------------------------------------------------------
+-- 竖版商城子商城
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-5-10
+-- --------------------------------------------------------------------
+MallSonPanel = class("MallSonPanel", function()
+    return ccui.Widget:create()
+end)
+
+local treasure_type = 16 --针对探宝的
+local index_treasure_type = 4 --探宝编号
+local index_CrossarenaShop = 7 --跨服竞技编号
+function MallSonPanel:ctor()
+	self.ctrl = MallController:getInstance()
+    self.role_vo = RoleController:getInstance():getRoleVo()
+	self.tab_list = {}
+	self.cur_index = nil
+	self.cur_tab = nil
+    self.data_list = {}
+	self:createRootWnd()
+	self:configUI()
+	self:register_event()
+end
+
+function MallSonPanel:createRootWnd()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("mall/mall_son_panel"))
+	self.root_wnd:setPosition(40,103)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0,0)
+end
+
+function MallSonPanel:configUI()
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.scroll_view = self.main_container:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.scroll_size = self.scroll_view:getContentSize()
+    self.tab_container = self.scroll_view:getChildByName("tab_container")
+    self.tab_container_size = self.scroll_view:getContentSize()
+    -- self.scroll_view:setInnerContainerSize(cc.size(self.tab_container_size.width+1000, 0))
+	for i=1, 9 do
+        local tab_btn = self.tab_container:getChildByName(string.format("tab_btn_%s",i))
+        tab_btn.label = self.tab_container:getChildByName("title_"..i)
+        tab_btn.label:setColor(cc.c3b(0xcf,0xb5,0x93))
+        tab_btn:setBright(false)
+        tab_btn.index = i
+        tab_btn.is_first = true
+        self.tab_list[i] = tab_btn
+        --tab_btn.label:setChangeScaleOffWidth(960)
+    end
+
+    self.refresh_panel = self.main_container:getChildByName("refresh_panel")
+	self.refresh_panel:setVisible(false)
+    self.btn_refresh = self.refresh_panel:getChildByName("btn_refresh")
+    self.btn_refresh:setPositionY(self.btn_refresh:getPositionY()+6)
+    self.refresh_time = self.refresh_panel:getChildByName("refresh_time")
+    --self.refresh_time:setPositionY(self.refresh_time:getPositionY()+6)
+    self.refresh_time:setString("")
+
+    local config = Config.ExchangeData.data_shop_list[treasure_type]
+    self.refresh_Sprite_1 = self.btn_refresh:getChildByName("Sprite_1")
+    self.refresh_Sprite_1:setScale(0.5)
+    loadSpriteTexture(self.refresh_Sprite_1, PathTool.getItemRes(Config.ItemData.data_get_data(config.item_bid).icon), LOADTEXT_TYPE)
+    self.refresh_Text_1 = self.btn_refresh:getChildByName("Text_1")
+    self.refresh_Text_1:setString(string.format(TI18N("语言_c_4752"),config.cost_list[1][2]))
+    
+    local btn_size = self.btn_refresh:getContentSize()
+	self.refresh_btn_label = createRichLabel(26, 1, cc.p(0.5, 0.5), cc.p(btn_size.width/2, btn_size.height/2),FONT_COMMON_LINE_SPACE,nil,170)
+	self.btn_refresh:addChild(self.refresh_btn_label)
+
+    self.last_time_txt = self.refresh_panel:getChildByName("last_time_txt")
+    self.last_time_count = self.refresh_panel:getChildByName("last_time_count")
+    self.last_time_txt:setString(TI18N("语言_c_466"))
+    self.last_time_txt:setVisible(false)
+    self.last_time_count:setVisible(false)
+
+    local last_time_count_pos = self.last_time_txt:getPositionX() + self.last_time_txt:getContentSize().width + 5
+    self.last_time_count:setPositionX(last_time_count_pos)
+
+    self.refresh_panel:getChildByName("Text_1_0"):setString(TI18N("语言_c_403"))
+    local refresh_time_pos = self.refresh_panel:getChildByName("Text_1_0"):getPositionX()+ self.refresh_panel:getChildByName("Text_1_0"):getContentSize().width + 5
+    self.refresh_time:setPositionX(refresh_time_pos)
+
+    self.scrollCon = self.main_container:getChildByName("scrollCon")
+    self.coin = self.main_container:getChildByName("coin")
+    self.coin:setPositionY(self.coin:getPositionY()+2)
+    self.count = self.main_container:getChildByName("count")
+    self.count:setPositionY(self.count:getPositionY()+2)
+    self.add_btn = self.main_container:getChildByName("add_btn")
+    self.add_btn:setVisible(false)
+    local scroll_view_size = cc.size(622,648)
+    local setting = {
+        item_class = MallItem,      -- 单元类
+        start_x = 4.5,                  -- 第一个单元的X起点
+        space_x = 2,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 2,                   -- y方向的间隔
+        item_width = 306,               -- 单元的尺寸width
+        item_height = 143,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 2                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.scrollCon, cc.p(0,8) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+end
+
+function MallSonPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool)    
+end
+
+function MallSonPanel:setList( list )  
+    local notice_list = {[5]=Config.ExchangeData.data_shop_exchage_cost.open_guild_lev.desc,
+                         [16]=Config.ExchangeData.data_shop_exchage_cost.open_arena_cent_lev.desc,
+                         [6]=Config.ExchangeData.data_shop_exchage_cost.open_arena_cent_lev.desc,
+                         [30]=Config.ExchangeData.data_shop_exchage_cost.open_sky_lev.desc,
+                         [34]=Config.ExchangeData.data_shop_exchage_cost.open_crossarena_lev.desc,
+                         [36]=Config.ExchangeData.data_shop_exchage_cost.open_champion_lev.desc,
+                         [37]=Config.ExchangeData.data_shop_exchage_cost.open_top_lev.desc,
+                        }
+    
+    for k,v in pairs(self.tab_list) do
+    	if list[k] then
+    		v:setVisible(true)
+    		v.label:setString(Config.ExchangeData.data_shop_list[list[k]].name)
+    		v.type = list[k]
+            v.notice = notice_list[v.type]
+            self:setTabBtnTouchStatus(self:checkBtnIsOpen(v.type),k)
+    	else
+    		v:setVisible(false)
+    	end
+    end
+
+    local select_index = 1
+    for i=1,#list do
+        if self:checkBtnIsOpen(self.tab_list[i].type) then
+            select_index = i
+            break
+        end
+    end
+end
+
+function MallSonPanel:register_event()
+	for k, tab_btn in pairs(self.tab_list) do
+        registerButtonEventListener(tab_btn, function()
+            if tab_btn.type ~= nil then
+                if tab_btn.can_touch == false then
+                    message(TI18N(tab_btn.notice))
+                else
+                    self:changeTabView(tab_btn.index)
+                end   
+            end
+        end ,false, 1)
+    end
+
+    registerButtonEventListener(self.add_btn, function()
+        local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+        local data = Config.ItemData.data_get_data(item_bid)
+        BackpackController:getInstance():openTipsSource( true, data )
+    end ,true, 1)
+
+    --获取商品已购买次数(限于购买过的有限购的商品)
+    if not self.update_have_count then
+        self.update_have_count = GlobalEvent:getInstance():Bind(MallEvent.Open_View_Event,function ( data )
+            if not data then return end
+            if self.cur_index ~= 4 and self.cur_index ~= index_CrossarenaShop then
+                if self.cur_tab.type == data.type  then
+                    local list = self:getConfig(self.cur_tab.type,data)
+                    self.data_list[self.cur_index] = list
+                    self.item_scrollview:setData(self.data_list[self.cur_index],function ( cell )
+                        self.ctrl:openMallBuyWindow(true,cell:getData())
+                    end)
+                else
+                    for k,v in pairs(self.tab_list) do
+                        if v.type == data.type then
+                            local list = self:getConfig(self.cur_tab.type,data)
+                            self.data_list[k] = list
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    if self.role_vo then
+        if self.role_update_lev_event == nil then
+            self.role_update_lev_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE,function(key,value)
+                if key == "lev" then
+                    for k,v in pairs(self.tab_list) do
+                        self:setTabBtnTouchStatus(self:checkBtnIsOpen(v.type),k)
+                    end
+                elseif key == "gsrv_id" or key == "gid" then
+                    self:setTabBtnTouchStatus(self:checkBtnIsOpen(5),1)
+                elseif key == "gold" or key == "arena_cent" or key == "guild" or key == "hero_soul" or key == "friend_point" or 
+                       key == "arena_guesscent" or key == "star_point" or key == "expedition_medal" or key == "elite_coin" or key == "cluster_coin" or key == "peak_guess_cent" or key == "cluster_guess_cent" or key == "sky_coin" then
+                    local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+                    if Config.ItemData.data_assets_id2label[item_bid] == key then
+                        loadSpriteTexture(self.coin, PathTool.getItemRes(Config.ItemData.data_get_data(item_bid).icon), LOADTEXT_TYPE)
+                        if self.cur_index == 4 then
+                            self.count:setString(MoneyTool.GetMoneyString(self.role_vo.star_point))
+                        else
+                            if self.cur_index == 1 then
+                                self.count:setString(MoneyTool.GetMoneyString(self.role_vo.expedition_medal))
+                            elseif self.cur_index == 5 then
+                                self.count:setString(MoneyTool.GetMoneyString(self.role_vo.elite_coin))
+                            else
+                                self.count:setString(MoneyTool.GetMoneyString(self.role_vo[Config.ItemData.data_assets_id2label[item_bid]]))
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end
+
+    --除神秘神格商城以外的购买成功
+    if not self.buy_success_event then
+        self.buy_success_event = GlobalEvent:getInstance():Bind(MallEvent.Buy_Success_Event,function ( data )
+            if self.cur_index and self.data_list and self.data_list[self.cur_index] then
+                for k,v in pairs(self.data_list[self.cur_index]) do
+                    if type(v) ~= "number" then
+                        if v and v.id and v.has_buy then
+                            if v.id == data.eid and next(data.ext or {}) ~= nil then
+                                v.has_buy = data.ext[1].val
+                            end
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+----------------------------------------------
+    registerButtonEventListener(self.btn_refresh, function()
+        if self.cur_tab then
+            if self.cur_tab.type == treasure_type then
+                local list =  Config.ExchangeData.data_shop_list[treasure_type].cost_list
+                if self.role_vo.star_point >= list[1][2] then
+                    self.ctrl:sender13405(treasure_type)
+                else
+                    message(TI18N("语言_c_4051"))
+                    BackpackController:getInstance():openTipsSource(true, 18)
+                end
+            elseif self.cur_tab.type == MallConst.MallType.CrossarenaShop then
+                local list =  Config.ExchangeData.data_shop_list[treasure_type].cost_list
+                if self.is_free_refresh or self.role_vo.cluster_coin >= list[1][2] then
+                    self.ctrl:sender13405(MallConst.MallType.CrossarenaShop)
+                else
+                    message(TI18N("语言_c_4052"))
+                    BackpackController:getInstance():openTipsSource(true, 30)
+                end
+            end
+        end
+    end ,true, 1)
+
+    if not self.update_son_list then
+        self.update_son_list = GlobalEvent:getInstance():Bind(MallEvent.Get_Buy_list,function ( data )
+            if data.type == treasure_type then
+
+                self:setLessTime(data.refresh_time - GameNet:getInstance():getTime())
+
+                for k,v in pairs(data.item_list) do
+                    v.shop_type = treasure_type
+                end
+                self.data_list[self.cur_index] = data
+                self:changeRefreshStata(data)
+                self.item_scrollview:setData(self.data_list[self.cur_index].item_list,function ( cell )
+                    self.ctrl:openMallBuyWindow(true,cell:getData())
+                end)
+            elseif data.type == MallConst.MallType.CrossarenaShop then
+                self:setLessTime(data.refresh_time - GameNet:getInstance():getTime())
+
+                for k,v in pairs(data.item_list) do
+                    v.shop_type = MallConst.MallType.CrossarenaShop
+                end
+                self.data_list[self.cur_index] = data
+                self:changeRefreshStata(data)
+                self.item_scrollview:setData(self.data_list[self.cur_index].item_list,function ( cell )
+                    self.ctrl:openMallBuyWindow(true,cell:getData())
+                end)
+            end
+        end)
+    end
+end
+
+--设置倒计时
+function MallSonPanel:setLessTime( less_time )
+    if tolua.isnull(self.refresh_time) then return end
+    doStopAllActions(self.refresh_time)
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.refresh_time:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                doStopAllActions(self.refresh_time)
+            else
+                self:setTimeFormatString(less_time)
+            end
+        end))))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+
+function MallSonPanel:setTimeFormatString(time)
+    if time > 0 then
+        self.refresh_time:setString(TimeTool.GetTimeFormat(time))
+    else
+        self.refresh_time:setString("00:00:00")
+    end
+end
+
+function MallSonPanel:changeRefreshStata(data)
+    local config = Config.ExchangeData.data_shop_list[self.cur_tab.type]
+    loadSpriteTexture(self.refresh_Sprite_1, PathTool.getItemRes(Config.ItemData.data_get_data(config.item_bid).icon), LOADTEXT_TYPE)
+    if config.cost_list[1] and config.cost_list[1][2] then
+        self.refresh_Text_1:setString(string.format(TI18N("语言_c_4752"),config.cost_list[1][2]))
+    end
+    
+    self.is_free_refresh = false
+    if data then
+        local btn_str = TI18N("语言_c_409")
+        self.refresh_btn_label:setString(btn_str)
+        if self.cur_index == index_CrossarenaShop then
+            self.refresh_Sprite_1:setVisible(false)
+            self.refresh_Text_1:setVisible(false)
+            local free_count = data.free_count or 0
+            if free_count <= 0 then
+                local  config = Config.ExchangeData.data_shop_list[MallConst.MallType.CrossarenaShop]
+                if config then
+                    local cost_list = config.cost_list
+                    local bid = cost_list[1][1]
+                    local num = cost_list[1][2]
+                    btn_str = string.format(TI18N("语言_c_467"), PathTool.getItemRes(Config.ItemData.data_get_data(bid).icon), num)
+                end
+            else
+                self.is_free_refresh = true
+                local asset_cfg = Config.ExchangeData.data_shop_exchage_cost["cluster_refresh_free"] 
+                if asset_cfg then
+                    btn_str = string.format("<div fontsize=24 outline=2,#6c2b00>%s(%s/%s)</div>", TI18N("语言_c_409"), free_count, asset_cfg.val)
+                end
+            end
+            local config = Config.ExchangeData.data_shop_exchage_cost.cluster_refresh_number
+            local max_count = 0 
+            if config then
+                max_count = config.val
+            end
+            local count = data.count or 0
+            local text = string.format("%s/%s", count, max_count)
+            self.last_time_count:setString(text)
+            self.last_time_txt:setVisible(true)
+            self.last_time_count:setVisible(true)
+            self.refresh_btn_label:setString(btn_str)
+            self.refresh_btn_label:setVisible(true)
+        else
+            self.last_time_txt:setVisible(false)
+            self.last_time_count:setVisible(false)
+            self.refresh_Sprite_1:setVisible(true)
+            self.refresh_Text_1:setVisible(true)
+            self.refresh_btn_label:setVisible(false)
+        end
+    else
+        self.last_time_txt:setVisible(false)
+        self.last_time_count:setVisible(false)
+        self.refresh_Sprite_1:setVisible(false)
+        self.refresh_Text_1:setVisible(false)
+        self.refresh_btn_label:setVisible(false)
+    end
+end
+
+function MallSonPanel:changeTabView( index )
+	if self.cur_index == index then return end
+    if self.cur_tab ~= nil then
+        self.cur_tab.label:setColor(cc.c3b(0xcf,0xb5,0x93))
+        self.cur_tab:setBright(false)
+    end
+
+    self.cur_index = index
+    self.cur_tab = self.tab_list[self.cur_index]
+
+    if self.cur_tab ~= nil then
+        self.cur_tab.label:setColor(cc.c3b(0xff,0xed,0xd6))
+        self.cur_tab:setBright(true)
+    end
+
+    if self.cur_index == 4 or self.cur_index == index_CrossarenaShop then
+        self.refresh_panel:setVisible(true)
+        self:changeRefreshStata(nil)
+    else
+        self.refresh_panel:setVisible(false)
+    end
+    if self.cur_tab.is_first then  --避免频繁请求
+        self.ctrl:sender13401(self.cur_tab.type)
+        self.cur_tab.is_first = false
+    else
+        if self.cur_index ~= 4 and self.cur_index ~= index_CrossarenaShop then
+            self.item_scrollview:setData(self.data_list[self.cur_index],function ( cell )
+                self.ctrl:openMallBuyWindow(true,cell:getData())
+            end)
+        end
+    end
+
+    if self.cur_index == 4 then
+        self.item_scrollview:setData({})
+        self.ctrl:sender13403(treasure_type)
+    elseif self.cur_index == index_CrossarenaShop then
+        self.item_scrollview:setData({})
+        self.ctrl:sender13403(MallConst.MallType.CrossarenaShop)
+    end
+    
+    local item_bid = Config.ExchangeData.data_shop_list[self.cur_tab.type].item_bid
+    if item_bid then
+        if self.cur_index == 4 then
+            local item_bid = Config.ExchangeData.data_shop_list[treasure_type].item_bid
+            loadSpriteTexture(self.coin, PathTool.getItemRes(Config.ItemData.data_get_data(item_bid).icon), LOADTEXT_TYPE)
+            self.count:setString(self.role_vo.star_point)
+        else
+            loadSpriteTexture(self.coin, PathTool.getItemRes(Config.ItemData.data_get_data(item_bid).icon), LOADTEXT_TYPE)
+            if self.cur_index == 1 then
+                self.count:setString(MoneyTool.GetMoneyString(self.role_vo.expedition_medal))
+            elseif self.cur_index == 5 then
+                self.count:setString(MoneyTool.GetMoneyString(self.role_vo.elite_coin))
+            else
+                self.count:setString(MoneyTool.GetMoneyString(self.role_vo[Config.ItemData.data_assets_id2label[item_bid]]))    
+            end
+        end
+    end
+end
+
+--根据商城类型打开
+function MallSonPanel:openById( id  )
+    for k,v in pairs(self.tab_list) do
+        if v.type == id then
+            self.cur_index = nil
+            self:changeTabView(v.index)
+            return
+        end
+    end
+end
+
+function MallSonPanel:getConfig( index,data)
+	local config = {}
+	local list = {}
+    
+	if index == 5 then -- 公会
+		config = deepCopy(Config.ExchangeData.data_shop_exchage_guild)
+	elseif index == 6 then -- 竞技
+		config = deepCopy(Config.ExchangeData.data_shop_exchage_arena)
+	elseif index == 7 then 
+		config = deepCopy(Config.ExchangeData.data_shop_exchage_boss)
+	elseif index == 8 then -- 征战
+		config = deepCopy(Config.ExchangeData.data_shop_exchage_expediton)
+    elseif index == 16 then --探宝
+		config = deepCopy(Config.ExchangeData.data_shop_exchage_guess)
+    elseif index == 17 then --精英段位赛
+        config = deepCopy(Config.ExchangeData.data_shop_exchage_elite)
+    elseif index == 30 then --跨服天梯
+        config = deepCopy(Config.ExchangeData.data_shop_exchage_ladder)
+    elseif index == 34 then --跨服竞技
+        -- config = deepCopy(Config.ExchangeData.data_shop_exchage_ladder)
+    elseif index == 36 then --冠军商店
+        config = deepCopy(Config.ExchangeData.data_shop_exchage_crosschampion)
+    elseif index == 37 then --巅峰商店
+        config = deepCopy(Config.ExchangeData.data_shop_exchage_peakchampion)
+	end
+
+    local list = deepCopy(data.item_list)
+    local show_list = {}
+    for a,j in pairs(config) do
+        if j.type == self.cur_tab.type then
+            if list and next(list) then
+                for k,v in pairs(list) do --已经买过的限购物品
+                    if j.id == v.item_id then
+                        if v.ext[1].val then --不管是什么限购 赋值已购买次数就好了。。
+                            j.has_buy = v.ext[1].val
+                            table.remove(list,k)
+                        end
+                        break
+                    else
+                        j.has_buy = 0
+                    end
+                end
+            else
+                j.has_buy = 0
+            end
+            if j.open_srv_timestamp and j.open_srv_timestamp ~= 0 then  --竞技商店老服去掉周限购
+                local openServerTime = InviteCodeController:getInstance():getModel():getOpenServerTime()
+                if openServerTime <= j.open_srv_timestamp then
+                    if j["limit_week"] and j.limit_week ~= 0 then
+                        j.limit_week = 0
+                    end
+                end
+            end
+            local is_show = true
+            if self.role_vo then
+                is_show = self:checkShowLev(j.role_lev)
+            end
+            if is_show then
+                table.insert(show_list,j)
+            end
+        end
+    end
+	return show_list
+end
+
+function MallSonPanel:checkShowLev(role_lev)
+    if role_lev ~= nil and next(role_lev) ~= nil then
+        for i,v in ipairs(role_lev) do
+            if v[1] == "lv" then
+                if self.role_vo.lev and self.role_vo.lev < v[2] then
+                    return false
+                end
+            end
+        end
+    end
+    return true
+end
+
+--判断是否开启按钮
+function MallSonPanel:checkBtnIsOpen( type )
+    if type == 5 then --公会
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_guild_lev.val and self.role_vo:isHasGuild() then
+            return true
+        else
+            return false
+        end
+    elseif type == 6 or type == 16 then --竞技
+        local build_vo = MainSceneController:getInstance():getBuildVo(CenterSceneBuild.arena)
+        if build_vo and build_vo.is_lock then 
+            return false
+        else
+            return true
+        end
+    elseif type == 7 then --boss
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_god_point_lev.val then
+            return true
+        else
+            return false
+        end
+    elseif type == 30 then --跨服天梯
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_sky_lev.val then
+            return true
+        else
+            return false
+        end
+    elseif type == 34 then --跨服竞技
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_crossarena_lev.val then
+            return true
+        else
+            return false
+        end
+    elseif type == 36 then --冠军商店
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_champion_lev.val then
+            return true
+        else
+            return false
+        end
+    elseif type == 37 then --巅峰商店
+        if self.role_vo.lev>=Config.ExchangeData.data_shop_exchage_cost.open_top_lev.val then
+            return true
+        else
+            return false
+        end
+    end
+    return true
+end
+
+--设置按钮是否变灰
+function MallSonPanel:setTabBtnTouchStatus(status, index)
+    local tab_btn = self.tab_list[index]
+    if tab_btn then
+        if status == true then
+            setChildUnEnabled(false, tab_btn)
+            tab_btn.label:setColor(cc.c3b(0xcf,0xb5,0x93))
+            tab_btn.label:enableOutline(cc.c4b(0x2A,0x16,0x0E,0xff), 2)
+        else
+            setChildUnEnabled(true, tab_btn)
+            tab_btn.label:setColor(cc.c3b(0xd8,0xd7,0xd7))
+            tab_btn.label:enableOutline(cc.c4b(0x40,0x40,0x40,0xff), 2)
+        end       
+        tab_btn.can_touch = status
+    end
+end
+
+function MallSonPanel:DeleteMe()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    
+    if self.update_have_count then 
+        GlobalEvent:getInstance():UnBind(self.update_have_count)
+        self.update_have_count = nil
+    end
+
+    if self.update_son_list then 
+        GlobalEvent:getInstance():UnBind(self.update_son_list)
+        self.update_son_list = nil
+    end
+    if self.buy_success_event then 
+        GlobalEvent:getInstance():UnBind(self.buy_success_event)
+        self.buy_success_event = nil
+    end
+    
+    if self.role_vo then
+        if self.role_update_lev_event then
+            self.role_vo:UnBind(self.role_update_lev_event)
+            self.role_update_lev_event = nil
+        end
+        self.role_vo = nil
+    end
+    doStopAllActions(self.refresh_time)
+end

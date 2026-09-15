@@ -1,0 +1,301 @@
+-- --------------------------------------------------------------------
+-- 竖版魂器item
+-- 
+-- @author: yuanqi@shiyue.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-6-28
+-- --------------------------------------------------------------------
+
+HorcruxItem = class("HorcruxItem", function() 
+    return ccui.Layout:create()
+end)
+
+HorcruxItem.Width = 119
+HorcruxItem.Height = 119
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+--==============================--
+--desc:英雄魂器
+--time:2020-06-28
+--@click: 是否可点击
+--@scale: 缩放
+--@show_tips: 是否显示tips（要显示tips时，click要设为true）
+--@swallow_touch: 点击吞噬
+--@effect:  是否显示点击效果
+--@return 
+--==============================--
+function HorcruxItem:ctor(click, scale, show_tips, swallow_touch, effect, show_type)
+    self.click = click
+    self.scale = scale or 1
+    self.show_tips = show_tips
+    self.size = cc.size(HorcruxItem.Width, HorcruxItem.Height)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+    if self.scale ~= 1 then
+        self:setScale(self.scale)
+    end
+
+    self:configUI()
+    if effect == nil then
+		effect = self.click
+	end
+	self.effect = effect
+    if self.click == true then
+        self:setTouchEnabled(true)
+        self:registerEvent()
+        self:setSwallowTouches(swallow_touch)
+    end
+    self.show_type = show_type
+end
+
+function HorcruxItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/horcrux_item"))
+    self:addChild(self.root_wnd)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+  	self.background = self.main_container:getChildByName("background")
+	self.item_icon = self.main_container:getChildByName("icon")
+    self.num_label = self.main_container:getChildByName("num")
+	self.num_label:setString("")
+    self.num_bg = self.main_container:getChildByName("num_bg")
+    local effect_config = Config.HorcruxData.data_constant.item_effect_id
+    local effect_id = effect_config and effect_config.val or 156
+    local res = Config.EffectData.data_effect_info[effect_id]
+    if self.effect_node then
+        self.effect_node:clearTracks()
+        self.effect_node:removeFromParent()
+        self.effect_node = nil		
+    end
+    local x = self:getContentSize().width / 2
+    local y = self:getContentSize().height / 2
+    self.effect_node = createEffectSpine(res, cc.p(x, y), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+    self:addChild(self.effect_node, 10)
+end
+
+function HorcruxItem:getSize()
+    return self.size
+end
+
+function HorcruxItem:getData()
+    return self.horcrux_data
+end
+
+--==============================--
+--desc:点击回调
+--time:2017-07-03 08:02:23
+--@callback:
+--@return 
+--==============================--
+function HorcruxItem:addCallBack(callback)
+    self.callback = callback
+end
+
+--==============================--
+--desc:注册相关事件
+--time:2017-07-03 01:53:49
+--@return 
+--==============================--
+function HorcruxItem:registerEvent()
+    if self.click == true then
+        self:addTouchEventListener(function(sender, event_type)
+            if self.effect == true then
+                customClickAction(self, event_type, self.scale)
+            end
+            if self.clickScroll then
+                if event_type == ccui.TouchEventType.began then
+                    self.touch_began = sender:getTouchBeganPosition()
+                end    
+            end
+            if event_type == ccui.TouchEventType.ended then
+
+                if self.clickScroll then
+                    local touch_began = self.touch_began
+                    local touch_end = sender:getTouchEndPosition()
+                    if touch_began and touch_end and (math.abs(touch_end.x - touch_began.x) > 20 or math.abs(touch_end.y - touch_began.y) > 20) then 
+                        --移动大于20了..表示本点击无效
+                        return
+                    end 
+
+                end
+                playButtonSound2()
+                if self.horcrux_data and self.show_tips then
+                    controller:openHorcruxTipsPanel(true, self.horcrux_data)
+                end
+                if self.callback then
+                    self:callback()
+                end
+            end
+        end)
+    end
+end
+
+--==============================--
+--desc:设置数据
+--time:2018-05-16 03:21:17
+--@data:
+--@return 
+--==============================--
+function HorcruxItem:setData(data)
+    self.horcrux_data = data
+    self:showRedPoint(false)
+    if self.horcrux_data then
+        if self.show_type ~= 5 then --为5的时候表示是解锁后弹出界面上的，特殊处理
+            if model:getIsHaveHorcrux(self.horcrux_data.bid) then --英雄有魂器
+                if model:getHorcruxIsOpen(self.horcrux_data.bid, self.horcrux_data.star) then --魂器已经配置
+                    if model:checkHorcruxActivateOpen(self.horcrux_data.star) then --魂器已解锁
+                        if self.horcrux_data.horcrux_status and self.horcrux_data.horcrux_status == 1 then  -- 魂器已觉醒
+                            self.show_type = 4
+                        else
+                            self.show_type = 3
+                        end
+                    else --英雄有魂器 有配置 但未解锁
+                        self.show_type = 2
+                    end
+                else
+                    self.show_type = 1 --英雄有魂器但未配置
+                end
+            end
+        end
+        self.effect_node:setVisible(false)
+        if self.show_type == 1 then
+            self:showExpectIcon(true)
+            self:showLockIcon(false)
+            self:showOpenIcon(false)
+            self:showHorcruxIcon(false)
+            self:showHorcruxLev(false)
+        elseif self.show_type == 2 then
+            self:showExpectIcon(false)
+            self:showLockIcon(true)
+            self:showOpenIcon(false)
+            self:showHorcruxIcon(true)
+            self:showHorcruxLev(false)
+        elseif self.show_type == 3 then
+            self:showExpectIcon(false)
+            self:showLockIcon(false)
+            self:showOpenIcon(true)
+            self:showHorcruxIcon(true)
+            self:showHorcruxLev(false)
+            self.effect_node:setVisible(true)
+        elseif self.show_type == 4 then
+            self:showExpectIcon(false)
+            self:showLockIcon(false)
+            self:showOpenIcon(false)
+            self:showHorcruxIcon(true)
+            self:showHorcruxLev(true)
+            self.effect_node:setVisible(true)
+        elseif self.show_type == 5 then
+            self:showExpectIcon(false)
+            self:showLockIcon(false)
+            self:showOpenIcon(false)
+            self:showHorcruxIcon(true)
+            self:showHorcruxLev(false)
+        end
+    end
+end
+
+function HorcruxItem:showHorcruxLev(bool)
+    if bool then
+        self.num_bg:setVisible(true)
+        self.num_label:setVisible(true)
+        self.num_label:setString(self.horcrux_data.horcrux_lev)
+    else
+        self.num_bg:setVisible(false)
+        self.num_label:setVisible(false)
+    end
+end
+
+function HorcruxItem:showHorcruxIcon(bool)
+    if bool then
+        self.item_icon:setVisible(true)
+        local horcrux_res
+        local partner_horcrux_config = model:getPartnerHorcruxConfig(self.horcrux_data.bid)
+        if partner_horcrux_config then
+            horcrux_res = PathTool.getHorcruxRes(partner_horcrux_config.res_id)
+        end
+        if horcrux_res then
+            loadSpriteTexture(self.item_icon, horcrux_res, LOADTEXT_TYPE)
+        end
+    else
+        self.item_icon:setVisible(false)
+    end
+end
+
+--敬请期待
+function HorcruxItem:showExpectIcon(bool)
+    if bool == false and not self.horcrux_expect then return end
+    if not self.horcrux_expect then
+        local size = self.main_container:getContentSize()
+        self.horcrux_expect = ccui.Layout:create()
+        self.horcrux_expect:setAnchorPoint(cc.p(0.5, 0.5))
+        self.horcrux_expect:setContentSize(size)
+        self.horcrux_expect:setPosition(size.width / 2, size.height / 2)
+        self.horcrux_expect:setTouchEnabled(false)
+        showLayoutRect(self.horcrux_expect, 150)
+        local res = PathTool.getResFrame("common", "common_1113")
+        createImage(self.horcrux_expect, res, size.width / 2, size.height / 2, cc.p(0.5, 0.5), true, 0, false)
+        createLabel(22, cc.c3b(0xff,0xf8,0xe5), cc.c3b(0x38,0x12,0x00), size.width / 2, size.height / 2, TI18N("敬请期待"), self.horcrux_expect, 2, cc.p(0.5,0.5))
+        self.main_container:addChild(self.horcrux_expect, 1)
+    end
+    self.horcrux_expect:setVisible(bool)
+end
+
+--锁
+function HorcruxItem:showLockIcon(bool)
+    if bool == false and not self.horcrux_lock then return end
+    if not self.horcrux_lock then
+        local size = self.main_container:getContentSize()
+        self.horcrux_lock = ccui.Layout:create()
+        self.horcrux_lock:setAnchorPoint(cc.p(0.5, 0.5))
+        self.horcrux_lock:setContentSize(size)
+        self.horcrux_lock:setPosition(size.width / 2, size.height / 2)
+        self.horcrux_lock:setTouchEnabled(false)
+        showLayoutRect(self.horcrux_lock, 150)
+        local res = PathTool.getResFrame("common", "common_90009")
+        createImage(self.horcrux_lock, res, size.width / 2, size.height / 2 + 15, cc.p(0.5, 0.5), true, 0, false)
+        createLabel(22, cc.c3b(0xff,0xf8,0xe5), cc.c3b(0x38,0x12,0x00), size.width / 2, size.height / 2 - 25, TI18N("12星解锁"), self.horcrux_lock, 2, cc.p(0.5,0.5))
+        self.main_container:addChild(self.horcrux_lock, 1)
+    end
+    self.horcrux_lock:setVisible(bool)
+end
+
+-- 开放图标
+function HorcruxItem:showOpenIcon(bool)
+    if bool == false and not self.open_icon then return end
+    if not self.open_icon then
+        local size = self.main_container:getContentSize()
+        local res = PathTool.getResFrame("common", "common_1112")
+        self.open_icon = createImage(self.main_container, res, size.width / 2, size.height / 2, cc.p(0.5, 0.5), true, 0, false)
+    end
+    self.open_icon:setVisible(bool)
+    if bool then
+        ActionHelp.breathingLampAction(self.open_icon, 1)
+    end
+end
+
+--红点
+function HorcruxItem:showRedPoint(bool)
+    if bool == false and not self.red_point then return end
+    if not self.red_point then
+        local res = PathTool.getResFrame("common","common_1014")
+        self.red_point = createImage(self,res,120,120,cc.p(0.5,0.5),true,10,false)
+    end
+    if self.show_type == 4 then
+        self.red_point:setPosition(cc.p(124, 117))
+    else
+        self.red_point:setPosition(cc.p(107, 107))
+    end
+    self.red_point:setVisible(bool)
+end
+
+function HorcruxItem:DeleteMe()
+    if self.effect_node then
+        self.effect_node:clearTracks()
+        self.effect_node:removeFromParent()
+        self.effect_node = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

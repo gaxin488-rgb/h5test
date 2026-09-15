@@ -1,0 +1,187 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-03-02 16:11:48
+-- @description    : 
+		-- 跨服战场主界面
+---------------------------------
+CrossgroundShinobiWindow = CrossgroundShinobiWindow or BaseClass(BaseView)
+
+local _controller = CrossgroundController:getInstance()
+local _model = CrossgroundController:getInstance():getModel()
+local _table_sort = table.sort
+
+function CrossgroundShinobiWindow:__init()
+    self.is_full_screen = true
+	self.win_type = WinType.Full
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("crossground", "crossground"), type = ResourcesType.plist},
+		{path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_82", true), type = ResourcesType.single}
+	}
+	self.layout_name = "crossground/crossground_main"
+end
+
+function CrossgroundShinobiWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:loadTexture(PathTool.getPlistImgForDownLoad("bigbg","bigbg_82",true), LOADTEXT_TYPE)
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_panel = self.root_wnd:getChildByName("main_panel")
+    self:playEnterAnimatianByObj(main_panel, 1)
+
+    self.left_title_bg = main_panel:getChildByName("left_title_bg")
+	self.rigth_title_bg = main_panel:getChildByName("rigth_title_bg")
+    self.title_txt = main_panel:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_c_6025"))
+    self.left_title_bg:setContentSize(cc.size(self.title_txt:getContentSize().width/2 + 70, self.left_title_bg:getContentSize().height))
+    self.rigth_title_bg:setContentSize(cc.size(self.title_txt:getContentSize().width/2 + 70, self.left_title_bg:getContentSize().height))
+
+    self.close_btn = main_panel:getChildByName("close_btn")
+	self.cross_btn = main_panel:getChildByName("cross_btn")
+
+	local scroll_list = main_panel:getChildByName("scroll_list")
+	local scroll_view_size = scroll_list:getContentSize()
+    local setting = {
+        item_class = CrossgroundItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = 687,               -- 单元的尺寸width
+        item_height = 214,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(scroll_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+end
+
+function CrossgroundShinobiWindow:openRootWnd(  )
+	self:setData()
+    local world_lev = RoleController:getInstance():getModel():getWorldLev()
+    local cfg = Config.CityData.data_base[13]
+    if cfg.activate[1][2] > world_lev then
+        self.cross_btn:setVisible(false)
+    else
+        self.cross_btn:setVisible(true)
+    end
+end
+
+function CrossgroundShinobiWindow:setData(  )
+	local ground_cfg = Config.CrossGroundData.data_base2
+	if ground_cfg then
+        local list = {}
+        local  table_insert = table.insert
+
+        for k,v in pairs(ground_cfg) do
+            if  v[1].id==2001 then
+                local model = ShinobiController:getInstance():getModel()
+                if not model:isHideShinobi() then
+                    table_insert(list, {data = v, index = k})
+                end
+            elseif v[1].id== 2003 then  
+                local model = DungeonAbyssController:getInstance():getModel()
+                if not model:isHideShinobi() and not model:checkAdvanceIsOpen() then --and model:getDungeonAbyssIsOpen(true) and
+                    if MainuiController:getInstance():checkIsOpenByActivate(v[1].open_limit) then
+                        table_insert(list, {data = v, index = k})
+                    end
+                end
+            elseif v[1].id== 2004 then
+                local model = DungeonAbyssController:getInstance():getModel()
+                if not model:isHideShinobi() and model:checkAdvanceIsOpen() then -- and model:getDungeonAbyssIsOpen(true) 
+                    if MainuiController:getInstance():checkIsOpenByActivate(v[1].open_limit) then
+                        table_insert(list, {data = v, index = k})
+                    end
+                end
+            elseif v[1].id== 2005 then
+                -- local is_act_open = ActionteamdungeonController:getInstance():getModel():checkActionIsClose()
+                -- if not is_act_open then 
+                -- else
+                    table_insert(list, {data = v, index = k})
+                -- end
+            elseif v[1].id== CrossgroundConst.Ground_Type.HitBoss then
+                local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+                local featuresId = MainuiConst.FeaturesShield.miningWar  --屏蔽id
+                local entry_lev = v[1].entry_lev
+                if table.indexof(nohideIds,featuresId) and MainuiController:getInstance():checkIsOpenByActivate(entry_lev) then
+                    table_insert(list, {data = v, index = k})
+                end
+            elseif v[1].id== CrossgroundConst.Ground_Type.BossTreasure or v[1].id== CrossgroundConst.Ground_Type.BossTreasureLottery then
+                local model = BossTreasureController:getInstance():getModel()
+                if model:isHide() and MainuiController:getInstance():checkIsOpenByActivate(v[1].open_limit) then
+                    table_insert(list, {data = v, index = k})
+                end
+            else
+                table_insert(list, {data = v, index = k})
+            end
+        end
+        _table_sort(list, function(a,b) return a.index < b.index end)
+		self.item_scrollview:setData(list)
+	end
+end
+
+function CrossgroundShinobiWindow:register_event(  )
+    registerButtonEventListener(self.close_btn, function (  )
+        _controller:openCrossGroundShinobiWindow(false)
+    end, false, 2)
+	registerButtonEventListener(self.cross_btn, function (  )
+		CrossshowController:getInstance():openCrossshowMainWindow(true)
+	end, false, 1)
+
+	-- 天梯红点
+	self:addGlobalEvent(ShinobiEvent.Update_Red_Status_Event, function (  )
+		self:updateItemListRedStatus()
+	end)
+    -- --异界进阶刷新
+    self:addGlobalEvent(DungeonAbyssEvent.Update_Base_Data, function (is_pass)
+        self:setData()
+        self:updateItemListRedStatus()
+	end)
+    self:addGlobalEvent(DungeonAbyssEvent.Update_Advance_Data, function (is_choose)
+        self:setData()
+        self:updateItemListRedStatus()
+	end)
+    self:addGlobalEvent(DungeonAbyssEvent.Update_Choose_Event, function (  )
+        self:setData()
+        self:updateItemListRedStatus()
+	end)
+    self:addGlobalEvent(ActionteamdungeonEvent.UpdataRedStatus, function (ststus)
+        self:updateItemListRedStatus()
+	end)
+    self:addGlobalEvent(ActionEvent.UPDATE_HOLIDAY_TAB_STATUS, function (function_id, vo)
+        if vo and vo.bid == ActionRankCommonType.all_boss_treasure then
+            self:updateItemListRedStatus()
+        end 
+	end)
+
+    self:addGlobalEvent(BossTreasureEvent.BossFirstRedEvent, function ()
+        self:updateItemListRedStatus()
+	end)
+    self:addGlobalEvent(BossTreasureEvent.BossHolidayFirstRedEvent, function ()
+        self:updateItemListRedStatus()
+	end)
+    self:addGlobalEvent(EsecsiceEvent.Update_Red_Point,function() --刷新红点
+        self:updateItemListRedStatus()
+    end) 	
+end
+
+function CrossgroundShinobiWindow:updateItemListRedStatus(  )
+	if not self.item_scrollview then return end
+	local item_list = self.item_scrollview:getItemList()
+    if item_list then
+        for k,item in pairs(item_list) do
+            item:updateRedStatus()
+        end
+    end
+end
+
+function CrossgroundShinobiWindow:close_callback(  )
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+	_controller:openCrossGroundShinobiWindow(false)
+end

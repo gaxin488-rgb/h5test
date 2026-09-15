@@ -1,0 +1,2690 @@
+-- --------------------------------------------------------------------
+-- z装备新版tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+EquipHolyTips = EquipHolyTips or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local role_vo = RoleController:getInstance():getRoleVo()
+local math_floor = math.floor
+
+function EquipHolyTips:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/equip_holy_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("holy_starup","holy_starup"), type = ResourcesType.plist },
+    }
+
+    self.win_type = WinType.Tips    
+    self.base_list = {}
+    self.suit_item_list = {}
+    self.random_item_list = {}
+    -- self.enchant_list = {}
+    -- self.gemstone_list = {}
+
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.ohter_list = {}
+    self.cloth_type = 1
+    self.is_need = true
+
+    --道具配置
+    self.item_config = nil
+    --套装配置
+    self.suit_config = nil
+    self.max_scroll_height = 800
+end
+
+function EquipHolyTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+        -- self.background:setSwallowTouches(false)
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+
+    self.content_panel = self.container:getChildByName("content_panel")
+    -- 基础属性,名字,类型和评分等
+    self.base_panel = self.content_panel:getChildByName("base_panel")
+    self.score_title = self.base_panel:getChildByName("score_title")
+    self.score_title:setString(TI18N("语言_c_1742"))
+    self.equip_item =  BackPackItem.new(true,self.isShowBtn and self.tab_btn_6:isVisible(),nil,1,false)
+    self.equip_item:setPosition(cc.p(72,68))
+    self.base_panel:addChild(self.equip_item)
+    self.name = self.base_panel:getChildByName("name")
+    setTextMaxWidth(self.name,250,-10)
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    setTextMaxWidth(self.equip_type,230,-15)
+    self.power_label = CommonNum.new(1, self.base_panel, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(210, 25))
+    self.power_label:setNum(0)
+    self.power_label:setScale(0.8) 
+    setItemXOneByOne({self.score_title,self.power_label},10)
+
+    self.look_btn = self.base_panel:getChildByName("look_btn")
+    self.look_btn:setVisible(false)
+
+    self.suit_icon = self.base_panel:getChildByName("suit_icon")
+    self.suit_name = self.base_panel:getChildByName("suit_name")
+    self.hero_tip = self.base_panel:getChildByName("hero_tip")
+    self.hero_bg = self.base_panel:getChildByName("hero_bg")
+    self.hero_tip:setString(TI18N("语言_c_7440"))
+    setTextMaxWidth(self.hero_tip,120,-8)
+    self.hero_tip:setVisible(false)
+    self.hero_bg:setVisible(false)
+    self.hero_panel = self.base_panel:getChildByName("hero_panel")
+    self.no_panel = self.hero_panel:getChildByName("no_panel")
+    self.have_panel = self.hero_panel:getChildByName("have_panel")
+    self.hero_panel:setVisible(false)
+    self.attr_scroll = self.content_panel:getChildByName("attr_scroll")
+    self.attr_scroll:setScrollBarEnabled(false)
+    -- 基础属性
+    self.baseattr_panel = self.attr_scroll:getChildByName("baseattr_panel")
+    self.baseattr_panel_height = self.baseattr_panel:getContentSize().height
+    self.baseattr_soul_panel = self.baseattr_panel:getChildByName("baseattr_soul_panel")
+    self.baseattr_soul_lock = self.baseattr_soul_panel:getChildByName("baseattr_soul_lock")
+    self.baseattr_soul_label = self.baseattr_soul_panel:getChildByName("baseattr_soul_label")
+    self.baseattr_soul_label:setString(TI18N("语言_c_7441"))
+    -- self.baseattr_soul_tip = self.baseattr_soul_panel:getChildByName("baseattr_soul_tip")
+    self.baseattr_soul_tip = createRichLabel(22,cc.c3b(0x3e,0xa1,0x39),cc.p(0,0),cc.p(14,36),-6,nil,600)
+    self.baseattr_soul_panel:addChild(self.baseattr_soul_tip)
+    self.baseattr_soul_btn = self.baseattr_soul_panel:getChildByName("baseattr_soul_btn")
+    self.baseattr_soul_panel:setVisible(false)
+    -- self.baseattr_label = self.baseattr_panel:getChildByName("label")
+    -- self.baseattr_label:setString(TI18N("语言_c_1282"))
+
+    -- self.baseattr_attach_label = self.baseattr_panel:getChildByName("label2")
+    -- self.baseattr_attach_label:setString(TI18N("语言_c_d_139"))
+    -- self.baseattr_attach_label:setPositionX( self.baseattr_label:getContentSize().width + self.baseattr_label:getPositionX())
+
+ 
+    --随机属性
+    self.randomattr_panel = self.attr_scroll:getChildByName("randomattr_panel")
+    self.randomattr_panel_height = self.randomattr_panel:getContentSize().height
+    self.randomattr_name  = self.randomattr_panel:getChildByName("label")
+    self.randomattr_name:setString(TI18N("语言_c_2942"))
+    self.pre_btn = self.randomattr_panel:getChildByName("pre_btn")
+    self.pre_btn_label = self.pre_btn:getChildByName("label")
+    self.pre_btn_label:setChangeScaleOffWidth(-500)
+    labelAutoFixBgSize(self.pre_btn_label, TI18N("语言_c_3048"))
+    self.randomattr_soul_panel = self.randomattr_panel:getChildByName("randomattr_soul_panel")
+    self.randomattr_soul_label = self.randomattr_soul_panel:getChildByName("randomattr_soul_label")
+    self.randomattr_soul_label:setString(TI18N("语言_c_7442"))
+    self.randomattr_soul_tip = self.randomattr_soul_panel:getChildByName("randomattr_soul_tip")
+    self.randomattr_soul_tip:setString(TI18N("语言_c_7443"))
+    self.randomattr_soul_btn = self.randomattr_soul_panel:getChildByName("randomattr_soul_btn")
+    self.randomattr_soul_lock = self.randomattr_soul_panel:getChildByName("randomattr_soul_lock")
+    self.randomattr_soul_panel:setVisible(false)
+
+    self.new_pre_btn = self.randomattr_panel:getChildByName("new_pre_btn")
+    labelAutoFixBgSize(self.new_pre_btn:getChildByName("label"), TI18N("语言_c_6522"))
+    
+    self.new_pre_look = self.randomattr_panel:getChildByName("new_pre_look")
+    labelAutoFixBgSize(self.new_pre_look:getChildByName("label"), TI18N("语言_c_6560"))
+
+
+
+    --套装属性
+    self.suitattr_panel = self.attr_scroll:getChildByName("suitattr_panel")
+    self.suitattr_panel_width = self.suitattr_panel:getContentSize().width
+    --技能
+    self.skill_panel = self.attr_scroll:getChildByName("skill_panel")
+    self.skill_panel_height = self.skill_panel:getContentSize().height
+    --附魂套装属性
+    self.attach_suitattr_panel = self.attr_scroll:getChildByName("attach_suitattr_panel")
+    self.attach_suitattr_lock = self.attach_suitattr_panel:getChildByName("attach_suitattr_lock")
+    self.attach_suitattr_lock:setVisible(false)
+    self.attach_suitattr_lock_tip = self.attach_suitattr_panel:getChildByName("attach_suitattr_lock_tip")
+    self.attach_suitattr_lock_tip:setString(TI18N("语言_c_7444"))
+    self.attach_suitattr_lock_tip:setVisible(false)
+    self.attach_suitattr_panel_width = self.attach_suitattr_panel:getContentSize().width
+    --附魂技能
+    self.attach_skill_panel = self.attr_scroll:getChildByName("attach_skill_panel")
+    self.attach_skill_panel_height = self.attach_skill_panel:getContentSize().height
+
+    -- 按钮部分
+    self.tab_panel = self.content_panel:getChildByName("tab_panel")
+    self.tab_panel_height = self.tab_panel:getContentSize().height
+
+    self.tab_btn_3 = self.tab_panel:getChildByName("tab_btn_3")
+    self.tab_btn_txt_3 = self.tab_btn_3:getChildByName("Text_1")
+    self.tab_btn_txt_3:setString(TI18N("语言_c_2959"))
+    self.tab_btn_2 = self.tab_panel:getChildByName("tab_btn_2")
+    self.tab_btn_txt_2 = self.tab_btn_2:getChildByName("Text_1")
+    self.tab_btn_txt_2:setString(TI18N("语言_c_3049"))
+    self.tab_btn_2.need_str = ""
+    self.tab_btn_1 = self.tab_panel:getChildByName("tab_btn_1")
+    self.tab_btn_txt_1 = self.tab_btn_1:getChildByName("Text_1")
+    self.tab_btn_txt_1:setString(TI18N("语言_c_2964"))
+    self.tab_btn_1.need_str = ""
+    self.tab_btn_4 = self.tab_panel:getChildByName("tab_btn_4")
+    self.tab_btn_txt_4 = self.tab_btn_4:getChildByName("Text_1")
+    self.tab_btn_txt_4:setString(TI18N("语言_c_2297"))
+    self.tab_btn_4.need_str = ""
+    self.tab_btn_4:setVisible(true)
+    self.tab_btn_5 = self.tab_panel:getChildByName("tab_btn_5")
+    self.tab_btn_txt_5 = self.tab_btn_5:getChildByName("Text_1")
+    self.tab_btn_txt_5:setString(TI18N("语言_c_5865"))
+    -- self.tab_btn_5.need_str = ""
+    self.tab_btn_5:setVisible(false)
+
+
+
+    self.tab_btn_6 = self.tab_panel:getChildByName("tab_btn_6")
+    self.tab_btn_txt_6 = self.tab_btn_6:getChildByName("Text_1")
+    self.tab_btn_txt_6:setString(TI18N("语言_c_d_136"))
+    -- self.tab_btn_5.need_str = ""
+    self.tab_btn_6:setVisible(true)
+
+
+    -- 描述部分
+    self.desc_panel = self.content_panel:getChildByName("desc_panel")
+    self.scroll_view = self.desc_panel:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.scroll_size = self.scroll_view:getContentSize()
+    self.desc_label = createRichLabel(22, cc.c4b(0xa1,0x97,0x8b,0xff), cc.p(0, 1), cc.p(0, 64), 0, nil, 560) 
+    self.desc_label:setHorizontalLayoutType(2)
+    self.scroll_view:addChild(self.desc_label)
+
+    self.close_btn = self.container:getChildByName("close_btn")
+    -- self:checkIsShowBtn()
+end
+
+function EquipHolyTips:register_event()
+    --穿戴 和更换
+    self.tab_btn_3:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn3()
+        end
+    end)
+    self.tab_btn_2:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn2()
+        end
+    end)
+    --卸下和出售
+    self.tab_btn_1:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn1()
+        end
+    end)
+    --满足可合成条件
+    self.tab_btn_4:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn4(sender)
+        end
+    end)
+    --升阶
+    self.tab_btn_5:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn5(sender)
+        end
+    end)
+    -- 附魂
+    self.tab_btn_6:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn6(sender)
+        end
+    end)
+    self.hero_panel:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn6(sender)
+        end
+    end)
+
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 1) 
+    registerButtonEventListener(self.background, function() self:onClickCloseBtn() end ,false, 0) 
+
+    registerButtonEventListener(self.pre_btn, function(param,sender, event_type) 
+        if not self.data or not self.item_config then return end
+        local config = Config.PartnerHolyEqmData.data_base_info(self.item_config.id)
+        if config then
+            TipsManager:getInstance():showCommonTips(config.tips_info, sender:getTouchBeganPosition())
+        end
+    end ,true, 2)
+    registerButtonEventListener(self.new_pre_look, function(param,sender, event_type) 
+        if not self.data or not self.item_config then return end
+        local config = Config.PartnerHolyEqmData.data_base_info(self.item_config.id)
+        if config then
+            TipsManager:getInstance():showAdventureBuffTipsScroll(config.color_rand2, sender:getTouchBeganPosition(),nil,nil,nil,false,450)
+        end
+    end ,true, 2)
+    registerButtonEventListener(self.new_pre_btn, function(param,sender, event_type) 
+        if not self.data or not self.item_config then return end
+        local list = model:getHolyCombinationList(self.item_config.id,self.data.holy_color_attr)
+        local cfg = Config.PartnerHolyEqmData.data_base_info(self.item_config.id)
+        local color_rand = cfg and cfg.color_rand or 0
+        local color_cfg = Config.PartnerHolyEqmData.data_color_info[color_rand]
+        if color_cfg then
+            local show_list = {}
+            for k, v in pairs(color_cfg) do
+                if list[v.color] and list[v.color] > 0 then
+                    local list_item = {}
+                    list_item.color = v.color
+                    for a, b in pairs(v.attr_list) do
+                        if b[1] == list[v.color] then
+                            list_item.attr = b
+                        end
+                    end
+                    table.insert(show_list,list_item)
+                end
+            end
+            local txt = TI18N("语言_c_6523").."\n".." \n"
+            for k, v in pairs(show_list) do
+                local attr_str = ""
+                for key, value in pairs(v.attr[2]) do
+                    local attr_name = Config.AttrData.data_key_to_name[value[1]]
+                    local attr_val = value[2]
+                    local is_per = PartnerCalculate.isShowPerByStr(value[1])
+                    if is_per == true then
+                        attr_val = (attr_val*0.1).."%"
+                    end
+                    attr_str = attr_str..string_format("%s +%s", attr_name, attr_val).."\n           "
+                end
+                local txt_1 = string.format(TI18N("<img src=%s /><div fontcolor=16f716> (%s) %s</div>"),PathTool.getResFrame("holy_starup","holy_starup_"..5+v.color),v.attr[1],attr_str)
+                txt = txt..txt_1.."\n"
+            end
+            TipsManager:getInstance():showCommonTips(txt, sender:getTouchBeganPosition())
+            return
+        end
+        message(TI18N("语言_c_6521"))
+    end ,true, 2)
+
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type) 
+        local config = Config.PartnerHolyEqmData.data_const.game_rule_1
+        if config then
+            TipsManager:getInstance():showAdventureBuffTipsScroll(config.desc, sender:getTouchBeganPosition(),24,nil,400,nil,600)
+        end
+    end ,true, 2)
+    registerButtonEventListener(self.randomattr_soul_btn, function(param,sender, event_type) 
+        local equipAttachVo = self:getHolyAttachEquip()
+        local txt = TI18N("语言_c_7445").."\n"
+
+        local eqm_attr = deepCopy(equipAttachVo.holy_eqm_attr or {})
+        local dic_holy_eqm_attr = {}
+        for i,v in ipairs(eqm_attr) do
+            if v.pos < 100 then
+                dic_holy_eqm_attr[v.pos] = v
+            end
+        end
+        local base_cfg = Config.PartnerHolyEqmData.data_base_info(equipAttachVo.base_id)
+        for i=1,#dic_holy_eqm_attr do
+            if dic_holy_eqm_attr[i] then
+                local attr_key = {}
+                if type(dic_holy_eqm_attr[i].attr_id) == "number" and dic_holy_eqm_attr[i].attr_id > 200 then
+                    attr_key = Config.AttrExtraData.data_id_to_key[dic_holy_eqm_attr[i].attr_id]
+                else
+                    attr_key = Config.AttrData.data_id_to_key[dic_holy_eqm_attr[i].attr_id]
+                end
+                local attr_val = math.floor(dic_holy_eqm_attr[i].attr_val*(base_cfg.append_attr_rate or 0)/1000+0.5)
+                local attr_pos = dic_holy_eqm_attr[i].pos or 0
+                -- attr_val = attr_val/1000
+                local attr_str = ""
+                if attr_key then
+                    local attr_name = ""
+                    if dic_holy_eqm_attr[i].attr_id > 200 then
+                        attr_name = Config.AttrExtraData.data_key_to_name[attr_key]
+                    else
+                        attr_name = Config.AttrData.data_key_to_name[attr_key]
+                    end
+                    local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                    if is_per == true then
+                        attr_val = (attr_val*0.1).."%"
+                    end
+                    local icon = PathTool.getAttrIconByStr(attr_key)
+                    local attr_color = "c1b7ab"
+                    local val_color = "ffeedd"
+                    local ext_str = ""
+                    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+                        --神装的颜色跟品质色走 val_color 后面处理
+                        local attr_val11 = dic_holy_eqm_attr[i].attr_val or 0
+                        val_color = model:getHolyEquipmentColorByItemIdAttrKey(self.item_config.id, attr_key, attr_val11, 1, 1)
+                        local max_count = model:getHolyEquipmentMaxAttrByItemIdAttrKey(self.item_config.id, attr_key)
+                        if attr_val11 >= max_count then
+                            ext_str = "(max)"
+                        end
+                    end
+                    attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val, ext_str)
+                else
+                    local str = Config.PartnerHolyEqmData.data_const["text_show_4"].desc 
+                    attr_str = LangStringFormat(str,attr_val[1],attr_val[2],attr_pos)
+                end
+                if dic_holy_eqm_attr[i].color and dic_holy_eqm_attr[i].color ~= 0 then
+                    attr_str = string.format("<img src='%s' scale=1 />", (PathTool.getResFrame("holy_starup","holy_starup_"..5+dic_holy_eqm_attr[i].color)))..attr_str
+                end
+                txt = txt.."\n".. attr_str
+            end
+        end
+
+        if not equipAttachVo then return end
+        local item_cfg = Config.ItemData.data_get_data(equipAttachVo.base_id)
+        local list = model:getHolyCombinationList(item_cfg.id,equipAttachVo.holy_color_attr)
+        local cfg = Config.PartnerHolyEqmData.data_base_info(item_cfg.id)
+        local color_rand = cfg and cfg.color_rand or 0
+        local color_cfg = Config.PartnerHolyEqmData.data_color_info[color_rand]
+        if color_cfg then
+            local show_list = {}
+            for k, v in pairs(color_cfg) do
+                if list[v.color] and list[v.color] > 0 then
+                    local list_item = {}
+                    list_item.color = v.color
+                    for a, b in pairs(v.attr_list) do
+                        if b[1] == list[v.color] then
+                            list_item.attr = b
+                        end
+                    end
+                    table.insert(show_list,list_item)
+                end
+            end
+            if show_list and next(show_list) then
+                txt = txt .. "\n" .. TI18N("语言_c_6525").."\n"
+                for k, v in pairs(show_list) do
+                    local attr_str = ""
+                    for key, value in pairs(v.attr[2]) do
+                        local attr_name = Config.AttrData.data_key_to_name[value[1]]
+                        local attr_val = math.floor(value[2]*(base_cfg.append_attr_rate or 0)/1000)
+                        local is_per = PartnerCalculate.isShowPerByStr(value[1])
+                        if is_per == true then
+                            attr_val = (attr_val*0.1).."%"
+                        end
+                        attr_str = attr_str..string_format("%s +%s", attr_name, attr_val)
+                    end
+                    local txt_1 = string.format(TI18N("<img src=%s /><div fontcolor=16f716> (%s) %s</div>"),PathTool.getResFrame("holy_starup","holy_starup_"..5+v.color),v.attr[1],attr_str)
+                    txt = txt..txt_1.."\n"
+                end
+            end
+        end
+
+        TipsManager:getInstance():showCommonTips(txt, sender:getTouchBeganPosition())
+    end ,true, 2)
+    --神装信息更新
+    self:addGlobalEvent(HeroEvent.Holy_Equipment_Update_Event, function (hero_vo)
+        if not hero_vo then return end
+        if not self.data or not self.item_config then return end
+        if hero_vo.partner_id and hero_vo.partner_id == self.partner_id then
+            self:initData()
+        end
+    end)
+    registerButtonEventListener(self.baseattr_soul_btn, function(param,sender, event_type) 
+        local _x,_y = self.baseattr_soul_btn:getPosition()
+        local world_pos = self.baseattr_soul_panel:convertToWorldSpace(cc.p(_x,_y))
+        controller:openEquipHolyShowTips(true,world_pos)
+    end ,true, 2)
+end
+
+function EquipHolyTips:addDataBindEvent()
+    --注册道具 goodsvo的变化事件..属性变化了才刷新
+    if self.partner_id == nil or self.partner_id == 0 then
+        if self.data and self.data.Bind and self.item_update_event == nil then
+            self.item_update_event = self.data:Bind(GoodsVo.UPDATE_GOODS_ATTR, function(key, value) 
+                if key == "holy_eqm_attr" then
+                    self:initData()
+                end
+            end)
+        end
+    end
+end
+
+--关闭
+function EquipHolyTips:onClickCloseBtn()
+    controller:openEquipTips(false)
+end
+
+
+function EquipHolyTips:onTabBtn2()
+    if not self.data then return end
+    if not self.item_config then return end
+    -- if self.is_need == false then 
+    --     message(self.tab_btn_2.need_str)
+    --     return
+    -- end
+    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+        --神装的是洗练
+        HeroController:getInstance():openHolyequipmentRefreshAttPanel(true, self.data, self.partner_id)
+        controller:openEquipTips(false)
+    end
+end
+
+--卸下和出售
+function EquipHolyTips:onTabBtn1()
+    if not self.data or not self.data.id or not self.item_config then return end
+    if self.cloth_type ==  PartnerConst.EqmTips.backpack then  --1是出售
+        
+        if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+            local color = BackPackConst.getWhiteQualityColorStr(self.item_config.quality)
+            local str = string.format(TI18N("语言_c_3050"), color,self.item_config.name)
+            if self.item_config.quality >= BackPackConst.quality.gold then
+                local _str = string.format("%s outline=2,#000000",color)
+                str = string.format(TI18N("语言_c_3050"),_str ,self.item_config.name)
+            end
+            controller:openHeroResetOfferPanel(true, {{item_id=self.data.id}}, false, function()
+                    if HeroController:getInstance():getModel():checkHolyEquipmentPalnByItemID(self.data.id) then
+                        local tips_str = TI18N("语言_c_3051")
+                        CommonAlert.show(tips_str, TI18N("语言_c_63"), function()
+                            controller:sender11089({{item_id=self.data.id}})
+                        end, TI18N("语言_c_62"), nil, CommonAlert.type.common)
+                    else
+                        controller:sender11089({{item_id=self.data.id}})
+                    end
+            end, HeroConst.ResetType.eHolyEquipSell, str)    
+        else
+            BackpackController:getInstance():openItemSellPanel(true, self.data, BackPackConst.Bag_Code.EQUIPS)
+        end
+        controller:openEquipTips(false) 
+    elseif self.cloth_type ==  PartnerConst.EqmTips.partner then --2是卸下
+        --装备唯一id
+        if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+            if self.holy_data and self.holy_data.list then --神装方案卸下装备
+                local partner_id = self.holy_data.partner_id or 0
+                local list = {}
+                --方案中已有的装备
+                if self.holy_data.list and next(self.holy_data.list) ~= 0 then
+                    for k,v in ipairs(self.holy_data.list) do
+                        if v and v.item_id then
+                            table.insert(list, {partner_id = v.partner_id, item_id = v.item_id, type = v.type})
+                        end
+                    end
+                end
+                --卸下的装备
+                for i=#list,1,-1 do
+                    if list[i] and list[i].item_id == self.data.id then
+                        table.remove(list, i)
+                    end
+                end
+                controller:sender25221(self.holy_data.id, partner_id, self.holy_data.name, list)
+            else
+                if HeroController:getInstance():getModel():isOpenHolyEquipMentByHerovo(self.partner) == false then
+                    local str = TI18N("语言_c_3052")
+                    local function fun()
+                        controller:sender11093(self.partner_id, self.data.id, 0)
+                        controller:openEquipTips(false)
+                    end
+                    CommonAlert.show(str, TI18N("语言_c_63"), fun, TI18N("语言_c_62"), nil, CommonAlert.type.rich, nil, nil, nil, true)
+                    return
+                end
+                controller:sender11093(self.partner_id, self.data.id, 0)
+            end
+        else 
+            controller:sender11011(self.partner_id, self.data.id)
+        end
+
+        controller:openEquipTips(false)
+    end
+end
+--穿戴和更换
+function EquipHolyTips:onTabBtn3()
+    if not self.data then return end
+    if not self.item_config then return end
+    local partner_id = self.partner_id or 0
+    local item_id = self.data.id or 0
+    local pos_id = self.item_config.type or 0
+    if self.cloth_type ==  PartnerConst.EqmTips.backpack then  --1是穿戴
+        if partner_id == 0  then 
+            MainuiController:getInstance():changeMainUIStatus(MainuiConst.btn_index.partner,1)
+        else
+            controller:sender11010(partner_id,item_id)
+        end
+        
+    elseif self.cloth_type ==  PartnerConst.EqmTips.partner then --2是更换
+        if self.holy_data and self.holy_data.list then --神装方案更换装备
+            controller:openHeroHolyEquipClothPanel(true, pos_id, 0, self.data, self.holy_data, HeroConst.EnterType.eHolyPlan,nil,self.holy_data.equip_list)
+        else
+            if BackPackConst.checkIsHolyEquipment(pos_id) then
+                local is_open = HeroController:getInstance():getModel():isOpenHolyEquipMentByHerovo(self.partner)
+                if not is_open then
+                    message(TI18N("语言_c_4385"))
+                    return
+                end
+                controller:openHeroHolyEquipClothPanel(true, pos_id, self.partner_id, self.data,nil,nil,self.partner)
+            else
+                controller:openEquipPanel(true, pos_id, self.partner_id, self.data)
+            end
+        end
+    end
+    controller:openEquipTips(false)
+end
+
+--升阶
+function EquipHolyTips:onTabBtn5(sender)
+    local num = model:canUpStar(self.data,self.item_config)
+    if num[1] == 2 then
+        message(string.format(TI18N("语言_c_5868"),num[2]))
+    else
+        controller:openHolyequipmentUpStarPanel(true,self.data, self.partner_id)
+        controller:openEquipTips(false)
+    end
+    -- if num[1] == 1 then
+    --     controller:openHolyequipmentUpStarPanel(true,self.data, self.partner_id)
+    --     controller:openEquipTips(false)
+    -- elseif num[1] == 2 then
+    --     message(string.format(TI18N("语言_c_5868"),num[2]))
+    -- elseif num[1] == 3 then
+    --     message(string.format(TI18N("语言_c_5869"),num[2]))
+    -- end
+end
+
+
+--附魂
+function EquipHolyTips:onTabBtn6(sender)
+    if self.cloth_type ~= PartnerConst.EqmTips.partner then return end
+    if self.partner_id and self.item_config and self.item_config.type then
+        local eq = model:getHolyEquipByPartnerIdAndTp(self.partner_id, self.item_config.type)
+        if not eq then
+            return
+        end
+        
+        controller:openHeroHolyEquipAttachPop(true, self.partner_id, self.item_config.type)
+        controller:openEquipTips(false)
+    end
+end
+--满足合成条件
+function EquipHolyTips:onTabBtn4(sender)
+    --先弹出合成预览
+    local _call_back = function()
+        -- print("EquipHolyTips--------- onTabBtn4 ===", self.partner_id, self.data.base_id)
+        controller:sender11084(self.partner_id, self.data.base_id)
+    end
+    local data = {
+        call_back = _call_back,
+        coin = sender.up_equip.cost_coin,
+        list = sender.up_equip.compose_list,
+        cost_item_list = sender.up_equip.cost_list,
+    }
+    controller:openHeroTargetEquipmentSynthesisWindow(true,data)
+    controller:openEquipTips(false) 
+end
+--[[
+    @desc: 打开时候附加的参数
+    author:{author}
+    time:2019-05-19 19:48:51
+    --@object: {data=data, open_type=open_type, partner=partner, holy_data=holy_data}
+    @return:
+]]
+function EquipHolyTips:openRootWnd(object)
+    self.data = object.data
+    self.cloth_type = object.open_type or PartnerConst.EqmTips.normal
+    self.partner = object.partner
+    if self.partner then
+        self.partner_id = self.partner.partner_id
+    end
+    self.holy_data = object.holy_data
+    -- 因为传参不同,这边需要获取不同的配置数据
+    local data = object.data
+    local item_config = nil
+    if type(data) == "number" then
+        item_config = Config.ItemData.data_get_data(data)
+    else
+        if data.config then
+            item_config = data.config
+        else
+            if data.bid then
+                item_config = Config.ItemData.data_get_data(data.bid)
+            elseif data.id then
+                item_config = Config.ItemData.data_get_data(data.id)
+            else
+                item_config = data
+            end
+        end
+    end
+    self.item_config = item_config
+    if self.item_config == nil then return end
+    self:initData()
+    self:addDataBindEvent()
+
+    --限购INXS
+    -- self:initLimitBuyInfo()
+end
+
+--限购信息
+--data.limit_total_num = 限购最大数量
+--data.limit_day  每日限购数量
+--data.其他限购未加入
+function EquipHolyTips:initLimitBuyInfo()
+    if not self.data then return end
+    if self.data.limit_day then --每日限购
+        local total_count = self.data.limit_total_num or 0
+        local label = self:getLimitBuytLabel()
+        if lable then
+            lable:setString(string_format(TI18N("语言_c_1713"), self.data.limit_day, total_count))
+        end
+    end
+end
+
+function EquipHolyTips:getLimitBuytLabel()
+    if self.limit_buy_label == nil then
+        self.limit_buy_label = createRichLabel(22, cc.c4b(0xff,0xee,0xdd,0xff), cc.p(0, 0.5), cc.p(0, 36) ,nil,nil,1000)
+        self.main_container:addChild(self.limit_buy_label)
+    end
+    return self.limit_buy_label
+end
+
+function EquipHolyTips:initData()
+     --原本高度
+    local target_height  = self.container_init_size.height
+    local attr_scroll_h = 0
+    local extendGapY = 0
+    -- 是否显示按钮部分
+    self.isShowBtn = false
+    local need_show_btn = (self.cloth_type == PartnerConst.EqmTips.backpack or self.cloth_type == PartnerConst.EqmTips.partner)   
+    if need_show_btn then
+        self.isShowBtn = true
+        local dtHeight = self:updateBtnList()
+        target_height = target_height + dtHeight
+    else
+        target_height = target_height - self.tab_panel_height
+        self.tab_panel:setVisible(false)
+        self.isShowBtn = false
+    end
+    
+    --基础属性
+    local baseattr_height = self:setBaseAttrInfo()
+    if baseattr_height > 0 then
+        -- target_height = target_height + baseattr_height + extendGapY
+        attr_scroll_h = attr_scroll_h + baseattr_height + extendGapY
+    end
+    --是否显示随机属性-------------开始 --神装才有
+    local need_show_randomattr = false
+    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+        need_show_randomattr = true
+    end
+    local randomattr_height = 0
+    if need_show_randomattr then
+        --随机属性（仅当为神装图鉴的时候会带参数）
+        randomattr_height = self:setRandomAttrInfo(self.data.lustr_status)
+        if randomattr_height > 0 then
+            -- target_height = target_height + randomattr_height + extendGapY
+            attr_scroll_h = attr_scroll_h + randomattr_height + extendGapY
+        else
+            randomattr_height = 0
+            self.randomattr_panel:setVisible(false)
+            need_show_randomattr = false
+        end
+    else
+        self.randomattr_panel:setVisible(false)
+    end
+    --是否显示随机属性----------结束
+
+    --是否显示套装属性-----------开始
+    local need_show_suitattr = false
+    local need_show_skill = nil
+    local suitattr_height = 0
+
+    if self.item_config.eqm_set ~= 0 then
+        if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+            self.suit_config = Config.PartnerHolyEqmData.data_suit_info[self.item_config.eqm_set]
+        elseif self.item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+            self.suit_config = Config.PartnerEqmData.data_eqm_suit[self.item_config.eqm_set]
+        end
+
+        if self.suit_config then
+            need_show_suitattr = true
+            table_sort( self.suit_config, function(a, b) return a.num < b.num end)
+        end
+    end
+    if need_show_suitattr then
+        suitattr_height, need_show_skill = self:setSuitAttrInfo()
+        if suitattr_height > 0 then
+            -- target_height = target_height + suitattr_height 
+            attr_scroll_h = attr_scroll_h + suitattr_height + extendGapY
+        else
+            suitattr_height = 0
+            self.suitattr_panel:setVisible(false)
+            need_show_suitattr = false
+        end
+    else
+        self.suitattr_panel:setVisible(false)
+    end
+    --是否显示套装属性-----------结束
+    
+    --是否显示技能 ------------ 开始 神装才有 必须在套装属性之后 因为判断在套装数据里面
+    if self.item_config.sub_type ~= BackPackConst.item_tab_type.HOLYEQUIPMENT then 
+        --不是神装没有技能显示
+        need_show_skill = nil
+    end
+    if need_show_skill ~= nil then
+        local config = Config.SkillData.data_get_skill(need_show_skill)
+        if config then
+            -- target_height = target_height + self.skill_panel_height 
+            attr_scroll_h = attr_scroll_h + self.skill_panel_height 
+            if self.skill_item == nil then
+                self.skill_item = self:createSkillItem(self.skill_panel)
+            end
+            self.skill_item.skill:showLockIcon(false) 
+            self.skill_item.skill:setData(config) 
+            -- self.skill_item.name:setString(config.name)  
+            self.skill_item.desc:setString(config.des)    
+ 
+            local label_siez = self.skill_item.desc:getContentSize()
+            local max_height = math.max(label_siez.height, self.skill_item.scroll_size.height)
+            self.skill_item.desc_scrollview:setInnerContainerSize(cc.size(self.skill_item.scroll_size.width, max_height))
+           
+            self.skill_item.desc:setPositionY(max_height)  
+            self.skill_item.desc_scrollview:setTouchEnabled(max_height>self.skill_item.scroll_size.height)
+            -- self.skill_item.desc:setString(transformTextToShort(config.des, 56))
+            -- addEvt2showAllTextTips(self.skill_item.desc,config.des,60,nil,nil,nil,true,true)
+        else
+            need_show_skill = false
+        end
+    end
+
+    --是否显示技能 ------------ 结束
+
+    -------------------附魂套装开始------------------------
+    --是否显示套装属性-----------开始
+    local attach_need_show_suitattr = true
+    local attach_need_show_skill = nil
+    local attach_suitattr_height = 0
+    if self.attach_item_config and self.attach_item_config.eqm_set ~= 0 then
+        if self.attach_item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+            self.attach_suit_config = Config.PartnerHolyEqmData.data_suit_info[self.attach_item_config.eqm_set]
+        elseif self.attach_item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+            self.attach_suit_config = Config.PartnerEqmData.data_eqm_suit[self.attach_item_config.eqm_set]
+        end
+
+        if self.attach_suit_config then
+            -- attach_need_show_suitattr = true
+            table_sort( self.attach_suit_config, function(a, b) return a.num < b.num end)
+        end
+    end
+    if self.item_config.quality <= BackPackConst.quality.red then
+        self.attach_suitattr_panel:setVisible(false)
+        attach_need_show_suitattr = false
+    else
+        attach_need_show_suitattr = true
+        self.attach_suitattr_panel:setVisible(true)
+        attach_suitattr_height, attach_need_show_skill = self:setSttachSuitAttrInfo()
+        if attach_suitattr_height == -1 then
+            self.attach_suitattr_lock:setVisible(true)
+            self.attach_suitattr_lock_tip:setVisible(true)
+            attach_suitattr_height = 70
+            self.attach_suitattr_panel:setContentSize(cc.size(self.attach_suitattr_panel_width, attach_suitattr_height))
+            if not self.attach_suitattr_name then
+                self.attach_suitattr_name = createRichLabel(22, cc.c4b(0xfe,0xee,0xba,0xff), cc.p(0, 0.5), cc.p(14, 50),-8,nil,560)
+                self.attach_suitattr_panel:addChild(self.attach_suitattr_name)
+            end
+            self.attach_suitattr_name:setPositionY(50)
+            self.attach_suitattr_name:setString(TI18N("语言_c_7446"))
+        else
+            self.attach_suitattr_lock:setVisible(false)
+            self.attach_suitattr_lock_tip:setVisible(false)
+        end
+        -- target_height = target_height + attach_suitattr_height 
+        attr_scroll_h = attr_scroll_h + attach_suitattr_height 
+    end
+    --是否显示套装属性-----------结束
+    
+    --是否显示技能 ------------ 开始 神装才有 必须在套装属性之后 因为判断在套装数据里面
+    if self.attach_item_config and self.attach_item_config.sub_type ~= BackPackConst.item_tab_type.HOLYEQUIPMENT then 
+        --不是神装没有技能显示
+        attach_need_show_skill = nil
+    end
+    self.attach_skill_panel:setVisible(false)
+    if attach_need_show_skill ~= nil then
+        local config = Config.SkillData.data_get_skill(attach_need_show_skill)
+        if config then
+            -- target_height = target_height + self.attach_skill_panel_height 
+            attr_scroll_h = attr_scroll_h + self.attach_skill_panel_height
+            if self.attach_skill_item == nil then
+                self.attach_skill_item = self:createSkillItem(self.attach_skill_panel)
+            end
+            self.attach_skill_panel:setVisible(true)
+            self.attach_skill_item.skill:showLockIcon(false) 
+            self.attach_skill_item.skill:setData(config) 
+            -- self.skill_item.name:setString(config.name)  
+            self.attach_skill_item.desc:setString(config.des)    
+ 
+            local label_siez = self.attach_skill_item.desc:getContentSize()
+            local max_height = math.max(label_siez.height, self.attach_skill_item.scroll_size.height)
+            self.attach_skill_item.desc_scrollview:setInnerContainerSize(cc.size(self.attach_skill_item.scroll_size.width, max_height))
+           
+            self.attach_skill_item.desc:setPositionY(max_height)  
+            self.attach_skill_item.desc_scrollview:setTouchEnabled(max_height>self.attach_skill_item.scroll_size.height)
+            -- self.skill_item.desc:setString(transformTextToShort(config.des, 56))
+            -- addEvt2showAllTextTips(self.skill_item.desc,config.des,60,nil,nil,nil,true,true)
+        else
+            attach_need_show_skill = false
+        end
+    end
+
+    --是否显示技能 ------------ 结束
+    -------------------附魂套装结束------------------------
+
+    --公会宝库时间
+    if self.data and self.data.is_market_place and next( self.data.end_time) ~= nil then
+        self.market_time_label = createRichLabel(24, cc.c4b(0xff,0x9b,0x1e,0xff), cc.p(0, 1), cc.p(17, -10000), 8, nil, 1000) 
+        self.container:addChild(self.market_time_label)
+        local time = self.data.end_time[1].end_unixtime or 0
+        local count = self.data.end_time[1].end_num or 1
+        local str 
+        local time = time - GameNet:getInstance():getTime()
+        if time < 0 then
+            time = 0
+        end
+        if time <= 0 then
+            str = string.format(TI18N("语言_c_1715"), count)
+        else
+            str = string.format(TI18N("语言_c_1714"), count, TimeTool.GetTimeFormatDayIIIIII(time))    
+        end 
+        self.market_time_label:setString(str)
+        local size = self.market_time_label:getContentSize()
+        -- target_height = target_height + size.height 
+        attr_scroll_h = attr_scroll_h + size.height 
+    end
+
+    -- if self.item_config.sub_type ~= BackPackConst.item_tab_type.HOLYEQUIPMENT and need_show_btn then
+    --     target_height = target_height - 40
+    -- end
+    if attr_scroll_h >= self.max_scroll_height then
+        self.attr_scroll:setTouchEnabled(true)
+        self.attr_scroll:setContentSize(cc.size(self.attr_scroll:getContentSize().width,self.max_scroll_height))
+        target_height = target_height + self.max_scroll_height
+    else
+        self.attr_scroll:setTouchEnabled(false)
+        self.attr_scroll:setContentSize(cc.size(self.attr_scroll:getContentSize().width,attr_scroll_h))
+        target_height = target_height + attr_scroll_h
+    end
+    target_height = target_height - 90
+    self.attr_scroll:setInnerContainerSize(cc.size(self.attr_scroll:getContentSize().width,attr_scroll_h))
+    if target_height ~= self.container_init_size.height then
+        self.container:setContentSize(cc.size(self.container_init_size.width, target_height))
+        local y = target_height - 2
+        self.base_panel:setPositionY(y) --基本信息
+        self.close_btn:setPositionY(y - 11)
+        y = y - self.base_panel:getContentSize().height 
+        self.attr_scroll:setPositionY(y)
+        y = y - self.attr_scroll:getContentSize().height - extendGapY
+        self.baseattr_panel:setPositionY(attr_scroll_h) --基础属性
+        attr_scroll_h = attr_scroll_h - self.baseattr_panel:getContentSize().height - extendGapY
+
+        if need_show_randomattr then --随机属性
+            self.randomattr_panel:setPositionY(attr_scroll_h)
+            attr_scroll_h = attr_scroll_h - randomattr_height - extendGapY
+        end
+
+        if need_show_suitattr then --套装属性
+            self.suitattr_panel:setPositionY(attr_scroll_h + suitattr_height - extendGapY)
+            attr_scroll_h = attr_scroll_h -  suitattr_height 
+        end
+
+        if need_show_skill then --技能显示
+            self.skill_panel:setPositionY(attr_scroll_h-extendGapY)
+            attr_scroll_h = attr_scroll_h - self.skill_panel_height --技能显示的高目前是写死的
+        end
+        if attach_need_show_suitattr then --附魂套装属性
+            self.attach_suitattr_panel:setPositionY(attr_scroll_h)
+            attr_scroll_h = attr_scroll_h -  attach_suitattr_height 
+        end
+
+        if attach_need_show_skill then --附魂技能显示
+            self.attach_skill_panel:setPositionY(attr_scroll_h+1)
+            attr_scroll_h = attr_scroll_h - self.attach_skill_panel_height --技能显示的高目前是写死的
+        end
+
+        if self._isAttachHoly then
+            if self.attach_holy_panel then
+                self.attach_holy_panel:setVisible(true)
+                attr_scroll_h = attr_scroll_h - self.attach_holy_panel:getContentSize().height  - extendGapY
+                self.attach_holy_panel:setPositionY(attr_scroll_h)
+            end
+        else
+            if self.attach_holy_panel then
+                self.attach_holy_panel:setVisible(false)
+            end
+        end
+
+        self.desc_panel:setPositionY(y)
+        if need_show_btn then
+            y = y - self.desc_panel:getContentSize().height 
+            self.tab_panel:setPositionY(y)
+        end
+
+        --公会宝库时间 --因为与 need_show_btn是互斥的所以不做兼容处理了
+        if self.data and self.data.is_market_place then
+            y = y - self.desc_panel:getContentSize().height
+            self.market_time_label:setPositionY(y)
+        end  
+    end
+
+    self:setBaseInfo()
+    self:_updateRandomBtn()
+end
+
+function EquipHolyTips:updateBtnList()
+    self.tab_btn_3:setVisible(true)
+    self.tab_btn_2:setVisible(false)
+    self.tab_btn_4:setVisible(false)
+    -- self.tab_btn_1:setPositionX(124)
+    -- self.tab_btn_2:setPositionX(124)
+    -- self.tab_btn_3:setPositionX(298)
+    -- self.tab_btn_5:setPositionX(298)
+    if self.cloth_type == PartnerConst.EqmTips.backpack then  --穿戴
+        self.tab_btn_txt_3:setString(TI18N("语言_c_2959"))
+        self.tab_btn_txt_1:setString(TI18N("语言_c_1319"))
+    elseif self.cloth_type == PartnerConst.EqmTips.partner then  --卸下
+        --判定红点
+        --不是神装才判断红点
+        if self.item_config and self.item_config.sub_type ~= BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+            local is_redpoint = HeroCalculate.checkSingleHeroEachPosEquipRedPoint(self.data.type,self.data)
+            addRedPointToNodeByStatus(self.tab_btn_3, is_redpoint, 5, 5)
+
+            --能合成更高一级的装备才显示
+            local is_redpoint, up_equip = HeroCalculate.checkSingleHeroEquipComposeRedPoint(self.data)
+            addRedPointToNodeByStatus(self.tab_btn_4, is_redpoint, 5, 5)
+            self.tab_btn_4:setVisible(is_redpoint and model:checkEquipComposeIsOpen())
+            if is_redpoint and model:checkEquipComposeIsOpen() then
+                self.tab_btn_1:setPositionX(74)
+                self.tab_btn_3:setPositionX(348)
+            end
+
+            self.tab_btn_4.up_equip = up_equip
+        end
+
+        self.tab_btn_txt_3:setString(TI18N("语言_c_1966"))
+        self.tab_btn_txt_1:setString(TI18N("语言_c_2964"))
+    else
+        self.tab_btn_3:setVisible(false)
+        -- self.tab_btn_2:setVisible(false)
+    end
+    
+    -- 附魂
+    if (self.cloth_type == PartnerConst.EqmTips.partner or self.cloth_type == PartnerConst.EqmTips.normal) and self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then
+        -- model:
+        if self.partner_id and self.item_config and self.item_config.quality >= BackPackConst.quality.gold and self.item_config.type > 0 and HeroCalculate.isHolyEquipmentAttachFuncOpen() then
+            local hero_vo = model:getHeroById(self.partner_id)  
+            if hero_vo and model:isOpenHolyEquipMentByHerovo(hero_vo) then
+                self.tab_btn_6:setVisible(true)
+                local isRed = model:getCanAttachHoly(hero_vo, self.item_config.type)
+                addRedPointToNodeByStatus(self.tab_btn_6,isRed,10,10)
+            end
+        else
+            self.tab_btn_6:setVisible(false)
+        end
+    else
+        self.tab_btn_6:setVisible(false)
+    end
+
+
+    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT and self.item_config.eqm_jie == 2 and self.item_config.eqm_star >= 1 then
+	    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+        local featuresId = MainuiConst.FeaturesShield.godOutfit
+        local nohideIds2 = RoleController:getInstance():getModel():getSeverShowIds("partner_holy_eqm_data")
+        local cfg = Config.PartnerHolyEqmData.data_step_info(self.item_config.id)
+        -- print("RoleController:getInstance():getRoleVo().lev >= Config.PartnerHolyEqmData.data_const['open_lev_star_up'].val",RoleController:getInstance():getRoleVo().lev, Config.PartnerHolyEqmData.data_const["open_lev_star_up"].val)
+        -- print("table.indexof(nohideIds,featuresId)",vardump(nohideIds),featuresId,table.indexof(nohideIds,featuresId))
+        -- print("cfg",vardump(cfg))
+        -- print("table.indexof(nohideIds2,cfg.next_id)",vardump(nohideIds2))
+        if  RoleController:getInstance():getRoleVo().lev >= Config.PartnerHolyEqmData.data_const["open_lev_star_up"].val and table.indexof(nohideIds,featuresId) and cfg and (cfg.isshow == 1 or (cfg.isshow == 0 and table.indexof(nohideIds2,cfg.next_id))) then
+            self.tab_btn_5:setVisible(true)
+            local isRed = model:getGodCanUpStar(self.data,self.item_config)
+            addRedPointToNodeByStatus(self.tab_btn_5,isRed,10,10)
+        end
+    end 
+    if self.item_config and self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+        self.tab_btn_2:setVisible(true)
+        self.look_btn:setVisible(true)
+        if self.item_config.eqm_jie <= 0 then
+            setChildUnEnabled(true, self.tab_btn_2)
+            self.tab_btn_txt_2:setString(TI18N("语言_c_3053"))
+            self.tab_btn_2:setTouchEnabled(false)   
+        end
+    end
+
+    -- 只要不是来自自己伙伴身上的
+    if self.cloth_type ~= PartnerConst.EqmTips.partner then
+        -- self.tab_btn_1:setVisible(false)
+    end
+
+    local visibleBtnNum = 0
+    local btnList = {}
+    for i = 1, 6 do
+        if self["tab_btn_"..i]:isVisible() then
+            visibleBtnNum = visibleBtnNum + 1
+            table.insert(btnList, self["tab_btn_"..i])
+        end
+    end
+    local s = self.tab_panel:getContentSize()
+    local s2 = self.tab_btn_1:getContentSize()
+
+    local row = math.ceil(visibleBtnNum/3)
+    local column =  math.ceil(visibleBtnNum/row)
+   
+    local paddingLeft = 40
+    local gapY = 10 + s2.height
+    local gapX = (s.width - paddingLeft * 2 - column * s2.width)/(column + 1)
+
+    local x = paddingLeft + gapX + s2.width/2
+    local totalHeight = row * gapY + 10
+    local startY = totalHeight - s2.height/2 - 10
+    for k, v in ipairs(btnList) do
+        row = math.floor((k -1)/column) 
+        v:setPosition(cc.p(x, startY - row * gapY))
+
+        if k  % column == 0 then
+            x = gapX + s2.width/2  + paddingLeft
+        else
+            x = x + s2.width + gapX 
+        end
+    end
+    self.tab_panel:setContentSize(cc.size(s.width, totalHeight))
+    return totalHeight - 140
+
+    -- if visibleBtnNum == 1 then
+    --     -- 3个按钮
+    --     btnList[1]:setPosition(cc.p(s.width/2, s.height/2))
+    -- elseif visibleBtnNum == 2 then  
+    --     local gap = 240
+    --     local startX = (s.width - gap)/2
+    --     btnList[1]:setPosition(cc.p(startX, s.height/2))
+    --     btnList[2]:setPosition(cc.p(startX + gap, s.height/2))
+    -- elseif visibleBtnNum == 3 then
+    --     local gap = 200
+    --     local startX = (s.width - gap * 2)/2
+    --     btnList[1]:setPosition(cc.p(startX, s.height/2))
+    --     btnList[2]:setPosition(cc.p(startX + gap, s.height/2))
+    --     btnList[3]:setPosition(cc.p(startX + gap * 2, s.height/2))
+    -- elseif visibleBtnNum == 4 then
+    --     local gapY = 60
+    --     local startY = (s.height - gapY)/2
+
+    --     local gap = 240
+    --     local startX = (s.width - gap)/2
+
+    --     btnList[1]:setPosition(cc.p(startX, startY + gap))
+    --     btnList[2]:setPosition(cc.p(startX + gap, startY + gap))
+
+    --     btnList[3]:setPosition(cc.p(startX, startY))
+    --     btnList[4]:setPosition(cc.p(startX + gap, startY))
+    -- else
+    --     local gapY = 60
+    --     local startY = (s.height - gapY)/2
+
+    --     local gap = 200
+    --     local startX = (s.width - gap)/2
+
+    --     btnList[1]:setPosition(cc.p(startX, startY + gap))
+    --     btnList[2]:setPosition(cc.p(startX + gap, startY + gap))
+    --     btnList[3]:setPosition(cc.p(startX + gap * 2, startY + gap))
+
+    --     btnList[4]:setPosition(cc.p(startX, startY))
+    --     btnList[5]:setPosition(cc.p(startX + gap, startY))
+    --     if btnList[6] then
+    --         btnList[6]:setPosition(cc.p(startX + gap * 2, startY))
+    --     end
+    -- end
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2018-10-20 09:40:23
+--@return 
+--==============================--
+function EquipHolyTips:setBaseInfo()
+    if self.data == nil or self.item_config == nil then return end
+    local data = self.data
+
+    self.equip_item:setBaseData(self.item_config.id)
+    -- self.equip_item:setEquipJie(true)
+
+    local name = self.item_config.name or ""
+    local str = name
+    local enchant = data.enchant or 0
+    if enchant > 0 then 
+        str = str .. "+" .. enchant
+    end
+    self.name:setString(str)
+
+    local quality = 0
+   
+    if self.item_config.quality and self.item_config.quality >= 0 and self.item_config.quality <= 6 then
+        quality = self.item_config.quality
+    end
+    local background_res
+    if quality == 6 then
+        background_res = PathTool.getResFrame("common_2", "common_2_05")
+    else
+        background_res = PathTool.getResFrame("common_2", "tips_"..quality)
+    end
+   
+
+    if self.record_background_res == nil or self.record_background_res ~= background_res then
+        self.record_background_res = background_res
+        self.base_panel:loadTexture(background_res, LOADTEXT_TYPE_PLIST)
+        self.base_panel:setCapInsets(cc.rect(318, 15, 12, 108))
+    end
+    local color = BackPackConst.getEquipTipsColor(quality)
+    self.name:setTextColor(color) 
+    
+    if self.item_config.type_desc then
+        self.equip_type:setString(TI18N("语言_c_1728")..self.item_config.type_desc)
+    end
+
+    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+        self.score_title:setVisible(true)
+        self.power_label:setVisible(true)
+        
+        local sore = self:getHolyEquipScore() or 0
+        self.power_label:setNum(sore)
+        --显示描述
+        
+        if self.chapter_label == nil then
+            local config = Config.PartnerHolyEqmData.data_base_info(self.item_config.id)
+            if config then
+                self.chapter_label = createLabel(18, cc.c4b(0xd9,0x50,0x14,0xff), nil, 410, 66, config.unlock_desc, self.baseattr_panel, nil, cc.p(1,0.5))
+            end
+        end
+        
+        local id = math.floor(self.item_config.eqm_set/100)
+        -- local config = Config.PartnerHolyEqmData.data_suit_res_prefix_fun(id)
+        -- if config then
+        --     local res = PathTool.getSuitRes(config.prefix)
+        --     if self.record_suit_res == nil or self.record_suit_res ~= res then
+        --         self.record_suit_res = res
+        --         loadSpriteTexture(self.suit_icon, res, LOADTEXT_TYPE)
+        --     end
+        --     self.suit_name:setString(config.name)
+        -- end
+    else--if self.item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+        self.score_title:setVisible(true)
+        self.power_label:setVisible(true)
+        
+        local score = data.score or 0
+        if score <= 0 then 
+            score = self:getBaseScore() or 0
+        end
+        local all_score = data.all_score or 0
+        all_score = math.max(all_score,score)
+        self.power_label:setNum(all_score)
+    end
+
+    -- 描述
+    self.desc_label:setString(self.item_config.desc)
+    local label_siez = self.desc_label:getContentSize()
+    local max_height = math.max(label_siez.height+10, self.scroll_size.height+10)
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_size.width, max_height))
+
+    self.desc_label:setHorizontalLayoutType(2)
+
+    self.desc_label:setPositionX((self.scroll_size.width - label_siez.width)/2)
+
+    self.desc_label:setPositionY(max_height-10)
+    -- 附魂
+    if (self.cloth_type == PartnerConst.EqmTips.partner or self.cloth_type == PartnerConst.EqmTips.normal or self.cloth_type == PartnerConst.EqmTips.plan) and self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then
+        -- model:
+        if self.partner_id and self.item_config and self.item_config.quality >= BackPackConst.quality.gold and self.item_config.type > 0 and HeroCalculate.isHolyEquipmentAttachFuncOpen() then
+            self.hero_panel:setVisible(true)
+            self.hero_tip:setVisible(true)
+            self.hero_bg:setVisible(true)
+            local equipAttachVo = self:getHolyAttachEquip()
+            if equipAttachVo and next(equipAttachVo) then
+                self.no_panel:setVisible(false)
+                self.have_panel:setVisible(true)
+                if not self.attach_item then
+                    self.attach_item = BackPackItem.new(true,false,nil,1,false)
+                    self.attach_item:setPosition(cc.p(60,60))
+                    self.have_panel:addChild(self.attach_item)
+                end
+                self.attach_item:setData(equipAttachVo)
+            else
+                self.no_panel:setVisible(true)
+                self.have_panel:setVisible(false)
+            end
+        else
+            self.hero_panel:setVisible(false)
+            self.hero_tip:setVisible(false)
+            self.hero_bg:setVisible(false)
+        end
+    else
+        self.hero_panel:setVisible(false)
+        self.hero_tip:setVisible(false)
+        self.hero_bg:setVisible(false)
+    end
+    -- 装备中
+    local isEquip = false
+
+    if self._isAttachHoly then
+        local equipAttachVo = self:getHolyAttachEquip()
+        self.equip_item:setHolyAttach(equipAttachVo)
+    end
+end
+
+
+function EquipHolyTips:getHolyAttachEquip()
+    local equipAttachVo 
+    if (self.cloth_type == PartnerConst.EqmTips.partner or self.cloth_type == PartnerConst.EqmTips.normal or self.cloth_type == PartnerConst.EqmTips.plan) and self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT and self.partner_id then
+        if self.partner and self.partner.holy_eqm_attach_list and next(self.partner.holy_eqm_attach_list) then
+            equipAttachVo = model:getHolyAttachEquipByPartnerIdAndTp(self.partner_id, self.item_config.type ,self.partner)
+        end
+    end
+
+    if not equipAttachVo then
+        if self.partner then
+            local g 
+            if self.partner.holy_eqm ~= nil then
+                --说明是网络返回的
+                for i,v in ipairs(self.partner.holy_eqm) do
+                    local item_config = Config.ItemData.data_get_data(v.base_id)
+                    if item_config and self.item_config.type == item_config.type then
+                        v.type = item_config.type
+                        g = GoodsVo.New(v.base_id)
+                        g:setExtra(v.extra)
+                        g:initAttrData(v)
+                        if g:isHolyAttach() then
+                            equipAttachVo = g
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return equipAttachVo
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2018-10-20 11:42:16
+--@return 
+--==============================--
+function EquipHolyTips:setBaseAttrInfo()
+    if not self.item_config or not self.item_config.ext or not self.item_config.ext[1] then return end
+    local base_attr = deepCopy(self.item_config.ext[1][2] or {})
+
+     -- 附魂 增加属性
+     local isAttachHoly = false
+     local attachIconRes
+     local attachAttrs = {}
+     if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT and self.partner_id then
+         local equipAttachVo = self:getHolyAttachEquip()
+         if equipAttachVo then
+             isAttachHoly = true
+             local cfg = Config.PartnerHolyEqmData.data_base_info(equipAttachVo.base_id)
+             local item_config = Config.ItemData.data_get_data(equipAttachVo.base_id)
+             self.attach_item_config = item_config
+             if cfg and item_config then
+                 if item_config.ext and item_config.ext[1] then
+                     local base_attr = deepCopy(item_config.ext[1][2] or {})
+                     for k, v in pairs(base_attr) do
+                         v[2] = math.floor(v[2] * (cfg.append_attr_rate or 0)/1000)
+                     end
+                     attachAttrs = base_attr
+                 end
+             end
+             local attrMap = {}
+             for k, v in pairs(base_attr) do
+                attrMap[v[1]] = v
+             end
+ 
+             for k, v in ipairs(attachAttrs) do
+                if attrMap[v[1]] then
+                    attrMap[v[1]][2] = attrMap[v[1]][2] + v[2]
+                else
+                    table.insert(base_attr, v)
+                    attrMap[v[1]] = v
+                end
+             end
+
+            local id = math.floor(equipAttachVo.config.eqm_set/100)
+			local suitConfig = Config.PartnerHolyEqmData.data_suit_res_prefix_fun(id)
+			if suitConfig then
+                attachIconRes = PathTool.getSuitRes(suitConfig.prefix)
+            end
+         end
+     end
+
+    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT and self.isShowBtn then --神装
+        local list = model:getGodBaseList(self.item_config.id)
+        for key, value in pairs(list) do
+            local att_list = {[1] = "activation",[2] = {value[1],value[2]}}
+            table.insert(base_attr,att_list)
+        end
+    end
+
+   
+    self._isAttachHoly = isAttachHoly
+    -- self.baseattr_attach_label:setVisible(isAttachHoly)
+    local index = 1 
+  
+    local _h = 5
+    -- local maxRow = math.ceil(#base_attr/2)
+    local maxRow = #base_attr
+    
+    local maxHeights = {}
+    for i,v in ipairs(base_attr) do
+        -- if index > 2 then return end        -- 超过2条属性不显示了,ui暂时不支持
+        local attr_key = v[1]
+        local attr_val = v[2]
+        local attach_val = nil
+        for key,value in ipairs(attachAttrs) do
+            if value[1] == attr_key then
+                attach_val = (attach_val or 0) + value[2]
+            end
+        end
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if attr_name or attr_key == "activation" then
+            if not self.base_list[index] then 
+                self.base_list[index] = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, 28), nil, nil, 290)
+                self.baseattr_panel:addChild(self.base_list[index])
+            end
+            local label = self.base_list[index]
+            local _x = 24
+            local row = i
+            -- local row = math.floor((i - 1)/2) + 1
+            -- if i % 2 == 0 then
+            --     _x = 320
+            -- else
+            --     _x = 24
+            -- end
+            local _y = 0
+            label:setPosition(cc.p(_x,_y))
+            if attr_name then
+                local icon = PathTool.getAttrIconByStr(attr_key)
+                local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                if is_per == true then
+                    attr_val = (attr_val*0.1).."%"
+                    if attach_val then
+                        attach_val = (attach_val*0.1).."%"
+                    end
+                end
+                local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#c1b7ab> %s：</div><div fontcolor=#ffeedd>%s</div>", PathTool.getResFrame("common", icon), attr_name, attr_val)
+                if self._isAttachHoly and attach_val then
+                    attr_str = attr_str .. string_format("<div fontcolor=#3ea139> (+%s)</div>", attach_val)
+                end
+                label:setString(attr_str)
+                
+                local h = self:_getLableHeight(label)--
+                local maxHeight = maxHeights[row] or 0
+                if h > maxHeight then
+                    maxHeights[row] = h
+                end
+                -- _h = _h + label:getContentSize().height +5
+            else
+                local str = Config.PartnerHolyEqmData.data_const["text_show_3"].desc
+                local attr_str = LangStringFormat(str,attr_val[1],attr_val[2],index)
+                label:setString(attr_str)
+                local h = self:_getLableHeight(label)
+                local maxHeight = maxHeights[row] or 0
+                if h > maxHeight then
+                    maxHeights[row] = h
+                end
+
+            end
+            index = index + 1
+        end
+    end
+    local gap = 0
+    local totalHeigh = 0
+    for i = 1, maxRow do
+        totalHeigh = totalHeigh + maxHeights[i]
+    end
+    totalHeigh = totalHeigh + (maxRow - 1) * gap
+  
+    if not self.baseattr_label then
+        self.baseattr_label = createRichLabel(22, cc.c4b(0xfe,0xee,0xba,0xff), cc.p(0, 1), cc.p(14, totalHeigh - 10),-10,nil,640)
+        self.baseattr_panel:addChild(self.baseattr_label)
+    end
+    if self._isAttachHoly then
+        if attachIconRes then
+            self.baseattr_label:setString(string.format("%s<div fontcolor=#3ea139>( %s )</div>", TI18N("语言_c_1282"), TI18N("语言_c_d_144")))
+        else
+            self.baseattr_label:setString(string.format("%s<div fontcolor=#3ea139>(%s)</div>"), TI18N("语言_c_1282"), TI18N("语言_c_d_144"))
+        end
+    else
+        self.baseattr_label:setString(TI18N("语言_c_1282"))
+    end
+    if self.item_config.quality <= BackPackConst.quality.red then
+        self.baseattr_soul_panel:setVisible(false)
+    else
+        -- self.baseattr_soul_panel:setPositionY()
+        local equipAttachVo = self:getHolyAttachEquip()
+        if equipAttachVo then
+            local cfg = Config.PartnerHolyEqmData.data_base_info(equipAttachVo.base_id)
+            self.baseattr_soul_tip:setString(TI18N("语言_c_d_138") .. (cfg.append_attr_rate or 0)/10 .. "%")
+            self.baseattr_soul_lock:setVisible(false)
+            self.baseattr_soul_tip:setPositionX(34)
+        else
+            self.baseattr_soul_tip:setString(TI18N("语言_c_7444"))
+            self.baseattr_soul_lock:setVisible(true)
+            self.baseattr_soul_tip:setPositionX(64)
+        end
+        local _h = self.baseattr_soul_tip:getContentSize().height + self.baseattr_soul_label:getContentSize().height + 5
+        _h = math.max(_h,70)
+        totalHeigh = totalHeigh + _h
+        self.baseattr_soul_panel:setContentSize(cc.size(self.baseattr_soul_panel:getContentSize().width,_h))
+        self.baseattr_soul_label:setPositionY(_h - 20)
+        self.baseattr_soul_tip:setPositionY(10)
+        self.baseattr_soul_btn:setPositionY(_h - 24)
+        self.baseattr_soul_panel:setVisible(true)
+    end
+    local s = self.baseattr_label:getContentSize()
+    totalHeigh = totalHeigh + s.height + 10
+
+    self.baseattr_panel:setContentSize(cc.size(self.baseattr_panel:getContentSize().width, totalHeigh))
+    self.baseattr_label:setPositionY(totalHeigh - 10)
+
+    -- self.baseattr_label:setPositionY(self.baseattr_panel:getContentSize().height - 24)
+    -- self.baseattr_attach_label:setPositionY(self.baseattr_panel:getContentSize().height - 24)
+ 
+    local startY = totalHeigh - s.height - 10
+     
+    for i,v in ipairs(self.base_list) do
+        -- local row = math.floor((i - 1)/2) + 1
+        local row = i
+        v:setPositionY(startY -  maxHeights[row]/2)
+        -- if i % 2 == 0 then
+            startY = startY - maxHeights[row]
+        -- end
+    end
+
+    return totalHeigh
+end
+
+--图鉴的随机属性
+function EquipHolyTips:setLustrAtt()
+    local cfg = Config.PartnerHolyEqmData.data_base_info(self.item_config.id)
+    if cfg and cfg.color_rand and cfg.color_rand ~= 0 then
+        self.new_pre_look:setVisible(true)
+    else
+        self.new_pre_look:setVisible(false)
+    end
+    if self.item_config.eqm_jie then
+        local const = Config.PartnerHolyEqmData.data_const
+        if self.item_config.eqm_jie == 0 then
+            local pos = {29,-9}
+            for i=1,2 do
+                local lustr_att = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(24,pos[i]),-10,nil,500)
+                self.randomattr_panel:addChild(lustr_att)
+                local str = ""
+                if i == 1 then
+                    str = const.text_show_1.desc
+                else
+                    str = const.text_show_2.desc
+                end
+                lustr_att:setString(str)
+            end
+            self.pre_btn:setVisible(false)
+        elseif self.item_config.eqm_jie == 1 then
+            local lustr_att = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(24,33),-4,nil,200)
+            self.randomattr_panel:addChild(lustr_att)
+            local attr_icon = PathTool.getAttrIconByStr("random")
+            local msg = string.format(TI18N("语言_c_4542"),PathTool.getResFrame("common", attr_icon))
+            lustr_att:setString(msg)
+
+            local lustr_att2 = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(24,-9),-10,nil,500)
+            self.randomattr_panel:addChild(lustr_att2)
+            lustr_att2:setString(const.text_show_2.desc)
+            self.pre_btn:setVisible(true)
+            -- lustr_att:setString(transformTextToShort(str, 20))
+            --     lustr_att:setTouchEnabled(true)
+            --     addEvt2showAllTextTips(lustr_att,str,20)
+        elseif self.item_config.eqm_jie == 2 then
+            local num = 2
+            if Config.PartnerHolyEqmData.data_base_info(self.item_config.id) then
+                num = tonumber(Config.PartnerHolyEqmData.data_base_info(self.item_config.id).attr_num)
+            end
+            local _h = 140 + (num-2)*38
+            self.randomattr_panel:setContentSize(cc.size(598,_h))
+            for i=1,num do
+                local _y = 11 + (i-1)*38
+                local lustr_att = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(24,_y),-10,nil,200)
+                self.randomattr_panel:addChild(lustr_att)
+                local attr_icon = PathTool.getAttrIconByStr("random")
+                local msg = string.format(TI18N("语言_c_4542"),PathTool.getResFrame("common", attr_icon))
+                lustr_att:setString(msg)
+            end
+            self.randomattr_name:setPositionY(_h - 24)
+            self.pre_btn:setPositionY(_h - 54)
+            self.pre_btn:setVisible(true)
+            self.new_pre_look:setPositionY(_h - 54)
+            return (num-2)*38
+        end
+    end
+    return 0
+end
+
+
+function EquipHolyTips:_getLableHeight(richText)
+    if richText:getRowNum() == 1 then
+        return 40
+    end
+    return richText:getContentSize().height +  5
+end
+--==============================--
+--desc:设置随机属性
+--@return 
+--==============================--
+function EquipHolyTips:setRandomAttrInfo(lustr_status)
+    if not self.data then return -1 end
+    local _height = self.randomattr_panel_height
+    if lustr_status == true then
+        local _h = self:setLustrAtt() 
+        self.new_pre_btn:setVisible(false)
+        _height = _height + 50 + _h
+    else
+        self.new_pre_look:setVisible(false)
+        local eqm_attr = deepCopy(self.data.holy_eqm_attr or {})
+        local holy_eqm_attr = {}
+        for key, value in pairs(eqm_attr) do
+            if value.pos < 100 then
+                table.insert(holy_eqm_attr,value)
+            end
+        end
+        for key, value in pairs(holy_eqm_attr) do
+            for k, v in pairs(self.data.holy_color_attr or {}) do
+                if v.pos == value.pos then
+                    holy_eqm_attr[key].color = v.color
+                end
+            end
+        end
+        if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+            local pos = 0
+            if holy_eqm_attr[1] and holy_eqm_attr[2] then
+                pos = #holy_eqm_attr
+            else
+                pos = 2
+            end
+            local list = model:getGodRandList(self.item_config.id)
+            for key, value in pairs(list) do
+                local list = {attr_id = "activation",attr_val = {value[1],value[2]},pos = pos + key}
+                table.insert(holy_eqm_attr,list)
+            end
+
+        end
+        local dic_holy_eqm_attr = {}
+        for i,v in ipairs(holy_eqm_attr) do
+            dic_holy_eqm_attr[v.pos] = v
+        end
+        if next(dic_holy_eqm_attr) == nil then
+            self.pre_btn:setVisible(false)
+        else
+            self.pre_btn:setVisible(true)
+        end
+      
+        if next(dic_holy_eqm_attr) == nil then
+            self.new_pre_btn:setVisible(false)
+            _height = _height - 5
+            -- self.randomattr_panel:setContentSize(cc.size(self.randomattr_panel:getContentSize().width,_height))
+            -- self.randomattr_name:setPositionY(_height - 24)
+        else
+            self.new_pre_btn:setVisible(false)
+            for k, v in pairs(dic_holy_eqm_attr) do
+                if v.color and v.color ~= 0 then
+                    self.new_pre_btn:setVisible(true)
+                end
+            end
+        end
+        local num = 2
+        if #dic_holy_eqm_attr > num then
+            num = #dic_holy_eqm_attr
+        end
+        local _x = 0
+       
+        if self.randomattr_list then
+            for k, v in pairs(self.randomattr_list) do
+                v:removeFromParent()
+            end
+        end
+        self.randomattr_list = {}
+        local maxHeights = {}
+        for i=1,num do
+            -- if self.random_item_list[i] == nil then
+            --     self.random_item_list[i] = self:createattrItem_2(i, self.randomattr_panel)
+            -- end
+            local row = i
+            -- local row = math.floor((i - 1)/2) + 1
+            -- if i % 2 == 0 then
+            --     _x = 320
+            -- else
+                _x = 24
+            -- end
+            if dic_holy_eqm_attr[i] then
+                local attr_key = {}
+                if type(dic_holy_eqm_attr[i].attr_id) == "number" and dic_holy_eqm_attr[i].attr_id > 200 then
+                    attr_key = Config.AttrExtraData.data_id_to_key[dic_holy_eqm_attr[i].attr_id]
+                else
+                    attr_key = Config.AttrData.data_id_to_key[dic_holy_eqm_attr[i].attr_id]
+                end
+                local attr_val = dic_holy_eqm_attr[i].attr_val or 0
+                local attr_pos = dic_holy_eqm_attr[i].pos or 0
+                -- attr_val = attr_val/1000
+                local attr_str = ""
+                if attr_key then
+                    local attr_name = ""
+                    if dic_holy_eqm_attr[i].attr_id > 200 then
+                        attr_name = Config.AttrExtraData.data_key_to_name[attr_key]
+                    else
+                        attr_name = Config.AttrData.data_key_to_name[attr_key]
+                    end
+                    local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                    if is_per == true then
+                        attr_val = (attr_val*0.1).."%"
+                    end
+                    local icon = PathTool.getAttrIconByStr(attr_key)
+                    local attr_color = "c1b7ab"
+                    local val_color = "ffeedd"
+                    local ext_str = ""
+                    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+                        --神装的颜色跟品质色走 val_color 后面处理
+                        local attr_val11 = dic_holy_eqm_attr[i].attr_val or 0
+                        val_color = model:getHolyEquipmentColorByItemIdAttrKey(self.item_config.id, attr_key, attr_val11, 1, 1)
+                        local max_count = model:getHolyEquipmentMaxAttrByItemIdAttrKey(self.item_config.id, attr_key)
+                        if attr_val11 >= max_count then
+                            ext_str = "(max)"
+                        end
+                    end
+                    attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val, ext_str)
+                else
+                    local str = Config.PartnerHolyEqmData.data_const["text_show_4"].desc 
+                    attr_str = LangStringFormat(str,attr_val[1],attr_val[2],attr_pos)
+                end
+                -- self.random_item_list[i].attr[1]:setString(attr_str)
+                -- self.random_item_list[i].icon[1]:setVisible(true)
+                -- _x = math.max(_x,self.random_item_list[i].attr[1]:getPositionX()+self.random_item_list[i].attr[1]:getContentSize().width+40)
+                
+                if dic_holy_eqm_attr[i].color and dic_holy_eqm_attr[i].color ~= 0 then
+                    attr_str = string.format("<img src='%s' scale=1 />", (PathTool.getResFrame("holy_starup","holy_starup_"..5+dic_holy_eqm_attr[i].color)))..attr_str
+                    -- self.random_item_list[i].icon[1]:setPositionX(_x)
+                    -- self.random_item_list[i].icon[1]:loadTexture(PathTool.getResFrame("holy_starup","holy_starup_"..5+dic_holy_eqm_attr[i].color), LOADTEXT_TYPE_PLIST)
+                end
+
+                
+                local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(_x, 0), nil, nil, 290)
+                table.insert(self.randomattr_list,label)
+                label:setString(attr_str)
+                
+                local h = self:_getLableHeight(label)--
+                local maxHeight = maxHeights[row] or 0
+                if h > maxHeight then
+                    maxHeights[row] = h
+                end
+                self.randomattr_panel:addChild(label)
+                -- local act_str = string_format("<div fontcolor=#%s>(%s%s)</div>", val_color,suit.count,TI18N("语言_c_3054"))
+                -- self.random_item_list[i].act_info:setString(act_str)
+            else
+                local str
+                if i == 1 then
+                    str = Config.PartnerHolyEqmData.data_const.text_show_1.desc
+                else
+                    str = Config.PartnerHolyEqmData.data_const.text_show_2.desc
+                end
+                
+                local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(_x, 0), nil, nil, 290)
+                table.insert(self.randomattr_list,label)
+                label:setString(str)
+                
+                local h = self:_getLableHeight(label)--
+                local maxHeight = maxHeights[row] or 0
+                if h > maxHeight then
+                    maxHeights[row] = h
+                end
+
+                self.randomattr_panel:addChild(label)
+
+                -- self.random_item_list[i]:setTouchEnabled(true)
+                -- addEvt2showAllTextTips(self.random_item_list[i].node,str,35)
+                -- self.random_item_list[i].attr:setString(str)
+                -- self.random_item_list[i].icon[1]:setVisible(false)
+            end
+        end
+        
+        local startY = 50
+        for i,v in ipairs(self.randomattr_list) do
+            -- local row = math.floor((i - 1)/2) + 1
+            local row = i
+            v:setPositionY(startY - maxHeights[row]/2)
+            -- if i % 2 == 0 then
+                startY = startY - maxHeights[row]
+            -- end
+        end
+        
+        local maxRow = math.ceil(num/2)
+        local maxRow = num
+        local gap = 0
+        local totalHeigh = 0
+        for i = 1, maxRow do
+            totalHeigh = totalHeigh + maxHeights[i]
+        end
+        totalHeigh = totalHeigh + (maxRow - 1) * gap + 50
+
+        _height = totalHeigh
+    end
+    if self.item_config.quality <= BackPackConst.quality.red then
+        self.randomattr_soul_panel:setVisible(false)
+    else
+        self.randomattr_soul_panel:setVisible(true)
+        if self._isAttachHoly then
+            self.randomattr_soul_tip:setString(TI18N("语言_c_7447"))
+            self.randomattr_soul_btn:setVisible(true)
+            self.randomattr_soul_lock:setVisible(false)
+            self.randomattr_soul_tip:setPositionX(34)
+        else
+            self.randomattr_soul_tip:setString(TI18N("语言_c_7444"))
+            self.randomattr_soul_btn:setVisible(false)
+            self.randomattr_soul_lock:setVisible(true)
+            self.randomattr_soul_tip:setPositionX(64)
+        end
+        local random_h = self.randomattr_soul_tip:getContentSize().height + self.randomattr_soul_label:getContentSize().height + 5
+        random_h = math.max(random_h,70)
+        _height = _height + random_h
+        self.randomattr_soul_panel:setContentSize(cc.size(self.randomattr_soul_panel:getContentSize().width,random_h))
+        self.randomattr_soul_label:setPositionY(random_h - 20)
+        self.randomattr_soul_tip:setPositionY(10)
+        self.randomattr_soul_btn:setPositionY(random_h - 24)
+        if lustr_status then
+            self.randomattr_soul_panel:setPositionY(-random_h-10)
+            _height = _height + 20
+        else
+            self.randomattr_soul_panel:setPositionY(random_h - _height + 30)
+        end
+    end
+    return _height
+end
+--==============================--
+--desc:装备套装属性 --by lwc
+--time:2018-10-20 12:04:58
+--@return 返回对比 csd中 suitattr_panel 额外的高度 如果 < 0 表示 没有套装信息(可能没有配置) 
+--==============================--
+function EquipHolyTips:setSuitAttrInfo()
+    if not self.suit_config then return -1 end
+    if not self.item_config then return -1 end
+
+    -- [4005] = {id=4005, name="@冒险套装", add_attr1={{'atk',100}}, add_attr2={{'def',100}}, add_attr3={{'speed',10}}},
+    --计算激活数量 (只有穿带才可能激活)
+    local act_count, cur_suit_config  = self:getEquipActiveCount()
+    --套装列表
+    local suit_list = {}
+    local max_config = self.suit_config[#self.suit_config]
+    local max_count = max_config.num
+    local name = nil
+    
+    for i,v in ipairs(self.suit_config) do
+        if name == nil then
+            name = v.name
+        end
+
+        if  (v.attr and next(v.attr) ~= nil) or (v.skill_id and next(v.skill_id) ~= nil) then
+            local suit = {}
+            suit.count = v.num
+            if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+                local eqm_set = nil
+
+                suit.total_attr = {}
+            --    for k, v in pairs(v.skill_id) do 
+            --        suit.total_attr[k] = v
+            --    end 
+
+                if cur_suit_config and cur_suit_config[i] then
+                    suit.attr = cur_suit_config[i].skill_id[#cur_suit_config[i].skill_id]
+                    eqm_set = cur_suit_config[i].id
+                    if cur_suit_config[i].all_skill_desc then
+                        suit.skill_desc = cur_suit_config[i].all_skill_desc[#v.all_skill_desc] --神装套装描述 
+                    end
+                    for k, v in pairs(cur_suit_config[i].skill_id) do 
+                        suit.total_attr[k] = v
+                    end 
+                else
+                    suit.attr = v.skill_id[#v.skill_id]     
+
+                    eqm_set = v.id
+                    if v.all_skill_desc then
+                        suit.skill_desc = v.all_skill_desc[#v.all_skill_desc] --神装套装描述 
+                    end
+                    for k, v in pairs(v.skill_id) do 
+                        suit.total_attr[k] = v
+                    end 
+                end
+                local star = eqm_set%100
+                suit.suit_name = string_format(v.desc, star)
+
+    
+            elseif self.item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+                if cur_suit_config and cur_suit_config[v.num] then
+                    for _,cur_suit in ipairs(cur_suit_config[v.num]) do
+                        if cur_suit.num == v.num then
+                            suit.attr = cur_suit.attr[#cur_suit.attr] 
+                            suit.name =  cur_suit.abb_name
+                            suit.is_suit =  true
+                        end
+                    end
+
+                    if suit.attr == nil then
+                        suit.attr = v.attr[#v.attr]
+                        suit.name =  v.abb_name
+                    end
+                else
+                    suit.attr = v.attr[#v.attr] 
+                    suit.name =  v.abb_name               
+                end
+                -- suit.attr = v.attr[#v.attr]
+            end
+            
+            table_insert(suit_list, suit)
+        end
+    end
+
+    self.suitattr_panel:removeAllChildren()
+    self.suitattr_name = createRichLabel(22, cc.c4b(0xfe,0xee,0xba,0xff), cc.p(0, 1), cc.p(14, -3),-10,nil,560)
+    self.suitattr_panel:addChild(self.suitattr_name)
+
+    local count = #suit_list
+    --神装名字特殊显示
+    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装 
+        local eqm_key = math_floor(self.item_config.eqm_set/100)
+        local res_config = Config.PartnerHolyEqmData.data_suit_res_prefix[eqm_key]
+        name = res_config.name
+        local tips = TI18N("语言_c_3056")
+        local str = string_format("%s(%s)", name, tips)
+        self.suitattr_name:setString(str)
+    else
+        if count > 0 then
+            --第一个名字不为空说明有套装激活
+            if suit_list[1] and suit_list[1].is_suit then
+                local tips = TI18N("语言_c_3056")
+                local str = string_format("%s(%s)", TI18N("语言_c_6805"), tips)
+                self.suitattr_name:setString(tips)
+                -- self.suitattr_name:setFontSize(20)
+            else
+                local str = string_format("%s(%s/%s)", name, act_count, max_count)
+                self.suitattr_name:setString(str)
+                -- local suit = suit_list[#suit_list]
+                -- if suit and act_count >= suit.count then
+                --     self.suitattr_name:setTextColor(cc.c4b(0x8b,0xff,0x8e,255))
+                -- end
+            end
+        end
+    end
+
+    local s = self.suitattr_name:getContentSize()
+    
+    local totalHeight = s.height 
+    local gap = 0
+    self.suitattr_name:setPosition(cc.p(14, 0 ))
+    -- local tHeight = totalHeight
+    -- local gap_y = 40
+    local show_skill_id = nil --是否有显示技能id
+    for i,suit in ipairs(suit_list) do
+        -- if self.suit_item_list[i] == nil then
+        --     self.suit_item_list[i] = self:createattrItem(i, self.suitattr_panel)
+        --     self.suit_item_list[i].icon[1]:setVisible(false)
+        -- end
+        
+        local type_str = type(suit.attr)
+        local attr_color = "c1b7ab"
+        local val_color = "ffeedd"
+        --是否激活
+        if act_count >= suit.count then
+            val_color = "8bff8e"
+            attr_color  = val_color
+        end 
+        local act_info = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(1, 0.5), cc.p(580, - totalHeight - gap - 20), nil, nil, 520)
+        self.suitattr_panel:addChild(act_info)
+        if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装 
+            local act_str = string_format("<div fontcolor=#%s>%s(%s)</div>", val_color, suit.suit_name, suit.count)
+            act_info:setString(act_str)
+        else
+            if suit.name then
+                local act_str = string_format("<div fontcolor=#%s>(%s%s%s)</div>",val_color, suit.name, suit.count,TI18N("语言_c_3054"))
+                act_info:setString(act_str)
+            else
+                local act_str = string_format("<div fontcolor=#%s>(%s%s)</div>", val_color, suit.count, TI18N("语言_c_3054"))
+                act_info:setString(act_str)
+            end
+        end
+
+         --说明是属性
+        if type_str == "table" then
+            -- 神装属性有2条
+            if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT and suit.total_attr and #suit.total_attr > 1 then --神装 
+                for k , suit_data in pairs(suit.total_attr) do 
+                    local attr_key = suit_data[1]
+                    local attr_val = suit_data[2]
+                    local attr_name = Config.AttrData.data_key_to_name[attr_key]
+                    local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                    if is_per == true then
+                        attr_val = (attr_val*0.1).."%"
+                    end
+                    
+                    local icon = PathTool.getAttrIconByStr(attr_key)
+                    local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val)
+               
+                    local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 1), cc.p(24, - totalHeight-gap-10), nil, nil, 400)
+                    self.suitattr_panel:addChild(label)
+                    label:setString(attr_str)
+                   
+                    totalHeight = totalHeight + gap + self:_getLableHeight(label)
+                end 
+                -- self.suit_item_list[i].icon[2]:setPositionY(-17)
+                -- self.suit_item_list[i].attr[2]:setPositionY(-17)
+                -- totalHeight = totalHeight + 80
+            else 
+
+                local attr_key = suit.attr[1]
+                local attr_val = suit.attr[2]
+                local attr_name = Config.AttrData.data_key_to_name[attr_key]
+                local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                if is_per == true then
+                    attr_val = (attr_val*0.1).."%"
+                end
+                local icon = PathTool.getAttrIconByStr(attr_key)
+                local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val)
+                local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 1), cc.p(24, - totalHeight-gap-10), nil, nil, 520)
+                self.suitattr_panel:addChild(label)
+                label:setString(attr_str)
+                totalHeight = totalHeight + gap + self:_getLableHeight(label)
+
+                -- local attr_key = suit.attr[1]
+                -- local attr_val = suit.attr[2]
+                -- local attr_name = Config.AttrData.data_key_to_name[attr_key]
+                -- local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                -- if is_per == true then
+                --     attr_val = (attr_val*0.1).."%"
+                -- end
+
+                -- local icon = PathTool.getAttrIconByStr(attr_key)
+                -- local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val)
+                -- self.suit_item_list[i].attr[1]:setString(attr_str)
+                -- self.suit_item_list[i].attr[1]:setPosition(cc.p(4,14))
+                -- local attrHeight = self.suit_item_list[i].attr[1]:getContentSize().height
+                -- if attrHeight > 45 then
+                --     gap_y = attrHeight + 6
+                -- else
+                --     gap_y = 40 
+                -- end
+            end 
+
+        elseif type_str == "number" then
+            local attr_name 
+            if suit.skill_desc then
+                attr_name = suit.skill_desc[2] or TI18N("语言_c_3058")
+                if suit.skill_desc[1] and suit.skill_desc[1] == 2 then
+                    show_skill_id = suit.attr
+                end
+            else
+                attr_name = TI18N("语言_c_3058")
+            end
+            local icon = PathTool.getAttrIconByStr("skill")
+            local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name)
+
+            local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 1), cc.p(24, - totalHeight-gap-10), nil, nil, 480)
+            self.suitattr_panel:addChild(label)
+            label:setString(attr_str)
+            totalHeight = totalHeight + gap + self:_getLableHeight(label)
+            -- self.suit_item_list[i].attr[1]:setString(attr_str)   
+            -- local attrHeight = self.suit_item_list[i].attr[1]:getContentSize().height
+            -- if attrHeight > 45 then
+            --     gap_y = attrHeight + 6
+            -- else
+            --     gap_y = 40
+            -- end
+        end
+        -- self.suit_item_list[i].node:setPosition(24, 16 - tHeight)
+        -- tHeight = tHeight + gap_y
+    end
+    self.suitattr_panel:setContentSize(cc.size(self.suitattr_panel_width, totalHeight))
+    return totalHeight  , show_skill_id
+end
+--==============================--
+--desc:附魂装备套装属性 --by lwc
+--time:2018-10-20 12:04:58
+--@return 返回对比 csd中 suitattr_panel 额外的高度 如果 < 0 表示 没有套装信息(可能没有配置) 
+--==============================--
+function EquipHolyTips:setSttachSuitAttrInfo()
+    if not self.attach_suit_config then return -1 end
+    if not self.attach_item_config then return -1 end
+
+    -- [4005] = {id=4005, name="@冒险套装", add_attr1={{'atk',100}}, add_attr2={{'def',100}}, add_attr3={{'speed',10}}},
+    --计算激活数量 (只有穿带才可能激活)
+    local act_count, cur_suit_config  = self:getAttachEquipActiveCount()
+
+    --套装列表
+    local suit_list = {}
+    local max_config = self.attach_suit_config[#self.attach_suit_config]
+    local max_count = max_config.num
+    local name = nil
+    
+    for i,v in ipairs(self.attach_suit_config) do
+        if name == nil then
+            name = v.name
+        end
+
+        if  (v.attr and next(v.attr) ~= nil) or (v.skill_id and next(v.skill_id) ~= nil) then
+            local suit = {}
+            suit.count = v.num
+            if self.attach_item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+                local eqm_set = nil
+
+                suit.total_attr = {}
+            --    for k, v in pairs(v.skill_id) do 
+            --        suit.total_attr[k] = v
+            --    end 
+
+                if cur_suit_config and cur_suit_config[i] then
+                    suit.attr = cur_suit_config[i].skill_id[#cur_suit_config[i].skill_id]
+                    eqm_set = cur_suit_config[i].id
+                    if cur_suit_config[i].all_skill_desc then
+                        suit.skill_desc = cur_suit_config[i].all_skill_desc[#v.all_skill_desc] --神装套装描述 
+                    end
+                    for k, v in pairs(cur_suit_config[i].skill_id) do 
+                        suit.total_attr[k] = v
+                    end 
+                else
+                    suit.attr = v.skill_id[#v.skill_id]     
+
+                    eqm_set = v.id
+                    if v.all_skill_desc then
+                        suit.skill_desc = v.all_skill_desc[#v.all_skill_desc] --神装套装描述 
+                    end
+                    for k, v in pairs(v.skill_id) do 
+                        suit.total_attr[k] = v
+                    end 
+                end
+                local star = eqm_set%100
+                suit.suit_name = string_format(v.desc, star)
+
+    
+            elseif self.attach_item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+                if cur_suit_config and cur_suit_config[v.num] then
+                    for _,cur_suit in ipairs(cur_suit_config[v.num]) do
+                        if cur_suit.num == v.num then
+                            suit.attr = cur_suit.attr[#cur_suit.attr] 
+                            suit.name =  cur_suit.abb_name
+                            suit.is_suit =  true
+                        end
+                    end
+
+                    if suit.attr == nil then
+                        suit.attr = v.attr[#v.attr]
+                        suit.name =  v.abb_name
+                    end
+                else
+                    suit.attr = v.attr[#v.attr] 
+                    suit.name =  v.abb_name               
+                end
+                -- suit.attr = v.attr[#v.attr]
+            end
+            
+            table_insert(suit_list, suit)
+        end
+    end
+
+    self.attach_suitattr_panel:removeAllChildren()
+    if not self.attach_suitattr_name then
+        self.attach_suitattr_name = createRichLabel(22, cc.c4b(0xfe,0xee,0xba,0xff), cc.p(0, 1), cc.p(14, 0),-6,nil,560)
+        self.attach_suitattr_panel:addChild(self.attach_suitattr_name)
+    end
+
+    local count = #suit_list
+    --神装名字特殊显示
+    if self.attach_item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装 
+        local eqm_key = math_floor(self.attach_item_config.eqm_set/100)
+        local res_config = Config.PartnerHolyEqmData.data_suit_res_prefix[eqm_key]
+        name = res_config.name
+        local tips1 = TI18N("语言_c_7448")
+        local tips = TI18N("语言_c_3056")
+        local str = string_format("%s\n%s(%s)",tips1, name, tips)
+        if self.attach_suitattr_name then
+            self.attach_suitattr_name:setString(str)
+        end
+    else
+        if count > 0 then
+            --第一个名字不为空说明有套装激活
+            local tips1 = TI18N("语言_c_7448")
+            if suit_list[1] and suit_list[1].is_suit then
+                local tips = TI18N("语言_c_3056")
+                local str = string_format("%s\n%s(%s)", tips1,TI18N("语言_c_6805"), tips)
+                if self.attach_suitattr_name then
+                    self.attach_suitattr_name:setString(tips)
+                end
+            else
+                local str = string_format("%s\n%s (%s/%s)", tips1,name, act_count, max_count)
+                self.attach_suitattr_name:setString(str)
+            end
+        end
+    end
+
+    local s = self.attach_suitattr_name:getContentSize()
+    
+    local totalHeight = s.height 
+    local gap = 0
+    self.attach_suitattr_name:setPosition(cc.p(14, 0 ))
+    -- local tHeight = totalHeight
+    -- local gap_y = 40
+    local show_skill_id = nil --是否有显示技能id
+    local act_info_list = {}
+    local label_list = {}
+    for i,suit in ipairs(suit_list) do
+        -- if self.suit_item_list[i] == nil then
+        --     self.suit_item_list[i] = self:createattrItem(i, self.suitattr_panel)
+        --     self.suit_item_list[i].icon[1]:setVisible(false)
+        -- end
+        
+        local type_str = type(suit.attr)
+        local attr_color = "c1b7ab"
+        local val_color = "ffeedd"
+        --是否激活
+        if act_count >= suit.count then
+            val_color = "8bff8e"
+            attr_color  = val_color
+        end 
+        local act_info = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(1, 0.5), cc.p(580, - totalHeight - gap - 20), nil, nil, 400)
+        self.attach_suitattr_panel:addChild(act_info)
+        table.insert(act_info_list,act_info)
+        if self.attach_item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装 
+            local act_str = string_format("<div fontcolor=#%s>%s(%s)</div>", val_color, suit.suit_name, suit.count)
+            act_info:setString(act_str)
+        else
+            if suit.name then
+                local act_str = string_format("<div fontcolor=#%s>(%s%s%s)</div>",val_color, suit.name, suit.count,TI18N("语言_c_3054"))
+                act_info:setString(act_str)
+            else
+                local act_str = string_format("<div fontcolor=#%s>(%s%s)</div>", val_color, suit.count, TI18N("语言_c_3054"))
+                act_info:setString(act_str)
+            end
+        end
+
+         --说明是属性
+        if type_str == "table" then
+            -- 神装属性有2条
+            if self.attach_item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT and suit.total_attr and #suit.total_attr > 1 then --神装 
+                for k , suit_data in pairs(suit.total_attr) do 
+                    local attr_key = suit_data[1]
+                    local attr_val = suit_data[2]
+                    local attr_name = Config.AttrData.data_key_to_name[attr_key]
+                    local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                    if is_per == true then
+                        attr_val = (attr_val*0.1).."%"
+                    end
+                    
+                    local icon = PathTool.getAttrIconByStr(attr_key)
+                    local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val)
+               
+                    local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 1), cc.p(24, - totalHeight-gap), nil, nil, 400)
+                    self.attach_suitattr_panel:addChild(label)
+                    table.insert(label_list,label)
+                    label:setString(attr_str)
+                   
+                    totalHeight = totalHeight + gap + self:_getLableHeight(label)
+                end 
+                -- self.suit_item_list[i].icon[2]:setPositionY(-17)
+                -- self.suit_item_list[i].attr[2]:setPositionY(-17)
+                -- totalHeight = totalHeight + 80
+            else 
+
+                local attr_key = suit.attr[1]
+                local attr_val = suit.attr[2]
+                local attr_name = Config.AttrData.data_key_to_name[attr_key]
+                local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                if is_per == true then
+                    attr_val = (attr_val*0.1).."%"
+                end
+                local icon = PathTool.getAttrIconByStr(attr_key)
+                local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val)
+                local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 1), cc.p(24, - totalHeight-gap), nil, nil, 400)
+                self.attach_suitattr_panel:addChild(label)
+                table.insert(label_list,label)
+                label:setString(attr_str)
+                totalHeight = totalHeight + gap + self:_getLableHeight(label)
+
+                -- local attr_key = suit.attr[1]
+                -- local attr_val = suit.attr[2]
+                -- local attr_name = Config.AttrData.data_key_to_name[attr_key]
+                -- local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                -- if is_per == true then
+                --     attr_val = (attr_val*0.1).."%"
+                -- end
+
+                -- local icon = PathTool.getAttrIconByStr(attr_key)
+                -- local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val)
+                -- self.suit_item_list[i].attr[1]:setString(attr_str)
+                -- self.suit_item_list[i].attr[1]:setPosition(cc.p(4,14))
+                -- local attrHeight = self.suit_item_list[i].attr[1]:getContentSize().height
+                -- if attrHeight > 45 then
+                --     gap_y = attrHeight + 6
+                -- else
+                --     gap_y = 40 
+                -- end
+            end 
+
+        elseif type_str == "number" then
+            local attr_name 
+            if suit.skill_desc then
+                attr_name = suit.skill_desc[2] or TI18N("语言_c_3058")
+                if suit.skill_desc[1] and suit.skill_desc[1] == 2 then
+                    show_skill_id = suit.attr
+                end
+            else
+                attr_name = TI18N("语言_c_3058")
+            end
+            local icon = PathTool.getAttrIconByStr("skill")
+            local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name)
+
+            local label = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 1), cc.p(24, - totalHeight-gap), nil, nil, 480)
+            self.attach_suitattr_panel:addChild(label)
+            table.insert(label_list,label)
+            label:setString(attr_str)
+            totalHeight = totalHeight + gap + self:_getLableHeight(label)
+            -- self.suit_item_list[i].attr[1]:setString(attr_str)   
+            -- local attrHeight = self.suit_item_list[i].attr[1]:getContentSize().height
+            -- if attrHeight > 45 then
+            --     gap_y = attrHeight + 6
+            -- else
+            --     gap_y = 40
+            -- end
+        end
+        -- self.suit_item_list[i].node:setPosition(24, 16 - tHeight)
+        -- tHeight = tHeight + gap_y
+    end
+    self.attach_suitattr_panel:setContentSize(cc.size(self.attach_suitattr_panel_width, totalHeight))
+    self.attach_suitattr_name:setPositionY(totalHeight-5)
+    local _h = totalHeight - self.attach_suitattr_name:getContentSize().height
+    for k, v in ipairs(act_info_list) do
+        v:setName("act_info_list"..k)
+        v:setPositionY(_h - gap - 20)
+        _h = _h - self:_getLableHeight(v)
+    end
+    local _h = totalHeight - self.attach_suitattr_name:getContentSize().height
+    for k, v in ipairs(label_list) do
+        v:setName("label_list"..k)
+        v:setPositionY(_h-gap- self:_getLableHeight(v)+30)
+        _h = _h-gap- self:_getLableHeight(v)
+    end
+    return totalHeight  , show_skill_id
+end
+
+--获取装备激活数量
+function EquipHolyTips:getEquipActiveCount()
+    if not self.partner_id or self.partner_id == 0 then
+        return 0
+    end
+    -- 套装数量
+    local count = 0
+    local equip_list = {}
+    if self.item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+        if self.partner.holy_eqm ~= nil then
+            --说明是网络返回的
+            for i,v in ipairs(self.partner.holy_eqm) do
+                local g = GoodsVo.New(v.base_id)
+                g:setExtra(v.extra)
+                -- if not g:isHolyAttach() then
+                    -- equip_list[v.type] = g
+                    table.insert(equip_list,g)
+                -- end
+            end
+        elseif self.partner.holy_eqm_list ~= nil then
+            --说明是本地的 hero_vo
+            for k,v in pairs(self.partner.holy_eqm_list) do
+                -- if not v:isHolyAttach() then
+                    -- equip_list[k] = v
+                    table.insert(equip_list,v)
+                -- end
+            end
+        end
+        --组合神装的套装信息
+        local suit_config = {} 
+        local eqm_key = math_floor(self.item_config.eqm_set/100)
+        local eqm_set_list = {}
+        for k, goodvo in pairs(equip_list) do
+            -- if goodvo.config and not goodvo:isHolyAttach() then
+            if goodvo.config then
+                local eqm_key_1 = math_floor(goodvo.config.eqm_set/100)
+                if eqm_key == eqm_key_1 then
+                    table_insert(eqm_set_list, goodvo.config.eqm_set)
+                    count = count + 1
+                end
+            end
+        end
+        table.sort( eqm_set_list, function(a,b) return a > b end)
+        if count > 1 then
+            local cur_eqm_set = nil
+            local cur_config = nil
+            for i,eqm_set in ipairs(eqm_set_list) do
+                if cur_eqm_set == nil then
+                    cur_eqm_set = eqm_set
+                    cur_config = Config.PartnerHolyEqmData.data_suit_info[eqm_set]
+                    table_sort( cur_config, function(a, b) return a.num < b.num end)
+                else
+                    if cur_eqm_set ~= eqm_set then
+                        cur_config = Config.PartnerHolyEqmData.data_suit_info[eqm_set]
+                        table_sort( cur_config, function(a, b) return a.num < b.num end)    
+                    end
+                    for _,suit_info in ipairs(cur_config) do
+                        if suit_info.num == i then
+                            table_insert(suit_config, suit_info)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        return count , suit_config
+
+    elseif self.item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+        if self.partner.eqms ~= nil then
+            --说明是网络返回的
+            for i,v in ipairs(self.partner.eqms) do
+                equip_list[v.type] = GoodsVo.New(v.base_id)
+            end
+        elseif self.partner.eqm_list ~= nil then
+            --说明是本地的 hero_vo
+            for k,v in pairs(self.partner.eqm_list) do
+                equip_list[k] = v
+            end
+        end
+
+        local suit_config = {}
+        for k, goodvo in pairs(equip_list) do
+            if goodvo.config then
+                if goodvo.config.eqm_set > 0 then
+                    count = count + 1
+                    local set_config = Config.PartnerEqmData.data_eqm_suit[goodvo.config.eqm_set]
+                    if set_config ~= nil then
+                        table_insert(suit_config, set_config)
+                    end
+                end
+                -- if self.item_config.eqm_set == goodvo.config.eqm_set then
+                --     count = count + 1
+                -- end
+            end
+        end
+        table_sort( suit_config, function(a, b) 
+                if a[1] and b[1] and a[1].id and b[1].id then
+                    return a[1].id > b[1].id
+                else
+                    return false
+                end
+            end)
+        return count, suit_config
+    end
+end
+
+--获取装备激活数量
+function EquipHolyTips:getAttachEquipActiveCount()
+    if not self.partner_id or self.partner_id == 0 then
+        return 0
+    end
+    -- 套装数量
+    local count = 0
+    local equip_list = {}
+    if self.attach_item_config.sub_type == BackPackConst.item_tab_type.HOLYEQUIPMENT then --神装
+        if self.partner.holy_eqm ~= nil then
+            --说明是网络返回的
+            for i,v in ipairs(self.partner.holy_eqm) do
+                local g = GoodsVo.New(v.base_id)
+                g:setExtra(v.extra)
+                -- if g:isHolyAttach() then
+                table.insert(equip_list,g)
+                    -- equip_list[v.type] = g
+                -- end
+            end
+        elseif self.partner.holy_eqm_attach_list ~= nil then
+            --说明是本地的 hero_vo
+            for k,v in pairs(self.partner.holy_eqm_attach_list) do
+                -- if v:isHolyAttach() then
+                    -- equip_list[k] = v
+                    table.insert(equip_list,v)
+                -- end
+            end
+        end
+        --组合神装的套装信息
+        local suit_config = {} 
+        local eqm_key = math_floor(self.attach_item_config.eqm_set/100)
+        local eqm_set_list = {}
+        for k, goodvo in pairs(equip_list) do
+            -- if goodvo.config and goodvo:isHolyAttach() then
+            if goodvo.config then
+                local eqm_key_1 = math_floor(goodvo.config.eqm_set/100)
+                if eqm_key == eqm_key_1 then
+                    table_insert(eqm_set_list, goodvo.config.eqm_set)
+                    count = count + 1
+                end
+            end
+        end
+
+        table.sort( eqm_set_list, function(a,b) return a > b end)
+        if count > 1 then
+            local cur_eqm_set = nil
+            local cur_config = nil
+            for i,eqm_set in ipairs(eqm_set_list) do
+                if cur_eqm_set == nil then
+                    cur_eqm_set = eqm_set
+                    cur_config = Config.PartnerHolyEqmData.data_suit_info[eqm_set]
+                    table_sort( cur_config, function(a, b) return a.num < b.num end)
+                else
+                    if cur_eqm_set ~= eqm_set then
+                        cur_config = Config.PartnerHolyEqmData.data_suit_info[eqm_set]
+                        table_sort( cur_config, function(a, b) return a.num < b.num end)    
+                    end
+                    for _,suit_info in ipairs(cur_config) do
+                        if suit_info.num == i then
+                            table_insert(suit_config, suit_info)
+                            break
+                        end
+                    end
+                end
+            end
+        end
+        return count , suit_config
+
+    elseif self.attach_item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+        if self.partner.eqms ~= nil then
+            --说明是网络返回的
+            for i,v in ipairs(self.partner.eqms) do
+                equip_list[v.type] = GoodsVo.New(v.base_id)
+            end
+        elseif self.partner.eqm_list ~= nil then
+            --说明是本地的 hero_vo
+            for k,v in pairs(self.partner.eqm_list) do
+                equip_list[k] = v
+            end
+        end
+
+        local suit_config = {}
+        for k, goodvo in pairs(equip_list) do
+            if goodvo.config then
+                if goodvo.config.eqm_set > 0 then
+                    count = count + 1
+                    local set_config = Config.PartnerEqmData.data_eqm_suit[goodvo.config.eqm_set]
+                    if set_config ~= nil then
+                        table_insert(suit_config, set_config)
+                    end
+                end
+                -- if self.item_config.eqm_set == goodvo.config.eqm_set then
+                --     count = count + 1
+                -- end
+            end
+        end
+        table_sort( suit_config, function(a, b) 
+                if a[1] and b[1] and a[1].id and b[1].id then
+                    return a[1].id > b[1].id
+                else
+                    return false
+                end
+            end)
+        return count, suit_config
+    end
+end
+
+function EquipHolyTips:createattrItem_2(index, parent)
+    if not parent then return end
+    local object = {}
+    object.node = ccui.Layout:create()
+    object.node:setAnchorPoint(cc.p(0, 0.5))
+    object.node:setContentSize(cc.size(300, 28))
+    local row = math.floor((index - 1)/2) + 1
+    if index % 2 == 1 then
+        object.node:setPosition(24,30-(row-1)*40)
+    else
+        object.node:setPosition(320,30-(row-1)*40)
+    end
+
+    parent:addChild(object.node)
+    object.node:setTouchEnabled(true)
+    object.attr = {}
+    object.attr[1] = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, 14), -2, nil, 290)
+    object.node:addChild(object.attr[1])
+
+
+    object.attr[2] = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, -7), -2, nil, 290)
+    object.node:addChild(object.attr[2])
+    object.icon = {}
+
+    object.icon[1] = createImage(object.node, PathTool.getResFrame("holy_starup","holy_starup_6"),4, 14, cc.p(0,0.5), true)
+    object.icon[1]:setVisible(false)
+
+    object.icon[2] = createImage(object.node, PathTool.getResFrame("holy_starup","holy_starup_6"),4, -7, cc.p(0,0.5), true)
+    object.icon[2]:setVisible(false)
+  
+    object.act_info = createRichLabel(20, cc.c4b(0xff,0xee,0xdd,0xff), cc.p(1, 0.5), cc.p(630, 14), -10, nil, 630)
+    object.node:addChild(object.act_info)
+    return object
+end
+
+
+-- function EquipHolyTips:createattrItem(index, parent)
+--     if not parent then return end
+--     local object = {}
+--     object.node = ccui.Layout:create()
+--     object.node:setAnchorPoint(cc.p(0, 0))
+--     object.node:setContentSize(cc.size(630, 0))
+    
+--     -- object.node:setPosition(24,30-(index-1)*40)
+--     parent:addChild(object.node)
+--     object.node:setTouchEnabled(true)
+--     object.attr = {}
+--     object.attr[1] = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, -20), -2, nil, 260)
+--     object.node:addChild(object.attr[1])
+
+
+--     object.attr[2] = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, -60), -2, nil, 280)
+--     object.node:addChild(object.attr[2])
+--     object.icon = {}
+
+--     object.icon[1] = createImage(object.node, PathTool.getResFrame("holy_starup","holy_starup_6"),4, -20, cc.p(0,0.5), true)
+--     object.icon[1]:setVisible(false)
+
+--     object.icon[2] = createImage(object.node, PathTool.getResFrame("holy_starup","holy_starup_6"),4, -60, cc.p(0,0.5), true)
+--     object.icon[2]:setVisible(false)
+  
+--     object.act_info = createRichLabel(20, cc.c4b(0xff,0xee,0xdd,0xff), cc.p(1, 0.5), cc.p(630, 14), 0, nil, 630)
+--     object.node:addChild(object.act_info)
+--     return object
+-- end
+
+
+--==============================--
+--desc:创建技能显示单例
+--==============================--
+function EquipHolyTips:createSkillItem(parent)
+    local item = {}
+    local skill = SkillItem.new(true,true,true,0.8)
+    parent:addChild(skill)
+    skill:setPosition(70, 62)
+    -- local name = createLabel(24,cc.c4b(0xfe,0xee,0xba,0xff),nil,140, 96,"",parent,1,cc.p(0,0))
+    local desc = createRichLabel(18,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(0, 15),4,nil,430)
+    -- local tips = createRichLabel(18,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(25, 115),4,nil,260)
+    -- tips:setString(TI18N("语言_c_3059"))
+    local scroll_size = cc.size(450,95) 
+    local desc_scrollview = createScrollView(scroll_size.width, scroll_size.height,130, 0, parent)
+    desc_scrollview:addChild(desc)     
+    desc_scrollview:setPositionY(15)
+    -- parent:addChild(tips)
+    item.skill = skill
+    -- item.name = name   
+    item.desc = desc
+    item.desc_scrollview = desc_scrollview 
+    item.scroll_size = scroll_size
+    return item
+end
+
+--计算基础评分
+function EquipHolyTips:getBaseScore()
+    if not self.item_config or not self.item_config.ext or not self.item_config.ext[1] then return 0 end
+    local base_attr = self.item_config.ext[1][2] or {}
+    local num = PartnerCalculate.calculatePower(base_attr)
+    return num
+end
+
+--计算神装评分
+function EquipHolyTips:getHolyEquipScore()
+    if not self.item_config or not self.item_config.ext or not self.item_config.ext[1] then return 0 end
+    local num = 0
+    local base_score = 0
+    local holy_eqm_attr_sore = 0
+
+    local base_config = Config.PartnerHolyEqmData.data_base_info(self.item_config.id)
+    if base_config then
+        num = base_config.score
+    end
+
+    if self.item_config and self.item_config.ext and self.item_config.ext[1] then
+        local base_attr = self.item_config.ext[1][2] or {}
+        base_score = HeroCalculate.holyEquipMentPower(base_attr)
+    end
+
+    if self.data and self.data.holy_eqm_attr then
+        local holy_eqm_attr = {}
+        local dic_holy_eqm_attr = {}
+        for k,v in pairs(self.data.holy_eqm_attr) do
+            dic_holy_eqm_attr[v.pos] = v
+        end
+        for i=1,tableLen(dic_holy_eqm_attr) do
+            if dic_holy_eqm_attr[i] then
+                local attr_key = Config.AttrData.data_id_to_key[dic_holy_eqm_attr[i].attr_id]
+                table_insert(holy_eqm_attr,{attr_key,dic_holy_eqm_attr[i].attr_val})
+            end
+        end
+        holy_eqm_attr_sore = HeroCalculate.holyEquipMentPower(holy_eqm_attr)
+    end
+    return num+ base_score+holy_eqm_attr_sore
+end
+
+
+function EquipHolyTips:close_callback()
+    if self.equip_item then 
+        self.equip_item:DeleteMe()
+        self.equip_item = nil
+    end
+    if self.power_label then 
+        self.power_label:DeleteMe()
+        self.power_label = nil
+    end
+
+    if self.item_update_event ~= nil then
+        self.data:UnBind(self.item_update_event)
+        self.item_update_event = nil
+    end
+
+    controller:openEquipTips(false)
+end
+
+
+function EquipHolyTips:_updateRandomBtn()
+    local arr = {self.pre_btn, self.new_pre_btn, self.new_pre_look}
+    local startX = 598
+    for k, v in ipairs(arr) do
+        if v:isVisible() then
+            local s = v:getContentSize()
+            v:setPositionX(startX - s.width/2 - 10)
+            startX = startX - s.width - 10
+        end
+    end
+end

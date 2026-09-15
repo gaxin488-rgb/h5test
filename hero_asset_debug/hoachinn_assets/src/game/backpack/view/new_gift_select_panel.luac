@@ -1,0 +1,256 @@
+-- --------------------------------------------------------------------
+-- @author: xhj@shiyue.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      新自选礼包召唤
+-- <br/> 2020年5月16日
+-- --------------------------------------------------------------------
+NewSelectGiftWindow = NewSelectGiftWindow or BaseClass(BaseView)
+local controller = BackpackController:getInstance()
+local model = controller:getModel()
+
+function NewSelectGiftWindow:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big   
+    self.is_full_screen = false
+    self.layout_name = "backpack/new_select_gift_panel"
+    self.summon_pos = {}
+    self.summon_list = {}
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("newselectgift", "newselectgift"), type = ResourcesType.plist},
+    }
+    
+
+end
+
+function NewSelectGiftWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.panel_bg = self.main_panel:getChildByName("panel_bg")
+    self.panel_bg2 = self.main_panel:getChildByName("panel_bg2")
+    self.panel_bg3 = self.main_panel:getChildByName("panel_bg3")
+    self.title_bg = self.main_panel:getChildByName("Image_2")
+    
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+
+    self.title = self.main_panel:getChildByName("win_title")
+    self.title:setString(TI18N(""))
+
+    self.desc_label = self.main_panel:getChildByName("desc_label")
+    self.desc_label:setString(TI18N("选中并使用，可获得该指定系的随机英雄"))
+
+    self.summon_btn = self.main_panel:getChildByName("summon_btn")
+    self.summon_label = self.summon_btn:getChildByName("label")
+    self.summon_label:setString(TI18N("确 认"))
+    
+    for i = 1, 5 do
+        local pos_node = self.main_panel:getChildByName("pos_node_" .. i)
+        if pos_node then
+            local summon_icon = self.summon_list[i]
+            if not summon_icon then
+                summon_icon = NewSelectGiftItem.new(handler(self, self._onClickSummonCard))
+                pos_node:addChild(summon_icon)
+                self.summon_list[i] = summon_icon
+            end
+            pos_node:setVisible(false)
+            self.summon_pos[i] = pos_node
+        end
+    end
+end
+
+-- 点击了卡牌
+function NewSelectGiftWindow:_onClickSummonCard(card)
+    if self.select_card then
+        self.select_card:setSelectStatus(false)
+        self.select_card = nil
+    end
+    
+    if card then
+        self.select_card = card
+        self.select_card:setSelectStatus(true)
+    end
+end
+
+
+function NewSelectGiftWindow:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.summon_btn, handler(self, self.onClickBtnSummon) ,true, 1)
+
+end
+
+
+--关闭
+function NewSelectGiftWindow:onClickBtnClose()
+    controller:openNewGiftSelectPanel(false)
+end
+
+
+-- 确定使用
+function NewSelectGiftWindow:onClickBtnSummon()
+    if self.select_card then
+        local sel_data = self.select_card:getData()
+        local chose_ids = {}
+        if sel_data and self.giftvo then
+            local cur_sort_id = -1
+            table.insert(chose_ids, {name=1,value = sel_data.bid,str =""})
+            cur_sort_id = sel_data.sort_id
+
+            if cur_sort_id and cur_sort_id >= 0 then
+                table.insert(chose_ids, {name=2,value = cur_sort_id,str =""})
+            end
+            
+            controller:sender10515(self.giftvo.id,1,chose_ids)
+            controller:openNewGiftSelectPanel(false)
+        end
+    else
+        message(TI18N("请先选择一种卡牌"))
+    end
+end
+
+function NewSelectGiftWindow:openRootWnd(giftvo)
+    self.giftvo = giftvo
+    if not giftvo then return end
+    
+    self:setData()
+end
+
+function NewSelectGiftWindow:setData()
+    if self.giftvo.config then
+        self.title:setString(self.giftvo.config.name)
+    end
+
+    local giftBid = self.giftvo.base_id
+    local item_list = {}
+    if Config.GiftData.data_choose_gift[giftBid] then
+        local gift_cfg = Config.GiftData.data_choose_gift[giftBid]
+        for k,v in pairs(gift_cfg) do
+            table.insert(item_list, v)
+        end
+        table.sort(item_list, SortTools.KeyLowerSorter("sort_id"))
+
+        local maxNum = #item_list
+        local pos_list = {}
+        if maxNum == 2 then
+            pos_list = {{210,290},{466,290}}
+        elseif maxNum == 3 then
+            pos_list = {{339,290},{150,290},{526,290}}
+        elseif maxNum == 5 then
+            pos_list = {{124,510},{335,510},{546,510},{210,265},{466,265}}
+        end
+        
+        if maxNum == 2 or maxNum == 3 then
+            self.main_panel:setContentSize(cc.size(678,574))
+            self.panel_bg:setContentSize(cc.size(678,574))
+            self.panel_bg2:setContentSize(cc.size(620,336))
+            self.panel_bg3:setContentSize(cc.size(620,336))
+            self.title_bg:setPositionY(566)
+            self.title:setPositionY(568)
+            self.desc_label:setPositionY(513)
+            self.close_btn:setPositionY(554)
+        end
+        for i,v in ipairs(item_list) do
+            if self.summon_pos and self.summon_pos[i] and pos_list and pos_list[i] then
+                self.summon_pos[i]:setPosition(cc.p(pos_list[i][1],pos_list[i][2]))
+                self.summon_pos[i]:setVisible(true)
+            end
+            
+            if self.summon_list and self.summon_list[i] then
+                self.summon_list[i]:setData(v)
+            end
+        end
+    end
+end
+
+
+function NewSelectGiftWindow:close_callback()
+    controller:openNewGiftSelectPanel(false)
+    for _,summon_item in pairs(self.summon_list) do
+        summon_item:DeleteMe()
+        summon_item = nil
+    end
+
+end
+
+---------------------------@ item
+NewSelectGiftItem = class("NewSelectGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function NewSelectGiftItem:ctor(callback)
+    self._clickCallBack = callback
+
+    self._is_select = false -- 是否选中了
+    self:configUI()
+    self:register_event()
+end
+
+function NewSelectGiftItem:configUI(  )
+    self.size = cc.size(180, 196)
+    self:setTouchEnabled(false)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("backpack/new_select_gift_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    self.container = container
+
+    self.brand = container:getChildByName("brand")
+    self.select = container:getChildByName("select")
+    
+    self.select:setVisible(false)
+end
+
+function NewSelectGiftItem:setData( data )
+    if not data then
+        return
+    end
+    self.data = data
+    if data.client_effect and data.client_effect[1] then
+        local res = PathTool.getResFrame("newselectgift","newselectgift_brand_"..(data.client_effect[1]))
+        loadSpriteTexture(self.brand, res, LOADTEXT_TYPE_PLIST)
+    end
+    
+    
+end
+
+function NewSelectGiftItem:getData( )
+    return self.data
+end
+
+function NewSelectGiftItem:register_event()
+    registerButtonEventListener(self.container, handler(self, self._onClickSummonLayer))
+end
+
+-- 点击选中
+function NewSelectGiftItem:_onClickSummonLayer()
+    if self._is_select == false then
+        if self._clickCallBack then
+            self:_clickCallBack(self)
+        end
+    end
+end
+
+function NewSelectGiftItem:setSelectStatus(status)
+    if status == true then
+        self.select:setVisible(true)
+    else
+        self.select:setVisible(false)
+    end
+    self._is_select = status
+end
+
+function NewSelectGiftItem:DeleteMe()
+    self.container:stopAllActions()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

@@ -1,0 +1,289 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 异界深渊 shop
+--------------------------------- 
+local _controller = DungeonAbyssController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+DungeonAbyssShopPanel = DungeonAbyssShopPanel or BaseClass(BaseView)
+
+function DungeonAbyssShopPanel:__init(type, diff)
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "dungeon_abyss/dungeon_abyss_shop_panel"
+
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.show_list = {}
+
+    self.cur_type = type or 1
+    self.diff = diff or 1
+end
+
+function DungeonAbyssShopPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+	self.container = container
+    self:playEnterAnimatianByObj(container, 2)
+    self.image_2 = container:getChildByName("image_2")
+	self.win_title = container:getChildByName("win_title")
+	self.win_title:setString(TI18N("语言_exc_02_92"))
+    moveTextBg(self.win_title,self.image_2,60,self.image_2:getContentSize().width)
+	self.close_btn = container:getChildByName("close_btn")
+
+	self.list_panel = container:getChildByName("list_panel")
+	self.res_label = container:getChildByName("res_label")
+    self.res_icon = container:getChildByName("res_icon")
+
+
+    self.res_bg = container:getChildByName("res_bg")
+    if not self.res_add then
+        local size = self.res_bg:getContentSize()
+        self.res_add = createImage(self.res_bg,PathTool.getResFrame("common", "common_1015"),size.width,size.height/2,cc.p(0.5,0.5),true)
+        self.res_add:setTouchEnabled(true)
+        self.res_add:setSwallowTouches(true)
+        registerButtonEventListener(self.res_add, function (  )
+            local item_id = Config.DungeonAbyssCircleData.data_constant["dungeon_currency_1"].val
+            if self.cur_type == 2 then
+                item_id = Config.DungeonAbyssCircleData.data_constant["dungeon_currency_high_1"].val
+            end
+            local data = Config.ItemData.data_get_data(item_id)
+            BackpackController:getInstance():openTipsSource( true,data )
+        end, true, 2)
+    end
+
+    self.label_limit = container:getChildByName("label_limit") 
+    self.label_limit:setString(TI18N("语言_c_5358"))
+	self.image_star = container:getChildByName("image_star")
+	self.label_star = container:getChildByName("label_star")
+
+	local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 2, -- y方向的间隔
+        item_width = 306, -- 单元的尺寸width
+        item_height = 143, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 2                         -- 列数，作用于垂直滚动类
+    }
+    self.item_scroll_view = CommonScrollViewSingleLayout.new(self.list_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, cc.size(self.list_panel:getContentSize().width, self.list_panel:getContentSize().height), setting, cc.p(0, 0))
+
+	self.item_scroll_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+	self.item_scroll_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+	self.item_scroll_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+
+    self:initTypeBtnList()
+end
+
+-- 初始化Tab按钮列表
+function DungeonAbyssShopPanel:initTypeBtnList()
+    self.tab_array = {
+        TI18N("语言_dun_aby_c_6"),
+        TI18N("语言_dun_aby_c_7")
+    }
+    self.tab_btn_list = {}
+    for i=1,2 do
+        local tab_btn = {}
+        local item = self.container:getChildByName("tab_btn"..i)
+        tab_btn.btn = item
+        tab_btn.index = i
+        tab_btn.select_bg = item:getChildByName("select_bg")
+        tab_btn.select_bg:setVisible(false)
+        tab_btn.title = item:getChildByName("title")
+        tab_btn.title:getVirtualRenderer():setLineSpacing(-10)
+        tab_btn.title:setTextColor(cc.c4b(247,238,117,255))
+        tab_btn.title:enableOutline(cc.c4b(58,41,10,255), 2)
+        tab_btn.title:setFontSize(25)
+        -- tab_btn.title:setChangeScaleOffWidth(60)
+        tab_btn.title:setChangeScaleOffWidth(-9999)
+        tab_btn.title:setString(self.tab_array[i])
+        tab_btn.red_point = item:getChildByName("tab_tips")
+        tab_btn.red_point:setVisible(false)
+        self.tab_btn_list[tab_btn.index] = tab_btn
+    end
+end
+
+function DungeonAbyssShopPanel:register_event(  )
+	registerButtonEventListener(self.close_btn, function (  )
+		DungeonAbyssController:getInstance():openDungeonAbyssShopPanel(false)
+	end, true, 2)
+
+	registerButtonEventListener(self.background, function (  )
+		DungeonAbyssController:getInstance():openDungeonAbyssShopPanel(false)
+	end, false, 2)
+
+    for index, tab_btn in ipairs(self.tab_btn_list) do
+        registerButtonEventListener(tab_btn.btn, function() self:_onClickTabBtn(tab_btn.index) end ,false, 2) 
+    end
+
+	self:addGlobalEvent(MallEvent.Open_View_Event, function ( data )
+        local shop_type = {MallConst.MallType.DungeonAbyss, MallConst.MallType.DungeonAbyss_Advance}
+		if data.type == shop_type[self.cur_type] then
+            local list = self:getConfig(data)
+            self.show_list[self.cur_type] =list
+            self.item_scroll_view:reloadData()
+        end
+	end)
+
+    if not self.role_lev_event and self.role_vo then
+        self.role_lev_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+            if key and (key == "chasm1" or key == "chasm2") then 
+                self:updateResNum()
+            end
+        end)
+    end
+end
+
+-- 点击Tab按钮
+function DungeonAbyssShopPanel:_onClickTabBtn( index )
+    if self.select_btn and self.select_btn.index == index then return end
+
+    if self.select_btn then 
+        self.select_btn.select_bg:setVisible(false)
+        self.select_btn.title:setTextColor(cc.c4b(249,238,208,255))
+        self.select_btn.title:enableOutline(cc.c4b(58,41,10,255), 2)
+    end
+    self.select_btn = self.tab_btn_list[index]
+    if self.select_btn then 
+        self.select_btn.select_bg:setVisible(true)
+        self.select_btn.title:setTextColor(cc.c4b(248,239,118,255))
+        self.select_btn.title:enableOutline(cc.c4b(92,39,5,255), 2)
+        self:updateSubTabBtn(index)
+    end
+end
+
+function DungeonAbyssShopPanel:updateSubTabBtn( index )
+    if index == 1 then
+        self.cur_type = 1
+        self:updateResNum()
+        self.win_title:setString(TI18N("语言_exc_02_92"))
+        moveTextBg(self.win_title,self.image_2,60,self.image_2:getContentSize().width)
+        MallController:getInstance():sender13401(MallConst.MallType.DungeonAbyss)
+    else
+        self.cur_type = 2
+        self:updateResNum()
+        self.win_title:setString(TI18N("语言_exc_02_93"))
+        moveTextBg(self.win_title,self.image_2,60,self.image_2:getContentSize().width)
+        MallController:getInstance():sender13401(MallConst.MallType.DungeonAbyss_Advance)
+    end
+end
+
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function DungeonAbyssShopPanel:createNewCell()
+    local cell = DungeonAbyssShopItem.new()--
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+
+--获取数据数量
+function DungeonAbyssShopPanel:numberOfCells()
+    if not self.show_list[self.cur_type] then return 0 end
+    return #self.show_list[self.cur_type]
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function DungeonAbyssShopPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    if not self.show_list then return end
+    if not self.cur_type then return end
+    if not self.show_list[self.cur_type] then return end
+    local data = self.show_list[self.cur_type][index]
+    if not data then return end
+    cell:setData(data,self.cur_type)
+end
+
+
+--点击cell .需要在 createNewCell 设置点击事件
+function DungeonAbyssShopPanel:onCellTouched(cell)
+    MallController:getInstance():openMallBuyWindow(true, cell:getData())
+end
+
+function DungeonAbyssShopPanel:getConfig(data)
+    local item_list = {}
+    local config = Config.ExchangeData.data_shop_exchage_chasm_nor
+    if self.cur_type == 2 then
+        config = Config.ExchangeData.data_shop_exchage_chasm_turn
+    end
+    if config then
+        local list = deepCopy(data.item_list)
+        for a, j in pairs(config) do
+            if list and next(list or {}) ~= nil  then
+                for k, v in pairs(list) do --已经买过的限购物品
+                    if j.id == v.item_id then
+                        if v.ext[1].val then --不管是什么限购 赋值已购买次数就好了。。
+                            j.has_buy = v.ext[1].val
+                            table.remove(list, k)
+                        end
+                        break
+                    else
+                        j.has_buy = 0
+                    end
+                end
+            else
+                j.has_buy = 0
+            end
+            table.insert(item_list, j)
+        end
+    end
+    table.sort(item_list ,function (a,b)
+        if a.limit_count and a.limit_count > 0 and a.has_buy >= a.limit_count and (not b.limit_count or b.limit_count == 0 or b.has_buy < b.limit_count) then
+            return false
+        elseif b.limit_count and b.limit_count > 0 and b.has_buy >= b.limit_count and (not a.limit_count or a.limit_count == 0 or a.has_buy < a.limit_count) then
+            return true
+        else
+            return  a.order < b.order
+        end
+    end)
+    return item_list
+end
+
+function DungeonAbyssShopPanel:updateResNum(  )
+	if self.role_vo then
+        local item_id = Config.DungeonAbyssCircleData.data_constant["dungeon_currency_1"].val
+        if self.cur_type == 2 then
+            item_id = Config.DungeonAbyssCircleData.data_constant["dungeon_currency_high_1"].val
+        end
+        local num = self.role_vo[Config.ItemData.data_assets_id2label[item_id]]
+        self.item_id = item_id
+        self.res_label:setString(num)
+        local item_config = Config.ItemData.data_get_data(item_id)
+        if item_config then
+            local res = PathTool.getItemRes(item_config.icon)
+            loadSpriteTexture(self.res_icon, res, LOADTEXT_TYPE)
+        end
+    end
+    self.label_star:setString(_model:getTotalStarCount(self.cur_type))
+    self.image_star:setPositionX(self.label_star:getPositionX() - self.label_star:getContentSize().width)
+    self.label_limit:setPositionX(self.image_star:getPositionX() - self.image_star:getContentSize().width)
+end
+
+function DungeonAbyssShopPanel:openRootWnd(  )
+    self.tab_btn_list[2].btn:setVisible(_model:checkAdvanceIsOpen())
+    self:_onClickTabBtn(self.cur_type)
+end
+
+function DungeonAbyssShopPanel:close_callback(  )
+	if self.item_scroll_view then
+        self.item_scroll_view:DeleteMe()
+        self.item_scroll_view = nil
+    end
+    if self.role_lev_event and self.role_vo then
+        self.role_vo:UnBind(self.role_lev_event)
+        self.role_lev_event = nil
+    end
+	DungeonAbyssController:getInstance():openDungeonAbyssShopPanel(false)
+end

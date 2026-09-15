@@ -1,0 +1,196 @@
+--******** 文件说明 ********
+-- 
+-- @description: 拼图图鉴等级详情
+-- @DateTime:    2020-02-20
+-- *******************************
+PuzzleBookLevWindow = PuzzleBookLevWindow or BaseClass(BaseView)
+
+local controller = HomeworldController:getInstance()
+local model = controller:getModel()
+function PuzzleBookLevWindow:__init()
+    self.is_full_screen = true
+    self.title_btn_list = {}
+    self.reward_btn_list = {}
+    self.item_list = {}
+    self.click_index = 0
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "homeworld/puzzle_book_lev_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("partnersummon", "partnersummon"), type = ResourcesType.plist },
+    }
+end
+
+function PuzzleBookLevWindow:open_callback()
+    self._ui = self:getExportUI()
+    self._ui._background:setScale(display.getMaxScale())
+    self._ui._win_title:setString(TI18N("语言_c_7633"))
+    autoSizeTitleBg(self._ui._win_title,self._ui._image_title,120,350)
+    self._ui._sp_txt:setString(TI18N("语言_c_7634"))
+    if self._ui._sp_txt:getContentSize().width > 400 then
+        setTextMaxWidth(self._ui._sp_txt,400,-8)
+    end
+    setLeftRightImg(self._ui._sp_line_1,self._ui._sp_txt,self._ui._sp_line_2,20)
+    self._ui._lev_tip:setString(TI18N("语言_c_7635"))
+    if self._ui._lev_tip:getContentSize().width > 130 then
+        setTextMaxWidth(self._ui._lev_tip,130,-8)
+    end
+    self._ui._score_icon:setPositionX(self._ui._lev_tip:getPositionX() - self._ui._lev_tip:getContentSize().width - 20)
+    self._ui._lev_bar:setScale9Enabled(true)
+    self._ui._lev_bar:setPercent(0)
+
+    
+	nativeBindClass(self._ui._no_attr_item, PuzzleBookNoAttrItem)
+end
+
+function PuzzleBookLevWindow:register_event()
+    registerButtonEventListener(self._ui._background,function()
+        controller:openPuzzleBookLevWindow(false)
+    end,false,2)
+    registerButtonEventListener(self._ui._close_btn,function()
+        controller:openPuzzleBookLevWindow(false)
+    end,false,2)
+end
+function PuzzleBookLevWindow:openRootWnd()
+    self.book_level = model:getPuzzleBookLev()
+    self.lev_cfg = Config.PuzzleBookData.data_level
+    if self.lev_cfg[self.book_level + 1] then
+        self._ui._next_attr_panel:setVisible(true)
+        self._ui._next_max_txt:setVisible(false)
+        self._ui._next_level_txt:setString(string.format(TI18N("语言_c_4520"),self.book_level+1))
+        local next_attr_list = self.lev_cfg[self.book_level + 1].attr1
+        if not self.next_attr_list then
+            self.next_attr_list = {}
+        end
+        self.next_attr_list = self:updateAttrPanel(self._ui._next_attr_panel,next_attr_list,HomeworldConst.Attr_Type.lev_short,1)
+    else
+        self._ui._next_level_txt:setString(TI18N("语言_c_4810"))
+        self._ui._next_max_txt:setString(TI18N("语言_c_4810"))
+        self._ui._next_max_txt:setVisible(true)
+        self._ui._next_attr_panel:setVisible(false)
+    end
+    self._ui._now_level_txt:setString(string.format(TI18N("语言_c_4520"),self.book_level))
+    if not self.now_attr_list then
+        self.now_attr_list = {}
+    end
+    local now_attr_list = {}
+    if self.lev_cfg[self.book_level] then
+        now_attr_list = self.lev_cfg[self.book_level].attr1
+    else
+        if self.lev_cfg[self.book_level+1] then
+            local list = self.lev_cfg[self.book_level+1].attr1
+	        for k,v in pairs(list) do
+                local _list = {v[1],0}
+                table.insert(now_attr_list,_list)
+            end
+        end
+    end
+    self.now_attr_list = self:updateAttrPanel(self._ui._now_attr_panel,now_attr_list,HomeworldConst.Attr_Type.lev_short,1)
+    self:updateSpAttrPanel()
+    self:updateLevDetailsPanel()
+    self:updateNextSpAttr()
+end
+function PuzzleBookLevWindow:updateAttrPanel(panel,attr_list,_type,col)
+    local list = {}
+    for k,v in pairs(attr_list) do
+        local item = PuzzleBookAttrItem.new(_type)
+        item:setData(v)
+        local _x = (k-1)%col*item:getContentSize().width + 2
+        local _y = panel:getContentSize().height - math.floor((k-1)/col)*item:getContentSize().height
+        item:setPosition(cc.p(_x,_y))
+        table.insert(list,item)
+        panel:addChild(item)
+        if _type == HomeworldConst.Attr_Type.lev_short then
+            item._ui._attr_bg:setVisible(k%2 == 0)
+        end
+    end
+    return list
+end
+function PuzzleBookLevWindow:updateAttrPanel2(panel,attr_list,_type,col)
+    local list = {}
+    local _h = math.max(panel:getContentSize().height,math.ceil(tableLen(attr_list)*0.5)*45)
+    panel:setInnerContainerSize(cc.size(panel:getContentSize().width,_h))
+    panel:setTouchEnabled(_h > panel:getContentSize().height)
+    for k,v in pairs(attr_list) do
+        local item = PuzzleBookAttrItem.new(_type)
+        item:setData(v)
+        local _x = (k-1)%col*(item:getContentSize().width + 12)
+        local _y = _h - math.floor((k-1)/col)*(item:getContentSize().height + 5)
+        item:setPosition(cc.p(_x,_y))
+        table.insert(list,item)
+        panel:addChild(item)
+    end
+
+    return list
+end
+function PuzzleBookLevWindow:updateSpAttrPanel()
+    local cfg = self.lev_cfg[self.book_level]
+    local attr_list = cfg and cfg.attr2 or {}
+    if attr_list and next(attr_list) then
+        self.now_sp_attr_list = self:updateAttrPanel2(self._ui._sp_attr_panel,attr_list,HomeworldConst.Attr_Type.lev_sp_short,2)
+        self._ui._no_attr_item:setVisible(false)
+    else
+        self._ui._no_attr_item:setVisible(true)
+        self._ui._no_attr_item:setData(TI18N("语言_c_7636"))
+    end
+end
+function PuzzleBookLevWindow:updateLevDetailsPanel()
+    local lev_cfg = Config.PuzzleBookData.data_level[self.book_level+1]
+    if not lev_cfg then
+        lev_cfg = Config.PuzzleBookData.data_level[#Config.PuzzleBookData.data_level]
+    end
+    self._ui._lev_bar:setPercent(model:getPuzzleBookExp()/lev_cfg.need_exp*100)
+    self._ui._lev_bar_txt:setString(string.format("%s/%s",model:getPuzzleBookExp(),lev_cfg.need_exp))
+end
+--展示下个特殊属性
+function PuzzleBookLevWindow:updateNextSpAttr()
+    local attr_list = {}
+    local next_lev = 0
+    for k, v in ipairs(self.lev_cfg) do
+        if v.level > self.book_level and v.attr2_show and next(v.attr2_show) then
+            attr_list = v.attr2_show[1]
+            next_lev = v.level
+            break
+        end
+    end
+    if attr_list and next(attr_list) then
+        if not self.next_tip then
+            self.next_tip = createRichLabel(20,cc.c3b(0xff,0xff,0xff),cc.p(0.5,1),cc.p(307,37),-8,nil,500)
+            self._ui._sp_panel:addChild(self.next_tip)
+        end
+        local _str = TI18N("语言_c_7637")
+        local icon = PathTool.getAttrIconByStr(attr_list[1])
+	    local res = PathTool.getResFrame("common", icon)
+        local _txt = Config.AttrData.data_key_to_name[attr_list[1]]
+        if not _txt then
+            _txt = Config.AttrExtraData.data_key_to_name[attr_list[1]]
+        end
+        local attr_val = attr_list[2]
+        local is_per = PartnerCalculate.isShowPerByStr(attr_list[1])
+        if is_per == true then
+            attr_val = (attr_val/10).."%%"
+        end
+        self.next_tip:setString(LangStringFormat(_str,next_lev - self.book_level,res,_txt,attr_val))
+    end
+end
+function PuzzleBookLevWindow:close_callback()
+    if self.now_attr_list and next(self.now_attr_list) then
+        for k,v in pairs(self.now_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    if self.next_attr_list and next(self.next_attr_list) then
+        for k,v in pairs(self.next_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    if self.now_sp_attr_list and next(self.now_sp_attr_list) then
+        for k,v in pairs(self.now_sp_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    controller:openPuzzleBookLevWindow(false)
+end

@@ -1,0 +1,301 @@
+--------------------------------------------
+---------------------------------
+ElfinTipsView = ElfinTipsView or BaseClass(BaseView)
+
+local _string_format = string.format
+local _controller = ElfinController:getInstance()
+local _table_insert = table.insert
+
+function ElfinTipsView:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "tips/elfin_tips_view"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+	self.show_index = 0
+	self.base_list = {}
+    self.win_type = WinType.Tips   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+end
+
+function ElfinTipsView:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.container = self.root_wnd:getChildByName("container")
+    self.close_btn = self.root_wnd:getChildByName("close_btn")
+    self.title_container = self.container:getChildByName("title_container")
+    self.title_bg = self.title_container:getChildByName("title_bg")
+    self.title = self.title_container:getChildByName("title_label")
+	self.title:setString(TI18N("语言_spr_01_11"))
+	autoSizeTitleBg(self.title, self.title_bg, 100, 330)
+	self.base_attr = self.container:getChildByName("base_attr")
+	if self.item_scrollview == nil then
+        local scroll_view_size = self.base_attr:getContentSize()
+        local setting = {
+            start_x = 0, -- 第一个单元的X起点
+            space_x = 5, -- x方向的间隔
+            start_y = 0, -- 第一个单元的Y起点
+            space_y = 0, -- y方向的间隔
+            item_width = 660, -- 单元的尺寸width
+            item_height = 310, -- 单元的尺寸height
+			col = 1,
+            once_num = 1 -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.base_attr, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createNewCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    end
+end
+
+function ElfinTipsView:createNewCell(width, height)
+    local cell = ElfinTipsViewItem.new()
+    return cell
+end
+
+function ElfinTipsView:numberOfCells()
+    if not self.cell_data_list then
+        return 0
+    end
+    return #self.cell_data_list
+end
+-- 更新cell(拖动的时候.刷新数据时候会执行次方法)
+-- cell :createNewCell的返回的对象
+-- index :数据的索引
+function ElfinTipsView:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.cell_data_list[index]
+    if not cell_data then
+        return
+    end
+	local next_data = self.cell_data_list[index + 1]
+	cell:setExtralData(next_data)
+    cell:setData(cell_data)
+end
+
+function ElfinTipsView:register_event(  )
+	registerButtonEventListener(self.background, function (  )
+		self:close()
+	end, false, 2)
+	registerButtonEventListener(self.close_btn, function (  )
+		self:close()
+	end, false, 2)
+end
+
+function ElfinTipsView:openRootWnd()
+	local cfg = Config.SpriteData.data_lv_info
+	local max_lv = _controller:getModel():getTujianMaxLv()
+	self.cell_data_list = {}
+	for k, v in pairs(cfg) do
+		local _data = deepCopy(v)
+		_data.max_lv = max_lv
+		table.insert(self.cell_data_list, _data)
+	end
+	local sort_func = SortTools.tableCommonSorter({{"lv", false}})
+	table.sort(self.cell_data_list, sort_func)
+	self.item_scrollview:reloadData()
+
+	local eff_data =  ElfinController:getInstance():getModel():getIllustBookData()
+	if eff_data then
+		local lv = eff_data.lv
+		self.item_scrollview:jumpToMoveByIndex(lv+1)
+	end
+end
+
+function ElfinTipsView:setData( elfin_bid )
+	if not elfin_bid then return end
+	--判断是哪一系列通灵兽
+	local elfin_list_cfg = Config.SpriteData.data_sprite_list
+	for k, v in pairs(elfin_list_cfg) do
+		local list = v.id_list[1]
+		for k, v in pairs(list) do
+			if elfin_bid == v then
+				self.show_list = deepCopy(list) 
+				break
+			end
+		end
+	end
+	local function sortFunc( objA, objB )
+		return objA < objB
+	end
+	table.sort(self.show_list, sortFunc)
+
+	for i = 1, #self.elfin_id_list do
+		if self.elfin_id_list[i] == self.elfin_id then
+			self.show_index = i
+			break
+		end
+	end
+end
+
+function ElfinTipsView:close_callback(  )
+	if self.power_label then
+        self.power_label:DeleteMe()
+        self.power_label = nil
+	end
+	
+	if self.elfin_item then
+		self.elfin_item:DeleteMe()
+		self.elfin_item = nil
+	end
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+	ElfinController:getInstance():openElfinViewWindow(false)
+end
+
+
+ElfinTipsViewItem = class("ElfinTipsViewItem", function() 
+	return ccui.Layout:create()
+end)
+
+function ElfinTipsViewItem:ctor()
+	self.base_list = {}
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("tips/elfin_tips_view_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self.bg = self.main_container:getChildByName("bg")
+	self.attr_tltle = self.main_container:getChildByName("attr_tltle")
+	self.attr_tltle:setString( TI18N("语言_c_4815"))
+	self.tag = self.main_container:getChildByName("tag")
+	self.tag:setVisible(false)
+	self.lv_txt = self.main_container:getChildByName("lv_txt")
+	self.lv_txt:setString(TI18N("语言_spr_01_12"))
+	local pos_x = self.lv_txt:getPositionX()
+	local pos_y = self.lv_txt:getPositionY()
+	local size = self.lv_txt:getContentSize()
+	self.lv = createRichLabel(24, cc.c4b(0x00, 0xff, 0x00, 0xff), cc.p(0, 0.5), cc.p(640, 154))
+	self.lv:setPositionX(pos_x+size.width+10)
+	self.lv:setPositionY(pos_y)
+	self.main_container:addChild(self.lv)
+
+	self.tip1 = self.main_container:getChildByName("tip1")
+	self.tip1:setString(TI18N("语言_spr_01_13"))
+	self.tip1:setVisible(false)
+	self.tip2 = self.main_container:getChildByName("tip2")
+	self.tip2:setString(TI18N("语言_c_6950"))
+
+	self.extral_txt = createRichLabel(20, cc.c4b(0x00, 0xff, 0x00, 0xff), cc.p(0.5, 0.5), cc.p(330, 80))
+	self.main_container:addChild(self.extral_txt)
+
+	self.level_txt = CommonNum.new(27, self.main_container, 99999, -2, cc.p(1, 0.5),0)
+	self.level_txt:setScale(0.65)
+    self.level_txt:setPosition(618, 292)
+end
+
+function ElfinTipsViewItem:setData(data)
+	self.data = data
+	-- {lv=0, min=0, max=99, attrs={{'hp_max',700},{'atk',100},{'def',10},{'speed',5}}, pro=30},
+	self.lv:setString(string.format("<div fontcolor=#0ea80e>%s</div>",data.lv))--(TI18N("语言_spr_01_7").."."..data.lv)
+	self.extral_txt:setString(string.format(TI18N("<div fontcolor=#7c5536>%s</div><div fontcolor=#0ea80e>%s</div>"),TI18N("语言_spr_01_7"),((data.pro/10).."%")))
+	local need_exp = data.max - data.min
+	local max_lv = data.max_lv
+	local eff_data =  ElfinController:getInstance():getModel():getIllustBookData()
+	local lv = eff_data.lv
+	if max_lv == lv then
+		self.tip1:setVisible(true)
+		self.tip1:setString(TI18N("语言_c_3203"))
+		self.level_txt:setVisible(false)
+	else
+		self.tip1:setString(TI18N("语言_spr_01_13"))
+	end
+	if lv == data.lv then
+		local exp = eff_data.exp - data.min
+		self.tag:setVisible(true)
+		self.tip1:setVisible(true)
+		self.level_txt:setVisible(true)
+		self.level_txt:setNum(need_exp)
+		if self.extral_data then
+		else
+			self.tip1:setVisible(false)	
+			self.level_txt:setVisible(false)	
+		end
+	elseif lv > data.lv then
+		self.tip1:setVisible(false)
+		self.level_txt:setVisible(false)
+		self.tag:setVisible(false)
+	else
+		self.tip1:setVisible(true)
+		self.level_txt:setVisible(true)
+		self.level_txt:setNum(need_exp)
+		self.tag:setVisible(false)
+		if self.extral_data then
+		else
+			self.tip1:setVisible(false)	
+			self.level_txt:setVisible(false)	
+		end
+	end
+	local size = self.level_txt:getContentSize()
+	self.tip1:setPositionX(618-size.width*0.65-10)
+	self:setBaseAttrInfo()
+end
+
+function ElfinTipsViewItem:setExtralData(data)
+	self.extral_data = data
+	-- if data then
+	-- 	-- self.tip1:setVisible(true)
+	-- 	-- self.level_txt:setVisible(true)
+	-- else
+	-- 	if then
+	-- 	self.tip1:setVisible(false)	
+	-- 	self.level_txt:setVisible(false)	
+	-- end
+end
+
+function ElfinTipsViewItem:setBaseAttrInfo()
+	
+	local _list = deepCopy(self.data.attrs)
+	local attr_list = {}
+	for k, v in pairs(_list) do
+        local key_id =  Config.AttrData.data_key_to_id[v[1]]
+        local a = {v[1],v[2],key_id}
+        table.insert(attr_list, a)
+    end
+    table.sort(attr_list, function(a, b) return a[3] < b[3] end)
+
+    local index = 1 
+    local _h = math.ceil(#attr_list/2) * 40 + 55
+    local _h = 5
+    for i,v in ipairs(attr_list) do
+        local attr_key = v[1]
+        local attr_val = v[2]
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if attr_name then
+            if not self.base_list[index] then 
+                self.base_list[index] = createRichLabel(20, cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0.5), cc.p(4, 28), nil, nil, 380)
+                self.main_container:addChild(self.base_list[index])
+            end
+            local label = self.base_list[index]
+            local _x = 160 + 190 * ((index-1) % 2)
+            local _y = 210 - math.floor((index-1)/2)*40
+            label:setPosition(cc.p(_x,_y))
+            if attr_name then
+                local icon = PathTool.getAttrIconByStr(attr_key)
+                local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                if is_per == true then
+                    attr_val = (attr_val*0.1).."%"
+                end
+                local attr_str = string.format("<img src='%s' scale=1 /> <div fontcolor=#7c5536> %s：</div><div fontcolor=#0ea80e>%s</div>", PathTool.getResFrame("common", icon), attr_name, attr_val)
+                label:setString(attr_str)
+                _h = _h + label:getContentSize().height +5
+            end
+            index = index + 1
+        end
+    end
+end
+
+function ElfinTipsViewItem:DeleteMe()
+	self:removeAllChildren()
+    self:removeFromParent()
+end

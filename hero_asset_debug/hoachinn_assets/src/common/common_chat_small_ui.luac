@@ -1,0 +1,891 @@
+-- --------------------------------------------------------------------
+-- 通用聊天的缩略图
+-- 
+-- @author: shiraho@syg.com(必填, 创建模块的人员)
+-- @editor: shiraho@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+
+CommonChatSmallUI = CommonChatSmallUI or class("CommonChatSmallUI", function()
+	return ccui.Widget:create()
+end)
+
+local ref_controller = RefController:getInstance()
+
+function CommonChatSmallUI:ctor()
+    self.item_desc_list = {}
+    self.item_code_list = {}
+
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("mainui/chat_container"))
+    self:addChild(self.root_wnd)
+
+    self.ctrl = ChatController:getInstance()
+    self.model = self.ctrl:getModel()
+    self.role_vo = RoleController:getInstance():getRoleVo()
+
+	local tmp_size = self.root_wnd:getContentSize()
+    self.size = cc.size(SCREEN_WIDTH, tmp_size.height)
+    self:setAnchorPoint(cc.p(0, 0))
+	self:setCascadeOpacityEnabled(true)
+    self:setContentSize(self.size)
+
+    self.show_item_list = {}
+    self.channelList = {} 
+    self.time = 0
+    self.show_max = 3 -- 最多创建item的数量
+    self.cur_showModel = 1 -- 当前聊天框模式（1为小模式，2为大模式）
+	self.tab_btn_list = {}
+	self.stack_tag =
+    {
+        [1] = ChatConst.Channel.Whole,     
+        [2] = ChatConst.Channel.World, 
+        [3] = ChatConst.Channel.Gang,
+        [4] = ChatConst.Channel.Friend,
+        [5] = ChatConst.Channel.Drama
+    }
+    self.stack_pos =
+    {
+        [ChatConst.Channel.Whole]   = 1,
+        [ChatConst.Channel.World]  = 2,
+        [ChatConst.Channel.Gang] = 3,
+        [ChatConst.Channel.Friend] = 4,
+        [ChatConst.Channel.Drama] = 5,
+    }
+
+    self:initHandle()	
+end
+
+function CommonChatSmallUI:initHandle(  )
+	local chat_container = self.root_wnd:getChildByName("chat_container")
+    self.chat_container = chat_container
+	chat_container:setContentSize(self.size)
+
+	self.bg = chat_container:getChildByName("bg")
+	self.bg:setContentSize(self.size)
+	self.bg:setOpacity(120)
+	self.tips_btn = chat_container:getChildByName("tips_btn")
+	self.tips_btn:setPositionX(self.size.width)
+	self.tips_btn:setVisible(false)
+
+	self.tips_panel = chat_container:getChildByName("tips_panel")
+	self.tips_panel:setVisible(false)
+
+	self.tips_scroll = self.tips_panel:getChildByName("tips_scroll")
+	self.tips_scroll:setScrollBarEnabled(false)
+
+	self.bubble = chat_container:getChildByName("bubble")
+	self.desc = self.bubble:getChildByName("desc")
+	self.bubble:setVisible(false)
+
+	self.layout_input = chat_container:getChildByName("layout_input")
+	self.layout_leftbtns = chat_container:getChildByName("layout_leftbtns")
+	self.layout_chat = chat_container:getChildByName("layout_chat")
+	self.layout_friend = chat_container:getChildByName("layout_friend")
+	self.layout_friend:setVisible(false)
+	self.btn_arrow = self.layout_leftbtns:getChildByName("btn_arrow")
+    self.pic_arrow = self.layout_leftbtns:getChildByName("pic_arrow")
+    self.layout_leftbtns_size = self.layout_leftbtns:getContentSize()
+    self.layout_friend_size = self.layout_friend:getContentSize()
+    self.layout_chat_size = self.layout_chat:getContentSize()
+
+	--输入组件
+    self.chat_input = ChatInput.new()
+    local inputBgSize = self.layout_input:getContentSize()
+    self.chat_input:setPosition(64, inputBgSize.height/2-10)
+    self.chat_input:setInputFunc(function()
+        self:onEditBoxTouch()
+    end)
+    self.chat_input:setVoiceFunc(function(sender, event)
+        self:beginRecord(sender, event)
+    end)
+    self.layout_input:addChild(self.chat_input)
+
+    --发送按钮
+    self.btn_send = CustomButton.New(self.layout_input, PathTool.getResFrame("mainui", "mainui_chat_btn_4"), PathTool.getResFrame("mainui", "mainui_chat_btn_4"),nil,LOADTEXT_TYPE_PLIST)
+    self.btn_send:setBtnLableColor(Config.ColorData.data_color4[1])
+    self.btn_send:setSize(cc.size(75,50))
+    self.btn_send:setLabelSize(22)
+    self.btn_send:setPosition(cc.p(inputBgSize.width-40,inputBgSize.height/2+3))
+    self.btn_send:setBtnLabel(TI18N("发送"))
+    self.btn_send:getLabel():enableOutline(Config.ColorData.data_color4[154],2)
+    self.btn_send:setLocalZOrder(4)
+    handleTouchEnded(self.btn_send, function()
+        self:onEditBoxTouch()
+    end)
+
+    -- 剧情回顾按钮
+    self.btn_drama = chat_container:getChildByName("btn_drama")
+    self.btn_drama:setTitleText(TI18N("剧情回顾"))
+    self.btn_drama_label = self.btn_drama:getTitleRenderer()
+    if self.btn_drama_label ~= nil then
+        self.btn_drama_label:enableOutline(Config.ColorData.data_color4[157], 2)
+    end
+    self.btn_drama:setVisible(false)
+
+	self.btn_arrow:addTouchEventListener(function(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+			if self.cur_showModel == 2 and (self.channel == ChatConst.Channel.Friend or self.channel == ChatConst.Channel.Drama) then
+				self:setSelecteTab(1)
+			end
+			self:changeChatUIHeight()
+		end
+	end)
+
+	self.tips_btn:addTouchEventListener(function(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+			if self.tips_panel:isVisible() then 
+				self.tips_panel:setVisible(false)
+			else
+				self.tips_panel:setVisible(true)
+			end
+		end
+	end)
+
+    self.btn_drama:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local dun_id = self.ctrl:checkIsPlayingDramaMsg()
+            PokedexController:getInstance():openPokedexWindow(true,nil,2,dun_id)
+        end
+    end)
+
+	self:registerNotifier(true)
+	self:createTabList()
+    self:changeChatUIHeight(true)
+end
+
+function CommonChatSmallUI:createTabList(  )
+	self.tabArray = {
+        {label = TI18N("全\n部"), index = 1, status = true},
+        {label = TI18N("世\n界"), index = 2, status = true},
+        {label = TI18N("帮\n会"), notice = TI18N("您暂时没有加入帮会"), index = 3, status = true},
+        {label = TI18N("私\n聊"), index = 4, status = true},
+        {label = TI18N("剧\n情"), index = 5, status = true},
+    }
+
+    local widget = self.layout_leftbtns
+    local widgetSize = widget:getContentSize()
+    local topMargin = 50
+    for i=1, #self.tabArray do
+        local btn = ccui.Layout:create()
+        btn:setAnchorPoint(0.5,0.5)
+        btn:setContentSize(cc.size(45,73))
+        widget:addChild(btn)
+        btn:setPosition(widgetSize.width/2, widgetSize.height-topMargin-40-(i-1)*73)
+        local width = btn:getContentSize().width/2
+        local height = btn:getContentSize().height/2
+        local unselect_bg = createImage(btn,PathTool.getResFrame("mainui","mainui_chat_btn_2"),width,height,cc.p(0.5,0.5),true,0,true)
+        unselect_bg:setContentSize(btn:getContentSize())
+        local select_bg = createImage(btn,PathTool.getResFrame("mainui","mainui_chat_btn_1"),width,height,cc.p(0.5,0.5),true,0,true)
+        select_bg:setContentSize(btn:getContentSize())
+        btn.unselect_bg = unselect_bg
+        btn.select_bg = select_bg
+
+        local title = createLabel(24,141,nil,width-2,height,self.tabArray[i].label,btn,0,cc.p(0.5,0.5),"fonts/title.ttf")
+        btn.label = title
+        btn.index = self.tabArray[i].index
+        btn.notice = self.tabArray[i].notice
+        btn.select_bg:setVisible(false)
+        btn:setTouchEnabled(self.tabArray[i].status)
+
+        self.tab_btn_list[i] = btn
+        -- 添加注册监听事件
+        btn:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                if btn.can_touch == false then
+                    message(btn.notice)
+                else
+                    self:setSelecteTab(btn.index)
+                end
+            end
+        end)
+
+        local is_open = self:checkBtnIsOpen(self.tabArray[i].index)
+        self:setTabBtnTouchStatus(is_open, self.tabArray[i].index)
+
+        self:setSelecteTab(1) -- 默认选中第一个
+
+        --[[if i ~= 4 then -- 系统那边不需要弄红点
+            local tab_tips = createImage(btn,PathTool.getResFrame("common","common_1014"),132,50,cc.p(0.5,0.5),true)
+            local red_num = createLabel(20,1,nil,130,51,"10",btn,0,cc.p(0.5,0.5))
+            btn.red_num = red_num
+            btn.tips = tab_tips
+            btn.red_num:setVisible(false)
+            btn.tips:setVisible(false)
+        end--]]
+    end
+end
+
+-- 刷新左侧按钮显示位置
+function CommonChatSmallUI:refreshLeftBtnsPos( isShowDrama )
+    if isShowDrama ~= nil then
+        self.isShowDrama = isShowDrama -- 标记是否将剧情频道放到第一位
+    end
+	local layoutSize = self.layout_leftbtns:getContentSize()
+	self.btn_arrow:setPosition(cc.p(layoutSize.width/2, layoutSize.height-29))
+	self.pic_arrow:setPosition(cc.p(layoutSize.width/2, layoutSize.height-29))
+	local topMargin = 50
+	for i,btn in ipairs(self.tab_btn_list) do
+        if self.isShowDrama then
+            if btn.index == 5 then
+                btn:setPosition(layoutSize.width/2, layoutSize.height-topMargin-40)
+            else
+                btn:setPosition(layoutSize.width/2, layoutSize.height-topMargin-40-(i)*73)
+            end
+        else
+            btn:setPosition(layoutSize.width/2, layoutSize.height-topMargin-40-(i-1)*73)
+        end
+	end
+end
+
+function CommonChatSmallUI:setSelecteTab( index, flag )
+	if self.cur_showModel == 1 and index == 4 then
+		self:changeChatUIHeight()
+	end
+	if self.cur_selected ~= nil then
+        if self.cur_selected.label then
+            self.cur_selected.label:setTextColor(ChatConst.MainChatButtonColor[2])
+        end
+        self.cur_selected.select_bg:setVisible(false)
+    end
+    self.cur_selected = self.tab_btn_list[index]
+    if self.cur_selected ~= nil then
+        if self.cur_selected.label then
+            self.cur_selected.label:setTextColor(ChatConst.MainChatButtonColor[1])
+        end
+        self.cur_selected.select_bg:setVisible(true)
+    end
+
+    if self.cur_selected ~= nil then
+        self:openTagBtn(self.cur_selected.index, flag)
+    end
+end
+
+-- 切换标签页
+function CommonChatSmallUI:openTagBtn( index, flag )
+	if index == self.select_index and not flag then 
+		return 
+	end
+    self.select_index = index
+    self.channel = self.stack_tag[index]
+    self.ctrl:setLastChannel(self.channel)
+    
+    --显示聊天消息
+    self:showCoseList(self.channel)
+
+    self.btn_drama:setVisible(self.channel == ChatConst.Channel.Drama)
+    self.layout_input:setVisible(self.channel ~= ChatConst.Channel.Drama)
+    self.layout_friend:setVisible(self.channel == ChatConst.Channel.Friend)
+    self.layout_chat:setVisible(self.channel ~= ChatConst.Channel.Friend)
+end
+
+function CommonChatSmallUI:showCoseList( channel )
+	if not self.channelList then self.channelList = {} end
+
+    for i,v in pairs(self.channelList) do
+        if i ~= ChatConst.Channel.Friend then
+            if v then
+                v:showNewMessage(false)
+                v:setVisible(false)
+            end
+        else
+            if v then
+                v:setVisibleStatus(false)
+            end
+        end
+    end
+    local isInit = false
+    local scroll = self.channelList[channel]
+    if not scroll then
+        isInit = true
+        if channel ~= ChatConst.Channel.Friend then
+            scroll = ChatListPanel.new(self.layout_chat_size, self.layout_chat, false, self.cur_showModel, channel)
+            scroll:setPosition(-4, 0)
+            self.layout_chat:addChild(scroll,22)
+        else
+            scroll = FriendChatPanel.new(self.ctrl, self.layout_friend)
+        end
+        self.channelList[channel] = scroll
+    else
+        if channel ~= ChatConst.Channel.Friend then
+            scroll:SetEnabled(true)
+        end
+    end
+    if channel ~= ChatConst.Channel.Friend then
+        if self.ctrl.stack_list == nil then return end
+        if isInit then
+            delayRun(self.layout_chat, 1/display.DEFAULT_FPS, function()
+                if self.channelList and self.channel and self.channelList[self.channel] and self.channelList[self.channel]["createMsg"] then
+                    local tempChannel = self.channel
+                    if tempChannel == ChatConst.Channel.World then
+                        tempChannel = ChatConst.Channel.Multi 
+                    end
+                    self.channelList[self.channel]:createMsg(self.ctrl.stack_list[tempChannel], channel)
+                end
+            end) 
+        else
+            self:updateCoseList()
+        end
+    else
+        self.channelList[self.channel]:setVisibleStatus(true)
+        self.channelList[self.channel]:updateData(self.select_srv_id,self.select_rid)
+    end
+end
+
+-- 打开频道
+function CommonChatSmallUI:openChannel(channel,srv_id,rid)
+    local index = self.stack_pos[channel]
+    self.channel = channel
+    self.select_srv_id = srv_id
+    self.select_rid = rid
+    -- 遍历一下是否激活状态
+    for i,v in ipairs(self.tabArray) do
+        is_open = self:checkBtnIsOpen(v.index)
+        self:setTabBtnTouchStatus(is_open, v.index)
+    end
+    if srv_id and rid then
+    	self:setSelecteTab(index, true)
+    else
+    	self:setSelecteTab(index)
+    end
+end
+
+--判断是否开启按钮
+function CommonChatSmallUI:checkBtnIsOpen( index )
+    if index == 3 then
+        if RoleController:getInstance():getRoleVo():isHasGuild()==false then
+            return false
+        else
+            return true
+        end
+    end
+    return true
+end
+
+--设置按钮是否变灰
+function CommonChatSmallUI:setTabBtnTouchStatus(status, index)
+    local tab_btn = self.tab_btn_list[index]
+    if tab_btn then
+        setChildUnEnabled(not status, tab_btn)    
+        tab_btn.can_touch = status
+    end
+end
+
+-- 文本框操作
+function CommonChatSmallUI:onEditBoxTouch(  )
+	local text, srv_id = self.chat_input:getInputText()
+    srv_id = srv_id or "" -- 服务器id，后端跨服聊天@人需要用到
+
+    if self.chat_input:isNothing() then
+        message(TI18N("请输入聊天信息"))
+        return
+    end
+
+    local data = WordCensor:getInstance():relapceFaceIconTag(text)
+    if data[1] > 5 then
+        message(TI18N("发言中不能超过5个表情"))
+        return
+    end
+
+    local tar_channel
+    text = WordCensor:getInstance():relpaceChatTag(text)
+
+    -- 展示物品替换
+    if self.item_desc_list and next(self.item_desc_list) then
+        for k,v in pairs(self.item_desc_list) do
+            text = string.gsub(text, k, v, 1)
+        end
+    end
+
+    if self.channel == ChatConst.Channel.World or self.channel == ChatConst.Channel.Whole then     --世界聊天
+        tar_channel = 1
+        local num1 = string.find(text,"@")
+        local num2 = string.find(text," ")
+        local len = string.len(text)
+        if num1 and num2 then
+            local at = string.sub(text,num1,num2)
+            local rep = string.format("<div href=atpeople srvid=%s>%s</div>",srv_id,at)
+            text = string.gsub(text,at,rep)
+        end
+    elseif self.channel == ChatConst.Channel.Cross then --跨服聊天
+        tar_channel = 1024
+    elseif self.channel == ChatConst.Channel.Scene then --场景聊天
+        tar_channel = 2
+    elseif self.channel == ChatConst.Channel.Team then --队伍聊天
+        tar_channel = 8
+    elseif self.channel == ChatConst.Channel.Gang  then --帮派聊天
+        if RoleController:getInstance():getRoleVo():isHasGuild() then
+            tar_channel = 4
+             local num1 = string.find(text,"@")
+            local num2 = string.find(text," ")
+            local len = string.len(text)
+            if num1 and num2 then
+                local at = string.sub(text,num1,num2)
+                local rep = string.format("<div href=atpeople srvid=%s>%s</div>",srv_id,at)
+                text = string.gsub(text,at,rep)
+            end
+        else
+            message(TI18N("加入联盟即可在此频道发言"))
+        end
+    elseif self.channel == ChatConst.Channel.Friend then --私聊频道
+        tar_channel = nil
+        local user_data = self.channelList[self.channel]:getUserData()
+        if user_data and next(user_data)~=nil then
+            self.ctrl:sender12720(user_data.srv_id, user_data.rid, 0, text)
+            self:cleatInputText()
+        else
+            message(TI18N("当前没人可以聊天~"))
+        end
+    end
+    if tar_channel then
+        if GameNet:getInstance():getTime() - self.time > 1 then
+            self.time =  GameNet:getInstance():getTime()
+            local is_success = self.ctrl:sendChatMsg(tar_channel, 0, text)
+            if is_success then
+                self:cleatInputText()
+            end
+        end
+    end
+end
+
+function CommonChatSmallUI:cleatInputText()
+    self.chat_input:setInputText("")
+    self.item_desc_list = {}
+    self.item_code_list = {}
+end
+
+-- 录音
+function CommonChatSmallUI:beginRecord( sender, event )
+	local channel = self.channel
+    if channel == ChatConst.Channel.Whole or channel == ChatConst.Channel.Multi or channel == ChatConst.Channel.Event then
+        channel = ChatConst.Channel.World
+    end
+    ChatHelp.RecordTouched(sender, event, channel)
+end
+
+-- 显示/关闭@人的消息
+function CommonChatSmallUI:showAtNotice( status,data )
+end
+
+-- 更新当前频道数据
+function CommonChatSmallUI:updateCoseList()
+    if not self.channelList then return end
+    local scroll = self.channelList[self.channel]
+    if self.channel ~= ChatConst.Channel.Friend then
+        if scroll and scroll:isSame(self.channel) then
+            local tempChannel = self.channel
+            if tempChannel == ChatConst.Channel.World then
+                tempChannel = ChatConst.Channel.Multi 
+            end
+            scroll:SetEnabled(true)
+            scroll:initData(self.ctrl.stack_list[tempChannel])
+            scroll:updateMsg()
+        end
+    else
+        local scroll1 = scroll:getCostList()
+        if scroll1 and scroll1:isSame(self.channel) then
+            scroll1:SetEnabled(true)
+            scroll1:initData(self.ctrl.stack_list[self.channel])
+            scroll1:updateMsg()
+        end
+    end
+end
+
+function CommonChatSmallUI:registerNotifier(bool)
+	if bool then
+		--添加表情
+	    if not self.add_face_evt then
+	        self.add_face_evt = GlobalEvent:getInstance():Bind(EventId.CHAT_SELECT_FACE, function(face_id, from_name)
+	            if from_name == "chatPanel" then
+	                self:onEditTextAddFace(face_id)
+	            end
+	        end)
+	    end
+
+        if not self.add_item_evt then
+            self.add_item_evt = GlobalEvent:getInstance():Bind(EventId.CHAT_SELECT_ITEM, function(data, from_name)
+                if from_name == "chatPanel" then
+                    self:onEditTextAddItem(data)
+                end
+            end)
+        end
+	    
+	    -- 世界聊天
+		if self.world_msg_evt == nil then
+	        self.world_msg_evt = GlobalEvent:getInstance():Bind(EventId.CHAT_UDMSG_WORLD, function()
+	            self:updateCoseList()
+	        end)
+	    end
+
+	    -- 私聊
+	    if self.friend_msg_evt == nil then
+	    	self.friend_msg_evt = GlobalEvent:getInstance():Bind(EventId.CHAT_UPDATE_SELF, function()
+	            self:updateCoseList()
+	        end)
+	    end
+
+	    --清除输入文本
+        if not self.clear_input_event then
+            self.clear_input_event = GlobalEvent:getInstance():Bind(EventId.CHAT_CLEAR_INPUT, function(is_private)
+                self:cleatInputText()
+            end)
+        end
+
+        --删除输入文字
+        if not self.backspace_evt then
+            self.backspace_evt = GlobalEvent:getInstance():Bind(EventId.CHAT_BACKSPACE, function(from_name)
+                if from_name == "chatPanel" then
+                    self:handleBackSpace()
+                end
+            end)
+        end
+
+        --更新翻译内容
+        if not self.adjust_event then
+            self.adjust_event = GlobalEvent:getInstance():Bind(ChatConst.Voice_Translate_Panel, function()
+                --self:adjustPosAfterTranslate()
+            end)
+        end
+
+        --点击发送按钮
+        if not self.touch_send_evt then
+            self.touch_send_evt = GlobalEvent:getInstance():Bind(EventId.CHAT_QUICK_SEND, function(from_name)
+                if from_name == "chatPanel" then
+                    self:onEditBoxTouch()
+                end
+            end)
+        end
+
+        --有联盟的时候更改下状态
+        if self.role_vo then
+            if self.role_update_lev_event == nil then
+                self.role_update_lev_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE,function(key,value)
+                    if key == "gsrv_id" or key == "gid" then
+                        if self.role_vo:isHasGuild() then
+                            self:setTabBtnTouchStatus(true, 3)
+                        end
+                    end
+                end)
+            end
+        end
+
+        --创建完成聊天列表 更新下信息
+        if not self.update_at then
+            self.update_at = GlobalEvent:getInstance():Bind(ChatEvent.EndCallBack,function (  )
+            	self.chat_input.edit_box:setPlaceHolder(TI18N("请输入信息，点开个人信息可快捷@人"))
+                --[[if self.channel == ChatConst.Channel.Gang or self.channel == ChatConst.Channel.Multi then 
+                    local data = self.model:getAtData()
+                    if data and next(data)~=nil then 
+                        self:showAtNotice(true,data)
+                    end
+                    self.chat_input.edit_box:setPlaceHolder(TI18N("请输入信息,长按头像可快捷@人"))
+                else
+                    self.chat_input.edit_box:setPlaceHolder(TI18N("请输入信息"))
+                end--]]
+            end)
+        end
+
+	    --系统提示增加
+	    if not self.update_tips then 
+	    	self.update_tips = GlobalEvent:getInstance():Bind(PromptEvent.ADD_PROMPT_DATA,function ( data )
+	    		self:showBubble(data)
+	    		local model = PromptController:getInstance():getModel()
+	    		local list = model:getPromptList()
+	    		if tableLen(list) > 0 then 
+	    			self:showTipsList(true,list)
+	    		end
+	    	end)
+	    end
+
+	    --系统提示移除
+	    if not self.remove_tips then 
+	    	self.remove_tips = GlobalEvent:getInstance():Bind(PromptEvent.REMOVE_PROMPT_DATA,function (  )
+	    		local model = PromptController:getInstance():getModel()
+	    		local list = model:getPromptList()
+	    		if tableLen(list) > 0 then 
+	    			self:showTipsList(true,list)
+	    		else
+	    			self:showTipsList(false)
+	    		end
+	    	end)
+	    end
+
+        -- 刷新左侧按钮位置
+        if not self.update_btn_pos then
+            self.update_btn_pos = GlobalEvent:getInstance():Bind(ChatEvent.AdjustMainChatBtnPos,function ( status )
+                self:refreshLeftBtnsPos(status)
+                if status == true then
+                    self:setSelecteTab(5)
+                else
+                    -- 剧情频道播放完毕，延迟5秒回到全部频道
+                    delayRun(self, 5, function ()
+                        self:setSelecteTab(1)
+                    end)
+                end
+            end)
+        end
+	else
+		if self.add_face_evt then
+            GlobalEvent:getInstance():UnBind(self.add_face_evt)
+            self.add_face_evt = nil
+        end
+        if self.add_item_evt then
+            GlobalEvent:getInstance():UnBind(self.add_item_evt)
+            self.add_item_evt = nil
+        end
+        if self.world_msg_evt then
+            GlobalEvent:getInstance():UnBind(self.world_msg_evt)
+            self.world_msg_evt = nil
+        end
+
+        if self.update_tips then
+            GlobalEvent:getInstance():UnBind(self.update_tips)
+            self.update_tips = nil
+        end
+
+        if self.remove_tips then
+            GlobalEvent:getInstance():UnBind(self.remove_tips)
+            self.remove_tips = nil
+        end
+
+        if self.clear_input_event then
+            GlobalEvent:getInstance():UnBind(self.clear_input_event)
+            self.clear_input_event = nil
+        end
+
+        if self.backspace_evt then
+            GlobalEvent:getInstance():UnBind(self.backspace_evt)
+            self.backspace_evt = nil
+        end
+        
+        if self.adjust_event then
+            GlobalEvent:getInstance():UnBind(self.adjust_event)
+            self.adjust_event = nil
+        end
+        
+        if self.touch_send_evt then
+            GlobalEvent:getInstance():UnBind(self.touch_send_evt)
+            self.touch_send_evt = nil
+        end
+        
+        if self.role_vo and self.role_update_lev_event then
+            self.role_vo:UnBind(self.role_update_lev_event)
+            self.role_update_lev_event = nil
+        end
+
+        if self.update_at then
+            GlobalEvent:getInstance():UnBind(self.update_at)
+            self.update_at = nil
+        end
+
+        if self.friend_msg_evt then
+            GlobalEvent:getInstance():UnBind(self.friend_msg_evt)
+            self.friend_msg_evt = nil
+        end
+
+        if self.update_btn_pos then
+            GlobalEvent:getInstance():UnBind(self.update_btn_pos)
+            self.update_btn_pos = nil
+        end
+	end
+end
+
+-- 输入框添加表情
+function CommonChatSmallUI:onEditTextAddFace(face_id)
+    local text = self.chat_input:getInputText()
+    if text == self.default_msg then
+        text = ""
+    end
+    self.chat_input:setInputText(text..face_id)
+end
+
+-- 输入框添加表情
+function CommonChatSmallUI:onEditTextAddItem(data)
+    if data == nil then return end
+
+    local text = self.chat_input:getInputText()
+    if text == self.default_msg then
+        text = ""
+    end
+
+    local base_id = data.base_id
+    local share_id = data.share_id
+    local count = data.count
+    local role_vo =  RoleController:getInstance():getRoleVo()
+    local item_config = Config.ItemData.data_get_data(base_id)
+    local code = data.code
+
+    if item_config then
+        local key = string.format("{%s,%s}", share_id, item_config.name)
+        local desc = ref_controller:buildItemMsg(base_id, role_vo.srv_id, share_id, count)
+
+        if self.item_code_list[code] then
+            local cur_object = self.item_code_list[code]
+            local cur_key = cur_object.key
+            local cur_desc = cur_object.desc
+
+            -- 获取原有的
+            text = string.gsub(text, cur_key, key, 1)
+        else
+            text = text..key
+        end
+        self.item_code_list[code] = {key=key, desc=desc}
+        self.item_desc_list[key] = desc
+        self.chat_input:setInputText(text)
+    end
+end
+
+-- 删除输入的信息
+function CommonChatSmallUI:handleBackSpace()
+    local text = self.chat_input:getInputText()
+    if text ~= "" then
+        local str_list, length = StringUtil.splitStr(text)
+        local words = ""
+        for i=1, #str_list-1 do
+            words = words.. tostring(str_list[i].char)
+        end
+        self.chat_input:setInputText(words)
+    end
+end
+
+function CommonChatSmallUI:changeChatUIHeight( notChangeModel )
+    if not notChangeModel then
+        if self.cur_showModel == 1 then
+            self.cur_showModel = 2
+        else
+            self.cur_showModel = 1
+        end
+        local arrowAct = cc.RotateBy:create(0.2, 180)
+        self.pic_arrow:runAction(arrowAct)
+    end
+    local cur_view_type = MainuiController:getInstance():getMainChatBoxCurViewType()
+    local chat_box_heights = ChatConst.ChatBoxHeight[cur_view_type]
+    local chat_panel_heights = ChatConst.ChatPanelHeight[cur_view_type]
+    local chat_tab_heights = ChatConst.ChatTabHeight[cur_view_type]
+
+    self.layout_leftbtns:setContentSize(cc.size(self.layout_leftbtns_size.width, chat_tab_heights[self.cur_showModel]))
+    self.layout_friend:setContentSize(cc.size(self.layout_friend_size.width, chat_panel_heights[self.cur_showModel]))
+    self.layout_chat:setContentSize(cc.size(self.layout_chat_size.width, chat_panel_heights[self.cur_showModel]))
+
+	for channel,chatScroll in pairs(self.channelList) do
+		if channel ~= ChatConst.Channel.Friend then
+			chatScroll:changeListModel(self.cur_showModel)
+		end
+	end
+	local newHight = chat_box_heights[self.cur_showModel]
+	self.chat_container:setContentSize(cc.size(self.size.width, newHight))
+	self:setContentSize(cc.size(self.size.width, newHight))
+	self.bg:setContentSize(cc.size(self.size.width, newHight))
+	self:refreshLeftBtnsPos()
+	GlobalEvent:getInstance():Fire(EventId.CHAT_HEIGHT_CHANGE, self.cur_showModel)
+end
+
+function CommonChatSmallUI:showBubble( data )
+	if data then
+		self.bubble:stopAllActions()
+		self.bubble:setVisible(true)
+		self.desc:setString(data.name)
+		local fadein = cc.FadeIn:create(0.7)
+		local fadeout = cc.FadeOut:create(0.7)
+		self.bubble:runAction(cc.Sequence:create(fadein,fadeout))
+	end
+end
+
+function CommonChatSmallUI:playAction(item)
+	if not item then return end
+	item:stopAllActions()
+	local posX = item:getPositionX()
+	local posY = item:getPositionY()
+	item:setPosition(cc.p(posX,posY-30))
+	item:setVisible(true)
+	local act_move = cc.MoveTo:create(0.3,cc.p(posX, posY))
+	if not tolua.isnull(item) then
+		item:runAction(cc.Sequence:create(act_move))
+	end
+end
+
+
+function CommonChatSmallUI:showTipsList( status,list )
+	self.tips_btn:setVisible(status)	
+	if status then 
+		if list and next(list)~=nil then
+			self.tips_scroll:removeAllChildren()
+			local len = tableLen(list)
+
+			local res = PathTool.getResFrame("mainui","mainui_tips_bg1") 
+			local max_height = math.max(self.tips_scroll:getContentSize().height,len*(12+49))
+
+			local scroll_height = math.min(len*(12+49),160)
+			print("====len===",len,max_height)
+
+			--根据大小调整下scroll和背景大小
+			self.tips_scroll:setContentSize(cc.size(self.tips_scroll:getContentSize().width,scroll_height))
+			self.tips_scroll:setInnerContainerSize(cc.size(self.tips_scroll:getContentSize().width,scroll_height))
+			self.tips_panel:setContentSize(cc.size(self.tips_panel:getContentSize().width,self.tips_scroll:getContentSize().height+60))
+			
+			if scroll_height > 160 then
+				self.tips_scroll:setInnerContainerSize(cc.size(self.tips_scroll:getContentSize().width,max_height))
+			end
+			for i,v in pairs(list) do
+				local item = createButton(self.tips_scroll, v.name, self.tips_scroll:getContentSize().width/2, 5+(12+49)*(i-1) , cc.size(171,49), res, 22,Config.ColorData.data_color4[175], res, res, LOADTEXT_TYPE_PLIST)
+				item:setAnchorPoint(0.5,0)
+				item:addTouchEventListener(function ( sender, event_type )
+					if event_type == ccui.TouchEventType.ended then
+						self:clickBtn(v)
+					end
+				end)
+			end
+		end
+	else
+		self.tips_panel:setVisible(false)
+	end
+end
+
+function CommonChatSmallUI:clickBtn( data )
+	if data.type == PromptTypeConst.Private_chat then --私聊
+		local rid,srv_id
+		for k,v in pairs(data.list[1].data.arg_uint32) do
+			if v.key == 1 then
+				rid = v.value
+			end
+		end
+
+		for k,v in pairs(data.list[1].data.arg_str) do
+			if v.key == 1 then
+				srv_id = v.value
+			end
+		end
+		if self.cur_showModel == 1 then
+			self:changeChatUIHeight()
+		end
+		self:setSelecteTab(4)
+	elseif data.type == PromptTypeConst.World_boss then --世界boss
+		MainuiController:getInstance():changeMainUIStatus(MainuiConst.btn_index.main_scene, MainuiConst.sub_type.world_boss)
+	elseif data.type == PromptTypeConst.At_notice then
+		self:setSelecteTab(1)
+	elseif data.type == PromptTypeConst.Endless_trail then	-- 无尽试炼
+		Endless_trailController:getInstance():openEndlessBuffView(true)
+    elseif data.type == PromptTypeConst.Escort then
+        EscortController:getInstance():openEscortMyInfoWindow(true) 
+    elseif data.type == PromptTypeConst.GuileMuster then
+        GuildbossController:getInstance():openMainWindow(true)
+    elseif data.type == PromptTypeConst.Challenge then
+        BattleController:getInstance():confirmBattlePk(data)
+	end
+	PromptController:getInstance():getModel():removePromptDataByTpye(data.type)
+	self.tips_panel:setVisible(false)
+end
+
+function CommonChatSmallUI:showPromptBubble( data )
+	
+end
+
+function CommonChatSmallUI:DeleteMe()
+    self:registerNotifier(false)
+	self:removeAllChildren()
+	self:removeFromParent()
+end

@@ -1,0 +1,757 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-12-21 10:07:17
+-- @description    : 
+		-- 次元之门章节地图
+---------------------------------
+BattleWarToleranceWindow = BattleWarToleranceWindow or BaseClass(BaseView)
+
+local controller = BattleDramaController:getInstance()
+local model = controller:getModel()
+local _string_format = string.format
+local _tolua_isnull = tolua.isnull
+local _drama_model = BattleDramaController:getInstance():getModel()
+
+function BattleWarToleranceWindow:__init()
+    self.view_tag = ViewMgrTag.WIN_TAG
+    self.is_full_screen = true
+    self.win_type = WinType.Full
+	self.layout_name = "battledrama/battle_drama_WarTolerance_windows"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("War_tolerance", "War_tolerance"), type = ResourcesType.plist},
+	}
+
+    model:setBattleDramaLoginRed(false)
+end
+
+function BattleWarToleranceWindow:open_callback( )
+    MainuiController:getInstance():getMainUi():changeBottomShowStatus(1)
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+    self.main_size = cc.size(SCREEN_WIDTH, display.height)
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+
+	self.map_layout = main_container:getChildByName("map_layout")
+	self.close_btn = main_container:getChildByName("close_btn")
+    self.chapter_btn = main_container:getChildByName("chapter_btn")
+    self.btn_left=self.chapter_btn:getChildByName("btn_left")
+    self.btn_right=self.chapter_btn:getChildByName("btn_right")
+    self.War_title=self.main_container:getChildByName("War_title")
+    self.btn_rule=self.main_container:getChildByName("btn_rule")
+    self.chapter_name=self.main_container:getChildByName("chapter_name")
+    self.btn_layout = ccui.Layout:create()
+    self.btn_layout:setVisible(true)
+    self.btn_layout:setLocalZOrder(999)
+    self.btn_layout:setPosition(self.main_size.width * 0.5, display.getBottom(self) + MainuiController:getInstance():getBottomHeight() + 90)
+    self:addChild(self.btn_layout)
+    self:createDramaButton()
+    -- 画网格线
+	local top_off = display.getTop(main_container)
+    local posy=top_off-80
+    self.chapter_btn:setPositionY(posy)
+    self.War_title:setPositionY(posy-5)
+    self.chapter_name:setPositionY(posy-35)
+    self.btn_rule:setPositionY(posy-14)
+
+end
+
+function BattleWarToleranceWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickCloseBtn), true, 2)
+	registerButtonEventListener(self.rank_btn, handler(self, self._onClickRecordBtn), true)
+    registerButtonEventListener(self.btn_right, handler(self, self._onClickNextBtn), true, 1)
+    registerButtonEventListener(self.btn_left, handler(self, self._onClickPreBtn), true,nil,nil,-1)
+    self.btn_rule:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local rule_cfg = Config.DungeonNinjaWarData.data_drama_const["game_rule"]
+            if rule_cfg then
+                TipsManager:getInstance():showCommonTips(rule_cfg.desc, sender:getTouchBeganPosition())
+            end
+        end
+    end)
+	local function onTouchBegin(touch, event)
+		self.map_layout:stopAllActions()
+        return true
+    end
+
+    local function onTouchMoved(touch, event)
+        self.last_point = touch:getDelta()
+        self:moveMapLayer(self.last_point.x,self.last_point.y)
+    end
+
+    if not self.update_war_data_event then
+        self.update_war_data_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.BattleDrama_War_Update_Data, function(data)
+            if self.root_wnd and not _tolua_isnull(self.root_wnd) then
+                self.war_data = model:getWarData()
+                self.chapter_id = self.war_data.chapter_id
+                self.dun_id = self.war_data.dun_id
+                if model.curChapter_id ~=data.chapter_id then
+                    controller:sender13234(data.chapter_id)
+                    model.curChapter_id=data.chapter_id
+                else 
+                    controller:sender13234(data.chapter_id)
+                end
+            end
+        end)
+    end
+
+	local function onTouchEnded(touch, event)
+        if self.last_point then
+        	local pos_x = self.map_layout:getPositionX() + self.last_point.x + 15
+        	if self.last_point.x < 0 then
+        		pos_x = self.map_layout:getPositionX() + self.last_point.x - 15
+        	end
+        	local return_pos = self:checkMapLayerPoint(pos_x)
+        	self.map_layout:stopAllActions()
+        	self.map_layout:runAction(cc.MoveTo:create(0.4, return_pos))
+        end
+    end
+
+    local listener = cc.EventListenerTouchOneByOne:create()
+    listener:registerScriptHandler(onTouchBegin,cc.Handler.EVENT_TOUCH_BEGAN)
+    listener:registerScriptHandler(onTouchMoved,cc.Handler.EVENT_TOUCH_MOVED)
+    listener:registerScriptHandler(onTouchEnded,cc.Handler.EVENT_TOUCH_ENDED)
+    self.map_layout:getEventDispatcher():addEventListenerWithSceneGraphPriority(listener, self.map_layout)
+
+    self:addGlobalEvent(Battle_dramaEvent.Changechapter, function ( )
+        if self.root_wnd and not tolua.isnull(self.root_wnd) then
+            self.chapter_id=model.curChapter_id
+            self.dun_id=model:getWarChapterDunId(self.chapter_id) 
+            self:updateBaseInfo()
+        end
+    end)
+    if not self.update_drama_quick_data_event then
+        self.update_drama_quick_data_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.BattleDrama_Quick_Battle_Data, function(data)
+            if data == nil then return end
+            if _tolua_isnull(self.quick_battle_btn) then return end
+            if data.fast_combat_num ~= 0 or not self.quick_battle_status then
+                self.quick_battle_tips:setVisible(false)
+            else
+                self.quick_battle_tips:setVisible(true)
+            end
+        end)
+    end
+
+    if not self.update_daily_reward_event then
+        self.update_daily_reward_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Update_Daily_Reward_Event, function()
+            if self.root_wnd and not _tolua_isnull(self.root_wnd) then
+                self:setPanel()
+            end
+        end)
+    end
+end
+
+function BattleWarToleranceWindow:moveMapLayer( x, y )
+	x = self.map_layout:getPositionX() + x
+    y = self.map_layout:getPositionY() + y
+    local return_pos = self:checkMapLayerPoint(x,y)
+    self.map_layout:setPosition(return_pos.x,return_pos.y)
+end
+
+function BattleWarToleranceWindow:checkMapLayerPoint( x, y )
+	local map_layout_size = self.map_layout:getContentSize()
+	if x > map_layout_size.width/2 then
+		x = map_layout_size.width/2
+	elseif x < (SCREEN_WIDTH-map_layout_size.width/2) then
+		x = SCREEN_WIDTH-map_layout_size.width/2
+	end
+	return cc.p(x, 775)
+end
+
+function BattleWarToleranceWindow:_onClickCloseBtn(  )
+	controller:openWarToleranceWindows(false)
+end
+
+function BattleWarToleranceWindow:_onClickRewardBtn(  )
+    BattleDramaController:getInstance():openWarRewardView(true)
+end
+
+function BattleWarToleranceWindow:_onClickNextBtn( )
+    local cur_id= model.curChapter_id
+    local nextid=cur_id+1
+    local cfg= Config.DungeonNinjaWarData.data_drama_world_info[nextid]
+    if not cfg then
+        nextid=1
+    end
+    self.btn_right:setTouchEnabled(false)
+    model.curChapter_id=nextid
+    local data=model:getChapterInfo(nextid)
+    if data then
+        self.chapter_id = nextid
+        self.dun_id = model:getWarChapterDunId(self.chapter_id) 
+        self:updateBaseInfo()
+    else
+        controller:sender13234(nextid)
+    end
+end
+
+function BattleWarToleranceWindow:_onClickPreBtn()
+    local cur_id= model.curChapter_id
+    local nextid=cur_id-1
+    local cfg= Config.DungeonNinjaWarData.data_drama_world_info[nextid]
+    if not cfg then
+        nextid=Config.DungeonNinjaWarData.data_drama_world_info_length
+    end
+    self.btn_left:setTouchEnabled(false)
+    model.curChapter_id=nextid
+    local data=model:getChapterInfo(nextid)
+    if data then
+        self.chapter_id = nextid
+        self.dun_id = model:getWarChapterDunId(self.chapter_id) 
+        self:updateBaseInfo()
+    else
+        controller:sender13234(nextid)
+    end
+end
+
+function BattleWarToleranceWindow:_onClickRecordBtn(  )
+	RankController:getInstance():openRankView(true, RankConstant.RankType.drama_war)
+end
+
+function BattleWarToleranceWindow:openRootWnd()
+    self.war_data = model:getWarData()
+    self.chapter_id = self.war_data.chapter_id
+    model.curChapter_id=self.chapter_id
+    self.dun_id = self.war_data.dun_id
+    controller:sender13234(self.chapter_id)
+end
+
+-- 更新基础信息
+function BattleWarToleranceWindow:updateBaseInfo()
+	if self.war_data then
+        self:setPanel()
+        self:updateDramaDropInfo()
+        self:updateMapImage()
+        local cfg= Config.DungeonNinjaWarData.data_drama_const["refresh_number"]
+        local max= cfg.val or 10
+        self.count_label:setString(self.war_data.count.."/"..max)
+	end
+end
+-- 更新章节地图节点
+function BattleWarToleranceWindow:updateMapPoint()
+	if self.main_point_list and next(self.main_point_list or {}) ~= nil then
+        for i, item in pairs(self.main_point_list) do
+            if item then
+                item:clearInfo()
+                item:DeleteMe()
+            end
+        end
+    end
+    self.main_point_list = {}
+    local item = nil
+    local data=model:getChapterInfo(model.curChapter_id)
+    if data then
+        for i, v in ipairs(data) do
+            if not self.main_point_list[v.dun_id] then
+                item = BattleWarMainPointItem.new()
+                self.main_point_list[v.dun_id] = item
+                if self.map_layout then
+                    self.map_layout:addChild(item)
+                end
+            end
+            item = self.main_point_list[v.dun_id]
+            if item then
+                v.v_data = model:getWarDunInfoByID(v.dun_id)
+                item:setPosition(v.v_data.pos[1], v.v_data.pos[2])
+                item:setData(v)
+                item:setZOrder(1000-v.v_data.pos[2])
+            end
+        end
+    end
+    self:updateMapTarget()
+ end
+
+-- 更新地图资源
+function BattleWarToleranceWindow:updateMapImage()
+	local _config = Config.DungeonNinjaWarData.data_drama_world_info[self.chapter_id]
+	if _config then
+		local map_id =_config.map_id
+		if self.res_load then
+            self.res_load:DeleteMe()
+            self.res_load = nil
+        end
+        local dun_config = Config.DungeonNinjaWarData.data_drama_dungeon_info(self.dun_id)
+        if dun_config then
+            self.chapter_name:setString(_config.name .. dun_config.type1)
+            self.War_title:setString(_config.name)
+            self.title_label:setString(_config.name .. dun_config.type1)
+        end
+        self:SetTitleBg()
+        local map_bg_res = PathTool.getBattleSceneRes(_string_format("%s/blayer/big_map", map_id), false)   
+        self.res_load = createResourcesLoad(map_bg_res, ResourcesType.single, function ()
+            if self.map_layout and not tolua.isnull(self.map_layout) then
+                if not self.map_bg then
+                    self.map_bg = createSprite(map_bg_res, 0, 0, self.map_layout, cc.p(0, 0), LOADTEXT_TYPE)
+                else
+                    loadSpriteTexture(self.map_bg, map_bg_res, LOADTEXT_TYPE)
+                end
+                local map_bg_size = self.map_bg:getContentSize()
+                self.map_layout:setContentSize(map_bg_size)
+                self:updateMapPoint()
+            end
+        end, self.res_load)
+        local status=model:getWarChapterStatus(self.chapter_id)
+        if status==1 then
+            self.boss_btn:setTouchEnabled(false)
+            setChildUnEnabled(true, self.boss_btn)
+            self.boss_btn_challenge:getChildByName("label"):setString(TI18N("语言_c_5802"))
+            self.boss_btn_challenge_effect:setVisible(false)
+        elseif status==2 then
+            local stru1=self:getBtnBossStatus()
+            self.boss_btn:setTouchEnabled(true)
+            self.boss_btn_challenge:getChildByName("label"):setString(TI18N("语言_c_1884"))
+            if stru1 then
+                setChildUnEnabled(false, self.boss_btn)
+                self.boss_btn_challenge_effect:setVisible(true)
+            else
+                setChildUnEnabled(true, self.boss_btn)
+                self.boss_btn_challenge_effect:setVisible(false)
+            end
+        else
+            self.boss_btn:setTouchEnabled(false)
+            setChildUnEnabled(true, self.boss_btn)
+            self.boss_btn_challenge:getChildByName("label"):setString(TI18N("语言_c_1884"))
+            self.boss_btn_challenge_effect:setVisible(false)
+        end
+        local cur_id= model.curChapter_id
+        self.btn_left:setVisible(cur_id~=1)
+        local nextid=cur_id+1
+        local cfg= Config.DungeonNinjaWarData.data_drama_world_info[nextid]
+        self.btn_right:setVisible(cfg~=nil)
+	end
+end
+
+function BattleWarToleranceWindow:SetTitleBg()
+    local maxWid=math.max(self.chapter_name:getContentSize().width,self.War_title:getContentSize().width) 
+    local len=math.max(maxWid+500,680)   
+    self.chapter_btn:setContentSize(cc.size(len,115))
+    if len >680 then
+        local offset=len-680
+        self.btn_right:setPositionX(468+offset)
+    else
+        self.btn_right:setPositionX(468)
+    end
+end
+
+function BattleWarToleranceWindow:getBtnBossStatus( )
+    local lev_limit=Config.DungeonNinjaWarData.data_drama_dungeon_info(self.dun_id).lev_limit
+    local lev= RoleController:getInstance():getRoleVo().lev
+    if lev<lev_limit or (self.war_data.count and self.war_data.count<1) then
+        return false
+    end
+    return true
+end
+--==============================--
+--desc:剧情副本创建下面的挑战BOSS,快速作战,英雄变强,以及资产收益组件
+--time:2018-11-19 02:51:24
+--@return 
+--==============================--
+function BattleWarToleranceWindow:createDramaButton( )
+    local bot_container = self.root_wnd:getChildByName("bottom_container")
+    self.bot_container = bot_container
+    self.title_bg=bot_container:getChildByName("title_bg")
+    self.title_label=bot_container:getChildByName("title_label")
+    self.rank_btn = bot_container:getChildByName("rank_btn")
+    self.rank_btn:getChildByName("record_lab"):setString(TI18N("语言_c_5803"))
+    self.count_title=bot_container:getChildByName("count_title")
+    self.count_title:setString(TI18N("语言_c_5843"))
+    self.count_label=bot_container:getChildByName("count_label")
+    self.count_label:setPositionX(self.count_title:getPositionX() + self.count_title:getContentSize().width +5)
+    -- 挑战bOSS
+    self.boss_btn=bot_container:getChildByName("boss_btn")
+    self.boss_btn:setName("boss_btn")
+    self.boss_btn_notice = self.boss_btn:getChildByName("notice_label")
+    self.boss_btn_challenge = self.boss_btn:getChildByName("challenge_item")
+    self.boss_btn_challenge_label = self.boss_btn_challenge:getChildByName("label")
+    self.boss_btn_challenge:getChildByName("label"):setString(TI18N("语言_c_1884"))
+    self.boss_btn_challenge_effect = createEffectSpine(Config.EffectData.data_effect_info[107], cc.p(95, 31), cc.p(0.5, 0.5), true, PlayerAction.action, nil, cc.TEXTURE2_D_PIXEL_FORMAT_RGB_A8888)
+    self.boss_btn_challenge:addChild(self.boss_btn_challenge_effect, -1)
+    self.hangUp_panel = bot_container:getChildByName("hangUp_panel")
+    self.eff_node = bot_container:getChildByName("eff_node")
+    self.eff_node:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local id = Config.DungeonNinjaWarData.data_drama_const["level_condition"].val
+            if self.dun_id >= id then
+                BattleDramaController:getInstance():openDramDailyView(true)
+            else
+                local cfg = Config.DungeonNinjaWarData.data_drama_dungeon_info(id)
+                local _cfg = Config.DungeonNinjaWarData.data_drama_world_info[cfg.chapter_id]
+                message(string.format(TI18N("语言_c_6316"),_cfg.name..cfg.type1))
+            end
+        end
+    end)
+    self.drama_reward_layout = self.hangUp_panel:getChildByName("reward_layout")
+    self.image_bg_7 = self.hangUp_panel:getChildByName("image_bg_7")
+    self.daily_panel = bot_container:getChildByName("daily_panel")
+    self.daily_panel:setVisible(false)
+    self.daily_tip = self.daily_panel:getChildByName("daily_tip")
+    self.daily_tip:setVisible(false)
+    self.daily_layout = self.daily_panel:getChildByName("daily_layout")
+    self.boss_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local lev_limit=Config.DungeonNinjaWarData.data_drama_dungeon_info(self.dun_id).lev_limit
+            local lev= RoleController:getInstance():getRoleVo().lev
+            if lev<lev_limit then
+                message(string.format(TI18N("语言_c_5845"),lev_limit))
+            elseif self.war_data.count and self.war_data.count<1 then
+                message(TI18N("语言_c_5844"))
+            elseif self.boss_btn.battle_status == 3 then
+                controller:send13202()
+            else
+                local info={chapter_id =self.chapter_id,dun_id = model:getcur_dun_id(),sub_id=1}--
+                controller:openBattleDramaDunFightInfo(true,{info=info})
+            end
+        end
+    end)
+    -- 冒险奇遇 --改为我要变强
+    self.encounter_btn=bot_container:getChildByName("encounter_btn")
+    self.encounter_btn_label = self.encounter_btn:getChildByName("label")
+    self.encounter_btn_label:setString(TI18N("语言_c_1364"))
+    self.encounter_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            StrongerController:getInstance():openMainWin(true)
+        end
+    end)
+    -- 引导需要
+    self.encounter_btn:setName("hero_btn")
+    
+    controller:sender13206()
+end
+
+function BattleWarToleranceWindow:setPanel()
+    self.daily_data = model:getDailyReward()
+    if self.daily_data then
+        local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+        local featuresId = MainuiConst.FeaturesShield.warTolerance_daily
+        local cfg = Config.PartnerBondSkillData.data_const["open_lev_condition"]
+        local role_vo = RoleController:getInstance():getRoleVo()
+        local status = role_vo.lev >= cfg.val
+        if status then
+            status = table.indexof(nohideIds,featuresId)
+        end
+        self:setHaveDaily(status)
+    end
+end
+function BattleWarToleranceWindow:setHaveDaily(status)
+    self.bot_container:setContentSize(cc.size(720,264))
+    self.title_label:setPositionY(284)
+    self.title_bg:setPositionY(284)
+    if status then
+        self.daily_panel:setVisible(true)
+        self.hangUp_panel:setPositionY(140)
+        self.image_bg_7:setPositionY(79)
+        local action = PlayerAction.action
+        if self.daily_data.cur_day >= self.daily_data.max_day then
+                action = PlayerAction.action_3
+        else
+            if next(self.daily_data.item_rewards) then
+                action = PlayerAction.action_2
+            else
+                action = PlayerAction.action_1
+            end
+        end
+        if not self.box_eff then
+            self.box_eff = createEffectSpine("E31361",cc.p(40,40),cc.p(0.5,0.5),true,action)
+            self.eff_node:addChild(self.box_eff)
+        end
+        addRedPointToNodeByStatus(self.box_eff,self.daily_data and #self.daily_data.item_rewards>0,50,50)
+        self.eff_node:setVisible(true)
+        self.box_eff:setVisible(true)
+        self.box_eff:setAnimation(0, action, true) 
+        self.daily_labels = self.daily_labels or {}
+        for i,v in ipairs(self.daily_labels) do
+            v:setVisible(false)
+        end
+        local id = Config.DungeonNinjaWarData.data_drama_const["level_condition"].val
+        local cfg = Config.DungeonNinjaWarData.data_drama_dungeon_info(self.dun_id)
+        if self.dun_id >= id then
+            for i, v in ipairs(cfg.daily_items) do
+                local label = self.daily_labels[i]
+                if label == nil then
+                    label = createRichLabel(20, cc.c3b(0xff,0xf6,0xc7), cc.p(0,0.5), cc.p(50, 22), nil, nil, 180)
+                    self.daily_labels[i] = label
+                    self.daily_layout:addChild(label)
+                end
+                local config = Config.ItemData.data_get_data(v[1])
+                local str = string.format(TI18N("<img src=%s visible=true scale=0.3 /><div fontcolor=#643223>%s/d</div>"), PathTool.getItemRes(config.icon), v[2])
+                label:setString(str)
+                label:setVisible(true)
+                local _x=i%2==0 and 330 or 50
+                local _y= 22
+                label:setPosition(cc.p(_x, _y))
+            end
+            self.daily_tip:setVisible(false)
+            setChildUnEnabled(false,self.eff_node)
+        else
+            setChildUnEnabled(true,self.eff_node)
+            self.daily_tip:setVisible(true)
+            local cfg = Config.DungeonNinjaWarData.data_drama_dungeon_info(id)
+            local _cfg = Config.DungeonNinjaWarData.data_drama_world_info[cfg.chapter_id]
+            self.daily_tip:setString(transformTextToShort(string.format(TI18N("语言_c_6316"),_cfg.name..cfg.type1),40))
+            addEvt2showAllTextTips(self.daily_tip,string.format(TI18N("语言_c_6316"),_cfg.name..cfg.type1),40)
+        end
+    else
+        self.daily_panel:setVisible(false)
+        self.hangUp_panel:setPositionY(120)
+        self.image_bg_7:setPositionY(50)
+        self.eff_node:setVisible(false)
+        if self.box_eff then
+            self.box_eff:setVisible(false)
+        end
+    end
+end
+
+-- 刷新副本挂机收益、掉落信息
+function BattleWarToleranceWindow:updateDramaDropInfo(  )
+    if self.drama_reward_layout and not _tolua_isnull(self.drama_reward_layout) then
+        local drama_data = _drama_model:getDramaData()
+        if drama_data == nil then return end
+        local drama_config
+        if not self.cur_drama_max_id and drama_data.max_dun_id == 0 then
+            drama_config = Config.DungeonData.data_drama_dungeon_info(10010)
+        else
+            if self.cur_drama_max_id == drama_data.max_dun_id then return end
+            drama_config = Config.DungeonData.data_drama_dungeon_info(drama_data.max_dun_id)
+        end
+        if drama_config == nil then return end
+        -- 挂机收益信息
+        self.drama_item_labels = self.drama_item_labels or {}
+        for i,v in ipairs(self.drama_item_labels) do
+            v:setVisible(false)
+        end
+        local dunid=model:getWarData().dun_id
+        local pre_id=model:GetPreDun_id(dunid)
+        local hook_items= nil
+        if pre_id then 
+            hook_items=Config.DungeonNinjaWarData.data_drama_dungeon_info(pre_id).hook_items
+        end
+        for i, v in ipairs(drama_config.per_hook_items) do
+            local label = self.drama_item_labels[i]
+            if label == nil then
+                label = createRichLabel(20, cc.c3b(0xff,0xf6,0xc7), cc.p(0,0.5), cc.p(_x, 22), nil, nil, 180)
+                self.drama_item_labels[i] = label
+                self.drama_reward_layout:addChild(label)
+            end
+            local config = Config.ItemData.data_get_data(v[1])
+            local str=""
+            if hook_items then
+                local add_v=hook_items[i][2]
+                str = string.format(TI18N("<img src=%s visible=true scale=0.3 /><div fontcolor=#643223>%s/m</div><div outline=1,#000000 fontcolor=#00ff00> +%s/m</div>"), PathTool.getItemRes(config.icon), v[2],add_v)
+            else
+                str = string.format(TI18N("<img src=%s visible=true scale=0.3 /><div fontcolor=#643223>%s/m</div>"), PathTool.getItemRes(config.icon), v[2])
+            end
+            label:setString(str)
+            label:setVisible(true)
+            local _x=i%2==0 and 330 or 50
+            local _y=i<=2 and 80 or 22
+            label:setPosition(cc.p(_x, _y))
+        end
+    end
+end
+
+--当前关卡箭头
+function BattleWarToleranceWindow:updateMapTarget()
+    local dun_id=model.cur_dun_id
+    local item = self.main_point_list[dun_id]
+    if item then
+        item:ShowTarget(true)
+        self:focusMap(item)
+    end
+    self.btn_right:setTouchEnabled(true)
+    self.btn_left:setTouchEnabled(true)
+end
+
+function BattleWarToleranceWindow:focusMap(item)
+    local half_map_width =  self.map_layout:getContentSize().width/2
+    local x = item:getPositionX()
+    local y = self.map_layout:getPositionY()
+    local offsetX=0
+    if x > half_map_width then
+		offsetX = SCREEN_WIDTH/2-(x-half_map_width)
+	else 
+		offsetX = half_map_width-x+SCREEN_WIDTH/2
+	end
+    local return_pos = self:checkMapLayerPoint(offsetX,y)
+    self.map_layout:setPosition(return_pos.x,y)
+end
+
+function BattleWarToleranceWindow:close_callback(  )
+	if self.res_load then
+        self.res_load:DeleteMe()
+        self.res_load = nil
+    end
+    if self.main_point_list then
+        for k, v in pairs(self.main_point_list) do
+            if v then
+                v:DeleteMe() 
+            end
+        end
+    end
+    if self.cur_effect then
+        self.cur_effect:clearTracks()
+        self.cur_effect:removeFromParent()
+        self.cur_effect = nil
+    end
+
+    if self.background then
+        self.background:removeAllChildren()
+        self.background:stopAllActions()
+    end
+
+    if self.update_war_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_war_data_event)
+        self.update_war_data_event = nil
+    end
+    if self.update_daily_reward_event then
+        GlobalEvent:getInstance():UnBind(self.update_daily_reward_event)
+        self.update_daily_reward_event = nil
+    end
+    
+	controller:openWarToleranceWindows(false)
+    MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Darma)
+end
+
+-- @description:
+--      忍界大战关卡点item
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+BattleWarMainPointItem = class("BattleWarMainPointItem",function ()
+    return ccui.Widget:create()
+end)
+
+BattleWarMainPointItem.WIDTH = 60
+BattleWarMainPointItem.HEIGHT = 40
+
+function BattleWarMainPointItem:ctor()
+    self.ctrl = BattleDramaController:getInstance()
+    self.model = self.ctrl:getModel()
+    self:initUi()
+
+end
+
+--初始化UI
+function BattleWarMainPointItem:initUi()
+    self.size = cc.size(BattleWarMainPointItem.WIDTH,BattleWarMainPointItem.HEIGHT)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+    self:setCascadeOpacityEnabled(true)
+    self:retain()
+    if not self.normal_img then
+         self.normal_img = createSprite(PathTool.getResFrame("War_tolerance", "War_tolerance11"),self.size.width/2,self.size.height/2,self,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+    end
+    self:setVisible(true)
+    self:registerEvent()
+end
+
+function BattleWarMainPointItem:registerEvent()
+    
+end
+
+--设置数据
+function BattleWarMainPointItem:setData(data)
+    if not data then
+        return 
+    end
+    self.data = data
+    self.dun_id = data.dun_id
+    self.list = data.list
+    self.status=data.status
+    local cur_dun_id=model.cur_dun_id
+    if self.dun_id<=cur_dun_id then
+        self.play_head = self:createRoleHead(self.size.width/2,80)
+        local face_id = self.data.face_id
+        self.play_head:setHeadRes(face_id)
+        self.play_head:addTouchEventListener(function(sender, eventType)
+            customClickAction_2(sender,eventType,0.7)
+            if eventType == ccui.TouchEventType.ended then
+                playButtonSound2()
+                if self.data then
+                    self.ctrl:openDramaDunInfoView(true,self.dun_id)
+                end
+            end
+        end)
+        setChildUnEnabled(false,self.normal_img)
+    else
+        local index=Config.DungeonNinjaWarData.data_drama_dungeon_info(self.dun_id).type1
+        local index_label=CommonNum.new(1, self, index, -2, cc.p(0,0.5))
+        index_label:setPosition(cc.p(index<10 and 22 or 15,50))
+        setChildUnEnabled(true,self.normal_img)
+    end
+end
+
+function BattleWarMainPointItem:createRoleHead(x,y)
+    local play_head = PlayerHead.new(PlayerHead.type.circle)
+    self:addChild(play_head)
+    play_head:setPosition(cc.p(x,y))
+    play_head:setAnchorPoint(cc.p(0.5,0.5))
+    play_head:setTouchEnabled(true)
+    play_head:setSwallowTouches(false)
+    play_head:setScale(0.7)
+    return play_head
+end
+
+function BattleWarMainPointItem:ShowName()
+    if tolua.isnull(self.down_img) then
+        self.down_img = createSprite(PathTool.getResFrame("War_tolerance", "War_tolerance24"),self.size.width/2,self.size.height/2-30,self,cc.p(0.5,0.5))
+        self.name_txt = createLabel(18, Config.ColorData.data_color4[1], nil, self.size.width/2, self.size.height/2-30,"", self, nil, cc.p(0.5, 0.5))
+        local dun_config = Config.DungeonNinjaWarData.data_drama_dungeon_info(self.dun_id)
+        if dun_config then
+            self.name_txt:setString(dun_config.name)
+        end
+    end
+end
+
+function BattleWarMainPointItem:ShowTarget(show)
+   if show then
+    if tolua.isnull(self.tagget_img) then
+        self.up_img = createSprite(PathTool.getResFrame("War_tolerance", "War_tolerance29"),self.size.width/2,self.size.height+15,self,cc.p(0.5,0.5))
+        self.tagget_img = createSprite(PathTool.getResFrame("War_tolerance", "War_tolerance10"),self.size.width/2,140,self,cc.p(0.5,0.5))
+    else
+        self.tagget_img:setVisible(true)
+    end
+    self.tagget_img:stopAllActions()
+    local moveto =cc.MoveTo:create(1,cc.p(self.size.width/2, 150))   
+    local move2= cc.MoveTo:create(1,cc.p(self.size.width/2, 140))    
+    local repat= cc.RepeatForever:create(cc.Sequence:create(moveto,move2,nil))
+    self.tagget_img:runAction(repat)
+    self.up_img:setVisible(true)
+    else
+        if not tolua.isnull(self.tagget_img) then
+            self.tagget_img:setVisible(false)
+            self.up_img:setVisible(false)
+        end
+    end
+end
+
+function BattleWarMainPointItem:updateStatus(status)
+end
+
+--清除数据
+function BattleWarMainPointItem:clearInfo()
+    doStopAllActions(self)
+    self:removeFromParent()
+end
+
+--删掉的时候关闭
+function BattleWarMainPointItem:DeleteMe()
+    if self.play_head then 
+		self.play_head:DeleteMe()
+		self.play_head = nil
+	end
+    doStopAllActions(self)
+    self:removeAllChildren()
+    self:removeFromParent()
+    self:release()
+end

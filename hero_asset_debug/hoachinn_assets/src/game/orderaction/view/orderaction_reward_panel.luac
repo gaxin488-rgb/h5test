@@ -1,0 +1,487 @@
+--******** 文件说明 ********
+-- @Author:      hyxing 
+-- @description: 奖励界面
+-- @DateTime:    2019-04-19 16:38:31
+-- *******************************
+OrderActionRewardPanel = class("OrderActionRewardPanel", function()
+    return ccui.Widget:create()
+end)
+local table_sort = table.sort
+local table_insert = table.insert
+local math_ceil = math.ceil
+local controller = OrderActionController:getInstance()
+local lev_reward_list = Config.HolidayWarOrderData.data_lev_reward_list
+function OrderActionRewardPanel:ctor(period)
+    self.cur_period = period or 1
+    self.cur_move_item = nil
+    self.cur_totle_count = nil
+
+    self:layoutUI()
+    self:registerEvents()
+end
+function OrderActionRewardPanel:layoutUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("orderaction/reward_panel"))
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(656,562))
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    local Image_1 = self.main_container:getChildByName("Image_1")
+    Image_1:getChildByName("Text_1"):setString(TI18N("等级"))
+   
+    local exercise_text = Image_1:getChildByName("Text_1_0")
+    exercise_text:setString(TI18N("训练奖励"))
+    if self.cur_period == 2 then
+        exercise_text:setString(TI18N("冒险奖励"))
+    end
+    Image_1:getChildByName("Text_1_1"):setString(TI18N("进阶奖励"))
+    Image_1:getChildByName("Text_1_2"):setString(TI18N("状态"))
+
+    self.lock_image = self.main_container:getChildByName("lock_image")
+    self.btn_open_lock = self.lock_image:getChildByName("Image_12")
+    self.lock_image:getChildByName("Text_6"):setString(TI18N("点击解锁"))
+    self.lock_image:setVisible(true)
+    if controller:getModel():getGiftStatus() == 1 then
+        self.lock_image:setVisible(false)
+    end
+
+    self.fixed_item = self.main_container:getChildByName("fixed_item")
+    self.lev_text = self.fixed_item:getChildByName("lev_text")
+    self.lev_text:setString("1") --默认是1
+    self.item_1_goods = self.fixed_item:getChildByName("item_1")
+
+    local item_goods = self.main_container:getChildByName("item_goods")
+    local scroll_view_size = item_goods:getContentSize()
+    local setting = {
+        item_class = OrderActionRewardItem,
+        start_x = 8,
+        space_x = 0,
+        start_y = 0,
+        space_y = 5,
+        item_width = 634,
+        item_height = 99,
+        row = 0,
+        col = 1,
+        need_dynamic = true
+    }
+    self.child_scrollview = CommonScrollViewLayout.new(item_goods, cc.p(0,0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.child_scrollview:setSwallowTouches(false)
+    if lev_reward_list and lev_reward_list[self.cur_period] then
+        local function func(index)
+            self:setScrollFixedReward(index)
+        end 
+        self.child_scrollview:addScrollMoveCallBack(func)
+    end
+end
+
+--滑动到一定等级显示的奖励
+function OrderActionRewardPanel:setScrollFixedReward(lev_index)
+    if not lev_reward_list or not lev_reward_list[self.cur_period] then return end
+    local count = #lev_reward_list[self.cur_period] or 1
+    lev_index = lev_index or (count-1)
+
+    lev_index = math_ceil((count - lev_index)*0.1)
+    if self.cur_move_item == lev_index then return end
+    self.cur_move_item = lev_index
+
+    local cur_index = self.cur_move_item * 10
+    if cur_index >= count then
+        cur_index = count
+    end
+    if cur_index == 0 then cur_index = 1 end
+
+    local list = lev_reward_list[self.cur_period][cur_index]
+    if not list then return end
+    --星辰奖励
+    if not self.star_item then
+        self.star_item = BackPackItem.new(nil,true,nil,0.6)
+        self.fixed_item:addChild(self.star_item)
+        self.star_item:setPosition(cc.p(173, 48))
+        self.star_item:setDefaultTip()
+    end
+    if self.star_item then
+        if list.reward[1] and list.reward[1][1] and list.reward[1][2] then
+            self.star_item:setBaseData(list.reward[1][1],list.reward[1][2])
+            self.star_item:setVisible(true)
+        else
+            self.star_item:setVisible(false)
+        end
+    end
+    --闪烁固定奖励
+    if not self.flick_scrollview then
+        local scroll_view_size = self.item_1_goods:getContentSize()
+        local setting = {
+            item_class = BackPackItem,
+            start_x = 30,
+            space_x = 15,
+            start_y = 10,
+            space_y = 0,
+            item_width = BackPackItem.Width*0.6,
+            item_height = BackPackItem.Height*0.6,
+            row = 1,
+            col = 0,
+            scale = 0.60
+        }
+        self.flick_scrollview = CommonScrollViewLayout.new(self.item_1_goods, cc.p(0,0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+        self.flick_scrollview:setSwallowTouches(false)
+    end
+    if self.flick_scrollview then
+        if list and list.rmb_reward then
+            local ermb_reward = {}
+            for i,v in pairs(list.rmb_reward) do
+                local vo = {}
+                vo.bid = v[1]
+                vo.quantity = v[2]
+                table_insert(ermb_reward, vo)
+            end
+            if #ermb_reward > 2 then
+                self.flick_scrollview:setClickEnabled(true)
+            else
+                self.flick_scrollview:setClickEnabled(false)
+            end
+            self.flick_scrollview:setData(ermb_reward)
+            self.flick_scrollview:addEndCallBack(function()
+                local list = self.flick_scrollview:getItemList()
+                for k,v in pairs(list) do
+                    v:setDefaultTip()
+                end
+            end)
+        end
+    end
+    self.lev_text:setString(cur_index)
+end
+function OrderActionRewardPanel:registerEvents()
+    if not self.update_levreward_event then
+        self.update_levreward_event = GlobalEvent:getInstance():Bind(OrderActionEvent.OrderAction_LevReward_Event,function(lev)
+            self:setRewardList(lev)
+        end)
+    end
+    if not self.update_lev_event then
+        self.update_lev_event = GlobalEvent:getInstance():Bind(OrderActionEvent.OrderAction_Updata_LevExp_Event,function(data)
+            if data then
+                self:setRewardList(data.lev)
+            end
+        end)
+    end
+
+    if not self.update_lockopen_event then
+        self.update_lockopen_event = GlobalEvent:getInstance():Bind(OrderActionEvent.OrderAction_BuyGiftCard_Event,function()
+            local cur_lev = controller:getModel():getCurLev()
+            self:setRewardList(cur_lev)
+            if controller:getModel():getGiftStatus() == 1 then
+                self.lock_image:setVisible(false)
+            else
+                self.lock_image:setVisible(true)
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.btn_open_lock, function()
+        local root = controller:getOrderActionMainRoot()
+        if root then
+            local period = controller:getModel():getCurPeriod()
+            root:tabChargeView(3,period)
+        end
+    end,false, 1)
+end
+function OrderActionRewardPanel:setRewardList(lev)
+    if self.child_scrollview and lev then
+        local cur_lev = lev or 0
+        if lev_reward_list and lev_reward_list[self.cur_period] then
+            local list = {}
+            for i,v in pairs(lev_reward_list[self.cur_period]) do
+                v.status = 0
+                v.get_label = 0 --领取字体变化
+                v.common_get = 0 --普通奖励
+                if v.lev <= cur_lev then
+                    v.status = 1
+                end
+                local lev_list = controller:getModel():getLevShowData(v.lev)
+                if lev_list then
+                    if lev_list.status == 1 and lev_list.rmb_status == 1 then --普通和付费奖励都领取
+                        v.status = 2
+                    elseif lev_list.status == 1 then --只领取普通奖励
+                        v.status = 1
+                        v.get_label = 1
+                        v.common_get = 1
+                        --普通奖励领取付费奖励未领取
+                        if controller:getModel():getRMBStatus() == 0 then
+                            v.get_label = 1
+                        elseif controller:getModel():getRMBStatus() == 1 then
+                            v.get_label = 0
+                        end
+                    end
+                end
+                if v.status ~= 2 then
+                    table_insert(list,v)
+                end 
+            end
+            self:sortLevItemList(list)
+            if next(list) == nil then
+                if self.star_item then
+                    self.star_item:setVisible(false)
+                end
+                if self.flick_scrollview then
+                    self.flick_scrollview:setData({})
+                end
+                if self.lev_text then
+                    self.lev_text:setVisible(false)
+                end
+                self.child_scrollview:setData({})
+                commonShowEmptyIcon(self.main_container, true, {font_size = 22,scale = 1, text = TI18N("已领取所有奖励")})
+            else
+                local num = 0
+                if list[1] and list[1].lev then
+                    num = list[1].lev
+                end
+                num = #list - num
+                if num <= 0 then num = 0 end
+                self:setScrollFixedReward(num)
+
+                if self.cur_totle_count ~= #list then
+                    self.child_scrollview:setData(list)
+                    self.cur_totle_count = #list
+                else
+                    self.child_scrollview:resetAddPosition(list)
+                end
+            end
+        end
+    end
+end
+
+function OrderActionRewardPanel:sortLevItemList(list)
+    local tempsort = {
+        [0] = 2,  -- 0 未完成
+        [1] = 1,  -- 1 已完成
+        [2] = 3,  -- 2 已提交
+    }
+    local function sortFunc(objA,objB)
+        if objA.status ~= objB.status then
+            if tempsort[objA.status] and tempsort[objB.status] then
+                return tempsort[objA.status] < tempsort[objB.status]
+            else
+                return false
+            end
+        else
+            return objA.lev < objB.lev
+        end
+    end
+    table_sort(list, sortFunc)
+end
+
+function OrderActionRewardPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+function OrderActionRewardPanel:DeleteMe()
+    if self.update_levreward_event then
+        GlobalEvent:getInstance():UnBind(self.update_levreward_event)
+        self.update_levreward_event = nil
+    end
+    if self.update_lev_event then
+        GlobalEvent:getInstance():UnBind(self.update_lev_event)
+        self.update_lev_event = nil
+    end
+    if self.update_lockopen_event then
+        GlobalEvent:getInstance():UnBind(self.update_lockopen_event)
+        self.update_lockopen_event = nil
+    end
+    
+    if self.child_scrollview then
+        self.child_scrollview:DeleteMe()
+        self.child_scrollview = nil
+    end
+    if self.star_item then 
+       self.star_item:DeleteMe()
+       self.star_item = nil
+    end
+    if self.flick_scrollview then
+        self.flick_scrollview:DeleteMe()
+        self.flick_scrollview = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+------------------------------------------
+-- 子项
+OrderActionRewardItem = class("OrderActionRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function OrderActionRewardItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function OrderActionRewardItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("orderaction/reward_item"))
+    self:setContentSize(cc.size(634,99))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.btn_goto = main_container:getChildByName("btn_goto")
+    self.btn_goto:getChildByName("Text_1"):setString(TI18N("前往"))
+    self.btn_goto:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_get:getChildByName("Text_1"):setString(TI18N("领取"))
+
+    self.btn_get:setVisible(false)
+    self.spr_get = main_container:getChildByName("spr_get")
+    self.spr_get:setVisible(false)
+
+    self.spr_common_get = main_container:getChildByName("spr_common_get")
+    self.spr_common_get:setVisible(false)
+    self.spr_common_get:setLocalZOrder(10)
+
+    self.btn_once_get = main_container:getChildByName("btn_once_get")
+    self.btn_once_get:getChildByName("Text_1"):setString(TI18N("奖励进阶"))
+    self.btn_once_get:setVisible(false)
+
+    self.lev_num = main_container:getChildByName("lev_num")
+    self.lev_num:setString("")
+
+    if not self.star_item_reward then
+        self.star_item_reward = BackPackItem.new(nil,true,nil,0.6)
+        main_container:addChild(self.star_item_reward)
+        self.star_item_reward:setPosition(cc.p(166, 48))
+        self.star_item_reward:setDefaultTip()
+        self.star_item_reward:setSwallowTouches(false)
+    end
+
+    local item_goods = main_container:getChildByName("goods")
+    local scroll_view_size = item_goods:getContentSize()
+    local setting = {
+        item_class = BackPackItem,
+        start_x = 30,
+        space_x = 10,
+        start_y = 7,
+        space_y = 0,
+        item_width = BackPackItem.Width*0.60,
+        item_height = BackPackItem.Height*0.60,
+        row = 1,
+        col = 0,
+        scale = 0.60
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(item_goods, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+end
+function OrderActionRewardItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        if self.data then
+            if self.data.get_label and self.data.get_label == 1 then
+                local root = controller:getOrderActionMainRoot()
+                if root then
+                    local period = controller:getModel():getCurPeriod()
+                    root:tabChargeView(3,period)
+                end
+            else
+                if self.data.lev then
+                    controller:send25304(self.data.lev)
+                end
+            end
+        end
+    end ,true, 1)
+    registerButtonEventListener(self.btn_goto, function()
+        local root = controller:getOrderActionMainRoot()
+        if root then
+            local period = controller:getModel():getCurPeriod()
+            root:tabChargeView(2,period)
+        end
+    end ,true, 1)
+
+    registerButtonEventListener(self.btn_once_get, function()
+        if controller:getModel():getRMBStatus() == 0 then 
+            local root = controller:getOrderActionMainRoot()
+            if root then
+                local period = controller:getModel():getCurPeriod()
+                message(TI18N("激活进阶卡方可领取进阶奖励"))
+                root:tabChargeView(3,period)
+            end
+        else
+            if self.data and self.data.lev then
+                controller:send25304(self.data.lev)
+            end
+        end
+    end ,true, 1)
+end
+
+function OrderActionRewardItem:setData(data)
+    if not data then return end
+    self.data = data
+
+    self.btn_goto:setVisible(data.status == 0)
+    self.btn_get:setVisible(data.status == 1)
+    self.spr_get:setVisible(data.status == 2)
+
+    if data.get_label == 1 then
+        self.btn_once_get:setVisible(true)
+        self.btn_get:setVisible(false)
+    else
+        self.btn_once_get:setVisible(false)
+    end
+
+    self.lev_num:setString(data.lev)
+    if next(data.reward) ~= nil then
+        if self.star_item_reward and data.reward and data.reward[1] and data.reward[1][1] and data.reward[1][2] then
+            self.star_item_reward:setBaseData(data.reward[1][1],data.reward[1][2])
+            self.star_item_reward:setVisible(true)
+        end
+    else
+        --未付费
+        local is_rmb_status = controller:getModel():getRMBStatus()
+        if is_rmb_status == 0 then
+            if data.status == 1 then
+                self.btn_once_get:setVisible(true)
+                self.btn_get:setVisible(false)
+            end
+        else--付费
+        end
+        self.star_item_reward:setVisible(false)
+    end
+
+    if data.common_get == 1 then
+        self.spr_common_get:setVisible(true)
+        setChildUnEnabled(true, self.star_item_reward)
+    else
+        self.spr_common_get:setVisible(false)
+        setChildUnEnabled(false, self.star_item_reward)
+    end
+
+    -- 物品列表
+    if next(data.rmb_reward) ~= nil then
+        local item_list = data.rmb_reward
+        local list = {}
+        for k, v in pairs(item_list) do
+            local vo = {}
+            vo.bid = v[1]
+            vo.quantity = v[2]
+            table_insert(list, vo)
+        end
+        if #list > 2 then
+            self.item_scrollview:setClickEnabled(true)
+        else
+            self.item_scrollview:setClickEnabled(false)
+        end
+        self.item_scrollview:setData(list)
+        self.item_scrollview:addEndCallBack(function()
+            local list = self.item_scrollview:getItemList()
+            for k,v in pairs(list) do
+                v:setDefaultTip()
+                v:setSwallowTouches(false)
+            end
+        end)
+    else
+        self.item_scrollview:setData({})
+    end
+end
+
+function OrderActionRewardItem:DeleteMe()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

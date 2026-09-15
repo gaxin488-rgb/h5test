@@ -1,0 +1,770 @@
+HeroAwakerSkillPanel = HeroAwakerSkillPanel or BaseClass(BaseView)
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+function HeroAwakerSkillPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Full
+    self.layout_name = "hero/hero_awaken_skill_window"
+    self.res_list = {
+        -- { path = PathTool.getPlistImgForDownLoad("herolibrary","herolibrary"), type = ResourcesType.plist },
+        -- { path = PathTool.getPlistImgForDownLoad("herolibrary","hero_library_24", fa), type = ResourcesType.plist },
+    }
+    self.skill_panel_list = {}
+    self.skill_bg_list = {}
+    self.skill_light_list = {}
+    self.skill_lock_list = {}
+    self.skill_icon_list = {}
+    self.skill_add_list = {}
+    self.skill_awaken_list = {}
+    self.choose_index = 1
+    self.choose_skill = 1
+end
+
+function HeroAwakerSkillPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    -- self.background:loadTexture(PathTool.getPlistImgForDownLoad("herolibrary", "hero_library_24", false), LOADTEXT_TYPE_PLIST)
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    self.skill_list = self.main_container:getChildByName("skill_list")
+
+    self.info_txt = self.main_container:getChildByName("info_txt")
+    -- self.info_txt:setString(TI18N("提升星阶解锁天赋槽位"))
+    self.info_txt:setVisible(false)
+    self.info_txt = createRichLabel(22,cc.c3b(0xff,0xfc,0xcc),cc.p(0.5,0.5),cc.p(360,954),nil,nil,400)
+    self.main_container:addChild(self.info_txt)
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_c_6285"))
+
+    self.act_btn = self.main_container:getChildByName("act_btn")
+    self.act_btn_txt = self.act_btn:getChildByName("label")
+    self.act_btn_txt:setString(TI18N("语言_c_2970"))
+
+    self.no_act_txt = self.main_container:getChildByName("no_act_txt")
+    self.look_btn = self.main_container:getChildByName("look_btn")
+
+    for i = 1, 4 do
+        local skill_panel = self.main_container:getChildByName("skill_panel_" .. i)
+        if skill_panel then
+            self.skill_panel_list[i] = skill_panel
+            self.skill_bg_list[i] = skill_panel:getChildByName("skill_bg")
+            self.skill_light_list[i] = skill_panel:getChildByName("skill_bg_light")
+            self.skill_lock_list[i] = skill_panel:getChildByName("skill_lock")
+            self.skill_icon_list[i] = skill_panel:getChildByName("skill_icon")
+            self.skill_add_list[i] = skill_panel:getChildByName("skill_add")
+        end
+    end
+    self.close_btn = self.root_wnd:getChildByName("close_btn")
+    self:adaptationScreen()
+end
+
+-- 设置适配屏幕
+function HeroAwakerSkillPanel:adaptationScreen()
+    -- 对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    local left_x = display.getLeft(self.main_container)
+    local right_x = display.getRight(self.main_container)
+
+    local main_container_size = self.main_container:getContentSize()
+    local close_btn_y = self.close_btn:getPositionY()
+    local content_bottom = close_btn_y + bottom_y
+    self.close_btn:setPositionY(content_bottom)
+end
+
+function HeroAwakerSkillPanel:openRootWnd(hero_vo)
+    self.hero_vo = hero_vo.hero_vo
+    self.choose_index = hero_vo.choose_index or 1
+    self.show_model_type = hero_vo.show_model_type
+    self.desc_str = "awaken_position_star_lv"
+    if self.hero_vo.isUpStarTreeHero and self.hero_vo:isUpStarTreeHero() then
+        self.desc_str = "awaken_position_star_sp_lv"
+    end
+    self:updateInfoPanel()
+    self:chooseSkillIcon()
+    -- 红点
+    -- self:updateCamplist_Red()
+    if self.hero_vo.is_had_detailed then
+        --是否已经有数据
+        self:setInfoTxt(self.hero_vo)
+    else
+        controller:sender11063(self.hero_vo.partner_id)
+    end
+    self:setInfoTxt(self.hero_vo)
+end
+function HeroAwakerSkillPanel:setInfoTxt(hero_vo)
+    local runic_power = 0 --符文能量
+    if hero_vo and hero_vo.ext_data then
+        for i,v in ipairs(hero_vo.ext_data) do
+            if v.id == 14 then --符文能量
+                runic_power = v.val or 0
+            end
+        end
+    end
+    self.info_txt:setString(string.format(TI18N("语言_c_6288"),runic_power))
+end
+-- 事件
+function HeroAwakerSkillPanel:register_event()
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type) 
+        local config = Config.PartnerAwakenSkillData.data_const["awaken_rule"]
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition(),nil,nil,600)
+        end
+    end ,true, 1)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openHeroAwakerSkillPanel(false)
+    end, true, 2)
+
+    for i = 1, 4 do
+        if self.skill_panel_list[i] then
+            self.skill_panel_list[i]:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    if i == self.choose_index then return end
+                    local config = Config.PartnerAwakenSkillData.data_const
+                    if config and self.hero_vo then
+                        if config[self.desc_str .. i] and config[self.desc_str .. i]["val"] then
+                            local cfg_lv = config[self.desc_str .. i]["val"]
+                            local cfg_needstep = cfg_lv[2]
+                            local cfg_needstar = cfg_lv[1]
+                            local hero_star = self.hero_vo.star
+                            local hero_star_step = self.hero_vo.star_step
+                            if  config["show_condition"] and config["show_condition"].val == 1 then
+                                self.choose_index = i
+                                self:chooseSkillIcon()
+                            else
+                                if i > 2 then
+                                    message(TI18N("语言_c_2050"))
+                                else
+                                    self.choose_index = i
+                                    self:chooseSkillIcon()
+                                end
+                            end
+                            -- if hero_star > cfg_needstar then
+                                --     self.choose_index = i
+                                --     self:chooseSkillIcon()
+                            -- else
+                            --     if hero_star == cfg_needstar and hero_star_step >= cfg_needstep then
+                            --         self.choose_index = i
+                            --         self:chooseSkillIcon()
+                            --     else
+                            --         if hero_star == 13 and i > 2 then
+                            --             message(TI18N("语言_c_2050"))
+                            --         else
+                            --             message(string_format(TI18N("语言_c_6279"), cfg_needstar, cfg_needstep))
+                            --         end 
+                            --     end
+                            -- end
+                        end
+                    end
+                    -- self:setMainPanel(i)
+                    -- self:itemClickBtn(tableLen(self.bond_skill_list))
+                end
+            end)
+        end
+    end
+
+    registerButtonEventListener(self.act_btn, function()
+        local config = Config.PartnerAwakenSkillData.data_const
+        if config and self.hero_vo then
+            local hero_star = self.hero_vo.star
+            local hero_star_step = self.hero_vo.star_step
+            local hero_id = self.hero_vo.id
+            local cfg_lv = config[self.desc_str .. self.choose_index]["val"]
+            local cfg_needstep = cfg_lv[2]
+            local cfg_needstar = cfg_lv[1]
+            local skill_pos = self.choose_skill
+            local skill_Obj = self.skill_ids[skill_pos]
+            local skill_id = skill_Obj and skill_Obj.skillId
+            if hero_star > cfg_needstar then
+                controller:sender11416(hero_id,self.choose_index,skill_id,0)
+            else
+                if hero_star == cfg_needstar and hero_star_step >= cfg_needstep then
+                    controller:sender11416(hero_id,self.choose_index,skill_id,0)
+                else
+                    message(string_format(TI18N("语言_c_6279"), cfg_needstar, cfg_needstep))
+                end
+            end
+        end
+    end, true, 2)
+
+    --  --羁绊技更新
+    --  self:addGlobalEvent(HeroEvent.Hero_Bond_Update_Event, function()
+    --     self:updatePower()
+    -- end)
+
+    if not self.updateAwaken then
+        self.updateAwaken = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Awaken_Update_Event,function ( data )
+        	self:updateSkillIcon()
+        end)
+    end
+
+     --英雄详细信息
+     self:addGlobalEvent(HeroEvent.Hero_Vo_Detailed_info, function(hero_vo)
+        if hero_vo and hero_vo.partner_id == self.hero_vo.partner_id then
+            self:setInfoTxt(hero_vo)
+        end
+    end)
+    -- registerButtonEventListener(self.equip_btn, handler(self, self.onClickBtnEquip) ,true, 2)
+end
+
+function HeroAwakerSkillPanel:updateInfoPanel()
+    local config = Config.PartnerAwakenSkillData.data_const
+    if config and self.hero_vo then
+        local hero_star = self.hero_vo.star
+        local hero_star_step = self.hero_vo.star_step or 0
+        local awaken_skills = model:getAwakenSkillId(self.hero_vo.id)
+        for i = 1, 4 do
+            if config[self.desc_str .. i] and config[self.desc_str .. i]["val"] then
+                local cfg_lv = config[self.desc_str .. i]["val"]
+                local cfg_needstep = cfg_lv[2]
+                local cfg_needstar = cfg_lv[1]
+                local skill_bg = self.skill_bg_list[i]
+                local skill_lock = self.skill_lock_list[i]
+                local skill_light = self.skill_light_list[i]
+                local skill_icon = self.skill_icon_list[i]
+                local skill_panel = self.skill_panel_list[i]
+                local skill_add = self.skill_add_list[i]
+                if skill_bg then
+                    if hero_star > cfg_needstar then
+                        loadSpriteTexture(skill_bg, PathTool.getResFrame("awaken_skill", "awaken_skill_10"),
+                            LOADTEXT_TYPE_PLIST)
+                    else
+                        if hero_star == cfg_needstar and tonumber(hero_star_step) >= cfg_needstep then
+                            loadSpriteTexture(skill_bg, PathTool.getResFrame("awaken_skill", "awaken_skill_10"),
+                                LOADTEXT_TYPE_PLIST)
+                        else
+                            loadSpriteTexture(skill_bg, PathTool.getResFrame("awaken_skill", "awaken_skill_9"),
+                                LOADTEXT_TYPE_PLIST)
+                        end
+                    end
+                end
+                if skill_lock then
+                    if hero_star > cfg_needstar then
+                        skill_lock:setVisible(false)
+                    else
+                        if hero_star == cfg_needstar and tonumber(hero_star_step) >= cfg_needstep then
+                            skill_lock:setVisible(false)
+                        else
+                            skill_lock:setVisible(true)
+                        end
+                    end
+                end
+                if skill_icon then
+                    if hero_star > cfg_needstar then
+                        skill_icon:setVisible(true)
+                    else
+                        if hero_star == cfg_needstar and tonumber(hero_star_step) >= cfg_needstep then
+                            skill_icon:setVisible(true)
+                        else
+                            skill_icon:setVisible(false)
+                        end
+                    end
+                end
+                if skill_light then
+                    if hero_star > cfg_needstar then
+                        if i == self.choose_index then
+                            skill_light:setVisible(true)
+                        else
+                            skill_light:setVisible(false)
+                        end
+                    else
+                        if hero_star == cfg_needstar and tonumber(hero_star_step) >= cfg_needstep then
+                            if i == self.choose_index then
+                                skill_light:setVisible(true)
+                            else
+                                skill_light:setVisible(false)
+                            end
+                        else
+                            skill_light:setVisible(false)
+                        end
+                    end
+                end
+                if skill_icon then
+                    if not self["skill_item" .. i] then
+                        self["skill_item" .. i] = SkillItem.new(true, false, true, 0.7, true)
+                        skill_icon:addChild(self["skill_item" .. i])
+                        self["skill_item" .. i]:setBgImg(PathTool.getResFrame("awaken_skill", "awaken_skill_10"))
+                        self["skill_item" .. i]:setPositionX(50)
+                        self["skill_item" .. i]:setPositionY(50)
+                    end
+                    for k, v in pairs(awaken_skills) do
+                        if i == v.pos then
+                            local skill_cfg = Config.SkillData.data_get_skill(v.skill_id)
+                            self["skill_item" .. i]:setData(skill_cfg)
+                            self["skill_item" .. i]:setBgImg(PathTool.getResFrame("awaken_skill", "awaken_skill_10"))
+                        end
+                    end
+                end
+                if skill_panel then
+                    local red_status = false
+                    if self.show_model_type == HeroConst.BagTab.eBagHero then
+                        if hero_star > cfg_needstar then
+                            red_status = true
+                            for k, v in pairs(awaken_skills) do
+                                if i == v.pos and v.skill_id ~= 0 then
+                                    red_status = false
+                                    break
+                                end
+                            end
+                        else
+                            if hero_star == cfg_needstar and hero_star_step >= cfg_needstep then
+                                red_status = true
+                                for k, v in pairs(awaken_skills) do
+                                    if i == v.pos and v.skill_id ~= 0 then
+                                        red_status = false
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    addRedPointToNodeByStatus(skill_panel,red_status,10,8)
+                    if skill_add then
+                        skill_add:setVisible(red_status)
+                    end
+                end
+            end
+        end
+    end
+    self:updateSkillData()
+    -- self:updateSkillIcon()
+    -- addRedPointToNodeByStatus(self.up_btn,model:getBondSkillAct(data.id),15,15)
+    -- addRedPointToNodeByStatus(self.act_btn,model:getBondSkillAct(data.id),15,15)
+end
+
+-- 更新技能icon显示
+function HeroAwakerSkillPanel:updateSkillIcon()
+    local config = Config.PartnerAwakenSkillData.data_const
+    local hero_star = self.hero_vo.star
+    local hero_star_step = self.hero_vo.star_step
+    local awaken_skills = model:getAwakenSkillId(self.hero_vo.id)
+    if config and self.hero_vo then
+        local awaken_skills = model:getAwakenSkillId(self.hero_vo.id)
+        for i = 1, 4 do
+            local skill_icon = self.skill_icon_list[i]
+            if skill_icon then
+                if not self["skill_item" .. i] then
+                    self["skill_item" .. i] = SkillItem.new(true, false, true, 0.7, true)
+                    skill_icon:addChild(self["skill_item" .. i])
+                    self["skill_item" .. i]:setBgImg(PathTool.getResFrame("awaken_skill", "awaken_skill_10"))
+                    self["skill_item" .. i]:setPositionX(50)
+                    self["skill_item" .. i]:setPositionY(100)
+                end
+                if self["skill_item" .. i] then
+                    for k, v in pairs(awaken_skills) do
+                        if i == v.pos then
+                            local skill_cfg = Config.SkillData.data_get_skill(v.skill_id)
+                            self["skill_item" .. i]:setData(skill_cfg)
+                            self["skill_item" .. i]:setBgImg(PathTool.getResFrame("awaken_skill", "awaken_skill_10"))
+                        end
+                    end
+                end
+            end
+            if config[self.desc_str .. i] and config[self.desc_str .. i]["val"] then
+                local cfg_lv = config[self.desc_str .. i]["val"]
+                local cfg_needstep = cfg_lv[2]
+                local cfg_needstar = cfg_lv[1]
+                local skill_panel = self.skill_panel_list[i]
+                local skill_add = self.skill_add_list[i]
+                if skill_panel then
+                    local red_status = false
+                    if self.show_model_type == HeroConst.BagTab.eBagHero then
+                        if hero_star > cfg_needstar then
+                            red_status = true
+                            for k, v in pairs(awaken_skills) do
+                                if i == v.pos and v.skill_id ~= 0 then
+                                    red_status = false
+                                    break
+                                end
+                            end
+                        else
+                            if hero_star == cfg_needstar and hero_star_step >= cfg_needstep then
+                                red_status = true
+                                for k, v in pairs(awaken_skills) do
+                                    if i == v.pos and v.skill_id ~= 0 then
+                                        red_status = false
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    addRedPointToNodeByStatus(skill_panel,red_status,10,8)
+                    if skill_add then
+                        skill_add:setVisible(red_status)
+                    end
+                end
+            end
+        end
+    end
+    self:updateSkillData()
+end
+
+-- 更新技能icon显示
+function HeroAwakerSkillPanel:chooseSkillIcon()
+    for i = 1, 4 do
+        local skill_light = self.skill_light_list[i]
+        local skill_icon = self.skill_icon_list[i]
+        if skill_light then
+            if i == self.choose_index then
+                skill_light:setVisible(true)
+            else
+                skill_light:setVisible(false)
+            end
+        end
+    end
+    self:updateSkillData()
+end
+
+-- 技能列表
+function HeroAwakerSkillPanel:updateSkillData()
+    self.skill_ids = {}
+    local chooseIndex = self.choose_index
+    local act_skill = 0
+    local choose_skill = 0
+    local config = Config.PartnerAwakenSkillData["data_skill_list" .. chooseIndex]
+    if config and self.hero_vo then
+        local awaken_skills = model:getAwakenSkillId(self.hero_vo.id)
+        local skillids = config[self.hero_vo.bid]
+        if skillids then
+            for k, v in pairs(skillids) do
+                local skillObj = {}
+                skillObj.index = k
+                skillObj.skillId = v
+                skillObj.selected = false
+                skillObj.is_act = false
+                if self.choose_skill == k then
+                    skillObj.selected = true
+                    choose_skill = v
+                end
+                for i, j in pairs(awaken_skills) do
+                    if j.skill_id == v then
+                        skillObj.is_act = true
+                        act_skill = v
+                    end
+                end
+                table_insert(self.skill_ids, skillObj)
+            end
+        end
+    end
+    setChildUnEnabled(false,self.act_btn)
+    self.act_btn_txt:setString(TI18N("语言_c_6305"))
+    self.act_btn:setTouchEnabled(true)
+    self.act_btn:setVisible(false)
+    self.no_act_txt:setVisible(false)
+    if choose_skill == act_skill and choose_skill ~= 0 and act_skill~= 0 then
+        setChildUnEnabled(true,self.act_btn)
+        self.act_btn_txt:setString(TI18N("语言_c_6306"))
+        self.act_btn:setTouchEnabled(false)
+    end
+
+    local config = Config.PartnerAwakenSkillData.data_const
+    if config and self.hero_vo then
+        if config[self.desc_str .. chooseIndex] and config[self.desc_str .. chooseIndex]["val"] then
+            local cfg_lv = config[self.desc_str .. chooseIndex]["val"]
+            local cfg_needstep = cfg_lv[2]
+            local cfg_needstar = cfg_lv[1]
+            local hero_star = self.hero_vo.star
+            local hero_star_step = self.hero_vo.star_step
+            if hero_star > cfg_needstar then
+                self.act_btn:setVisible(true and self.show_model_type == HeroConst.BagTab.eBagHero)
+                self.no_act_txt:setVisible(false)
+            else
+                if hero_star == cfg_needstar and hero_star_step >= cfg_needstep then
+                    self.act_btn:setVisible(true and self.show_model_type == HeroConst.BagTab.eBagHero)
+                    self.no_act_txt:setVisible(false)
+                else
+                    -- if hero_star == 13 and choose_skill > 2 then
+                    self.act_btn:setVisible(false)
+                    self.no_act_txt:setVisible(true)
+                    if hero_star == 13 then
+                        if chooseIndex > 2 then
+                            if config["show_condition"] and config["show_condition"].val == 1 then
+                                self.no_act_txt:setString(string_format(TI18N("语言_c_6279"), cfg_needstar, cfg_needstep))
+                            else
+                                self.no_act_txt:setString(TI18N("语言_c_2050"))
+                            end 
+                        else
+                            self.no_act_txt:setString(string_format(TI18N("语言_c_6279"), cfg_needstar, cfg_needstep))
+                        end
+                    else
+                        if config["show_condition"] and config["show_condition"].val == 1 then
+                            self.no_act_txt:setString(string_format(TI18N("语言_c_6279"), cfg_needstar, cfg_needstep))
+                        else
+                            self.no_act_txt:setString(TI18N("语言_c_2050"))
+                        end 
+                    end
+                end
+            end
+        end
+    end
+    self:updateSkillList()
+end
+
+function HeroAwakerSkillPanel:updateSkillList()
+    if self.list_view == nil then
+        local scroll_view_size = self.skill_list:getContentSize()
+        local setting = {
+            start_x = 0, -- 第一个单元的X起点
+            space_x = 0, -- x方向的间隔
+            start_y = 0, -- 第一个单元的Y起点
+            space_y = 4, -- y方向的间隔
+            item_width = 623, -- 单元的尺寸width
+            item_height = 123, -- 单元的尺寸height
+            row = 1, -- 行数，作用于水平滚动类型
+            col = 1, -- 列数，作用于垂直滚动类型
+            once_num = 1 -- 每次创建的数量
+        }
+        self.list_view = CommonScrollViewSingleLayout.new(self.skill_list, cc.p(0, 0), ScrollViewDir.vertical,
+            ScrollViewStartPos.top, scroll_view_size, setting)
+
+        self.list_view:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self, self.updateCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+        self.list_view:registerScriptHandlerSingle(handler(self, self.onCellTouched), ScrollViewFuncType.OnCellTouched) -- 更新cell
+    end
+
+    if self.skill_ids == nil then
+        return
+    end
+    self.list_view:reloadData()
+end
+
+-- 创建cell 
+-- @width 是setting.item_width
+-- @height 是setting.item_height
+function HeroAwakerSkillPanel:createNewCell(width, height)
+    local cell = HeroAwakenSkillItem.new()
+    cell:addCallBack(function()
+        self:onCellTouched(cell)
+    end)
+    return cell
+end
+-- 获取数据数量
+function HeroAwakerSkillPanel:numberOfCells()
+    if not self.skill_ids then
+        return 0
+    end
+    return #self.skill_ids
+end
+-- 更新cell(拖动的时候.刷新数据时候会执行次方法)
+-- cell :createNewCell的返回的对象
+-- index :数据的索引
+function HeroAwakerSkillPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.skill_ids[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+function HeroAwakerSkillPanel:onCellTouched(cell)
+    local index = cell.index
+    self.choose_skill = index
+    local act_skill = 0
+    local choose_skill = 0
+    -- local cell_data = self.skill_ids[index]
+    for k, v in pairs(self.skill_ids) do
+        self.skill_ids[k].selected = false
+        if v.index == index then
+            self.skill_ids[k].selected = true
+            choose_skill = v.skillId
+        end
+        if v.is_act == true then
+            act_skill = v.skillId
+        end
+    end
+
+    setChildUnEnabled(false,self.act_btn)
+    self.act_btn_txt:setString(TI18N("语言_c_6305"))
+    self.act_btn:setTouchEnabled(true)
+    if choose_skill == act_skill and choose_skill ~= 0 and act_skill~= 0 then
+        setChildUnEnabled(true,self.act_btn)
+        self.act_btn_txt:setString(TI18N("语言_c_6306"))
+        self.act_btn:setTouchEnabled(false)
+    end
+    self.list_view:reloadData()
+    -- if not cell_data then return end
+    -- cell:setData(cell_data)
+end
+
+function HeroAwakerSkillPanel:close_callback()
+    if self.updateAwaken then
+        self.updateAwaken = GlobalEvent:getInstance():UnBind(self.updateAwaken)
+        self.updateAwaken = nil
+    end
+
+    if self.list_view then 
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+
+    for i = 1, 4 do
+        local skill_icon = self.skill_icon_list[i]
+        if skill_icon then
+            if self["skill_item" .. i] then
+                skill_icon:removeChild(self["skill_item" .. i])
+                self["skill_item" .. i] = nil
+            end
+        end
+    end
+    controller:openHeroAwakerSkillPanel(false)
+end
+-- 移除
+function HeroAwakerSkillPanel:DeleteMe()
+end
+
+
+-- --------------------------------------------------------------------
+-- 竖版装备穿戴子项
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-2-27
+-- --------------------------------------------------------------------
+HeroAwakenSkillItem = class("HeroAwakenSkillItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeroAwakenSkillItem:ctor()
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+
+function HeroAwakenSkillItem:config()
+    self.size = cc.size(595.00, 141)
+    self:setContentSize(self.size)
+end
+
+function HeroAwakenSkillItem:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_awaken_skill_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.main_panel:setSwallowTouches(false)
+    self.bg = self.main_panel:getChildByName("bg")
+    self.skill_icon = self.main_panel:getChildByName("skill_icon")
+    self.skill_no = self.main_panel:getChildByName("skill_no")
+    self.name_txt = self.main_panel:getChildByName("name_txt")
+    self.act_txt = self.main_panel:getChildByName("act_txt")
+    self.act_txt:setString(TI18N("语言_c_6307"))
+    self.desc_txt = self.main_panel:getChildByName("desc_txt")
+    self.choose_bg = self.main_panel:getChildByName("choose_bg")
+end
+
+function HeroAwakenSkillItem:setData(info)
+    if not info then
+        return
+    end
+    self.data = info
+    local skillid = info.skillId
+    local index = info.index
+    local skill_cfg = Config.SkillData.data_get_skill(skillid)
+    if not self.skillitem then
+        self.skillitem = SkillItem.new(true, true, true, 0.8, true)
+        self.skillitem:setPositionX(self.skill_icon:getContentSize().width * 0.5)
+        self.skillitem:setPositionY(self.skill_icon:getContentSize().height * 0.5)
+        self.skill_icon:addChild(self.skillitem)
+    end
+    if skill_cfg then
+        self.skillitem:setData(skill_cfg)
+        self.name_txt:setString(skill_cfg.name)
+        self.name_txt:setTouchEnabled(false)
+        setTextSpacing(self.desc_txt,-6)
+        self.desc_txt:setString(transformTextToShort(skill_cfg.des, 50))
+	    self.desc_txt:setTouchEnabled(false)
+        -- self.desc_txt:setSwallowTouches(false)
+	    -- addEvt2showAllTextTips(self.desc_txt,skill_cfg.des,60)
+        self.choose_bg:setVisible(info.selected)
+        self.act_txt:setVisible(info.is_act)
+        setItemXOneByOne({self.name_txt,self.act_txt})
+        loadSpriteTexture(self.skill_no,PathTool.getResFrame("awaken_skill", "awaken_skill_"..index),PLIST_LIST)
+    end
+end
+
+-- 事件
+
+function HeroAwakenSkillItem:clearTimeTicket()
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+
+function HeroAwakenSkillItem:registerEvents()
+    self.main_panel:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            self.long_touch = false
+            self.touch_began = sender:getTouchBeganPosition()
+            local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                self.long_touch = true
+            end))
+            self.sequence_action = self.main_panel:runAction(action)
+            self.sequence_action:setTag(10016)
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click = math.abs(self.touch_end.x - self.touch_began.x) <= 20 and math.abs(self.touch_end.y - self.touch_began.y) <= 20 and not self.long_touch
+            end
+            if is_click then
+                playButtonSound2()
+                if self.call_fun then
+                    self:call_fun(self.data)
+                end
+            else
+                if self.data then
+                    local skill_cfg = Config.SkillData.data_get_skill(self.data.skillId)
+                    local tips_width = 400
+                    local off_width =  50
+                    local off_height =  50
+                    local is_new =  true
+                    local add_widget =  false
+                    local not_middle = false
+                    local is_middle = not not_middle
+                    if skill_cfg then
+                        TipsManager:getInstance():showSkillTips(skill_cfg, false, true)
+                        -- if StringUtil.SubStringGetTotalIndex(skill_cfg.des) > 50 then
+                        --     playButtonSound2()
+                        --     TipsManager:getInstance():showCommonTips(skill_cfg.des, sender:getTouchBeganPosition(),nil,nil,tips_width,is_middle,off_width,off_height,is_new)
+                        -- end
+                    end
+                end
+            end
+        end
+    end)
+end
+function HeroAwakenSkillItem:clickHandler()
+    if self.sequence_action then
+        self.item_node:stopActionByTag(10016)
+        self.sequence_action = nil
+    end
+    if self.call_fun then
+        self:call_fun(self.data)
+    end
+end
+function HeroAwakenSkillItem:addCallBack(call_fun)
+    self.call_fun = call_fun
+end
+
+function HeroAwakenSkillItem:DeleteMe()
+    if self.skillitem then
+        self.skillitem:DeleteMe()
+        self.skillitem = nil
+    end
+    self.data = nil
+    self:removeFromParent()
+end

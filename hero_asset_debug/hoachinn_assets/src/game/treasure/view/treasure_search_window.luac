@@ -1,0 +1,490 @@
+--******** 文件说明 ********
+-- 
+-- @description: 编年史寻访
+-- @DateTime:    2019-04-22 16:56:26
+-- *******************************
+
+TreasureSearchWindow = TreasureSearchWindow or BaseClass(BaseView)
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+
+function TreasureSearchWindow:__init()
+    self.win_type = WinType.Tips      
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG    
+    self.layout_name = "treasure/treasure_search_window"
+	self.egg_list = {}
+end
+
+function TreasureSearchWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.container = self.root_wnd:getChildByName("container")
+    -- 孵化
+    self.hatch_panel = self.container:getChildByName("hatch_panel")
+    self.hatch_bg = self.hatch_panel:getChildByName("hatch_bg")
+    -- self.hatch_bg:ignoreContentAdaptWithSize(false)
+    
+    self.vip_btn = self.hatch_panel:getChildByName("vip_btn")
+    self.vip_btn:getChildByName("label"):setString(TI18N("语言_c_6114"))
+    self.time_lab = self.vip_btn:getChildByName("time_lab")
+    self.time_lab:setString("")
+    
+    for i=1,6 do
+    	local egg = self.hatch_panel:getChildByName("egg_"..i)
+		local item = TreasureSearchItem.new()
+		item:setData(i)
+    	egg:addChild(item)
+    	self.egg_list[i] = item
+    end
+    self.title_bg = self.container:getChildByName("title_bg")
+    self.title_label = self.container:getChildByName("title_label")
+    self.title_label:setString(TI18N("语言_c_6074"))
+    self.title_bg:setContentSize(cc.size(math.max(self.title_label:getContentSize().width+120,332), 63))
+    self.close_btn = self.container:getChildByName("close_btn")
+end
+function TreasureSearchWindow:register_event()
+	registerButtonEventListener(self.background, function()
+        controller:openTreasureSearchWindow(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openTreasureSearchWindow(false)
+    end,false, 2)
+	registerButtonEventListener(self.vip_btn, function (  )
+        controller:openTreasurePrivilegeWindow(true)
+	end, true)
+
+    if self.update_hatch_event == nil then
+        self.update_hatch_event = GlobalEvent:getInstance():Bind(VipEvent.PRIVILEGE_INFO, function()
+            self:updateTreasurePrivileg()
+        end)
+    end
+end
+function TreasureSearchWindow:openRootWnd()
+    controller:sender22300()
+    self:updateTreasurePrivileg()
+end
+
+function TreasureSearchWindow:updateTreasurePrivileg()
+    local privilege_data = RoleController:getInstance():getModel():getPrivilegeDataById(TreasureConst.Privilege_Hatch_Id)
+    if privilege_data and privilege_data.expire_time and privilege_data.status == 1 then --已激活
+        local cur_time = GameNet:getInstance():getTime()
+        local less_time = privilege_data.expire_time - cur_time
+        -- setChildUnEnabled(false, self.vip_btn)
+        local res = PathTool.getResFrame("ninja_treasure","ninja_treasure_60",false,"ninja_treasure")
+        self.vip_btn:loadTexture(res,LOADTEXT_TYPE_PLIST)
+        self.time_lab:setString(TimeTool.GetTimeFormatDayIIIIII(less_time))
+        
+    else
+        local res = PathTool.getResFrame("ninja_treasure","ninja_treasure_59",false,"ninja_treasure")
+        self.vip_btn:loadTexture(res,LOADTEXT_TYPE_PLIST)
+        -- setChildUnEnabled(true, self.vip_btn)
+        self.time_lab:setString("")
+    end
+end
+function TreasureSearchWindow:close_callback()
+	if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    
+    if self.update_hatch_event then
+        GlobalEvent:getInstance():UnBind(self.update_hatch_event)
+        self.update_hatch_event = nil
+    end
+    
+    
+    for k,v in pairs(self.egg_list) do
+		if v then
+			v:DeleteMe()
+		end
+	end
+    
+    self.egg_list = nil
+    controller:openTreasureSearchWindow(false)
+end
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      寻访item
+-- Create: 2020-02-19
+-- --------------------------------------------------------------------
+TreasureSearchItem = class("TreasureSearchItem", function()
+    return ccui.Widget:create()
+end)
+
+function TreasureSearchItem:ctor()
+	self.ctrl = ActionController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+    self.cur_hatch_index = 1 -- 当前灵窝的下标
+    self.cur_hatch_vo = nil  -- 当前显示的灵窝数据
+    self.cur_hatch_status = nil -- 当前精灵窝的状态
+    self.all_hatch_data = {} -- 所有灵窝数据（包括未解锁的）
+end
+
+function TreasureSearchItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("treasure/treasure_search_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(100,120))
+    self:setAnchorPoint(0,0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.egg_icon = self.main_container:getChildByName("egg_icon")
+    self.egg_icon:ignoreContentAdaptWithSize(true)
+    self.egg_bg = self.main_container:getChildByName("egg_bg")
+    self.egg_bg:setVisible(false)
+    self.hatch_lock_sp = self.main_container:getChildByName("hatch_lock_sp")
+    self.hatch_lock_sp:setVisible(false)
+    self.egg_home_sp = self.main_container:getChildByName("egg_home_sp")
+    self.name_bg = self.main_container:getChildByName("name_bg")
+    
+    self.add_egg_btn = self.main_container:getChildByName("add_egg_btn")
+    
+    self.egg_name = self.main_container:getChildByName("egg_name")
+    self.egg_name:setString(TI18N("语言_c_1956"))
+    self.egg_time = self.main_container:getChildByName("egg_time")
+    self.egg_time:setVisible(false)
+
+    self.tip_lab = self.main_container:getChildByName("tip_lab")
+    self.tip_lab:setString(TI18N("语言_c_1957"))
+
+    local size = cc.size(143, 19)
+    local res = PathTool.getResFrame("common","common_90005")
+    local res1 = PathTool.getResFrame("common","common_90006")
+    local bg,comp_bar = createLoadingBar(res, res1, size, self.main_container, cc.p(0.5,0.5), 100, 208, true, true)
+    self.comp_bar_bg = bg
+    self.comp_bar = comp_bar
+
+    local text_color = cc.c3b(249,238,208)
+    local line_color = cc.c3b(0,0,0)
+    self.comp_bar_label = createLabel(26, text_color, line_color, size.width/2, size.height/2, "", self.comp_bar, 2, cc.p(0.5, 0.5))
+
+    self.comp_bar_bg:setVisible(false)
+    self.comp_bar:setVisible(false)
+    self.comp_bar_label:setVisible(false)
+
+    self.open_lab = createLabel(20,cc.c4b(0x7a,0xfa,0x6d,0xff),cc.c4b(0x19,0x3b,0x17,0xff),100,70,"",self.main_container,2, cc.p(0.5,0.5))
+
+    self.egg_icon:setRotation(0)
+end
+
+function TreasureSearchItem:register_event(  )
+	
+    registerButtonEventListener(self.add_egg_btn, function (  )
+        self:onClickAddEggBtn()
+    end, true)
+
+    registerButtonEventListener(self.main_container, function (  )
+        self:onClickEggIcon()
+    end, false)
+
+    -- 所有孵化器数据
+    if not self.get_hatch_data_event then
+        self.get_hatch_data_event = GlobalEvent:getInstance():Bind(TreasureEvent.Get_Treasure_Hatch_Data_Event, function (  )
+            self.all_hatch_data = model:getTreasureHatchList()
+            -- print("self.all_hatch_data",vardump(self.all_hatch_data))
+            table.sort(self.all_hatch_data, SortTools.KeyLowerSorter("sort"))
+            self:setHatchData()
+        end)
+    end
+
+    -- 红点
+    if not self.update_red_status_event then
+        self.update_red_status_event = GlobalEvent:getInstance():Bind(TreasureEvent.Update_Treasure_Search_Red_Event, function ( bid, status )
+            self:updateTreasureRedInfo()
+        end)
+    end
+end
+
+
+-- 添加蛋
+function TreasureSearchItem:onClickAddEggBtn(  )
+    local setting = {}
+    -- setting.view_type = TreasureConst.Select_Type.Egg
+    setting.hatch_id = self.cur_hatch_vo.id
+    controller:openTreasureSelectItemWindow(true, setting)
+end
+
+-- 点击灵蛋
+function TreasureSearchItem:onClickEggIcon(  )
+    -- 当前灵窝为未解锁的特权灵窝，则打开特权弹窗
+    if self.cur_hatch_vo and self.cur_hatch_vo.is_open == 0 or self.cur_hatch_vo.is_open == 2 then
+        local hatch_cfg = Config.NinjaTreasureData.data_hatch_data[self.cur_hatch_vo.id]
+        if hatch_cfg and hatch_cfg.res_id == 2 then
+            controller:openTreasurePrivilegeWindow(true)
+        else
+            controller:openTreasureHatchUnlockPanel(true,self.cur_hatch_vo)
+        end
+    elseif self.cur_hatch_vo and self.cur_hatch_vo.state == TreasureConst.Hatch_Status.Hatch then
+        message(TI18N("语言_c_1958"))
+    end
+end
+
+-- 设置当前灵窝数据
+function TreasureSearchItem:setHatchData(  )
+    if self.cur_hatch_vo ~= nil then
+        if self.update_self_event ~= nil then
+            GlobalEvent:getInstance():UnBind(self.update_self_event)
+            self.update_self_event = nil
+        end
+    end
+
+    if not self.cur_hatch_index or not self.all_hatch_data then return end
+    self.cur_hatch_vo = self.all_hatch_data[self.cur_hatch_index]
+    if not self.cur_hatch_vo then return end
+
+    if self.update_self_event == nil then
+        self.update_self_event = GlobalEvent:getInstance():Bind(TreasureEvent.Update_Treasure_Hatch_Vo_Event, function()
+            self:updateHatchInfo()
+        end)
+    end
+    self:updateHatchInfo()
+    self:updateTreasureRedInfo()
+end
+
+-- 更新孵化界面
+function TreasureSearchItem:updateHatchInfo(  )
+    if tolua.isnull(self.egg_icon) then return end
+    if not self.cur_hatch_vo then return end
+    self.cur_hatch_status = self.cur_hatch_vo.state
+
+    -- 灵窝中的蛋的配置数据
+    if self.cur_hatch_vo.do_id and self.cur_hatch_vo.do_id ~= 0 then
+        self.cur_hatch_egg_cfg = Config.NinjaTreasureData.data_hatch_egg[self.cur_hatch_vo.do_id]
+    else
+        self.cur_hatch_egg_cfg = nil
+    end
+
+    -- 灵窝名称，未放置灵蛋，则显示灵窝的名称，否则显示为灵蛋的名称
+    local hatch_cfg = Config.NinjaTreasureData.data_hatch_data[self.cur_hatch_vo.id]
+    if self.cur_hatch_egg_cfg then
+        local egg_item_cfg = Config.ItemData.data_get_data(self.cur_hatch_egg_cfg.item_bid)
+        if egg_item_cfg then
+            self.egg_name:setString(egg_item_cfg.name)
+        end
+    elseif hatch_cfg then
+        self.egg_name:setString(hatch_cfg.name)
+        self.open_lab:setString(hatch_cfg.desc1)
+        
+    else
+        self.egg_name:setString(TI18N("语言_c_1956"))
+    end
+
+    -- 特权灵窝显示提示
+    if hatch_cfg and hatch_cfg.res_id == 2 then --特权
+        loadSpriteTexture(self.egg_home_sp, PathTool.getResFrame("elfin", "elfin_1046"), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(self.name_bg, PathTool.getResFrame("elfin", "elfin_1052"), LOADTEXT_TYPE_PLIST)
+        self.egg_name:setTextColor(cc.c4b(0xE4,0xDE,0x6D,0xff))
+        self.egg_name:setPositionY(35)
+        
+    else
+        self.egg_name:setTextColor(cc.c4b(0xFF,0xF7,0xC9,0xff))--(cc.c4b(0x64,0x32,0x23,0xff))
+        self.egg_name:setPositionY(35)
+        loadSpriteTexture(self.egg_home_sp, PathTool.getResFrame("elfin", "elfin_1047"), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(self.name_bg, PathTool.getResFrame("elfin", "elfin_1053"), LOADTEXT_TYPE_PLIST)
+    end
+
+    self.egg_icon:setVisible(true)
+    -- self.egg_icon:setTouchEnabled(false)
+    -- self.egg_icon:setTouchEnabled(true)
+    self.add_egg_btn:setVisible(false)
+    self.tip_lab:setVisible(false)
+    self:showEggHatchSuccessAni(false)
+    doStopAllActions(self.comp_bar_label)
+    doStopAllActions(self.egg_time)
+    self.egg_time:setVisible(false)
+    self.egg_name:setVisible(true)
+    if self.cur_hatch_status == TreasureConst.Hatch_Status.Open and self.cur_hatch_vo.is_open == 0 then -- 空闲且未激活才显示为锁住
+        loadSpriteTexture(self.hatch_lock_sp, PathTool.getResFrame("common","common_90009"), LOADTEXT_TYPE_PLIST)
+        -- self.hatch_lock_sp:setScale(0.8)
+        self.hatch_lock_sp:setVisible(true)
+        self.open_lab:setTextColor(cc.c4b(0xff,0xf7,0xc9,0xff))
+        self.open_lab:enableOutline(cc.c4b(0x45,0x21,0x21,0xff), 2)
+        self.open_lab:setVisible(true)
+        self.egg_icon:setVisible(false)
+        self.comp_bar_bg:setVisible(false)
+        self.comp_bar:setVisible(false)
+        self.egg_bg:setVisible(false)
+        self.comp_bar_label:setVisible(false)
+    elseif self.cur_hatch_status == TreasureConst.Hatch_Status.Open and self.cur_hatch_vo.is_open == 2 then -- 空闲且待激活才显示为可开锁
+        loadSpriteTexture(self.hatch_lock_sp, PathTool.getResFrame("elfin", "elfin_1049"), LOADTEXT_TYPE_PLIST)
+        self.hatch_lock_sp:setScale(1)
+        self.hatch_lock_sp:setVisible(true)
+        self.open_lab:setTextColor(cc.c4b(0x7a,0xfa,0x6d,0xff))
+        self.open_lab:enableOutline(cc.c4b(0x19,0x3b,0x17,0xff), 2)
+        self.open_lab:setString(TI18N("语言_c_1959"))
+        self.open_lab:setVisible(true)
+        self.egg_bg:setVisible(false)
+        self.egg_icon:setVisible(false)
+        self.comp_bar_bg:setVisible(false)
+        self.comp_bar:setVisible(false)
+        self.comp_bar_label:setVisible(false)
+    elseif self.cur_hatch_status == TreasureConst.Hatch_Status.Hatch or self.cur_hatch_status == TreasureConst.Hatch_Status.Over then -- 孵化中或孵化完成待领取
+        -- self.egg_icon:setRotation(56)
+        self.hatch_lock_sp:setVisible(false)
+        self.open_lab:setVisible(false)
+        self.egg_bg:setVisible(true)
+        self.egg_name:setVisible(false)
+         -- 孵化总时间
+         local need_all_time = self.cur_hatch_vo.all_end_time - GameNet:getInstance():getTime()
+         if need_all_time>0 then
+             commonCountDownTime(self.egg_time, need_all_time)
+         else
+             self.egg_time:setString(TI18N("语言_c_759"))
+         end
+
+        -- 蛋的资源
+        local percent = 0
+        if self.cur_hatch_egg_cfg then
+            self:showEggAction(true)
+            local hatch_rate = Config.NinjaTreasureData.data_constant["hatch_rate"]
+			if hatch_rate then
+                local sumTime = self.cur_hatch_egg_cfg.need_piont*hatch_rate.val
+				percent = (sumTime-need_all_time)/sumTime*100
+			end
+        end
+        self.comp_bar_bg:setVisible(false)
+        self.comp_bar:setVisible(true)
+        self.comp_bar_label:setVisible(false)
+        self.comp_bar:setPercent(percent)
+        self.egg_time:setVisible(true)
+        if self.cur_hatch_status ~= TreasureConst.Hatch_Status.Hatch then
+            self:showEggHatchSuccessAni(true)
+        else
+            self.egg_icon:setTouchEnabled(true)
+        end
+    elseif self.cur_hatch_status == TreasureConst.Hatch_Status.Open then -- 已开启，但未孵化
+        self.hatch_lock_sp:setVisible(false)
+        self.open_lab:setVisible(false)
+        self.egg_bg:setVisible(false)
+        self.egg_icon:setVisible(false)
+        self.add_egg_btn:setVisible(true)
+        self.tip_lab:setVisible(true)
+        self.comp_bar_bg:setVisible(false)
+        self.comp_bar:setVisible(false)
+        self.comp_bar_label:setVisible(false)
+    end
+end
+
+
+-- 显示灵蛋孵化成功的特效
+function TreasureSearchItem:showEggHatchSuccessAni( status )
+    if status == true then
+        self.cur_ani_hatch_id = self.cur_hatch_vo.id -- 记录一下当前播放孵化成功特效的灵窝id，避免播放过程中点击切换到其他灵窝产生的问题
+        self:handleEggEffect(true)
+    else
+        self.cur_ani_hatch_id = nil
+    end
+end
+
+function TreasureSearchItem:onEndEggAniCallBack(  )
+    self.is_show_egg_effect = false
+end
+
+function TreasureSearchItem:handleEggEffect( status )
+    doStopAllActions(self.main_container)
+    self.is_show_egg_effect = status -- 是否正在播放蛋孵化成功的特效，过程中不给切换灵窝和tab按钮
+    if status == false then
+    else
+        -- 孵化成功的音效
+        playOtherSound("c_hatchegg")
+        self:showEggAction(false)
+
+        -- 请求领取孵出的精灵
+        local function reqReceiveTreasureCallBack(  )
+            if self.cur_ani_hatch_id and self.cur_ani_hatch_id == self.cur_hatch_vo.id then
+                controller:sender22306(self.cur_hatch_vo.id)
+            end
+        end
+        local delay_time = 2
+        if Config.NinjaTreasureData.data_constant["end_time"] then
+            delay_time = Config.NinjaTreasureData.data_constant["end_time"].val/1000
+        end
+        self.main_container:runAction(cc.Sequence:create(cc.DelayTime:create(delay_time), cc.CallFunc:create(reqReceiveTreasureCallBack)))
+
+        -- 播放孵化成功特效过程中，隐藏一些东西
+        if self.smash_crack_icon then
+            self.smash_crack_icon:stopAllActions()
+            self.smash_crack_icon:setVisible(false)
+            self.is_smash_crack_ani = false
+        end
+        self.egg_icon:runAction(cc.Sequence:create( cc.DelayTime:create(delay_time), cc.CallFunc:create(function (  )
+            if not tolua.isnull(self.egg_icon) then
+                self.egg_icon:setVisible(false)
+            end
+        end)))
+    end
+end
+
+function TreasureSearchItem:setData( index )
+    self.cur_hatch_index = index	
+end
+
+
+------------------@ 红点
+function TreasureSearchItem:updateTreasureRedInfo()
+    local status = false
+    if self.cur_hatch_vo then
+        if self.cur_hatch_vo.state == TreasureConst.Hatch_Status.Open and self.cur_hatch_vo.is_open == 2 then
+            status = true
+        end
+
+        if status == false and self.cur_hatch_vo.is_open == 1 and self.cur_hatch_vo.state == TreasureConst.Hatch_Status.Open then
+            local all_egg_list = BackpackController:getInstance():getModel():getBackPackItemListByType(BackPackConst.item_type.ELFIN_EGG)
+            if #all_egg_list > 0 then
+                status = true
+            end
+        end
+
+        if status == false and self.cur_hatch_vo.state == TreasureConst.Hatch_Status.Over then
+            status = true
+        end
+        
+    end
+    
+    addRedPointToNodeByStatus(self.main_container, status, -20, -30)
+end
+
+-- 积分按钮抖动效果
+function TreasureSearchItem:showEggAction( status )
+    if status == true then
+        local act_1 = cc.MoveTo:create(1,cc.p(93,137))
+        local act_2 = cc.MoveTo:create(1,cc.p(93,147))
+        local act_3 = cc.MoveTo:create(1,cc.p(93,137))
+        local act_4 = cc.MoveTo:create(1,cc.p(93,147))
+        local sequence = cc.Sequence:create(act_1,act_2,act_3,act_4)
+        self.egg_icon:runAction(cc.RepeatForever:create(sequence))
+    else
+        self.egg_icon:stopAllActions()
+    end
+end
+
+function TreasureSearchItem:DeleteMe()
+    self:showEggAction(false)
+    self:handleEggEffect(false)
+    doStopAllActions(self.comp_bar_label)
+    doStopAllActions(self.egg_time)
+    doStopAllActions(self.main_container)
+    if self.cur_hatch_vo ~= nil then
+        if self.update_self_event ~= nil then
+            GlobalEvent:getInstance():UnBind(self.update_self_event)
+            self.update_self_event = nil
+        end
+    end
+
+    if self.get_hatch_data_event then
+        GlobalEvent:getInstance():UnBind(self.get_hatch_data_event)
+        self.get_hatch_data_event = nil
+    end
+
+    if self.update_red_status_event then
+        GlobalEvent:getInstance():UnBind(self.update_red_status_event)
+        self.update_red_status_event = nil
+    end
+end

@@ -1,0 +1,691 @@
+ActionDdpGameWindow = class("ActionDdpGameWindow",function()
+    return ccui.Layout:create()
+end)
+local table_insert = table.insert
+local flip_open_delay = 15
+
+function ActionDdpGameWindow:ctor(activity_id, choose_index, bid)
+    if self.action_id == activity_id then
+        return
+    end
+    if self.choose_index == choose_index then
+        return
+    end
+    self.action_id = activity_id
+    self.choose_index = choose_index
+    self.action_bid = bid
+    self.ctrl = ActionController:getInstance()
+    self.model = self.ctrl:getModel()
+    -- self.win_type = WinType.Full
+    -- self.layout_name = "action/action_ddp_game_panel"
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_ddp_game_panel"))
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self.label_list = {}
+    self.hero_item_list = {}
+    self.cur_rank_type = 0
+    self.has_done_item_num = 0 -- 已完成选择的牌数
+    self.all_item_num = 0 -- 总牌数
+    self.current_step = 0 -- 当前步数
+    self.checkHeroItem = nil
+    self.flip_num = 0
+    self.reward_item_list = {}
+    self.is_can_time = true --是否开启倒计时
+    self.flop_cfg = Config.HolidayFlopData.data_flop_act_list[self.action_id]
+    -- 资源加载
+    local res_list = {
+        {path = PathTool.getPlistImgForDownLoad("arena", "arenaenter"),type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("bigbg/action", "pairtopair_bg_1"),type = ResourcesType.single}, 
+        {path = PathTool.getPlistImgForDownLoad("bigbg/action", "pairtopair_bg_2"),type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("num", "type3"),type = ResourcesType.plist}
+    }
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:initConfig()
+        end
+    end)
+end
+
+function ActionDdpGameWindow:initConfig()
+    self.background_path = PathTool.getPlistImgForDownLoad("bigbg/action", "pairtopair_bg_1")
+    self.bottom_path = PathTool.getPlistImgForDownLoad("bigbg/action", "pairtopair_bg_2")
+    
+    self:initView()
+    self:registerEvent()
+    self:openRootWnd()
+end
+
+function ActionDdpGameWindow:initView()
+
+    self.current_step = 0
+    self.has_done_item_num = 0
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.background = self.main_container:getChildByName("bg")
+    -- self.effect_layer = self.main_container:getChildByName("effect_layer") -- 模型
+
+    self.award_bg = self.main_container:getChildByName("award_bg")
+    self.item_layer = self.main_container:getChildByName("item_layer")
+    self.step_title = self.main_container:getChildByName("step_title")
+    self.step_title:setString(TI18N("语言_c_107"))
+    local _w = math.max(self.step_title:getContentSize().width,135)
+    self.item_layer:setContentSize(cc.size(_w,self.item_layer:getContentSize().height))
+
+    self.item_group = self.main_container:getChildByName("reward_con")
+    
+    self.step_tip = self.main_container:getChildByName("step_tip")
+    setTextMaxWidth(self.step_tip,250)
+    self.step_tip:setString(TI18N("语言_hol_fl_2"))
+    self.step_num = self.main_container:getChildByName("step_num")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_6995"))
+    self.time_node = self.main_container:getChildByName("time_node")
+    self.time_txt = createRichLabel(24,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(0,0))
+    self.time_node:addChild(self.time_txt)
+end
+
+function ActionDdpGameWindow:_onClickBtnClose()
+    self.ctrl:openDdpGameWindow(false)
+    self.ctrl:openActionMainPanel(true,nil,self.action_id)
+end
+function ActionDdpGameWindow:registerEvent()
+    if not self.card_open_event then
+        self.card_open_event = GlobalEvent:getInstance():Bind(ActionEvent.CardOpenEvent, function(data)
+            self:beginOpenBagFlip(data)
+        end)
+    end
+end
+
+function ActionDdpGameWindow:openRootWnd()
+    self:initPanel(self.action_id, self.choose_index, self.action_bid)
+end
+
+function ActionDdpGameWindow:initPanel(activity_id, choose_index, bid)
+    local flop_cfg = Config.HolidayFlopData.data_flop_act_list[self.action_id]
+    local mod_info = Config.HolidayFlopData.data_mod_info[flop_cfg.mod_id][self.choose_index]
+    if not mod_info then
+        return
+    end
+    local award_info = Config.HolidayFlopData.data_award_info[self.action_id][mod_info.difficulty_id]
+    self.mod_info = mod_info
+    self.award_info = award_info
+    local game_background_pic = flop_cfg.table_background_picture
+    local step_pic = flop_cfg.challenge_picture
+    local card_icon = flop_cfg.card_icon
+    local icon_type = flop_cfg.icon_type
+    self.background_path = PathTool.getPlistImgForDownLoad("bigbg/action", game_background_pic)
+    -- self.background_path = PathTool.getPlistImgForDownLoad("pairtopair", step_pic)
+    self.icon_type = icon_type
+    self.card_icon = card_icon
+
+    self.background:loadTexture(self.background_path, LOADTEXT_TYPE)
+
+    self.all_item_num = mod_info.count or 0
+    self.diff_limit = mod_info.award_limit or 0
+    local hero_icon = flop_cfg.hero_icon
+    local reward_show = award_info.challenge_award
+    -- self.step_desc:setString(string_format(TI18N("语言_c_g_140"), self.diff_limit))
+    local list = self.model:getDdpRewardList()
+    local has_get = false
+    if list[self.choose_index] and list[self.choose_index].finish_award then
+        has_get = true
+    end
+    for i,v in ipairs(reward_show) do
+        if self.hero_item_list[i] == nil then
+            self.hero_item_list[i] = BackPackItem.new(false, true, false, 0.8, false, true)
+            self.hero_item_list[i]:setPosition( (i-1) * (BackPackItem.Width * 0.8 + 10) , 0)
+            self.hero_item_list[i]:setDefaultTip(true, false)
+            self.item_layer:addChild(self.hero_item_list[i])
+            self.hero_item_list[i]:setBaseData(v[1], v[2])
+        end
+        self.hero_item_list[i]:IsGetStatus(has_get, 0, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_get"))
+    end
+    
+    -- self:showEffect(true)
+    self:initGameData(hero_icon)
+    local countdown = 0
+    local list = self.flop_cfg.play_type
+    local _type = "type_3"
+    if table.indexof(list, 1) then
+        for k, v in pairs(self.mod_info.play_param) do
+            if v[1] == DdpSpecialType.Time then
+                countdown = v[2][1]
+                _type = v[2][2]
+            end
+        end
+    end
+    if countdown ~= 0 then
+        self.time_node:setVisible(true)
+        self.surplus_txt:setVisible(true)
+        if countdown > 0 then 
+            if countdown > 99 then
+                local txt = "<img src=%s visible=true /><img src=%s visible=true /><img src=%s visible=true />"
+                local a = math.floor(countdown/100)
+                local b = math.floor(countdown%100/10)
+                local c = math.floor(countdown%100%10)
+                self.time_txt:setString(string.format(txt,PathTool.getResFrame("num", string.format("%s_%s", _type, a), false, _type),PathTool.getResFrame("num", string.format("%s_%s", _type, b), false, _type),PathTool.getResFrame("num", string.format("%s_%s", _type, c), false, _type)))
+            elseif countdown > 9 then
+                local txt = "<img src=%s visible=true /><img src=%s visible=true />"
+                local b = math.floor(countdown/10)
+                local c = math.floor(countdown%10)
+                self.time_txt:setString(string.format(txt,PathTool.getResFrame("num", string.format("%s_%s", _type, b), false, _type),PathTool.getResFrame("num", string.format("%s_%s", _type, c), false, _type)))
+            else
+                local txt = "<img src=%s visible=true />"
+                self.time_txt:setString(string.format(txt,PathTool.getResFrame("num", string.format("%s_%s", _type, countdown), false, _type)))
+            end
+        end
+        self.surplus_txt:setPositionX(self.time_node:getPositionX() - self.time_txt:getContentSize().width/2 - 10)
+    else
+        doStopAllActions(self.time_txt)
+        self.time_node:setVisible(false)
+        self.surplus_txt:setVisible(false)
+    end
+end
+function ActionDdpGameWindow:updateTime()
+    local countdown = 0
+    local list = self.flop_cfg.play_type
+    local _type = "type_3"
+    if table.indexof(list, 1) then
+        for k, v in pairs(self.mod_info.play_param) do
+            if v[1] == DdpSpecialType.Time then
+                countdown = v[2][1]
+                _type = v[2][2]
+            end
+        end
+    end
+    if countdown ~= 0 then
+        self.time_node:setVisible(true)
+        commonCountDownTime(self.time_txt,countdown,{callback=function(time)
+            if time > 0 then 
+                if time > 99 then
+                    local txt = "<img src=%s visible=true /><img src=%s visible=true /><img src=%s visible=true />"
+                    local a = math.floor(time/100)
+                    local b = math.floor(time%100/10)
+                    local c = math.floor(time%100%10)
+                    self.time_txt:setString(string.format(txt,PathTool.getResFrame("num", string.format("%s_%s", _type, a), false, _type),PathTool.getResFrame("num", string.format("%s_%s", _type, b), false, _type),PathTool.getResFrame("num", string.format("%s_%s", _type, c), false, _type)))
+                elseif time > 9 then
+                    local txt = "<img src=%s visible=true /><img src=%s visible=true />"
+                    local b = math.floor(time/10)
+                    local c = math.floor(time%10)
+                    self.time_txt:setString(string.format(txt,PathTool.getResFrame("num", string.format("%s_%s", _type, b), false, _type),PathTool.getResFrame("num", string.format("%s_%s", _type, c), false, _type)))
+                else
+                    local txt = "<img src=%s visible=true />"
+                    self.time_txt:setString(string.format(txt,PathTool.getResFrame("num", string.format("%s_%s", _type, time), false, _type)))
+                end
+            else
+                doStopAllActions(self.time_txt)
+                GlobalEvent:getInstance():Fire(ActionEvent.DdpGameFailEvent)
+            end
+        end})
+    else
+        doStopAllActions(self.time_txt)
+        self.time_node:setVisible(false)
+    end
+    self.is_can_time = false
+end
+function ActionDdpGameWindow:initGameData(hero_icon)
+    local hero_type_num = #hero_icon
+    local need_hero_num = self.all_item_num * 0.5
+    local random_hero_index = self:get_random_list(hero_type_num)
+    local random_heros = {}
+    for k, v in pairs(random_hero_index) do
+        if k <= need_hero_num then
+            table_insert(random_heros, hero_icon[v])
+            table_insert(random_heros, hero_icon[v])
+        end
+    end
+    local random_hero = self:get_random_list(self.all_item_num)
+    self.heros = {}
+    for h, j in pairs(random_hero) do
+        local hero = {}
+        hero.id = random_heros[j]
+        hero.open = false
+        hero.card_icon = self.card_icon
+        hero.icon_type = self.icon_type
+        hero.camp_id = self.action_id
+        table_insert(self.heros, hero)
+    end
+    local difficulty = self.mod_info.dispose
+    local difficulty_x = difficulty[1]
+    local difficulty_y = difficulty[2]
+    local space = 5
+    local item_group_width = self.item_group:getContentSize().width
+    local item_group_height = self.item_group:getContentSize().height
+    local item_group_pos_x = item_group_width * 0.5
+    local item_group_pos_y = item_group_height * 0.5
+    local item_width = 110
+    local item_height = 110
+
+    local first_pos_x = item_group_pos_x - (item_width + space) * (difficulty_x - 1) * 0.5
+    local first_pos_y = item_group_pos_y + (item_width + space) * (difficulty_y - 1) * 0.5
+    self.reward_item_list = {}
+    for i = 1, tableLen(self.heros) do
+        local reward_item
+        local reward_item_obj = self.heros[i]
+        if not reward_item then
+            reward_item = ActionDdpItem.new()
+            local item_x = first_pos_x + (i - 1) % difficulty_x * (item_width + space)
+            local item_y = first_pos_y - math.floor((i - 1) / difficulty_x) * (item_width + space)
+            reward_item:setPosition(item_x, item_y)
+            reward_item:setTouchEnabled(true)
+            self.item_group:addChild(reward_item)
+            self.reward_item_list[i] = reward_item
+        end
+        reward_item:setData(reward_item_obj)
+    end
+
+    self.step_num:setString(string.format("%s/%s",self.current_step,self.diff_limit))
+end
+
+function ActionDdpGameWindow:get_random_list(n)
+    local map = {}
+    local list = {}
+    for i = 1, n do
+        local r = math.random(i, n)
+        local a = r
+        if map[r] then
+            a = map[r]
+        end
+        table.insert(list, a)
+        map[r] = map[i] or i
+    end
+    return list
+end
+
+-- -- 人物特效 展示立绘 模型不要了
+-- function ActionDdpGameWindow:showEffect(status)
+--     local flop_cfg = Config.HolidayFlopData.data_flop_act_list[self.action_id]
+--     if status == false then
+--         if self.effect_1 then
+--             if not tolua.isnull(self.effect_1) then
+--                 self.effect_1:removeFromParent()
+--                 self.effect_1 = nil
+--             end
+--         end
+--     else
+--         if not tolua.isnull(self.effect_layer) then
+--             if not tolua.isnull(self.effect_1) then
+--                 self.effect_1:removeFromParent()
+--                 self.effect_1 = nil
+--             end
+--             local effectId = flop_cfg.character_animation
+--             self.effect_1 = createSpineByName(effectId, PlayerAction.show)
+--             self.effect_1:setPosition(cc.p(100, 350))
+--             self.effect_1:setScaleX(0.9)
+--             self.effect_1:setScaleY(0.9)
+--             self.effect_1:setAnimation(0, PlayerAction.show, true)
+--             self.effect_layer:addChild(self.effect_1)
+--         end
+--     end
+-- end
+-- 开始打开卡牌
+function ActionDdpGameWindow:beginOpenBagFlip(cell)
+    if self.opening ~= nil and self.opening then
+        return
+    end
+    -- self:setBagOpening(true)
+    self.flip_num = -flip_open_delay
+    self.opening = true
+    local cell_data = cell:getData()
+    self:clearTimeTicket()
+    local function _callback()
+        if cell and cell.setOpenItemFlip then
+            cell:setOpenItemFlip(self.flip_num)
+            self.flip_num = self.flip_num + 3
+        end
+        if self.is_can_time then
+            self:updateTime()
+        end
+        if self.flip_num >= flip_open_delay then
+            self:clearTimeTicket()
+            if cell.resetItemFlip then
+                cell:initScale()
+                self.current_step = self.current_step + 1
+                self.step_num:setString(string.format("%s/%s",self.current_step,self.diff_limit))
+                if self.checkHeroItem ~= nil then
+                    local hero_data = self.checkHeroItem.data
+                    local current_data = cell.data
+                    if hero_data and hero_data.id == current_data.id then
+                        cell.data.open = true
+                        self.has_done_item_num = self.has_done_item_num + 2
+                        if cell and cell.showItemEffect then
+                            cell:showItemEffect()
+                        end
+                        if self.checkHeroItem and self.checkHeroItem.showItemEffect then
+                            self.checkHeroItem:showItemEffect()
+                        end
+                        delayOnce(function()
+                            self.opening = false
+                            if cell and cell.resetItemFlip then
+                                cell:resetItemFlip()
+                            end
+                            if self.checkHeroItem and self.checkHeroItem.resetItemFlip then
+                                self.checkHeroItem:resetItemFlip()
+                                self.checkHeroItem = nil
+                            end
+                        end, 0.2)
+                    else
+                        cell.data.open = false
+                        if self.checkHeroItem and self.checkHeroItem.data then
+                            self.checkHeroItem.data.open = false
+                        end
+                        delayOnce(function()
+                            self.opening = false
+                            if cell and cell.setCloseItemFlip then
+                                cell:setCloseItemFlip()
+                            end
+                            if self.checkHeroItem and self.checkHeroItem.setCloseItemFlip then
+                                self.checkHeroItem:setCloseItemFlip()
+                                self.checkHeroItem = nil
+                            end
+                            -- if cell and cell.resetItemFlip then
+                            --     cell:resetItemFlip()
+                            -- end
+                            -- if self.checkHeroItem and self.checkHeroItem.resetItemFlip then
+                            --     self.checkHeroItem:resetItemFlip()
+                            --     self.checkHeroItem = nil
+                            -- end
+                        end, 0.2)
+
+                    end
+                else
+                    self.opening = false
+                    self.checkHeroItem = cell
+                    cell.data.open = true
+                    cell:resetItemFlip()
+                end
+
+            end
+        end
+        if self.all_item_num == self.has_done_item_num then
+            self.ctrl:sender29601(self.choose_index,self.current_step)
+        end
+    end
+    self.time_open_ticket = GlobalTimeTicket:getInstance():add(_callback, 1 / (flip_open_delay * 4))
+    self.opening_ticket = GlobalTimeTicket:getInstance():add(function()
+        if self.opening_ticket ~= nil then
+            GlobalTimeTicket:getInstance():remove(self.opening_ticket)
+            self.opening_ticket = nil
+        end
+    end, 0.5, 1)
+end
+
+function ActionDdpGameWindow:clearTimeTicket()
+    if self.time_open_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_open_ticket)
+        self.time_open_ticket = nil
+    end
+end
+
+function ActionDdpGameWindow:DeleteMe()
+    -- self:showEffect(false)
+    if self.opening_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.opening_ticket)
+        self.opening_ticket = nil
+    end
+    if self.card_open_event then
+        GlobalEvent:getInstance():UnBind(self.card_open_event)
+        self.card_open_event = nil
+    end
+    self.action_id = nil
+    self.choose_index = nil
+    if self.item_node then
+        self.item_node = nil
+    end
+    if self.item_layer then
+        self.item_layer:removeAllChildren()
+    end
+    for k, v in pairs(self.reward_item_list) do
+        v:DeleteMe()
+        -- v:removeFromParent()
+        v=nil
+    end
+    doStopAllActions(self.time_txt)
+    self:clearTimeTicket()
+    self:removeAllChildren()
+end
+
+ActionDdpItem = class("ActionDdpItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionDdpItem:ctor()
+    self:configUI()
+    self:registerEvent()
+end
+
+function ActionDdpItem:getData()
+    return self.data
+end
+
+function ActionDdpItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_ddp_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(110, 110))
+    self:setAnchorPoint(0.5, 0.5)
+
+    self.container = self.root_wnd:getChildByName("container")
+    self.head_icon = self.container:getChildByName("head_icon")
+    self.item_bg = self.container:getChildByName("item_bg")
+    self.item_mask = self.container:getChildByName("item_mask")
+    self.effect_group = self.container:getChildByName("effect_group")
+    self:createItemEffect(true)
+end
+
+-- desc:注册相关事件
+-- time:2017-07-03 01:53:49
+-- @return 
+-- ==============================--
+function ActionDdpItem:registerEvent()
+    self:setTouchEnabled(true)
+    self.item_mask:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            GlobalEvent:getInstance():Fire(ActionEvent.CardOpenEvent, self)
+        end
+    end)
+end
+
+function ActionDdpItem:showItemEffect()
+    if self.play_effect then
+        self.play_effect:setVisible(true)
+        self.play_effect:setAnimation(0, PlayerAction.action_1, false)
+    end
+end
+
+function ActionDdpItem:createItemEffect(bool)
+    if bool == true then
+        if self.play_effect == nil then
+            self.play_effect = createEffectSpine("E31315", cc.p(55, 56), cc.p(0.5, 0.5), false, PlayerAction.action_1, function()
+                self.play_effect:setVisible(false)
+            end)
+            self.play_effect:setVisible(false)
+            self.effect_group:addChild(self.play_effect, 1)
+        end
+    else
+        if self.play_effect then
+            self.play_effect:clearTracks()
+            self.play_effect:removeFromParent()
+            self.play_effect = nil
+        end
+    end
+end
+
+function ActionDdpItem:unBindEvent()
+
+    -- if self.data then
+    --     if self.item_update_event ~= nil then
+    --         self.data:UnBind(self.item_update_event)
+    --         self.item_update_event = nil
+    --     end
+    --     self.data = nil
+    -- end
+end
+-- ==============================--
+-- desc:设置数据
+-- time:2018-05-15 08:12:01
+-- @data:data类型可以是partnervo，partner表的config，bid
+-- @return 
+-- ==============================--
+function ActionDdpItem:setData(data)
+    self:unBindEvent()
+    self.data = data
+    local card_icon = PathTool.getPlistImgForDownLoad("pairtopair", data.card_icon)
+    self.item_mask:loadTexture(card_icon, LOADTEXT_TYPE)
+    self:updateData(data)
+    self:resetItemFlip()
+end
+
+function ActionDdpItem:initScale()
+    self.item_mask:setScaleX(1)
+    self.item_bg:setScaleX(1)
+    self.head_icon:setScaleX(1)
+    self.item_bg:setVisible(true)
+end
+
+function ActionDdpItem:resetItemFlip()
+    self:initScale()
+    if self.data.open then
+        self.head_icon:setVisible(true)
+        self.item_mask:setVisible(false)
+    else
+        self.head_icon:setVisible(false)
+        self.item_mask:setVisible(true)
+    end
+end
+
+function ActionDdpItem:setOpenItemFlip(flip_num)
+    if flip_num < 0 then
+        self.item_bg:setVisible(false)
+        self.head_icon:setVisible(false)
+        self.item_mask:setVisible(false)
+        self.item_bg:setScaleX(flip_num / flip_open_delay)
+        self.head_icon:setScaleX(1)
+    else
+        self.head_icon:setVisible(true)
+        self.item_bg:setVisible(true)
+        self.item_bg:setScaleX(flip_num / flip_open_delay)
+        self.head_icon:setScaleX(flip_num / flip_open_delay)
+    end
+end
+
+function ActionDdpGameWindow:clearTimeTicket()
+    if self.time_open_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_open_ticket)
+        self.time_open_ticket = nil
+    end
+end
+
+function ActionDdpItem:setCloseItemFlip()
+    if self.opening ~= nil and self.opening then
+        return
+    end
+    self.flip_num = -flip_open_delay
+    self.opening = true
+    self:clearTimeTicket()
+    local function _callback()
+        if not self.flip_num then self.flip_num = 0 end
+        if not self.item_bg then return end
+        if self.flip_num < 0 then
+            self.item_bg:setVisible(true)
+            self.head_icon:setVisible(true)
+            self.item_mask:setScaleX(0)
+            self.head_icon:setScaleX(-self.flip_num / flip_open_delay)
+            self.item_bg:setScaleX(self.flip_num / flip_open_delay)
+            self.item_mask:setScaleX(1)
+        else
+            self.head_icon:setVisible(false)
+            self.item_bg:setVisible(true)
+            self.item_mask:setVisible(true)
+            self.head_icon:setScaleX(-self.flip_num / flip_open_delay)
+            self.item_bg:setScaleX(self.flip_num / flip_open_delay)
+            self.item_mask:setScaleX(self.flip_num / flip_open_delay)
+        end
+        self.flip_num = self.flip_num + 3
+        if self.flip_num >= flip_open_delay then
+            self:clearTimeTicket()
+            self:resetItemFlip()
+        end
+    end
+    self.time_open_ticket = GlobalTimeTicket:getInstance():add(_callback, 1 / (flip_open_delay * 4))
+    self.opening_ticket = GlobalTimeTicket:getInstance():add(function()
+        self.opening = false
+        if self.opening_ticket ~= nil then
+            GlobalTimeTicket:getInstance():remove(self.opening_ticket)
+            self.opening_ticket = nil
+        end
+    end, 0.2, 1)
+end
+
+function ActionDdpItem:clearTimeTicket()
+    if self.time_open_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_open_ticket)
+        self.time_open_ticket = nil
+    end
+end
+
+-- @info 数据 可以是
+function ActionDdpItem:updateData(info)
+    if not info then
+        return
+    end
+    if info.icon_type == 1 then
+        local item_config = Config.ItemData.data_get_data(info.id)
+        if not item_config or not item_config.icon then
+            return
+        end
+        local head_icon = PathTool.getItemRes(item_config.icon, false)
+        if self.record_head_icon == nil or self.record_head_icon ~= head_icon then
+			self.record_head_icon = head_icon
+            self.head_icon:loadTexture(head_icon, LOADTEXT_TYPE)
+		end
+    else
+        local data = Config.PartnerData.data_partner_base[info.id]
+        if not data or not data.bid then
+            return
+        end
+        local key = getNorKey(data.bid, 5)
+        local star_config = Config.PartnerData.data_partner_star(key)
+        if star_config then
+            self:setHeadImg(star_config.head_id)
+        end
+    end
+    local cfg = Config.HolidayFlopData.data_flop_act_list[info.camp_id]
+    local res = PathTool.getResFrame("pairtopair", cfg.card_icon) 
+    self.item_bg:loadTexture(res, LOADTEXT_TYPE_PLIST)
+end
+
+-- ==================--
+-- desc:设置头像
+-- time:2019-01-24 09:31:58
+-- @head_icon:
+-- @return 
+-- ==============================--
+function ActionDdpItem:setHeadImg(head_icon)
+    if self.record_head_id == nil or self.record_head_id ~= head_icon then
+        self.record_head_id = head_icon
+        local res = PathTool.getHeadIcon(head_icon)
+        self.record_head_icon = res
+        self.head_icon:loadTexture(res, LOADTEXT_TYPE)
+    end
+end
+
+function ActionDdpItem:DeleteMe()
+    doStopAllActions(self)
+    if self.opening_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.opening_ticket)
+        self.opening_ticket = nil
+    end
+    self:createItemEffect(false)
+    self:unBindEvent()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

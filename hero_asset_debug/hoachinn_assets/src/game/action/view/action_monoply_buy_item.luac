@@ -1,0 +1,243 @@
+-- --------------------------------------------------------------------
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ActionMonoplyBuyItem = ActionMonoplyBuyItem or BaseClass(BaseView)
+
+function ActionMonoplyBuyItem:__init()
+	self.ctrl = ActionController:getInstance()
+    self.is_full_screen = false
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG  
+    self.win_type = WinType.Mini    
+    self.layout_name = "mall/mall_buy_panel"
+    self.res_list = {
+        
+	}
+	self.is_can_buy_max = false
+end
+
+function ActionMonoplyBuyItem:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setPosition(360, 640)
+    self.background:setAnchorPoint(cc.p(0.5, 0.5))
+	self.background:setScale(display.getMaxScale())
+	
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+
+	self.title_con = self.main_container:getChildByName("title_con")
+	self.title_label = self.title_con:getChildByName("title_label")
+	self.title_label:setString(TI18N("语言_c_85"))
+
+	self.ok_btn = self.main_container:getChildByName("ok_btn")
+	self.ok_btn:setTitleText(TI18N("语言_c_85"))
+	self.ok_btn.label = self.ok_btn:getTitleRenderer()
+    if self.ok_btn.label ~= nil then
+    	self.ok_btn.label:enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+    end
+	self.cancel_btn = self.main_container:getChildByName("cancel_btn")
+	self.cancel_btn:setTitleText(TI18N("语言_c_62"))
+	self.cancel_btn.label = self.cancel_btn:getTitleRenderer()
+    if self.cancel_btn.label ~= nil then
+    	self.cancel_btn.label:enableOutline(cc.c4b(0x5c,0x27,0x05,0xff), 2)
+    end
+	self.close_btn = self.main_container:getChildByName("close_btn")
+
+	self.item_con = self.main_container:getChildByName("item_con")
+	self.name = self.item_con:getChildByName("name")
+	self.coin = self.item_con:getChildByName("coin")
+	self.price = self.item_con:getChildByName("price")
+	self.limit = self.item_con:getChildByName("limit")
+
+	self.icon_bg_image = self.item_con:getChildByName("Image_1")
+
+	self.goods_item = BackPackItem.new()
+	self.goods_item:setPosition(110,self.item_con:getContentSize().height/2-2)
+	self.item_con:addChild(self.goods_item)
+	self.info_con = self.main_container:getChildByName("info_con")
+	self.slider = self.info_con:getChildByName("slider")-- 滑块
+    self.slider:setBarPercent(10, 89)
+	self.buy_count_title = self.info_con:getChildByName("buy_count_title")
+	self.buy_count_title:setString(TI18N("语言_c_275"))
+	self.plus_btn = self.info_con:getChildByName("plus_btn")
+	self.buy_count = self.info_con:getChildByName("buy_count")
+	self.num = 1
+	self.buy_count:setString(self.num)
+	setItemXOneByOne({self.buy_count_title,self.buy_count})
+	self.min_btn = self.info_con:getChildByName("min_btn")
+	self.max_btn = self.info_con:getChildByName("max_btn")
+	local txt = self.max_btn:getChildByName("txt")
+	txt:setString(TI18N("语言_c_4543"))
+	self.total_price_title = self.info_con:getChildByName("total_price_title")
+	self.total_price_title:setString(TI18N("语言_c_276"))
+	self.total_price = self.info_con:getChildByName("total_price")
+	setItemXOneByOne({self.total_price_title,self.total_price})
+	self.buy_desc = self.main_container:getChildByName("buy_desc")
+	self.buy_desc:setString("")
+	self.tips_label = createLabel(22, 15, nil, 385, 277, TI18N("语言_c_277"), self.main_container, nil, cc.p(0.5, 0.5))
+	self.tips_label:setVisible(false)
+end
+
+function ActionMonoplyBuyItem:openRootWnd()
+
+end
+--data结构:
+--data.item_bid data.item_id   购买的道具id
+--data.name = 道具名字  如果没有 用道具id原本名字
+--data.limit_num  --购买上限
+--data.price --购买价格
+--data.cost_type --购买花费物品id
+--data.has_buy 已经购买数量
+function ActionMonoplyBuyItem:setData( data )
+	Debug.info(data)
+	self.data = data
+	local config = Config.ItemData.data_get_data(data.item_bid or data.item_id)
+	self.goods_item:setBaseData(data.item_bid)
+	self.name:setString(config.name)
+	self.num = data.limit_num - data.has_buy
+	self.limit_num = self.data.limit_num
+	self.price:setString(data.price)
+	self.price_val = data.price
+	self.cost_type = data.cost_type 
+	-- self.cost_num = data.cost_num
+	self.is_can_buy_num = data.limit_num - data.has_buy
+	local costcfg = Config.ItemData.data_get_data(self.cost_type)
+	self.coin:loadTexture(PathTool.getItemRes(costcfg.icon), LOADTEXT_TYPE)
+
+	if self.limit_num >0 and data.has_buy then
+		self.limit:setString(string.format(TI18N("语言_c_4751"),self.limit_num-data.has_buy))
+		self.is_can_buy_max = true
+	end
+	--显示限购或玩家可支付购买的个数最小值
+	self.num = math.min(self.is_can_buy_num, self.num)
+	self:setCurUseItemInfoByNum(self.num)
+end
+
+function ActionMonoplyBuyItem:register_event()
+	if self.close_btn then
+		self.close_btn:addTouchEventListener(function(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playCloseSound()
+				self.ctrl:openMonopolyMallBuyWindow(false)
+			end
+		end)
+	end
+
+	if self.background then
+		self.background:addTouchEventListener(function(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playCloseSound()
+				self.ctrl:openMonopolyMallBuyWindow(false)
+			end
+		end)
+	end
+
+	if self.slider ~= nil then
+    	self.slider:addEventListener(function ( sender,event_type )
+			if event_type == ccui.SliderEventType.percentChanged then
+				if self.slider:getPercent() == 100 and self.is_can_buy_num >= self.limit_num and self.is_can_buy_max == false then
+					self.tips_label:setVisible(true)
+				else
+					self.tips_label:setVisible(false)
+				end
+                self:setCurUseItemInfoByPercent(self.slider:getPercent())
+    		end
+    	end)
+    end
+
+    self.min_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 0 then return end --已经是最小的了
+            if self.num == 0 then return end
+            self.num = self.num - 1
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+    self.plus_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            local temp_num = math.min(self.is_can_buy_num, self.limit_num - self.data.has_buy)
+            if self.num >= temp_num then return end
+            self.num = self.num + 1
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+    self.max_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            local temp_num = self.limit_num - self.data.has_buy
+            if self.num >= temp_num then return end
+            self.num = math.min(self.is_can_buy_num, temp_num)
+            self:setCurUseItemInfoByNum(self.num)
+        end
+    end)
+
+	if self.ok_btn then
+		self.ok_btn:addTouchEventListener(function ( sender,event_type )
+			if event_type == ccui.TouchEventType.ended then
+				playButtonSound2()
+				local own_num = BackpackController:getInstance():getModel():getItemNumByBid(self.cost_type)
+				if own_num>= self.num*self.price_val then
+					self.ctrl:sender29304(self.num)
+				else
+					local costcfg = Config.ItemData.data_get_data(self.cost_type)
+					message(string.format(TI18N("语言_c_3666"), costcfg.name))
+				end
+			end
+		end)
+	end
+
+	if self.cancel_btn then
+		self.cancel_btn:addTouchEventListener(function ( sender,event_type )
+			if event_type == ccui.TouchEventType.ended then
+				playButtonSound2()
+				self.ctrl:openMonopolyMallBuyWindow(false)
+			end
+		end)
+	end
+end
+
+function ActionMonoplyBuyItem:setCurUseItemInfoByPercent(percent)
+	-- if self.item_vo == nil then return end
+	local temp_num = math.min(self.is_can_buy_num, self.limit_num - self.data.has_buy)
+    local num = math.floor( percent * temp_num * 0.01 + 0.5)
+    self:setCurUseItemInfoByNum(num)
+end
+
+function ActionMonoplyBuyItem:setCurUseItemInfoByNum(num)
+    -- if self.item_vo == nil then return end
+    self.num = num
+    local temp_num = math.min(self.is_can_buy_num, self.limit_num - self.data.has_buy)
+    
+    if self.num < 1 then
+        self.num = 1
+    elseif self.num > temp_num then
+        self.num = temp_num
+    end
+
+    local percent = self.num / temp_num * 100
+    if percent < 1 then --进度条数值区间[1,100]
+    	percent = math.ceil(percent)
+    end
+    self.slider:setPercent(percent)
+    self.buy_count:setString(self.num)
+    self.total_price:setString(self.num*self.price_val)
+end
+
+function ActionMonoplyBuyItem:close_callback()
+	if self.goods_item then 
+		self.goods_item:DeleteMe()
+	end
+	self.goods_item = nil
+	self.ctrl:openMonopolyMallBuyWindow(false)
+end

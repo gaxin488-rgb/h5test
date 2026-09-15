@@ -1,0 +1,526 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2019-04-30
+-- --------------------------------------------------------------------
+ShinobiController = ShinobiController or BaseClass(BaseController)
+
+function ShinobiController:config()
+    self.model = ShinobiModel.New(self)
+    self.dispather = GlobalEvent:getInstance()
+end
+
+function ShinobiController:getModel()
+    return self.model
+end
+
+function ShinobiController:registerEvents()
+	-- 断线重连
+    if self.re_link_game_event == nil then
+        self.re_link_game_event = GlobalEvent:getInstance():Bind(LoginEvent.RE_LINK_GAME, function()
+        	-- 断线重连成功后，如果结算界面正在显示，则重新请求一次翻牌数据
+        	if self.Shinobi_result_wnd then
+        		self:sender14412()
+        	end
+        end)
+    end
+end
+
+------------------ c2s
+-- 请求个人信息
+function ShinobiController:sender14400(  )
+	self:SendProtocal(14400, {})
+end
+
+-- 请求挑战列表
+function ShinobiController:sender14401(  )
+	self:SendProtocal(14401, {})
+end
+
+-- 请求挑战玩家的信息
+function ShinobiController:sender14402( rid, srv_id )
+	local protocal = {}
+    protocal.rid = rid
+    protocal.srv_id = srv_id
+    self:SendProtocal(14402, protocal)
+end
+
+-- 挑战玩家
+function ShinobiController:sender14403( rid, srv_id,is_test,stars )
+	MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Shinobi)
+	local protocal = {}
+    protocal.rid = rid
+    protocal.srv_id = srv_id
+	protocal.is_test = is_test
+    protocal.stars = stars
+    self:SendProtocal(14403, protocal)
+end
+
+-- 请求设置阵法
+function ShinobiController:sender14432( type,formation_type,pos_info,hallows_id,isTips)
+	self.isTips = isTips or 0
+	local protocal = {}
+    protocal.type = type
+	protocal.formation_type = formation_type
+    protocal.pos_info = pos_info
+	protocal.hallows_id = hallows_id
+    if type == 2 then -- 缓存一下，设置成功之后再写入锁定英雄数据
+    	self._temp_formation = protocal
+    end
+    self:SendProtocal(14432, protocal)
+end
+
+-- 请求阵法数据
+function ShinobiController:sender14433( type )
+	local protocal = {}
+    protocal.type = type
+    self:SendProtocal(14433, protocal)
+end
+
+-- 请求挑战玩家
+function ShinobiController:sender14406( rid, srv_id )
+    --策划要求进入战斗要去掉提示
+	PromptController:getInstance():getModel():removePromptDataByTpye(PromptTypeConst.Corss_arena_tips)
+	local protocal = {}
+    protocal.rid = rid
+    protocal.srv_id = srv_id
+    protocal.is_auto = self.model:getShinobiAutoBattle() or 0
+    self:SendProtocal(14406, protocal)
+end
+
+-- -- 请求挑战次数奖励信息
+-- function ShinobiController:sender14407(  )
+-- 	self:SendProtocal(14407, {})
+-- end
+
+-- 请求每日排行榜信息
+function ShinobiController:sender14408(  )
+	self:SendProtocal(14408, {})
+end
+
+-- 请求赛区排行榜信息
+function ShinobiController:sender14409(  )
+	self:SendProtocal(14409, {})
+end
+-- -- 领取挑战次数奖励
+-- function ShinobiController:sender14408( num )
+-- 	local protocal = {}
+--     protocal.num = num
+--     self:SendProtocal(14408, protocal)
+-- end
+
+-- 日志记录
+function ShinobiController:sender14410(  )
+	self:SendProtocal(14410, {})
+end
+
+-- 大神风采
+function ShinobiController:sender14411(  )
+	self:SendProtocal(14411, {})
+end
+
+-- 推送红点
+function ShinobiController:sender14412(  )
+	self:SendProtocal(14412, {})
+end
+
+-- 请求赛季荣耀信息
+function ShinobiController:sender14414(  )
+	self:SendProtocal(14414, {})
+end
+
+-- 请求挑战记录
+function ShinobiController:sender14416( _type )
+	local protocal = {}
+    protocal.type = _type
+	self:SendProtocal(14416, protocal)
+end
+
+-- 请求记录详情
+function ShinobiController:sender14417( _type, id )
+	local protocal = {}
+    protocal.type = _type
+    protocal.id = id
+	self:SendProtocal(14417, protocal)
+end
+function ShinobiController:sender14413()
+	local protocal = {}
+	self:SendProtocal(14413, protocal)
+end
+
+function ShinobiController:registerProtocals()
+	self:RegisterProtocal(14400, "handle14400")     -- 个人数据
+	self:RegisterProtocal(14401, "handle14401")     -- 挑战角色列表数据
+	self:RegisterProtocal(14402, "handle14402")     -- 挑战角色的信息
+	self:RegisterProtocal(14403, "handle14403")     -- 挑战玩家
+	self:RegisterProtocal(14407, "handle14407")     -- 战斗结算
+	self:RegisterProtocal(14408, "handle14408")     -- 每日排行榜数据
+	self:RegisterProtocal(14409, "handle14409")     -- 赛区排行榜数据
+	self:RegisterProtocal(14410, "handle14410")     -- 日志记录
+	self:RegisterProtocal(14411, "handle14411")     -- 大神风采
+	self:RegisterProtocal(14412, "handle14412")     -- 推送红点
+	self:RegisterProtocal(14413, "handle14413")     -- 主界面系统提示跳转相关
+	self:RegisterProtocal(14432, "handle14432")     -- 设置阵法
+    self:RegisterProtocal(14433, "handle14433")     -- 请求阵法数据
+
+end
+
+------------------ s2c
+function ShinobiController:handle14413( data )
+end
+-- 个人信息
+function ShinobiController:handle14400( data )
+	if data then
+		-- print("handle14400",vardump(data))
+		self.model:setShinobiMyBaseInfo(data)
+		self.model:checkShinobiPrompt()
+		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_MyBaseInfo_Event)
+	end
+end
+
+-- 挑战角色列表数据
+function ShinobiController:handle14401(data)
+	if data then
+		-- print("handle14401",vardump(data))
+		if data.f_list and next(data.f_list)~=nil then
+            for i,v in ipairs(data.f_list) do
+                if v.is_challenged>0 then
+				   local t=v.stars>0 and 100000 or 1000
+                   v.force=v.power*t
+				else
+					v.force=v.power
+				end
+			end
+			table.sort(data.f_list, function(a, b) return a.force < b.force end)
+			if data.type == 0 then -- 全部更新
+				self.model:setChallengeRoleData(data.f_list)
+			elseif data.type == 1 then -- 部分更新
+				self.model:updateChallengeRoleData(data.f_list)
+			end
+		else
+			self.model:setChallengeRoleData({})
+		end
+		self.model:checkShinobiPrompt1()
+		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_Challenge_Role_Event)
+	end
+end
+
+-- 挑战角色的信息
+function ShinobiController:handle14402( data )
+	if data then
+		if data and self.Shinobi_Atk_wnd then
+			self.Shinobi_Atk_wnd:setData(data)
+		end
+	end
+end
+
+-- 查看对方英雄信息(成功返回11061)
+function ShinobiController:handle14403( data )
+	if data then
+		message(data.msg)
+	end
+end
+
+-- 挑战玩家
+function ShinobiController:handle14406( data )
+	if data then
+		message(data.msg)
+	end
+end
+
+-- -- 挑战次数奖励信息
+-- function ShinobiController:handle14407( data )
+-- 	if data then
+-- 		self.model:setChallengeAwardData(data)
+-- 		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_Challenge_Award_Event)
+-- 	end
+-- end
+
+-- 战斗结算
+function ShinobiController:handle14407( data )
+	if data then
+		BattleController:getInstance():openFinishView(true, BattleConst.Fight_Type.Shinobi, data)
+	end
+end
+
+-- 每日排行榜数据
+function ShinobiController:handle14408( data )
+	if data then	
+		if data.rank_list_daily and next(data.rank_list_daily)~=nil then
+           table.sort(data.rank_list_daily,function (a,b)
+			  return a.rank<b.rank
+		   end)
+		end
+		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_Rank_Data_Event, data)
+	end
+end
+
+-- 赛区排行榜数据
+function ShinobiController:handle14409( data )
+	if data then
+		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_ZoneRank_Data_Event,data)
+	end
+end
+
+-- 日志记录
+function ShinobiController:handle14410( data )
+	if data then
+		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_MyLogData_Event,data)
+	end
+end
+
+-- 大神风采
+function ShinobiController:handle14411( data )
+	if data then
+		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_GodLogData_Event,data)
+	end
+end
+
+-- 推送红点
+function ShinobiController:handle14412( data )
+	if data and data.red_point_list then
+		for i,v in pairs(data.red_point_list) do
+			self.model:updateShinobiRedStatus(v.type,v.code== 1)
+	    end
+	end
+end
+
+-- 设置阵法
+function ShinobiController:handle14432( data )
+	if data then
+		if data.code == 1 then
+			if self.isTips == 0 then
+				message(TI18N("语言_s_132"))
+			end
+		else
+			if self.isTips == 0 then
+				message(data.msg)
+			end
+			GlobalEvent:getInstance():Fire(HeroEvent.Hero_no_Sacrifice_bttom_Event,data.msg,PartnerConst.Fun_Form.ShinobiDef)
+			HeroController:getInstance():getModel():NextBattle(14432)
+		end
+		self.isTips = 0
+		if data.code == 1 then -- 设置阵法成功，则通知布阵界面进入战斗
+			-- GlobalEvent:getInstance():Fire(ShinobiEvent.Save_Shinobi_Form_Event, data)
+			if self._temp_formation then
+				local model = HeroController:getInstance():getModel()
+				local temp=self._temp_formation
+				temp.type = PartnerConst.Fun_Form.ShinobiDef
+				model:setFormList(temp)
+				self._temp_formation = nil
+			end
+			HeroController:getInstance():getModel():NextBattle(14432)
+		end
+	end
+end
+
+-- 阵法数据
+function ShinobiController:handle14433( data )
+	if data.type == 2 then
+	    local model = HeroController:getInstance():getModel()
+		data.type=PartnerConst.Fun_Form.ShinobiDef
+		model:setFormList(data)
+    end 
+	GlobalEvent:getInstance():Fire(ShinobiEvent.Update_Form_Data_Event, data) 
+end
+
+-- 挑战记录
+function ShinobiController:handle14416( data )
+	if data then
+		GlobalEvent:getInstance():Fire(ShinobiEvent.Update_Video_Data_Event, data)
+	end
+end
+
+-- 挑战记录详情
+function ShinobiController:handle14417( data )
+	if data then
+		GlobalEvent:getInstance():Fire(ElitematchEvent.Elite_Challenge_Record_Info_Event, data)
+	end
+end
+
+---------------@ 界面相关
+-- 打开忍界联赛主界面
+function ShinobiController:openShinobiMainWindow( status )
+	if status == true then
+		-- 功能是否开启
+		if not self.model:getShinobiIsOpen() then
+			return
+		end
+		if not self.Shinobi_main_wnd then
+			self.Shinobi_main_wnd = ShinobiMainWindow.New()
+		end
+		if self.Shinobi_main_wnd:isOpen() == false then
+			self.Shinobi_main_wnd:open()
+		end
+	else
+		if self.Shinobi_main_wnd then
+			self.Shinobi_main_wnd:close()
+			self.Shinobi_main_wnd = nil
+		end
+	end
+end
+
+function ShinobiController:getShinobiMainRoot(  )
+	if self.Shinobi_main_wnd then
+		return self.Shinobi_main_wnd.root_wnd
+	end
+end
+
+-- 打开段位界面
+function ShinobiController:openShinobiLevelPanel( status,group)
+	if status == true then
+		if not self.Shinobi_level_wnd then
+			self.Shinobi_level_wnd = ShinobiLevelPanel.New()
+		end
+		if self.Shinobi_level_wnd:isOpen() == false then
+			self.Shinobi_level_wnd:open(group)
+		end
+	else
+		if self.Shinobi_level_wnd then
+			self.Shinobi_level_wnd:close()
+			self.Shinobi_level_wnd = nil
+		end
+	end
+end
+
+-- 打开排行榜界面
+function ShinobiController:openShinobiRankWindow( status )
+	if status == true then
+		if not self.Shinobi_rank_wnd then
+			self.Shinobi_rank_wnd = ShinobiRankWindow.New()
+		end
+		if self.Shinobi_rank_wnd:isOpen() == false then
+			self.Shinobi_rank_wnd:open()
+		end
+	else
+		if self.Shinobi_rank_wnd then
+			self.Shinobi_rank_wnd:close()
+			self.Shinobi_rank_wnd = nil
+		end
+	end
+end
+
+-- 打开挑战玩家信息界面
+function ShinobiController:openShinobiAtkWindow( status,data)
+	if status == true then
+		if not self.Shinobi_Atk_wnd then
+			self.Shinobi_Atk_wnd = ShinobiAttkPositionWindow.New()
+		end
+		if self.Shinobi_Atk_wnd:isOpen() == false then
+			self.Shinobi_Atk_wnd:open(data)
+		end
+	else
+		if self.Shinobi_Atk_wnd then
+			self.Shinobi_Atk_wnd:close()
+			self.Shinobi_Atk_wnd = nil
+		end
+	end
+end
+
+-- 打开奖励预览界面
+function ShinobiController:openShinobiAwardWindow( status )
+	if status == true then
+		if not self.Shinobi_award_wnd then
+			self.Shinobi_award_wnd = ShinobiAwardPanel.New()
+		end
+		if self.Shinobi_award_wnd:isOpen() == false then
+			self.Shinobi_award_wnd:open()
+		end
+	else
+		if self.Shinobi_award_wnd then
+			self.Shinobi_award_wnd:close()
+			self.Shinobi_award_wnd = nil
+		end
+	end
+end
+
+-- 打开声望商店界面
+function ShinobiController:openShinobiShopWindow( status )
+	if status == true then
+		if not self.Shinobi_shop_wnd then
+			self.Shinobi_shop_wnd= ShinobiShopWindow.New()
+		end
+		if self.Shinobi_shop_wnd:isOpen() == false then
+			self.Shinobi_shop_wnd:open()
+		end
+	else
+		if self.Shinobi_shop_wnd then
+			self.Shinobi_shop_wnd:close()
+			self.Shinobi_shop_wnd = nil
+		end
+	end
+end
+
+-- 天梯战报
+function ShinobiController:openShinoPreviewWindow( status )
+	if status then
+		if self.Shinobi_preview_window == nil then
+			self.Shinobi_preview_window = ShinobiPreviewWindow.New()
+		end
+		self.Shinobi_preview_window:open()
+	else
+		if self.Shinobi_preview_window then
+			self.Shinobi_preview_window:close()
+			self.Shinobi_preview_window = nil
+		end
+	end
+end
+
+-- 天梯结算界面
+function ShinobiController:openShinobiBattleResultWindow( status, data )
+	if status then
+		if self.shinobi_result_window == nil then
+			self.shinobi_result_window = ShinobiBattleResultWindow.New()
+		end
+		self.shinobi_result_window:open(data)
+	else
+		if self.shinobi_result_window then
+			self.shinobi_result_window:close()
+			self.shinobi_result_window = nil
+		end
+	end
+end
+
+-- 天梯战报
+function ShinobiController:openShinobiLogWindow( status )
+	if status then
+		if self.Shinobi_log_window == nil then
+			self.Shinobi_log_window = ShinobiLogWindow.New()
+		end
+		self.Shinobi_log_window:open()
+	else
+		if self.Shinobi_log_window then
+			self.Shinobi_log_window:close()
+			self.Shinobi_log_window = nil
+		end
+	end
+end
+
+-- 挑战记录界面
+function ShinobiController:openShinobiVideoWindow( status )
+	if status == true then
+		if not self.Shinobi_video_wnd then
+			self.Shinobi_video_wnd = CrossareanVideoWindow.New()
+		end
+		if self.Shinobi_video_wnd:isOpen() == false then
+			self.Shinobi_video_wnd:open()
+		end
+	else
+		if self.Shinobi_video_wnd then
+			self.Shinobi_video_wnd:close()
+			self.Shinobi_video_wnd = nil
+		end
+	end
+end
+
+
+function ShinobiController:__delete()
+    if self.model ~= nil then
+        self.model:DeleteMe()
+        self.model = nil
+    end
+end

@@ -1,0 +1,289 @@
+
+-- --------------------------------------------------------------------
+MazeExchangeTips = MazeExchangeTips or BaseClass(BaseView)
+
+local partner_data = Config.PartnerData.data_get_compound_info
+function MazeExchangeTips:__init()
+    self.ctrl = MazeController:getInstance()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "maze/maze_exchange_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("maze","maze"), type = ResourcesType.plist },
+    }
+
+    self.win_type = WinType.Tips   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.cur_number = 0
+    self.init_number = 0 --初始化是最大合成的个数
+end
+local imput_number = 500 --输入最大数量
+function MazeExchangeTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    local main_panel = self.root_wnd:getChildByName("main_panel")
+    local desc_group = main_panel:getChildByName("desc_group")
+    self.image_title = main_panel:getChildByName("image_title")
+    self.text_name = main_panel:getChildByName("text_name")
+    -- self.text_desc = main_panel:getChildByName("text_desc")
+    self.text_name:setString(TI18N("语言_c_6842"))
+    autoSizeTitleBg(self.text_name,self.image_title,nil,300)
+    self.text_desc = createRichLabel(24, cc.c4b(0x7c, 0x55, 0x36, 0xff), cc.p(0.5, 1), cc.p(300, 80), 0, nil, 580)
+    self.text_desc:setString("")
+    desc_group:addChild(self.text_desc)
+
+    self.comp_group = main_panel:getChildByName("comp_group")
+    self.btn_redu = self.comp_group:getChildByName("btn_redu")
+    self.btn_add = self.comp_group:getChildByName("btn_add")
+    self.max_btn = self.comp_group:getChildByName("max_btn")                                 -- 最大值
+    self.comp_num_text = self.comp_group:getChildByName("comp_num")
+    self.comp_num_text:setString("")
+
+    self.btn_comp = main_panel:getChildByName("btn_comp")
+    self.btn_comp_label = self.btn_comp:getChildByName("Text_1")
+    self.btn_comp_label:setString(TI18N("语言_c_6842"))
+    self.btn_comp_label:enableOutline(Config.ColorData.data_color4[264], 2)
+
+    main_panel:getChildByName("Text_2"):setString(TI18N("语言_c_1746"))
+    --合成数字
+    local comp_node = self.comp_group:getChildByName("comp_node")
+    self.comp_number_edit = createEditBox(comp_node, PathTool.getResFrame("common", "common_1021"), cc.size(194, 41), cc.c4b(0x00,0x00,0x00,0xff), 26, cc.c4b(0x00,0x00,0x00,0xff), 26, "", nil, 6, LOADTEXT_TYPE_PLIST)
+    self.comp_number_edit:setInputMode(cc.EDITBOX_INPUT_MODE_NUMERIC)
+
+    self.item_icon = main_panel:getChildByName("item_icon")
+    self.item_num = main_panel:getChildByName("item_num")
+    self.icon_btn = main_panel:getChildByName("icon_btn")
+    self.close_btn = main_panel:getChildByName("close_btn")
+
+    local function onEditCompNumberEvent(event,sender)
+        if not tolua.isnull(self.comp_num_text) then
+            if event == "ended" then
+                local str = sender:getText()
+                sender:setText("")
+                self.comp_num_text:setVisible(true)
+                if str ~= "" then
+                    local num = tonumber(str)
+                    if num == nil then 
+                        num = 0
+                    end
+                    if num <= 0 then
+                        num = 1
+                        self:setTouchEnable_Add(false)
+                        self:setTouchEnable_Redu(true)
+                    elseif num >= self.init_number then
+                        self:setTouchEnable_Add(true)
+                        self:setTouchEnable_Redu(false)
+                    else
+                        self:setTouchEnable_Add(false)
+                        self:setTouchEnable_Redu(false)
+                    end
+                    if num >= imput_number then
+                        num = imput_number
+                    end
+                    self.comp_num_text:setString(num)
+                    self.cur_number = num
+                else
+                    message(TI18N("语言_c_6843"))
+                    self.comp_num_text:setString("")
+                    self.cur_number = nil
+                    return
+                end
+            elseif event == "began" then
+                self.comp_num_text:setVisible(false)
+            elseif event == "changed" then
+            end
+        end
+    end
+    self.comp_number_edit:registerScriptEditBoxHandler(onEditCompNumberEvent)
+
+    self.goods_item =  BackPackItem.new(true,true,nil,1,false)
+    self.goods_item:setPosition(cc.p(main_panel:getContentSize().width/2,250))
+    main_panel:addChild(self.goods_item)
+end
+
+function MazeExchangeTips:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        self:close()
+        MazeController:getInstance():openMazeExchangeTips(false)
+    end,false, 2)
+    registerButtonEventListener(self.background, function()
+        self:close()
+        MazeController:getInstance():openMazeExchangeTips(false)
+    end,false, 2)
+
+    registerButtonEventListener(self.btn_redu, function()
+        if self.cur_number then
+            self:touch_redu()
+        end
+    end,true, 1)
+
+    registerButtonEventListener(self.btn_add, function()
+        if self.cur_number then
+            self:touch_add()
+        end
+    end,true, 1)
+
+    self.max_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            if self.cur_number then
+                self:touch_max()
+            end
+        end
+    end)
+
+    registerButtonEventListener(self.btn_comp, function()
+        if not self.cur_number then
+            return
+        end
+        if self.item_config then
+            local item_data = BackpackController:getModel():getBackPackItemNumByBid(self.item_config.id)
+            if item_data <= 0 then
+                self:close()
+                local config = Config.MazeData.data_const["challenge_tickets"]
+                if config then
+                    local needid = config.val[1]
+                    local data = Config.ItemData.data_get_data(needid)
+                    BackpackController:getInstance():openTipsSource( true, data )
+                end
+                -- local config = Config.SourceData.data_source_data[750]
+                -- if config then
+                --     self:close()
+                --     BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+                -- end
+            else
+                if self.cur_number < 1 then
+                    message(TI18N("语言_c_6844").."1")
+                    return
+                end
+                if self.cur_number > self.init_number then
+                    message(TI18N("语言_c_6845"))
+                    return
+                end
+                --请求兑换
+                MazeController:getInstance():sender30316(self.cur_number)
+                self:close()
+                -- BackpackController:getInstance():sender11008(self.item_config.id, self.cur_number)
+            end
+        end
+    end,true, 1)
+
+    registerButtonEventListener(self.icon_btn, function()
+        --跳转
+        self:close()
+        local config = Config.MazeData.data_const["challenge_tickets"]
+        if config then
+            local needid = config.val[1]
+            local data = Config.ItemData.data_get_data(needid)
+            BackpackController:getInstance():openTipsSource( true, data )
+        end
+        -- local config = Config.SourceData.data_source_data[750]
+        -- if config then
+        --     self:close()
+        --     BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+        -- end
+    end,true, 1)
+end
+function MazeExchangeTips:touch_redu()
+    self.cur_number = self.cur_number - 1
+    if self.cur_number < self.init_number then
+        self:setTouchEnable_Add(false)
+        self:setTouchEnable_Redu(false)
+    end
+    if self.cur_number <= 0 then
+        self:setTouchEnable_Add(false)
+        self:setTouchEnable_Redu(true)
+    end
+    self.comp_num_text:setString(self.cur_number)
+end
+
+function MazeExchangeTips:touch_add()
+    self.cur_number = self.cur_number + 1
+    if self.cur_number >= 1 then
+        self:setTouchEnable_Add(false)
+        self:setTouchEnable_Redu(false)
+    end
+    if self.cur_number >= self.init_number then
+        self:setTouchEnable_Add(true)
+        self:setTouchEnable_Redu(false)
+    end
+    self.comp_num_text:setString(self.cur_number)
+end
+function MazeExchangeTips:touch_max()
+    if self.init_number and self.init_number > 0 then
+        self.cur_number = self.init_number
+    else
+        self.init_number = 0
+        self.cur_number = self.init_number
+    end
+    if self.cur_number > 1 then
+        self:setTouchEnable_Add(false)
+        self:setTouchEnable_Redu(false)
+    end
+
+    if self.init_number == 0 then
+        self:setTouchEnable_Add(true)
+        self:setTouchEnable_Redu(true)
+    elseif self.cur_number >= self.init_number then
+        self:setTouchEnable_Add(true)
+        self:setTouchEnable_Redu(false)
+    end
+    self.comp_num_text:setString(self.cur_number)
+end
+
+function MazeExchangeTips:setTouchEnable_Add(bool)
+    setChildUnEnabled(bool,self.btn_add)
+    self.btn_add:setTouchEnabled(not bool)
+end
+function MazeExchangeTips:setTouchEnable_Redu(bool)
+    setChildUnEnabled(bool,self.btn_redu)
+    self.btn_redu:setTouchEnabled(not bool)
+end
+
+function MazeExchangeTips:openRootWnd(item_bid)
+    if not item_bid then return end
+    local config = Config.ItemData.data_get_data(item_bid)
+    self.item_config = config
+    self:setBaseInfo()
+end
+
+function MazeExchangeTips:setBaseInfo()
+    if self.item_config == nil then return end
+    self.goods_item:setBaseData(self.item_config.id)
+    self.item_icon:loadTexture(PathTool.getItemRes(self.item_config.icon), LOADTEXT_TYPE)
+    local item_data = BackpackController:getModel():getBackPackItemNumByBid(self.item_config.id)
+    local _str = string.format(TI18N("语言_maze_01_5"),PathTool.getItemRes(self.item_config.icon))
+	self.text_desc:setString(_str)
+    self.item_num:setString(item_data)
+    local comp_num = 1
+    if item_data == 0 then
+        comp_num = 0
+    end
+    self.cur_number = comp_num
+    if  math.floor(item_data/comp_num) >= 0 then
+        self.init_number = math.floor(item_data/comp_num)
+    else
+        self.init_number = 0
+    end
+    self.comp_num_text:setString(comp_num)
+    if self.cur_number <= 0 then
+        self:setTouchEnable_Redu(true)
+    end
+    if self.init_number == 0 then
+        self:setTouchEnable_Add(true)
+        self:setTouchEnable_Redu(true)
+    elseif self.cur_number >= self.init_number then
+        self:setTouchEnable_Add(true)
+    end
+    -- self:setTouchEnable_Add(true)
+    -- self:setTouchEnable_Redu(true)
+end
+
+function MazeExchangeTips:close_callback()
+    if self.goods_item then 
+        self.goods_item:DeleteMe()
+    end
+    self.goods_item = nil
+    MazeController:getInstance():openMazeExchangeTips(false)
+end

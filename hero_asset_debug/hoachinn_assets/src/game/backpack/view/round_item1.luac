@@ -1,0 +1,214 @@
+-- -------------------
+--  物品（圆形的）
+-- -------------------
+RoundItem1 = class("RoundItem1", function() 
+	return ccui.Layout:create()
+end)
+
+RoundItem1.Width = 58
+RoundItem1.Height = 58
+
+--==============================--
+--desc:创建物品对象
+-- click:是否可点击
+-- scale: 框
+-- scale1:里面的物品
+--==============================--
+function RoundItem1:ctor(click,scale, scale1)
+	self.click = click
+	self.scale = scale or 1
+	self.scale1 = scale1 or 1
+	
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("backpack/round_item"))
+    self.size = cc.size(RoundItem1.Width, RoundItem1.Height)--self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+	self:setTouchEnabled(true)
+	self:setCascadeOpacityEnabled(true)
+	if self.scale ~= 1 then
+		self:setScale(self.scale)
+	end
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+  	self.background = self.main_container:getChildByName("background")
+  	self.round_bg = self.background:getChildByName("round_bg")
+  	
+  	self.item_icon = self.main_container:getChildByName("icon")
+  	self.item_icon:setScale(self.scale1)
+  	self.num_label = self.main_container:getChildByName("num")
+  	self.num_label:setString("")
+  	self.num_bg = self.main_container:getChildByName("num_bg")
+	self.num_bg_size = self.num_bg:getContentSize()
+
+	self.redpoint = self.main_container:getChildByName("redpoint")
+	self.redpoint:setVisible(false)
+
+	self.round_res_id = PathTool.getRoundQualityBg(1)
+
+	self:registerEvent()
+end
+
+--红点
+function RoundItem1:setVisibleRedPoint(visible)
+	visible = visible or false
+	if self.redpoint then
+		self.redpoint:setVisible(visible)
+	end
+end
+--物品
+function RoundItem1:setVisibleIcon(visible)
+	visible = visible or false
+	if self.item_icon then
+		self.item_icon:setVisible(visible)
+	end
+end
+--物品框颜色
+function RoundItem1:setSelfBackground(quality)
+	quality = quality or 1
+	local res_id = PathTool.getRoundQualityBg(quality)
+	if self.round_res_id ~= res_id then
+		self.round_res_id = res_id
+		self.background:loadTexture(self.round_res_id, LOADTEXT_TYPE_PLIST)
+	end
+end
+--光圈
+function RoundItem1:setVisibleRoundBG(visible)
+	visible = visible or false
+	if self.round_bg then
+		self.round_bg:setVisible(visible)
+	end
+end
+
+function RoundItem1:getData()
+	return self.data
+end
+--desc:点击回调
+--time:2017-07-03 08:02:23
+--@callback:
+--@return 
+--==============================--
+function RoundItem1:addCallBack(callback)
+	self.callback = callback
+end
+
+function RoundItem1:registerEvent()
+	if self.click == true then
+		self:addTouchEventListener(function(sender, event_type) 
+			if self.effect == true then
+				customClickAction_2(self.main_container, event_type)
+			end
+			if event_type == ccui.TouchEventType.ended then
+				self.touch_end = sender:getTouchEndPosition()
+				local is_click = true
+				if self.touch_began ~= nil then
+					is_click =
+						math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+						math.abs(self.touch_end.y - self.touch_began.y) <= 20
+				end
+				if is_click == true then
+					playButtonSound2()
+					if self.btn_call_fun then
+						self:btn_call_fun()
+					else
+						if self.is_show_tips and self.data ~= nil then
+							local list = {bid=self.data.id,num=self.item_num}
+							local show_list = {list}
+							if self.list_data and next(self.list_data) then
+								show_list = self.list_data
+							end
+							local _x,_y = sender:getPosition()
+							local world_pos = self:convertToWorldSpace(cc.p(0,0))
+							local top_y = display.getTop()
+							local bottom_y = display.getBottom()
+							local add_height = top_y - bottom_y - SCREEN_HEIGHT
+							EsecsiceController:getInstance():openEserciseShowRewardWindowCopy(true,show_list,world_pos,80-add_height/2+(self.offset_y or 0),80)
+							return
+						end
+						if self.callback then
+							self:callback()
+						end
+					end
+					
+				end
+			elseif event_type == ccui.TouchEventType.moved then
+			elseif event_type == ccui.TouchEventType.began then
+				self.touch_began = sender:getTouchBeganPosition()
+			elseif event_type == ccui.TouchEventType.canceled then
+			end
+		end)
+	end
+
+end	
+
+--desc:显示tips的开关
+--time:2018-07-02 01:54:41
+--@is_show_source:是否显示来源
+--@return 
+--==============================--
+function RoundItem1:setDefaultTip(is_show_tips)
+	if is_show_tips == nil then
+		is_show_tips = true
+	end
+	self.is_show_tips = is_show_tips
+end
+
+--物品数据
+function RoundItem1:setBaseData(bid,num,scal,index,list_data)
+	if scal == false then
+		local config = Config.ItemData.data_get_data(bid)
+		if config == nil then return end
+		self.data = config
+		self.item_num = num
+		self.list_data = list_data
+		self.main_container:setVisible(false)
+		local res = PathTool.getResFrame("elfin","elfin_101"..index)
+		if index > 2 then
+			res = PathTool.getResFrame("elfin","elfin_101"..2)
+		end
+		local bg = createSprite(res, 65,65, self.root_wnd, cc.p(0.5,0.5), LOADTEXT_TYPE_PLIST)
+		self.extral_bg = bg
+		self:setScale(1)
+	end
+end
+function RoundItem1:setBackgroundImg(index)
+	if index > 5 then
+		index = 5
+	end
+	local res = PathTool.getResFrame("holiday_og_sports","holiday_og_sports_icon_"..index)
+	if self.extral_bg then
+		loadSpriteTexture(self.extral_bg, res, LOADTEXT_TYPE_PLIST)
+	end
+end
+function RoundItem1:setOffsetPos(x,y)
+	self.offset_x = x or 0
+	self.offset_y = y or 0
+end
+
+function RoundItem1:setSelfNum(num)
+	num = num or 0
+	self.num_label:setVisible(num >1)
+	self.num_bg:setVisible(num > 1)
+	if num > 1 then
+		self.num_label:setString(num)
+		self:updateNumBGSize()
+	end
+end
+
+function RoundItem1:updateNumBGSize()
+	local size = self.num_label:getContentSize()
+	local width = size.width
+	if width < 50 then
+		width = 50
+	end
+	self.num_bg:setContentSize(cc.size(width+6, self.num_bg_size.height))
+end
+
+
+function RoundItem1:DeleteMe()
+	self:removeAllChildren()
+    self:removeFromParent()
+end

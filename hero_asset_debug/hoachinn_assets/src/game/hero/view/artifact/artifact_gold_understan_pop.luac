@@ -1,0 +1,415 @@
+-- --------------------------------------------------------------------
+-- 技能领悟
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ArtifactGoldUnderstanPop = ArtifactGoldUnderstanPop or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function ArtifactGoldUnderstanPop:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/artifact_gold_understan_pop"
+    self.res_list = {
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.dic_cur_select_list = {}
+    self.hero_list = {}
+end
+
+function ArtifactGoldUnderstanPop:open_callback()
+	self._ui = self:getExportUI()
+    local ui = self._ui
+    ui._background:setScale(display.getMaxScale())
+    ui._show_bg:setScale(display.getMaxScale())
+    self:playEnterAnimatianByObj(ui._main_panel , 2)
+    ui._title:setString(TI18N("语言_c_7560"))
+    autoSizeTitleBg(ui._title,ui._imgTitleBg,120,322)
+    ui._resetTxt:setString(TI18N("语言_c_5330"))
+    setTextMaxWidth(ui._resetTxt,100,-8)
+    ui._understanTxt:setString(TI18N("语言_c_4386"))
+    
+    ui._skill_scroll:setScrollBarEnabled(false)
+    ui._tip_scroll:setScrollBarEnabled(false)
+
+    ui._show_panel:setVisible(false)
+end
+function ArtifactGoldUnderstanPop:register_event()
+    local ui = self._ui
+    registerButtonEventListener(ui._close_btn, function() self:onClickCloseBtn() end ,true, 1) 
+    registerButtonEventListener(ui._background, function() self:onClickCloseBtn() end ,false, 0)
+    registerButtonEventListener(ui._resetBtn, function() self:onClickResetBtn() end ,true, 1)
+    registerButtonEventListener(ui._understanBtn, function() self:onClickUnderstanBtn() end ,true, 1)
+    registerButtonEventListener(ui._leftBtn, function() self:onClickChangeBtn(false) end ,true, 1,nil,1.2)
+    registerButtonEventListener(ui._rightBtn, function() self:onClickChangeBtn(true) end ,true, 1,nil,1.2)
+    registerButtonEventListener(ui._show_btn, function() self:_onClickCostHero() end ,true, 1,nil,1.2)
+    registerButtonEventListener(ui._show_bg, function() 
+        ui._show_panel:setVisible(false)
+    end ,false, 1,nil,1.2)
+--     self:addGlobalEvent(HeroEvent.Gold_Artifact_Skill_Study_Event, function() 
+--         controller:openArtifactGoldUnderstanPop(false)
+--         --打开技能升级
+--         controller:openArtifactGoldBreakPop(true,self.skill_list[1].skill_id,self.artifact_id)
+--    end)
+   
+   self:addGlobalEvent(BackpackEvent.ADD_GOODS, function()
+    self:setCostPanel()
+end)
+self:addGlobalEvent(BackpackEvent.MODIFY_GOODS_NUM, function()
+    self:setCostPanel()
+end)
+self:addGlobalEvent(BackpackEvent.DELETE_GOODS, function()
+    self:setCostPanel()
+end)
+end
+
+--关闭
+function ArtifactGoldUnderstanPop:onClickCloseBtn()
+    controller:openArtifactGoldUnderstanPop(false)
+end
+function ArtifactGoldUnderstanPop:onClickResetBtn()
+    message(TI18N("语言_c_7561"))
+end
+function ArtifactGoldUnderstanPop:onClickUnderstanBtn()
+    local list = {}
+    for k,v in pairs(self.dic_cur_select_list) do
+        local _list = {partner_id=v.partner_id}
+        table.insert(list, _list)
+    end
+    if #list >= self.cost_max_num then
+        local cfg = self.group_cfg.cost_item
+        for k, v in pairs(cfg) do
+            local need_id = v[1]
+            local need_num = v[2]
+            local have_num = BackpackController:getInstance():getModel():getItemNumByBid(need_id)
+            if have_num < need_num then
+                BackpackController:getInstance():openTipsSource(true, need_id)
+                return
+            end
+        end
+        controller:sender11480(self.group_id,list)
+    else
+        self:_onClickAddHero()
+    end
+end
+--切换技能等级
+function ArtifactGoldUnderstanPop:onClickChangeBtn(status)
+    if status then
+        self.skill_lev = self.skill_lev + 1
+    else
+        self.skill_lev = self.skill_lev - 1
+    end
+    if self.skill_lev > #self.skill_list then
+        self.skill_lev = 1
+    elseif self.skill_lev < 1 then
+        self.skill_lev = #self.skill_list
+    end
+    self:setTopPanel()
+end
+
+
+function ArtifactGoldUnderstanPop:openRootWnd(group_id,artifact_id)
+	if not group_id then return end
+	self.group_id = group_id
+    self.artifact_id = artifact_id
+    self.group_cfg = Config.PartnerArtifactGoldenData.data_group[self.group_id]
+    self.skill_list = Config.PartnerArtifactGoldenData.data_skill_2[self.group_id]
+    self.skill_lev = 1
+    self:setTopPanel()
+    self:setBotPanel()
+    self:setCostPanel()
+end
+function ArtifactGoldUnderstanPop:setTopPanel()
+    local ui = self._ui
+    self.now_skill_cfg = self.skill_list[self.skill_lev]
+    self.skill_cfg = Config.SkillData.data_get_skill(self.now_skill_cfg.skill_id)
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true, true, true, 1, true)
+        ui._skill_node:addChild(self.skill_item)
+    end
+    self.skill_item:setData(self.skill_cfg)
+    ui._skill_name:setString(self.skill_cfg.name)
+    autoSizeTitleBg(ui._skill_name,ui._skill_name_bg,76,175)
+    local res = PathTool.getPlistImgForDownLoad("hero", "txt_cn_level_"..self.now_skill_cfg.skill_lv)
+    loadSpriteTexture(ui._skill_lev, res, LOADTEXT_TYPE)
+    ui._leftBtn:setVisible(#self.skill_list > 1)
+    ui._rightBtn:setVisible(#self.skill_list > 1)
+    if not self.power_txt then
+        self.power_txt = createRichLabel(22,cc.c3b(0xff,0xff,0xff),cc.p(0,0.5),cc.p(10,338),nil,nil)
+        ui._top_panel:addChild(self.power_txt)
+    end
+    local energy_cfg = Config.PartnerSkillDataEnergy.data_skill_energy_level[self.now_skill_cfg.skill_id]
+    if energy_cfg then
+        self.power_txt:setString(string.format(TI18N("语言_c_7543"),energy_cfg.energy))
+    end
+    autoSizeTitleBg(self.power_txt,ui._power_bg,30,233)
+    if not self.skill_des then
+        self.skill_des = createRichLabel(20,cc.c3b(0x6d,0x3c,0x2d),cc.p(0,1),cc.p(0,0),nil,nil,560)
+        ui._skill_scroll:addChild(self.skill_des)
+    end
+    local txt = "<div><img src=\'%s\' /> <div>%s</div></div>"
+    local buff_desc_str = ""
+    if self.skill_cfg.buff_des ~= nil and self.skill_cfg.buff_des[1] and next(self.skill_cfg.buff_des[1]) then
+        buff_desc_str = string.format("\n<img src=\'%s\' scale=1.2 />",PathTool.getResFrame("common", "common_1_303",false,"common"))
+        local buff_config = Config.SkillData.data_get_buff 
+        for i, v in ipairs(self.skill_cfg.buff_des[1]) do
+            local config = buff_config[v]
+            if config then
+                -- if buff_desc_str ~= "" then
+                    buff_desc_str = buff_desc_str.."<div fontcolor=#7c5536>\n</div>"
+                -- end
+                local buff_desc = string_format("<div fontcolor=#7c5536>【%s】</div><div fontcolor=#7c5536>\n%s</div>", config.name, config.desc)
+                buff_desc_str = buff_desc_str..buff_desc
+            end
+        end
+    end
+    self.skill_des:setString(string.format(txt,res,self.skill_cfg.des)..buff_desc_str)
+    local _h = math.max(self.skill_des:getContentSize().height,ui._skill_scroll:getContentSize().height)
+    ui._skill_scroll:setInnerContainerSize(cc.size(self.skill_des:getContentSize().width,_h))
+    self.skill_des:setPositionY(_h)
+end
+function ArtifactGoldUnderstanPop:setBotPanel()
+    local ui = self._ui
+    if not self.reset_tip then
+        self.reset_tip = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(0,1),cc.p(0,0),nil,nil,590)
+        ui._tip_scroll:addChild(self.reset_tip)
+    end
+    self.reset_tip:setString(TI18N("语言_c_7562"))
+    local max_scroll_h = 90
+    local tip_h = self.reset_tip:getContentSize().height
+    if tip_h <= max_scroll_h then
+        ui._tip_scroll:setContentSize(cc.size(ui._tip_scroll:getContentSize().width,tip_h))
+    else
+        ui._tip_scroll:setContentSize(cc.size(ui._tip_scroll:getContentSize().width,max_scroll_h))
+    end
+    local _h = math.max(tip_h,ui._tip_scroll:getContentSize().height)
+    ui._tip_scroll:setInnerContainerSize(cc.size(self.reset_tip:getContentSize().width,_h))
+    self.reset_tip:setPositionY(_h)
+    ui._bot_line:setPositionY(ui._tip_scroll:getPositionY() - ui._tip_scroll:getContentSize().height - 4)
+    local hero_scroll_h = ui._bot_line:getPositionY() - ui._hero_scroll:getPositionY() - 6
+    ui._hero_scroll:setContentSize(cc.size(ui._hero_scroll:getContentSize().width,hero_scroll_h))
+    if not self.cost_name then
+        self.cost_name = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(0.5,0.5),cc.p(0,0),-8,nil,590)
+        ui._hero_name_node:addChild(self.cost_name)
+    end
+    self:updateCostHeroTxt()
+    local list = self.group_cfg.cost_partner
+    if list and next(list) then
+        self.cost_hero_id = list[1][1]
+        self.cost_hero_star = list[1][2]
+        self.cost_max_num = list[1][3]
+        self.hero_list = model:getHeroInfoByBidStar(self.cost_hero_id,self.cost_hero_star) or {}
+
+        if self.list_view == nil then
+            if tolua.isnull(ui._hero_scroll) then return end
+            local list_setting = {
+                start_x = 0,
+                space_x = 0,
+                start_y = 5,
+                space_y = 0,
+                item_width = 120,
+                item_height = 140,
+                row = 0,
+                col = 5,
+                need_dynamic = true
+            }
+            local size = ui._hero_scroll:getContentSize()
+            self.list_view = CommonScrollViewSingleLayout.new(ui._hero_scroll, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, list_setting, cc.p(0, 0)) 
+    
+            self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+            self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+            self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        end
+        self.list_view:reloadData()
+    end
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ArtifactGoldUnderstanPop:createNewCell(width, height)
+    local cell = HeroExhibitionItem.new(0.9, true)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    cell:setLongTimeTouchEffect(true)
+    return cell
+end
+--获取数据数量
+function ArtifactGoldUnderstanPop:numberOfCells()
+    return #self.hero_list + 1
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function ArtifactGoldUnderstanPop:updateCellByIndex(cell, index)
+    cell.index = index
+    local x, y = cell:getPosition()
+    cell:setPosition(x, y + 10)
+    local hero_vo = self.hero_list[index]
+    if hero_vo then
+        cell:setData(hero_vo)
+        -- cell:setHeroName(true, hero_vo.name)
+        --锁定 或者 在布阵中 要锁定 data.isLock and data:isLock() o
+        local is_lock = hero_vo:isLock() or (hero_vo.isInForm and hero_vo:isInForm())
+        cell:showLockIcon(is_lock)
+        --设置选中状态 
+        if self.dic_cur_select_list[hero_vo.id] and (hero_vo.is_hero_hun or (hero_vo.isInForm and not hero_vo:isInForm() and not hero_vo:isLock())) then
+            cell:setSelected(true)
+        else
+            cell:setSelected(false)
+        end
+        cell:showAddIcon(false)
+    else
+        cell:setData(nil) 
+        --空表示最后的加号
+        cell:showAddIcon(true)
+        cell:setHeroName(false)
+        cell:setSelected(false)
+        cell:showLockIcon(false)
+    end
+
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function ArtifactGoldUnderstanPop:onCellTouched(cell)
+    local index = cell.index
+    local hero_vo = self.hero_list[index]
+    if hero_vo then
+        self:selectHero(cell, hero_vo)
+    else
+        self:_onClickAddHero()
+    end
+end
+function ArtifactGoldUnderstanPop:_onClickAddHero()
+    local partner_config = Config.PartnerData.data_partner_base[self.cost_hero_id] or {}
+    local item_id = partner_config.item_id
+    if item_id then 
+        local config = Config.ItemData.data_get_data(item_id)
+        if config then
+            BackpackController:getInstance():openTipsOnlySource(true, config)
+        end
+    end
+end
+function ArtifactGoldUnderstanPop:selectHero(cell, hero_vo)
+    if not hero_vo  then return end
+    if not cell then return end
+
+    local is_in_team = nil
+    if hero_vo.isInTeamAction then
+        is_in_team = hero_vo:isInTeamAction()
+    end
+    if tableLen(hero_vo.dic_in_form) ~= 0 or is_in_team then
+        local count = 0
+        for k,v in pairs(self.dic_cur_select_list) do
+            count = count + 1
+        end
+        if count >= self.cost_max_num then
+            message(TI18N("语言_c_3039"))
+            return
+        else
+            model:openherotips(cell,hero_vo)
+            return
+        end
+    end
+    if HeroController:getInstance():getModel():getHeroIsEnable(hero_vo.partner_id) then
+        local str = TI18N("语言_par_ult_20")
+        CommonAlert.show( str, TI18N("语言_c_63"), function()
+            HeroController:getInstance():sender11478(hero_vo.partner_id,0,1)
+        end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+        return
+    end
+    if hero_vo:checkHeroLockTips(true) then
+        return 
+    end
+
+    --打开英雄信息ui
+    if self.dic_cur_select_list[hero_vo.id] then
+        cell:setSelected(false)
+        self.dic_cur_select_list[hero_vo.id] = nil  
+    else
+        local count = 0
+        for k,v in pairs(self.dic_cur_select_list) do
+            count = count + 1
+        end
+        if count >= self.cost_max_num then
+            message(TI18N("语言_c_3039"))
+            return
+        end
+
+        self.dic_cur_select_list[hero_vo.id] = hero_vo
+        cell:setSelected(true)
+    end
+
+    self:updateCostHeroTxt()
+end
+function ArtifactGoldUnderstanPop:updateCostHeroTxt()
+    local list = self.group_cfg.cost_partner
+    if list and next(list) then
+        local cfg = Config.PartnerData.data_partner_base[list[1][1]]
+        local need_num = list[1][3]
+        local have_num = 0
+        if self.dic_cur_select_list and next(self.dic_cur_select_list) then
+            have_num = tableLen(self.dic_cur_select_list)
+        end
+        self.cost_name:setString(LangStringFormat(TI18N("语言_c_7563"),have_num,need_num,cfg.name))
+        self._ui._show_btn:setPositionX(-self.cost_name:getContentSize().width*0.5-30)
+    end
+end
+function ArtifactGoldUnderstanPop:_onClickCostHero()
+    local list = self.group_cfg.cost_partner
+    if list and next(list) then
+        local hero_vo = HeroVo.New()
+        local data = {}
+        data.bid = list[1][1]
+        data.lev = 1
+        data.star = 5
+        hero_vo:updateHeroVo(data)
+        if not self.show_item then
+            self.show_item = HeroExhibitionItem.new(0.9, false)
+            self._ui._show_item_node:addChild(self.show_item)
+        end
+        self.show_item:setData(hero_vo)
+        self._ui._show_panel:setVisible(true)
+    end
+end
+
+function ArtifactGoldUnderstanPop:setCostPanel()
+    local ui = self._ui
+    local cfg = self.group_cfg.cost_item
+    if not self.cost_item_list then
+        self.cost_item_list = {}
+    end
+    if self.cost_item_list and next(self.cost_item_list) then
+        for k, v in pairs(self.cost_item_list) do
+            v:removeFromParent()
+            v=nil
+        end    
+    end
+    local pos_x_list = {
+        [1] = {335},
+        [2] = {201,469},
+        [3] = {133,335,535}
+    }
+    for k, v in pairs(cfg) do
+        local item = ArtifactGoldCostItem.new()
+        ui._cost_panel:addChild(item)
+        item:setPosition(cc.p(pos_x_list[#cfg][k],ui._cost_panel:getContentSize().height*0.5))
+        item:setData(v)
+    end
+end
+function ArtifactGoldUnderstanPop:close_callback()
+    if self.cost_item_list and next(self.cost_item_list) then
+        for k, v in pairs(self.cost_item_list) do
+            v:removeFromParent()
+            v=nil
+        end    
+    end
+    controller:openArtifactGoldUnderstanPop(false)
+end

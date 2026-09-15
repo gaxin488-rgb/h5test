@@ -1,0 +1,693 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 圣夜奇境战令主界面
+-- @DateTime:    2020-2-20
+-- *******************************
+MonopolyWarOrderWindow = MonopolyWarOrderWindow or BaseClass(BaseView)
+
+local controller = MonopolyController:getInstance()
+local model = controller:getModel()
+function MonopolyWarOrderWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Full
+
+    self.layout_name = "monopoly/monopoly_war_order_window"
+    self.res_list = {{
+        path = PathTool.getPlistImgForDownLoad("planesafkorderaction", "planesafkorderaction"),
+        type = ResourcesType.plist
+    }, {
+        path = PathTool.getPlistImgForDownLoad("oncewarorder", "oncewarorder"),
+        type = ResourcesType.plist
+    },{
+        path = PathTool.getPlistImgForDownLoad("monopoly", "monopolyenter"),
+        type = ResourcesType.plist
+    }}
+
+
+    self.reward_list = {}
+end
+
+function MonopolyWarOrderWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    self.icon_img = self.main_container:getChildByName("icon_img")
+    -- 解锁奖励总览
+    self.btn_open_lock = self.main_container:getChildByName("btn_open_lock")
+    self.btn_open_lock_label = self.btn_open_lock:getChildByName("name")
+
+    self.Text_33_0 = self.main_container:getChildByName("Image_15"):getChildByName("Text_33_0")
+
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.btn_close = self.main_container:getChildByName("btn_close")
+    
+    self.Image_1 =self.main_container:getChildByName("Image_1")
+    local medal_title=self.Image_1:getChildByName("medal_title")
+    self.medal_num=self.Image_1:getChildByName("medal_num")
+    medal_title:setString(TI18N("语言_c_5311"))
+    setTextMaxWidth(medal_title,210)
+
+    local tips_bg = self.main_container:getChildByName("Image_7")
+    tips_bg:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    self.Text_33 = self.main_container:getChildByName("Image_4"):getChildByName("Text_33")
+    setTextMaxWidth(self.Text_33, 330)
+    self.goods_item = self.main_container:getChildByName("goods_item")
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.time_txt = self.main_container:getChildByName("time_txt")
+    self.login_bg = createImage(self.main_container, PathTool.getResFrame("planesafkorderaction","planesafkaction_10"), 720, 913, cc.p(1,0.5), true, 10, true)
+    self.login_day = self.main_container:getChildByName("login_day")
+    self.login_day:setZOrder(11) 
+    self.login_day:setVisible(false)
+    self.exp_buy_btn = self.main_container:getChildByName("exp_buy_btn")
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔 k, 
+        item_width = 720, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+        checkovercallback = handler(self, self.updateSlideShowByVertical)
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,
+        ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    ---进度条相关
+    local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+    local setting = {
+        start_x = 8, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 100, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.reward_num_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size2, setting)
+    self.reward_num_item:setClickEnabled(false)
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    -- controller:sender27507(self.comp_id)
+end
+function MonopolyWarOrderWindow:setData()
+    local cfg = Config.MonopolyOrderData.data_constant[self.comp_id]
+    self.btn_open_lock_label:setString(TI18N("语言_c_2680"))
+    self.Text_33_0:setString(cfg.name)
+    self.Text_33:setString(cfg.desc)
+    self:initAwardConfig()
+    self:adaptationScreen()
+    self:updateIconImg() -- 背景
+    self:upDataTips() -- 领奖提示
+end
+function MonopolyWarOrderWindow:upDataTips()
+    -- local nextInfo = model:getNextDramaRewardInfo()
+    -- if nextInfo then
+    --     local max_floor = 0 -- 当前最大的通关数量
+    --     local next_floor -- 下一次奖励需要的关卡
+    --     local drama_data = model:getDramaData()
+    --     if drama_data then
+    --         self.max_dun_id = drama_data.max_dun_id
+    --         local cur_drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(drama_data.max_dun_id)
+    --         if cur_drama_dungeon_info then
+    --             max_floor = cur_drama_dungeon_info.floor or 0 -- 最大通关数
+    --         end
+    --     end
+    -- end
+end
+
+-- 奖励列表
+function MonopolyWarOrderWindow:createTaskCell()
+    local cell = MonopolyWarOrderIten.new()
+    return cell
+end
+
+function MonopolyWarOrderWindow:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function MonopolyWarOrderWindow:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,self.comp_id,self.OrderBid,index)
+end
+
+-- 进度条
+-- 功勋数数列表
+function MonopolyWarOrderWindow:createTaskCell2()
+    local cell = MonopolyRewardItem.new(self.type)
+    return cell
+end
+
+function MonopolyWarOrderWindow:numberOfTaskCells2()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function MonopolyWarOrderWindow:updateTaskCellByIndex2(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,self.OrderBid,self.comp_id,index)
+end
+
+-- 设置适配屏幕
+function MonopolyWarOrderWindow:adaptationScreen()
+end
+
+function MonopolyWarOrderWindow:register_event()
+    if not self.get_monopoly_war_order_data then
+        self.get_monopoly_war_order_data = GlobalEvent:getInstance():Bind(MonopolyEvent.Get_Monopoly_War_Order_Data, function (  )
+            self:setData()
+        end)
+    end
+    registerButtonEventListener(self.btn_open_lock, function()
+        local config = Config.MonopolyOrderData.data_constant[self.comp_id]
+        if config.recharge_id2 == 0 then
+            controller:openMonopolyWarOrderBuyCardWindow(true,self.comp_id)
+        else
+            controller:openMonopolyWarOrderBuyCardWindow2(true,self.comp_id)
+        end
+    end, true, 1)
+
+    -- 关闭按钮
+    registerButtonEventListener(self.btn_close, function()
+        controller:openWarOrderWindow(false)
+    end, true, 2)
+
+    registerButtonEventListener(self.exp_buy_btn, function()
+        controller:openWarOrderBuyexpPanel(true,self.OrderBid,self.comp_id)
+	end, true)
+    -- 帮助说明
+    registerButtonEventListener(self.btn_rule, function(param, sender, event_type)
+        local config = Config.MonopolyOrderData.data_constant[self.comp_id]
+        if config then
+            local config_desc = config.dis
+            TipsManager:getInstance():showCommonTips(config_desc, sender:getTouchBeganPosition(), nil, nil, 500)
+        end
+    end, false, 1)
+end
+
+-- 滑动的时候处理显示
+function MonopolyWarOrderWindow:updateSlideShowByVertical()
+    local container_y = self.reward_goods_item:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+
+function MonopolyWarOrderWindow:updateIconImg()
+    if tolua.isnull(self.icon_img) or tolua.isnull(self.btn_open_lock) then
+        return
+    end
+    local cfg = Config.MonopolyOrderData.data_constant[self.comp_id]
+    loadSpriteTexture(self.icon_img, PathTool.getResFrame("monopolyenter", cfg.icon), LOADTEXT_TYPE_PLIST)
+    local status = model:getOrderStatus()
+    
+    if status then
+        setChildUnEnabled(false, self.icon_img)
+    else
+        setChildUnEnabled(true, self.icon_img)
+    end
+    if status then
+        self.btn_open_lock:setVisible(false)
+    else
+        self.btn_open_lock:setVisible(true)
+    end
+end
+
+function MonopolyWarOrderWindow:jumpToMoveByY(y)
+    if not y then
+        return
+    end
+    local pos = y
+    if pos < 0 then
+        pos = 0
+    end
+
+    local len = #self.reward_list or 1
+    local scroll_view_size = self.goods_item:getContentSize()
+    local pos_per = pos * 100 / (len * 139 - scroll_view_size.height)
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_goods_item:scrollToPercentVertical(pos_per, 0.5, true)
+end
+--设置倒计时
+function MonopolyWarOrderWindow:setLessTime(less_time)
+    if tolua.isnull(self.time_txt) then
+        return
+    end
+    local less_time = less_time or 0
+    self.time_txt:stopAllActions()
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.time_txt:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1),
+            cc.CallFunc:create(function()
+                less_time = less_time - 1
+                if less_time < 0 then
+                    self.time_txt:stopAllActions()
+                else
+                    self:setTimeFormatString(less_time)
+                end
+            end))))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+
+function MonopolyWarOrderWindow:setTimeFormatString( time )
+    if time > 0 then
+        self.time_txt:setString(string.format(TI18N("语言_c_2397"),TimeTool.GetTimeFormatDay(time)))
+    else
+        self.time_txt:setString(TI18N("语言_c_233"))
+    end
+    self.time_bg:setContentSize(cc.size(math.max(self.time_txt:getContentSize().width+20,self.time_bg:getContentSize().width),self.time_bg:getContentSize().height))
+end
+
+function MonopolyWarOrderWindow:setChangeLevelStatus()
+    local title_pos = 1
+    local data = model:getOrderData()
+    self.login_day:setString(string.format(TI18N("语言_c_5237"),data.day))
+    self.login_bg:setContentSize(cc.size(self.login_day:getContentSize().width+30,self.login_day:getContentSize().height+2))
+    self.login_bg:setVisible(false)
+    local end_time = data.end_time
+    local cur_time = GameNet:getInstance():getTime()
+    local less_time = end_time - cur_time
+    self:setLessTime(less_time)
+    for key, value in pairs(data.quest_list) do
+        if value.reward == 1 or value.rmb_reward == 1 then
+            title_pos = key
+            break
+        end
+    end
+    self:jumpToMoveByY(139 * (title_pos - 1))
+end
+
+-- 红点
+function MonopolyWarOrderWindow:setTabRedPoint()
+end
+
+function MonopolyWarOrderWindow:initAwardConfig()
+    self.reward_list = {}
+    local temp_reward_list = Config.MonopolyOrderData.data_quest_list[self.comp_id]
+    for k, v in pairs(temp_reward_list) do
+        table.insert(self.reward_list, v)
+    end
+    local id = model:getReceiveFinish()
+    local finalid= table.maxn(temp_reward_list)
+    self.exp_buy_btn:setVisible(id~=finalid)
+    table.sort(self.reward_list, SortTools.KeyLowerSorter("goal_id"))
+    self.reward_goods_item:reloadData()
+    self.reward_num_item:reloadData()
+
+    if self.comp_bar_bg and not tolua.isnull(self.comp_bar_bg) and self.comp_bar and not tolua.isnull(self.comp_bar) and
+        self.bar_layout and not tolua.isnull(self.bar_layout) then
+        local len = #self.reward_list or 1
+        self.comp_bar_bg:setContentSize(cc.size(139 * (len - 1), 27))
+        self.comp_bar:setContentSize(cc.size(139 * (len - 1), 15))
+        self.bar_layout:setPosition(cc.p(57, 139 * (len - 1) + 139 / 2))
+    end
+    self:setChangeLevelStatus()
+    -- local cfg=temp_reward_list[id]
+    local nextCfg= temp_reward_list[model:getReceiveFinishNext()]    
+    -- local num1=cfg~=nil and cfg.progress[1].target_val or 0
+    local num1=RoleController:getInstance():getRoleVo():getActionAssetsNumByBid(80354)
+    local num2=nextCfg.progress[1].target_val
+    local str = num1.."/"..num2
+    self.medal_num:setString(str)
+end
+
+function MonopolyWarOrderWindow:openRootWnd(type)
+    self.type=type
+    if type==1 then
+        self.OrderBid=model:getOrderBid()
+        self.comp_id=model:getCamp_id()
+    else
+        self.OrderBid=model:getOrderBid1()
+        self.comp_id=model:getCamp_id1()
+    end
+    controller:sender27507(self.OrderBid)
+end
+
+function MonopolyWarOrderWindow:close_callback()
+    self.time_txt:stopAllActions()
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    if self.reward_num_item then
+        self.reward_num_item:DeleteMe()
+        self.reward_num_item = nil
+    end
+    if self.get_monopoly_war_order_data then
+        GlobalEvent:getInstance():UnBind(self.get_monopoly_war_order_data)
+        self.get_monopoly_war_order_data = nil
+    end
+    controller:openWarOrderWindow(false)
+end
+
+------------------------------------------
+-- 奖励子项
+MonopolyWarOrderIten = class("MonopolyWarOrderIten", function()
+    return ccui.Widget:create()
+end)
+
+function MonopolyWarOrderIten:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function MonopolyWarOrderIten:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("monopoly/monopoly_war_order_reward_item"))
+    self:setContentSize(cc.size(720, 139))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.goods_item = main_container:getChildByName("goods_item") -- 付费礼物
+    self.goods_item:setScrollBarEnabled(false)
+    self.free_goods_item = main_container:getChildByName("free_goods_item") -- 免费礼物
+    self.free_goods_item:setScrollBarEnabled(false)
+    self.finish_img = main_container:getChildByName("finish_img")
+    self.finish_img:setVisible(false)
+    if not self.login_label then
+        self.login_label = createLabel(24,cc.c4b(0x7c,0x55,0x36,0xff),cc.c4b(0x00,0x00,0x00,0xff),629,70,"",main_container,0,cc.p(0.5,0.5))
+    end
+    self.login_label:setWidth(135)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_name = self.btn_get:getChildByName("name")
+    self.btn_name:setString("")
+end
+
+function MonopolyWarOrderIten:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local is_unlock = model:getOrderStatus()
+        if is_unlock then -- 战令已解锁
+            if self.orderReceive.reward == 1 or self.orderReceive.rmb_reward == 1 then
+                if model:canReceiveMax(self.data.goal_id,self.comp_id) then -- 达到活动天数
+                    controller:sender27508(self.orderid,self.orderReceive.id)
+                else
+                    message(TI18N("语言_c_5278"))
+                end
+            elseif self.orderReceive.reward == 0 or self.orderReceive.rmb_reward == 0 then
+                controller:openWarOrderWindow(false)
+            end
+        else -- 未解锁
+            if self.orderReceive.reward == 1 then -- 可领取
+                if model:canReceiveMax(self.data.goal_id,self.comp_id) then -- 达到活动天数
+                    controller:sender27508(self.orderid,self.orderReceive.id)
+                else
+                    message(TI18N("语言_c_5278"))
+                end
+            elseif self.orderReceive.reward == 2 then -- 前往购买
+                local config = Config.MonopolyOrderData.data_constant[self.comp_id]
+                if config.recharge_id2 == 0 then
+                    controller:openMonopolyWarOrderBuyCardWindow(true,self.comp_id)
+                else
+                    controller:openMonopolyWarOrderBuyCardWindow2(true,self.comp_id)
+                end
+            elseif self.orderReceive.reward == 0 then -- 前往过关
+                controller:openWarOrderWindow(false)
+            end
+        end
+    end, true, 1)
+end
+
+function MonopolyWarOrderIten:setData(data,comp_id,orderid,index)
+    if not data then
+        return
+    end
+    self.data = data
+    self.comp_id=comp_id
+    self.orderid=orderid
+    self.orderReceive = model:getOrderReceive(index)
+    local open_day = Config.MonopolyOrderData.data_constant[self.comp_id].open_day
+    self.login_label:setString(string.format(TI18N("语言_c_5279"),math.ceil(data.goal_id/open_day)))
+    local free_effect_id = false
+    local free_data_list = data.award or {}
+    local status = self.orderReceive.reward == 0
+    local setting1 = {}
+    setting1.start_x = 10
+    setting1.scale = 0.7
+    setting1.is_tip = true
+    setting1.lock = status
+    setting1.is_lock_bg = status
+    setting1.show_effect_id = free_effect_id
+    setting1.is_get_status = self.orderReceive.reward == 2
+    setting1.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.free_item_list = commonShowSingleRowItemList(self.free_goods_item, self.free_item_list, free_data_list,setting1)
+
+    -- 进阶奖励
+    local is_locak_status = model:getOrderStatus() -- 战令解锁状态
+    local pay_effect_id = false
+    -- 付费道具
+    local data_list = data.rmb_award or {}
+    local rmbStatus = self.orderReceive.rmb_reward == 0
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.lock = rmbStatus
+    setting.is_lock_bg = rmbStatus
+    setting.is_tip = true
+    setting.show_effect_id = pay_effect_id
+    setting.is_get_status = self.orderReceive.rmb_reward == 2
+    setting.max_count = 2
+    setting.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.item_list = commonShowSingleRowItemList(self.goods_item, self.item_list, data_list, setting)
+
+    if self.btn_get then
+        addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+        if is_locak_status then -- 战令已经解锁
+            if self.orderReceive.rmb_reward == 1 then -- 可领取
+                self.btn_name:enableOutline(Config.ColorData.data_color4[264], 2)
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                if model:canReceiveMax(self.data.goal_id,self.comp_id) then -- 达到活动天数
+                    addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+                    setChildUnEnabled(false,self.btn_get)
+                    self.login_label:setVisible(false)
+                else
+                    self.login_label:setVisible(true)
+                    self.btn_get:setVisible(false)
+                    setChildUnEnabled(true,self.btn_get)
+                    addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+                end
+            elseif self.orderReceive.rmb_reward == 2 then -- 已领取
+                self.login_label:setVisible(false)
+                self.btn_get:setVisible(false)
+                self.finish_img:setVisible(true)
+                addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+            elseif self.orderReceive.rmb_reward == 0 then -- 前往过关
+                if model:canReceiveMax(self.data.goal_id,self.comp_id) then -- 达到活动天数
+                    self.btn_name:setString(TI18N("语言_c_108"))
+                    self.btn_get:setVisible(true)
+                    self.finish_img:setVisible(false)
+                    setChildUnEnabled(false,self.btn_get)
+                    addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+                    self.login_label:setVisible(false)
+                else
+                    self.login_label:setVisible(true)
+                    self.btn_get:setVisible(false)
+                    self.finish_img:setVisible(false)
+                end
+            end
+        else -- 战令未解锁时
+            if self.orderReceive.reward == 1 then -- 可领取
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                if model:canReceiveMax(self.data.goal_id,self.comp_id) then -- 达到活动天数
+                    addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+                    setChildUnEnabled(false,self.btn_get)
+                    self.login_label:setVisible(false)
+                else
+                    self.login_label:setVisible(true)
+                    self.btn_get:setVisible(false)
+                    setChildUnEnabled(true,self.btn_get)
+                    addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+                end
+            elseif self.orderReceive.reward == 2 then -- 前往购买
+                self.login_label:setVisible(false)
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(false,self.btn_get)
+                addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+            elseif self.orderReceive.reward == 0 then
+                if model:canReceiveMax(self.data.goal_id,self.comp_id) then -- 达到活动天数
+                    self.btn_name:setString(TI18N("语言_c_108"))
+                    self.btn_get:setVisible(true)
+                    self.finish_img:setVisible(false)
+                    setChildUnEnabled(false,self.btn_get)
+                    addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+                    self.login_label:setVisible(false)
+                else
+                    self.login_label:setVisible(true)
+                    self.btn_get:setVisible(false)
+                    self.finish_img:setVisible(false)
+                end
+            end
+        end
+        -- if model:canReceiveMax(self.data.goal_id) then -- 达到活动天数
+        --     self.btn_get:setVisible(true)
+        --     self.login_label:setVisible(false)
+        -- else
+        --     self.btn_get:setVisible(false)
+        --     self.login_label:setVisible(true)
+        -- end
+    end
+end
+
+function MonopolyWarOrderIten:DeleteMe()
+    if self.item_list then
+        for i, v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+    if self.common_goods_item then
+        self.common_goods_item:DeleteMe()
+        self.common_goods_item = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+------------------------------------------
+-- 功勋子项
+MonopolyRewardItem = class("MonopolyRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function MonopolyRewardItem:ctor(type)
+    self.size = cc.size(100, 139)
+    self:configUI(type)
+    self:register_event()
+end
+
+function MonopolyRewardItem:configUI(type)
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    local resid= type==1 and 80244 or 80354
+    self.select_bg = createSprite(PathTool.getItemRes(resid),self.size.width / 2, self.size.height / 2 + 6,self.root_wnd,cc.p(0.5,0.5),LOADTEXT_TYPE)
+    setChildUnEnabled(true,self.select_bg)
+    self.select_img = createSprite(PathTool.getItemRes(resid),self.size.width / 2, self.size.height / 2 + 6,self.root_wnd,cc.p(0.5,0.5),LOADTEXT_TYPE)
+    self.select_img:setVisible(false)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+        self.size.width / 2, self.size.height / 5 + 11, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+        self.size.height / 5 + 11, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function MonopolyRewardItem:register_event()
+end
+
+function MonopolyRewardItem:setData(data,OrderBid,comp_id,index)
+    if not data then
+        return
+    end
+    self.data = data
+    self.select_img:setVisible(false)
+    self.orderReceive = model:getOrderReceive(index)
+    self.OrderBid=OrderBid
+    self.comp_id=comp_id
+    -- 进度条相关
+    local cfg = Config.MonopolyOrderData.data_quest_list[self.comp_id]
+    local id = self.data.id
+    local last_id = id + 1
+    if self.data.goal_id and cfg[self.data.goal_id+1] then
+        if self.comp_bar == nil then
+            local size = cc.size(139, 27)
+            local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+            local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.root_wnd:addChild(bar_layout,1)
+                bar_layout:setPosition(cc.p(50, 77))
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 0, 0)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+            self.comp_bar_bg:setContentSize(cc.size(139, 27))
+            self.comp_bar:setContentSize(cc.size(139, 15))
+        end
+        if self.bar_layout then
+            self.bar_layout:setVisible(true)
+        end
+        local fid = model:getReceiveFinish()
+        if self.orderReceive then
+            if self.orderReceive.id < fid then
+                self.comp_bar:setPercent(100)
+                self.select_img:setVisible(true)
+            elseif self.orderReceive.id == fid then
+                self.select_img:setVisible(true)
+                local nextData = model:getOrderReceive(index+1)
+                self.comp_bar:setPercent((nextData.value - self.orderReceive.value)/(nextData.target_val - self.orderReceive.target_val)*100)
+            else
+                self.comp_bar:setPercent(0)
+            end
+        else
+            self.comp_bar:setPercent(0)
+        end
+    else
+        if self.bar_layout then
+            self.bar_layout:setVisible(false)
+        end
+        local id = model:getReceiveFinish()
+        if index == id then
+            self.select_img:setVisible(true)
+        end
+    end
+    if cfg and cfg[self.data.goal_id] then
+        self.num_txt:setString(cfg[self.data.goal_id].progress[1].target_val)
+    end
+    self.select_bg:setLocalZOrder(9)
+    self.select_img:setLocalZOrder(10)
+    self.num_bg:setLocalZOrder(11)
+    self.num_txt:setLocalZOrder(12)
+    if self.data.goal_id then
+        self:setLocalZOrder(self.data.goal_id)
+    end
+end
+
+function MonopolyRewardItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

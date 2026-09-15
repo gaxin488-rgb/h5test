@@ -1,0 +1,244 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      英雄分解 英雄碎片分解信息界面
+-- <br/>Create: 2018年11月12日
+--
+-- --------------------------------------------------------------------
+KeyinResetOfferPanel = KeyinResetOfferPanel or BaseClass(BaseView)
+
+local table_insert = table.insert
+local controller = KeyinController:getInstance()
+local model = controller:getModel()
+
+function KeyinResetOfferPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini
+    self.layout_name = "keyin/keyin_reset_offer_panel"
+end 
+
+function KeyinResetOfferPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(container , 2)  
+    self.win_title = container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_5014"))
+    self.scroll_view = container:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.dec_val = createRichLabel(24, cc.c4b(0x68, 0x45, 0x2a, 0xff), cc.p(0,1), cc.p(0,40),FONT_COMMON_LINE_SPACE,nil,610)
+    self.scroll_view:addChild(self.dec_val)
+    self.dec_val:setString(TI18N("语言_c_6984"))
+    local label_siez = self.dec_val:getContentSize()
+    local max_height = math.max(label_siez.height,104)
+    self.scroll_view:setInnerContainerSize(cc.size(622, max_height))
+    if label_siez.height <= 65 then
+        self.scroll_view:setTouchEnabled(false)
+    end
+    self.dec_val:setPositionY(max_height)
+
+
+    self.image_2 = container:getChildByName("Image_2")
+    local image_2_width = math.max(self.win_title:getContentSize().width + 100 , 332)
+	local image_2_height = self.image_2:getContentSize().height
+	self.image_2:setContentSize(image_2_width,image_2_height)
+
+    local tips = container:getChildByName("tips")
+    tips:setString(TI18N("语言_c_6746"))
+    local left_tips_icon = container:getChildByName("left_tips_icon")
+    local right_tips_icon = container:getChildByName("right_tips_icon")
+    setLeftRightImg(left_tips_icon,tips,right_tips_icon,20)
+
+    self.cancel_btn = container:getChildByName("cancel_btn")
+    self.cancel_btn_label = self.cancel_btn:getChildByName("label")
+    self.cancel_btn_label:setString(TI18N("语言_c_395"))
+    self.cancel_btn_label:enableOutline(Config.ColorData.data_color4[263], 2)
+
+    self.confirm_btn = container:getChildByName("confirm_btn")
+    self.confirm_btn_label = self.confirm_btn:getChildByName("label")
+    self.confirm_btn_label:setString("")
+    -- self.confirm_btn_label:enableOutline(Config.ColorData.data_color4[264], 2) --
+    self.cost_val = createRichLabel(24, cc.c4b(0xf8, 0xef, 0x76, 0xff), cc.p(0.5,0.5), cc.p(80,32),FONT_COMMON_LINE_SPACE)
+    self.confirm_btn:addChild(self.cost_val)
+
+    self.list_view = container:getChildByName("list_view")
+    local size = self.list_view:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 16,                  -- 第一个单元的X起点
+        space_x = 32,                    -- x方向的间隔
+        start_y = 6,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = 119,               -- 单元的尺寸width
+        item_height = 119,              -- 单元的尺寸height
+        row = 4,                        -- 行数，作用于水平滚动类型
+        col = 4,                         -- 列数，作用于垂直滚动类型
+        once_num = 4,
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.list_view, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, setting)
+    self.close_btn = container:getChildByName("close_btn")
+    self.container = container
+end
+
+function KeyinResetOfferPanel:register_event()
+    registerButtonEventListener(self.close_btn, function() controller:openKeyinResetOfferPanel(false) end ,true, 1)
+    registerButtonEventListener(self.cancel_btn, function() controller:openKeyinResetOfferPanel(false) end ,true, 2)
+    registerButtonEventListener(self.confirm_btn, function() self:onConfirmButton() end ,true, 2)
+
+    self:addGlobalEvent(HeroEvent.Hero_Keyin_Reset_Offer_Event , function(data)
+        if not data then return end
+        self:setData(data.items)
+    end)
+end
+
+function KeyinResetOfferPanel:onConfirmButton()
+    controller:openKeyinResetOfferPanel(false)
+    self:onTenStarChangeComfirm()
+end
+
+function KeyinResetOfferPanel:onTenStarChangeComfirm()
+    if self.callback then
+        self.callback()
+    end  
+end
+
+function KeyinResetOfferPanel:openRootWnd(hero_list, callback)
+    if not hero_list then  return end
+    
+    controller:sender11472(hero_list)
+
+    local total_lv = model:getNowTotalKeyinLv(hero_list)
+    local cfg = Config.PartnerEngravedData.data_rev_info
+    local cost = cfg[total_lv].rev_cost[1]
+    -- local str = "<img src=\'resource/item/%s.png\' scale=0.5 /><div fontsize=23 outline=2,#6c2b00>%s</div>"
+ --cc.c4b(0x6c,0x2b,0x00,0xff),
+    self.cost_val:setString(string.format(TI18N("语言_c_4039"),PathTool.getItemRes(Config.ItemData.data_get_data(cost[1]).icon),cost[2]))
+
+    self.callback = callback
+end
+
+function KeyinResetOfferPanel:setData(list)
+    if not list then return end
+
+    local item_list = {}
+    for i,v in ipairs(list) do
+        local item = {}
+        item.id = v.id
+        item.quantity = v.num
+        table_insert(item_list, item)
+    end
+
+    if #item_list == 0 then
+        commonShowEmptyIcon(self.list_view, true, {font_size = 22,scale = 1, text = TI18N("语言_c_3132")})
+        return
+    end
+    local sort_func = SortTools.tableUpperSorter({"id"})
+    -- local sort_func = SortTools.tableUpperSorter({"quality","lev"})
+    table.sort(item_list, sort_func)
+    self.item_scrollview:setData(item_list, nil, nil, {is_show_tips = true, is_other = true})
+end
+
+-- 设置英雄回退信息
+function KeyinResetOfferPanel:setHeroReturnData(list)
+    if not list then return end
+    if #list == 0 then
+        commonShowEmptyIcon(self.list_view, true, {font_size = 22,scale = 1, text = TI18N("语言_c_3132")})
+        return
+    end
+    
+    local setting = {
+        item_class = ReturnIconItem,      -- 单元类
+        start_x = 16,                  -- 第一个单元的X起点
+        space_x = 32,                    -- x方向的间隔
+        start_y = 6,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = 119,               -- 单元的尺寸width
+        item_height = 119,              -- 单元的尺寸height
+        row = 4,                        -- 行数，作用于水平滚动类型
+        col = 4,                         -- 列数，作用于垂直滚动类型
+        once_num = 4,
+        need_dynamic = true
+    }
+    self.item_scrollview:setData(list,nil,setting)
+end
+
+function KeyinResetOfferPanel:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    controller:openKeyinResetOfferPanel(false)
+end
+
+-- 常驻英雄回退道具item--------------------------------------------------------------------------------------------
+ReturnIconItem = class("ReturnIconItem", function() 
+    return ccui.Widget:create()
+end)
+
+function ReturnIconItem:ctor()
+    self.size = cc.size(119, 119)
+    self:setTouchEnabled(false)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self:addChild(self.root_wnd)
+
+    self:registerEvent()
+end
+
+function ReturnIconItem:registerEvent()
+    
+end
+
+--@config 结构是 Config.PartnerData.data_partner_base
+function ReturnIconItem:setData(data)
+    if data == nil then return end
+    if self.item then
+        self.item:DeleteMe()
+        self.item = nil
+    end
+    local item = nil
+    if data.show_type ~= nil and data.show_type == MainuiConst.item_exhibition_type.partner_type then
+        item = HeroExhibitionItem.new(1, true)
+        item:addCallBack(function() 
+            -- if v.rid and v.srv_id then
+            --     HeroController:getInstance():openHeroTipsPanel(true, v)
+            -- else
+            --     HeroController:getInstance():openHeroTipsPanelByBid(v.bid)
+            -- end
+        end)
+        item:setPosition(self.size.width/2, self.size.height/2)
+        item:setData(data)
+        self.root_wnd:addChild(item)
+    else
+        item = BackPackItem.new(false, true)
+        item:setPosition(self.size.width/2, self.size.height/2)
+        item:setSwallowTouches(false)
+        item:setDefaultTip()
+        item:setBaseData(data[1], data[2], true)
+        if data[1] then
+            local cfg = Config.ItemData.data_get_data(data[1])
+            if cfg.type == BackPackConst.item_type.HERO_HUN then
+                -- local starNum = cfg.eqm_jie
+                -- item:createStar(starNum,15)
+                item:initCamp(cfg.camp_type)
+                item:createStar(cfg.eqm_jie)
+            end
+        end
+        self.root_wnd:addChild(item)
+    end
+    self.item = item
+end
+
+function ReturnIconItem:DeleteMe()
+    if self.item then
+        self.item:DeleteMe()
+        self.item = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

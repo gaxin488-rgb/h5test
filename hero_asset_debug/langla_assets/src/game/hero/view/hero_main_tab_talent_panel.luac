@@ -1,0 +1,1280 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      竖版伙伴天赋
+-- <br/> 2019年2月19日
+-- --------------------------------------------------------------------
+HeroMainTabTalentPanel = class("HeroMainTabTalentPanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeroMainTabTalentPanel:ctor(parent)  
+    self.parent = parent
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+-- Ô 3 và ô 6 là hai ô kỹ năng đặc biệt.
+function HeroMainTabTalentPanel:isSpecialSkillSlot(index)
+    return index == 3 or index == 6
+end
+
+function HeroMainTabTalentPanel:config()
+    -- self.size = cc.size(680,372.97)
+    -- self:setContentSize(self.size)
+
+    --技能列表
+    self.skill_item_list = {}
+end
+
+function HeroMainTabTalentPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_main_tab_talent_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.tab_panel = self.root_wnd:getChildByName("tab_panel")
+    self.bg_box = self.tab_panel:getChildByName("bg_box")
+    self.skill_type = self.tab_panel:getChildByName("skill_type")
+
+    self.skill_look_btn = self.tab_panel:getChildByName("skill_look_btn")
+    self.skill_look_btn:getChildByName("label"):setString(TI18N("语言_c_2287"))
+    self.shop_btn = self.tab_panel:getChildByName("shop_btn")
+    self.shop_btn:getChildByName("label"):setString(TI18N("语言_c_3044"))
+
+    self.look_btn = self.tab_panel:getChildByName("look_btn")
+
+    local dic_config = Config.PartnerSkillData.data_partner_skill_pos or {}
+    local raw_config_list = {}
+
+    for k,v in pairs(dic_config) do
+        table_insert(raw_config_list, v)
+    end
+    table.sort(raw_config_list, function(a, b) return a.pos < b.pos end)
+
+    -- Tạo danh sách cố định 6 vị trí. Nếu config chưa có pos 4/5/6 thì vẫn
+    -- hiển thị ô, nhưng khóa lại để tránh gọi model/server bằng config nil.
+    local config_by_pos = {}
+    for _, config in ipairs(raw_config_list) do
+        if config and config.pos then
+            config_by_pos[config.pos] = config
+        end
+    end
+    self.config_list = {}
+    for i = 1, 6 do
+        self.config_list[i] = config_by_pos[i] or {pos = i, is_missing_config = true}
+    end
+
+    -- CSB gốc chỉ có skill_panel1/2/3.
+    -- Bố cục mới: 2 hàng x 3 ô cân đối trong khung nền.
+    -- Hàng trên: skill 1, skill 6(đặc biệt), skill 2
+    -- Hàng dưới: skill 4, skill 3(đặc biệt), skill 5
+    local panel_1 = self.tab_panel:getChildByName("skill_panel1")
+    local panel_2 = self.tab_panel:getChildByName("skill_panel2")
+    local panel_3 = self.tab_panel:getChildByName("skill_panel3")
+
+    local top_left_x = panel_1 and panel_1:getPositionX() or 148
+    local top_right_x = panel_2 and panel_2:getPositionX() or 497
+    local center_x = panel_3 and panel_3:getPositionX() or math.floor((top_left_x + top_right_x) * 0.5)
+
+    local base_top_y = math.max(
+        panel_1 and panel_1:getPositionY() or 284,
+        panel_2 and panel_2:getPositionY() or 284
+    )
+
+    -- Tách riêng hai hàng rõ hơn:
+    -- ô 1,2,6 dịch lên trên một chút
+    -- ô 3,4,5 dịch xuống dưới một chút
+    local top_row_shift_up = 32
+    local bottom_row_shift_down = 32
+
+    -- Dịch toàn bộ cụm 2 hàng lên trên một chút để không bị sát phần nút.
+    local skill_grid_shift_up = 18
+    local top_y = base_top_y + top_row_shift_up + skill_grid_shift_up
+    local row_gap = 84 + top_row_shift_up + bottom_row_shift_down
+    local bottom_y = top_y - row_gap
+
+    self.skill_grid_pos = {
+        [1] = cc.p(top_left_x, top_y),
+        [2] = cc.p(top_right_x, top_y),
+        [3] = cc.p(center_x, bottom_y),
+        [4] = cc.p(top_left_x, bottom_y),
+        [5] = cc.p(top_right_x, bottom_y),
+        [6] = cc.p(center_x, top_y),
+    }
+    self.extra_skill_bottom_y = bottom_y
+    self.extra_skill_top_y = top_y
+
+    -- Hạ hai nút xuống rõ hơn so với bản trước (v2 đang cộng +10px).
+    local btn_shift_down = 4
+    if self.skill_look_btn then
+        self.skill_look_btn:setPositionY(self.skill_look_btn:getPositionY() - btn_shift_down)
+    end
+    if self.shop_btn then
+        self.shop_btn:setPositionY(self.shop_btn:getPositionY() - btn_shift_down)
+    end
+
+    -- Không dùng Widget:clone() làm cách chính, vì ở một số bản Cocos
+    -- các Sprite con như lock_icon không được clone đầy đủ. Tải một bản CSB
+    -- mới rồi tách panel gốc ra sẽ giữ nguyên toàn bộ icon/dấu cộng.
+    local function copySkillPanelFromCSB(new_index, source_name, source_panel)
+        local skill_panel = self.tab_panel:getChildByName("skill_panel"..new_index)
+
+        if skill_panel == nil then
+            local temp_root = cc.CSLoader:createNode(csbPath)
+            local temp_tab = temp_root and temp_root:getChildByName("tab_panel")
+            local temp_panel = temp_tab and temp_tab:getChildByName(source_name)
+
+            if temp_panel then
+                temp_panel:retain()
+                temp_panel:removeFromParent(false)
+                temp_panel:setName("skill_panel"..new_index)
+                self.tab_panel:addChild(
+                    temp_panel,
+                    source_panel and source_panel:getLocalZOrder() or 1
+                )
+                temp_panel:release()
+                skill_panel = temp_panel
+            elseif source_panel and source_panel.clone then
+                -- Fallback cho những bản engine không cho tách node khỏi CSB.
+                skill_panel = source_panel:clone()
+                skill_panel:setName("skill_panel"..new_index)
+                self.tab_panel:addChild(skill_panel, source_panel:getLocalZOrder())
+            end
+        end
+
+        if skill_panel and source_panel then
+            skill_panel:setScale(source_panel:getScale())
+            local target_pos = self.skill_grid_pos and self.skill_grid_pos[new_index]
+            if target_pos then
+                skill_panel:setPosition(target_pos)
+            else
+                skill_panel:setPosition(cc.p(source_panel:getPositionX(), bottom_y))
+            end
+        end
+        return skill_panel
+    end
+
+    copySkillPanelFromCSB(4, "skill_panel1", panel_1)
+    copySkillPanelFromCSB(5, "skill_panel2", panel_2)
+    copySkillPanelFromCSB(6, "skill_panel3", panel_3)
+
+    -- Xóa ô nền mờ (bg_box) phía sau vị trí kỹ năng 1 và 2.
+    -- Giữ nguyên skill_bg và lock_icon nên khung tối/dấu cộng vẫn hiển thị.
+    for _, slot_index in ipairs({1, 2}) do
+        local slot_panel = self.tab_panel:getChildByName("skill_panel"..slot_index)
+        local slot_bg_box = slot_panel and slot_panel:getChildByName("bg_box")
+        if slot_bg_box then
+            slot_bg_box:setVisible(false)
+        end
+    end
+
+    for i = 1, 6 do
+        local index = i
+        local v = self.config_list[index]
+        local skill_panel = self.tab_panel:getChildByName("skill_panel"..index)
+        if skill_panel and self.skill_grid_pos and self.skill_grid_pos[index] then
+            skill_panel:setPosition(self.skill_grid_pos[index])
+        end
+        if skill_panel then
+            local item = {}
+            item.skill_panel = skill_panel
+            item.icon = skill_panel:getChildByName("icon")
+            item.lock_icon = skill_panel:getChildByName("lock_icon")
+
+            -- Fallback: nếu engine vẫn làm mất Sprite lock_icon khi sao chép,
+            -- tạo lại dấu cộng/ổ khóa tại đúng vị trí của panel gốc.
+            if item.lock_icon == nil then
+                local source = ((index == 1 or index == 4) and panel_1) or
+                               ((index == 2 or index == 5) and panel_2) or panel_3
+                local source_lock = source and source:getChildByName("lock_icon")
+                local px, py = 60, 60
+                local anchor = cc.p(0.5, 0.5)
+                local zorder = 5
+
+                if source_lock then
+                    px, py = source_lock:getPosition()
+                    anchor = source_lock:getAnchorPoint()
+                    zorder = source_lock:getLocalZOrder()
+                elseif skill_panel then
+                    local size = skill_panel:getContentSize()
+                    px, py = size.width * 0.5, size.height * 0.5
+                end
+
+                item.lock_icon = createSprite(
+                    PathTool.getResFrame("common", "common_90026"),
+                    px, py, skill_panel, anchor, LOADTEXT_TYPE_PLIST, zorder
+                )
+                item.lock_icon:setName("lock_icon")
+
+                if source_lock then
+                    item.lock_icon:setScaleX(source_lock:getScaleX())
+                    item.lock_icon:setScaleY(source_lock:getScaleY())
+                    item.lock_icon:setRotation(source_lock:getRotation())
+                end
+            end
+
+            -- Fallback tương tự cho node icon kỹ năng.
+            if item.icon == nil then
+                local source = ((index == 1 or index == 4) and panel_1) or
+                               ((index == 2 or index == 5) and panel_2) or panel_3
+                local source_icon = source and source:getChildByName("icon")
+                local px, py = 60, 60
+                local anchor = cc.p(0.5, 0.5)
+                local zorder = 4
+
+                if source_icon then
+                    px, py = source_icon:getPosition()
+                    anchor = source_icon:getAnchorPoint()
+                    zorder = source_icon:getLocalZOrder()
+                elseif skill_panel then
+                    local size = skill_panel:getContentSize()
+                    px, py = size.width * 0.5, size.height * 0.5
+                end
+
+                item.icon = createSprite(
+                    nil, px, py, skill_panel, anchor, LOADTEXT_TYPE, zorder
+                )
+                item.icon:setName("icon")
+                if source_icon then
+                    item.icon:setScaleX(source_icon:getScaleX())
+                    item.icon:setScaleY(source_icon:getScaleY())
+                end
+            end
+
+            item.skill_name_bg = skill_panel:getChildByName("skill_name_bg")
+            item.skill_level_bg = skill_panel:getChildByName("skill_level_bg")
+            item.redPoint = skill_panel:getChildByName("redPoint")
+            if item.redPoint then
+                item.redPoint:setVisible(false)
+            end
+            item.skill_name = skill_panel:getChildByName("skill_name")
+            item.skill_level = skill_panel:getChildByName("skill_level")
+            registerButtonEventListener(skill_panel, function()
+                self:onSkillClickByIndex(index, v)
+            end, false, 1)
+            self.skill_item_list[index] = item
+        end
+    end
+
+    local function initSpecialSkillPanel(index, box_loader_key, bg_loader_key)
+        if self.skill_item_list[index] then
+            self.skill_item_list[index].effect_node = self.skill_item_list[index].skill_panel:getChildByName("effect_node")
+            self.skill_item_list[index].effect_node_2 = self.skill_item_list[index].skill_panel:getChildByName("effect_node_2")
+            local bg_box = self.skill_item_list[index].skill_panel:getChildByName("bg_box")
+            local skill_bg = self.skill_item_list[index].skill_panel:getChildByName("skill_bg")
+            local bg_res = PathTool.getPlistImgForDownLoad("bigbg/hero","hero_talent_bg_1", false)
+            self[box_loader_key] = loadSpriteTextureFromCDN(bg_box, bg_res, ResourcesType.single, self[box_loader_key]) 
+            local bg_res2 = PathTool.getPlistImgForDownLoad("bigbg/hero","hero_talent_bg", false)
+            self[bg_loader_key] = loadSpriteTextureFromCDN(skill_bg, bg_res2, ResourcesType.single, self[bg_loader_key]) 
+        end
+    end
+    initSpecialSkillPanel(3, "box_item_load", "skill_bg_item_load")
+    initSpecialSkillPanel(6, "box_item_load_6", "skill_bg_item_load_6")
+    --目前写死第二个
+    -- if self.skill_item_list[2] then
+    --     self.skill_item_list[2].skill_level_bg:setVisible(false)
+    --     self.skill_item_list[2].skill_level:setVisible(false)
+    --     self.skill_item_list[2].skill_name:setString(TI18N("语言_c_3045"))
+    -- end
+
+    self.bg = self.tab_panel:getChildByName("bg")
+    self.bg_1 = self.tab_panel:getChildByName("bg_1")
+    local bg_res = PathTool.getPlistImgForDownLoad("bigbg/hero","hero_bag_talent_bg", false)
+    self.item_load = loadSpriteTextureFromCDN(self.bg, bg_res, ResourcesType.single, self.item_load) 
+end
+
+--事件
+function HeroMainTabTalentPanel:registerEvents()
+    --详情
+    registerButtonEventListener(self.skill_look_btn, function() self:onClickLookBtn()  end ,true, 2, nil)
+    registerButtonEventListener(self.shop_btn, function() self:onClickShopBtn()  end ,true, 2, nil)
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type) 
+        local config = Config.PartnerSkillData.data_partner_skill_const.skill_rule
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        end
+        local config = Config.PartnerData.data_partner_const.game_rule1
+    end ,true, 1)
+
+    --物品道具增加 判断红点
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+                if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                    for i,item in pairs(temp_add) do
+                        if Config.ItemData.data_skill_item_list[item.base_id] then
+                            delayRun(self, 1, function() 
+                                self:checkSkillLevelUpRedpoint()
+                            end)
+                            break
+                        end
+                        if item.base_id == model.talent_skill_cost_id then
+                            delayRun(self, 1, function() 
+                                self:checkSkillLevelUpRedpoint()
+                            end)
+                            break
+                        end
+                    end
+                end
+        end)
+    end
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+                if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                    for i,item in pairs(temp_del) do
+                        if Config.ItemData.data_skill_item_list[item.base_id] then
+                            delayRun(self, 1, function() 
+                                self:checkSkillLevelUpRedpoint()
+                            end)
+                            break
+                        end
+                        if item.base_id == model.talent_skill_cost_id then
+                            delayRun(self, 1, function() 
+                                self:checkSkillLevelUpRedpoint()
+                            end)
+                            break
+                        end
+                    end
+                end
+        end)
+    end
+
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            -- if self.show_model_type == HeroConst.BagTab.eBagHero then 
+                if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                    for i,item in pairs(temp_list) do
+                        if Config.ItemData.data_skill_item_list[item.base_id] then
+                            delayRun(self, 1, function() 
+                                self:checkSkillLevelUpRedpoint()
+                            end)
+                            break
+                        end
+                        if item.base_id == model.talent_skill_cost_id then
+                            delayRun(self, 1, function() 
+                                self:checkSkillLevelUpRedpoint()
+                            end)
+                            break
+                        end
+                    end
+                end
+            -- end
+        end)
+    end
+
+    -- if role_vo ~= nil then
+    --     if self.role_lev_event == nil then
+    --         self.role_lev_event =  role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, lev) 
+    --             if not self.hero_vo then return end
+    --             local status = HeroCalculate.getHeroShowLevelStatus(self.hero_vo) 
+    --             if status == 1 then
+    --                 if key == "coin" then
+    --                     -- delayRun(self, 1, function() 
+    --                     --     self:checkSkillLevelUpRedpoint()
+    --                     -- end)
+    --                 end
+    --             end
+    --         end)
+    --     end
+    -- end
+
+
+        -- 获取到天赋信息
+    if not self.hero_get_talent_event then
+        self.hero_get_talent_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Get_Talent_Event, function(list)
+            if not self.hero_vo then return end
+
+            local function isSamePartner(partner_id)
+                if partner_id == nil then return true end
+                return tostring(partner_id) == tostring(self.hero_vo.partner_id)
+            end
+
+            local changed = false
+
+            -- Có bản trả về một record, có bản trả về danh sách hero,
+            -- cũng có bản trả về danh sách từng skill {partner_id,pos,skill_id}.
+            if type(list) == "table" then
+                local event_list = list
+                if list.partner_id or list.talent_skill_list or list.dower_skill or
+                   list.skill_list or list.skills or list.data then
+                    event_list = {list}
+                end
+
+                for _, v in pairs(event_list) do
+                    if type(v) == "table" and isSamePartner(v.partner_id) then
+                        self:syncTalentSkillFromEvent(v, false)
+
+                        local nested = v.data or v.hero_data or v.partner_data
+                        if type(nested) == "table" then
+                            self:syncTalentSkillFromEvent(nested, false)
+                        end
+                        changed = true
+                    end
+                end
+
+                -- Trường hợp event trả thẳng map [pos] = skill_id.
+                if not changed then
+                    local normalized = self:normalizeTalentSkillList(list)
+                    if normalized then
+                        self.hero_vo.talent_skill_list = normalized
+                        changed = true
+                    end
+                end
+            end
+
+            -- Một số client chỉ cập nhật trực tiếp HeroVo rồi phát event rỗng.
+            local normalized = self:normalizeTalentSkillList(self.hero_vo.talent_skill_list)
+            if not normalized then
+                normalized = self:normalizeTalentSkillList(self.hero_vo.dower_skill)
+            end
+            if normalized then
+                self.hero_vo.talent_skill_list = normalized
+                changed = true
+            end
+
+            self.talent_skill_cache = {}
+            self:updteData()
+        end)
+    end
+    -- 穿戴天赋技能返回
+    if not self.hero_learn_talent_event then
+        self.hero_learn_talent_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Learn_Talent_Event, function(data)
+            if not data then return end
+            if not self.hero_vo then return end
+            if tostring(data.partner_id) == tostring(self.hero_vo.partner_id) then
+                self:syncTalentSkillFromEvent(data, false)
+                self:initSkillItemList()
+                delayRun(self, 1, function() 
+                    self:checkSkillLevelUpRedpoint()
+                end)
+            end
+        end)
+    end
+    -- 升级天赋技能返回
+    if not self.hero_level_up_talent_event then
+        self.hero_level_up_talent_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Level_Up_Talent_Event, function(data)
+            if not data then return end
+            if not self.hero_vo then return end
+            if tostring(data.partner_id) == tostring(self.hero_vo.partner_id) then
+                message(TI18N("语言_c_3046"))
+                self:syncTalentSkillFromEvent(data, false)
+                self:initSkillItemList()
+                delayRun(self, 1, function() 
+                    self:checkSkillLevelUpRedpoint()
+                end)
+            end
+        end)
+    end
+    -- 升级天赋技能返回
+    if not self.hero_forget_talent_event then
+        self.hero_forget_talent_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Forget_Talent_Event, function(data)
+            if not data then return end
+            if not self.hero_vo then return end
+            if tostring(data.partner_id) == tostring(self.hero_vo.partner_id) then
+                self:syncTalentSkillFromEvent(data, true)
+                self:initSkillItemList()
+            end
+        end)
+    end
+
+end
+
+
+function HeroMainTabTalentPanel:onClickLookBtn()
+    if not self.hero_vo then return end
+    HeroController:getInstance():openArtifactSkillWindow(true, 2)
+end
+
+--打开商店
+function HeroMainTabTalentPanel:onClickShopBtn()
+    MallController:getInstance():openMallPanel(true, MallConst.MallType.SkillShop)
+end
+
+-- Lấy skill theo vị trí, hỗ trợ cả 3 kiểu dữ liệu thường gặp:
+-- 1) talent_skill_list[pos] = skill_id
+-- 2) talent_skill_list["pos"] = skill_id
+-- 3) danh sách record: {pos=4, skill_id=700001}
+function HeroMainTabTalentPanel:getTalentSkillIdByPos(pos)
+    pos = tonumber(pos)
+    if not pos then return nil end
+
+    if self.talent_skill_cache and self.talent_skill_cache[pos] then
+        return self.talent_skill_cache[pos]
+    end
+
+    local list = self.hero_vo and self.hero_vo.talent_skill_list
+    if type(list) ~= "table" then
+        local normalized = self:normalizeTalentSkillList(list)
+        if not normalized and self.hero_vo then
+            normalized = self:normalizeTalentSkillList(self.hero_vo.dower_skill)
+        end
+        if normalized then
+            self.hero_vo.talent_skill_list = normalized
+            self.talent_skill_cache = {}
+            list = normalized
+        else
+            return nil
+        end
+    end
+
+    local function firstPositive(...)
+        for i = 1, select("#", ...) do
+            local value = select(i, ...)
+            local number = tonumber(value)
+            if number and number > 0 then
+                return number
+            end
+        end
+        return nil
+    end
+
+    local function extractSkillId(value)
+        if type(value) == "number" or type(value) == "string" then
+            return firstPositive(value)
+        elseif type(value) == "table" then
+            -- Không dùng chuỗi "a or b" ở đây vì trong Lua, số 0 vẫn là true.
+            return firstPositive(
+                value.skill_id, value.skill_bid, value.skillId,
+                value.new_skill_id, value.new_skill_bid,
+                value.bid, value.skill, value.val, value.id, value[2]
+            )
+        end
+        return nil
+    end
+
+    local direct = extractSkillId(list[pos]) or extractSkillId(list[tostring(pos)])
+    if direct then
+        self.talent_skill_cache = self.talent_skill_cache or {}
+        self.talent_skill_cache[pos] = direct
+        return direct
+    end
+
+    for key, value in pairs(list) do
+        if type(value) == "table" then
+            local value_pos = firstPositive(
+                value.pos, value.position, value.skill_pos,
+                value.slot, value.index, value[1]
+            )
+            if value_pos == pos then
+                local skill_id = extractSkillId(value)
+                if skill_id then
+                    self.talent_skill_cache = self.talent_skill_cache or {}
+                    self.talent_skill_cache[pos] = skill_id
+                    return skill_id
+                end
+            end
+        elseif tonumber(key) == pos then
+            local skill_id = extractSkillId(value)
+            if skill_id then
+                self.talent_skill_cache = self.talent_skill_cache or {}
+                self.talent_skill_cache[pos] = skill_id
+                return skill_id
+            end
+        end
+    end
+
+    if self.hero_vo and self.hero_vo.dower_skill and self.hero_vo.dower_skill ~= list then
+        local normalized = self:normalizeTalentSkillList(self.hero_vo.dower_skill)
+        if normalized and normalized[pos] then
+            self.hero_vo.talent_skill_list = normalized
+            self.talent_skill_cache = self.talent_skill_cache or {}
+            self.talent_skill_cache[pos] = normalized[pos]
+            return normalized[pos]
+        end
+    end
+
+    return nil
+end
+
+-- Chuẩn hóa dữ liệu kỹ năng từ local/server về dạng [pos] = skill_id.
+-- Hỗ trợ map, key dạng chuỗi, record có field, record dạng {pos, skill_id}
+-- và cả dữ liệu chuỗi kiểu "1,700001;2,700002" hoặc "700001|700002|...".
+function HeroMainTabTalentPanel:normalizeTalentSkillList(source)
+    if source == nil then return nil end
+
+    local normalized = {}
+
+    local function firstPositive(...)
+        for i = 1, select("#", ...) do
+            local value = select(i, ...)
+            local number = tonumber(value)
+            if number and number > 0 then
+                return number
+            end
+        end
+        return nil
+    end
+
+    local function addSkill(pos, skill_id)
+        pos = tonumber(pos)
+        skill_id = tonumber(skill_id)
+        if pos and pos > 0 and skill_id and skill_id > 0 then
+            normalized[pos] = skill_id
+        end
+    end
+
+    if type(source) == "string" then
+        local nums = {}
+        for num in string.gmatch(source, "%d+") do
+            table_insert(nums, tonumber(num))
+        end
+
+        if #nums >= 2 then
+            for i = 1, #nums, 2 do
+                local pos = nums[i]
+                local skill_id = nums[i + 1]
+                if pos and pos >= 1 and pos <= 12 and skill_id and skill_id > 0 then
+                    addSkill(pos, skill_id)
+                end
+            end
+
+            if next(normalized) == nil then
+                for i, skill_id in ipairs(nums) do
+                    addSkill(i, skill_id)
+                end
+            end
+        end
+
+        return next(normalized) and normalized or nil
+    end
+
+    if type(source) ~= "table" then return nil end
+
+    -- Bóc wrapper thường gặp trước khi duyệt record.
+    local wrapped = source.talent_skill_list or source.dower_skill or
+                    source.skill_list or source.skills or source.talent_list
+    if wrapped and wrapped ~= source then
+        local wrapped_normalized = self:normalizeTalentSkillList(wrapped)
+        if wrapped_normalized then
+            for pos, skill_id in pairs(wrapped_normalized) do
+                addSkill(pos, skill_id)
+            end
+        end
+    end
+
+    for key, value in pairs(source) do
+        if type(value) == "table" then
+            local pos = firstPositive(
+                value.pos, value.position, value.skill_pos,
+                value.slot, value.index, value[1], key
+            )
+            local skill_id = firstPositive(
+                value.skill_id, value.skill_bid, value.skillId,
+                value.new_skill_id, value.new_skill_bid,
+                value.bid, value.skill, value.val, value.id, value[2]
+            )
+            addSkill(pos, skill_id)
+        elseif type(value) == "number" or type(value) == "string" then
+            addSkill(key, value)
+        end
+    end
+
+    return next(normalized) and normalized or nil
+end
+
+function HeroMainTabTalentPanel:setTalentSkillIdByPos(pos, skill_id)
+    pos = tonumber(pos)
+    skill_id = tonumber(skill_id)
+    if not pos then return end
+
+    self.talent_skill_cache = self.talent_skill_cache or {}
+
+    if skill_id and skill_id > 0 then
+        self.talent_skill_cache[pos] = skill_id
+        if self.hero_vo then
+            self.hero_vo.talent_skill_list =
+                self.hero_vo.talent_skill_list or {}
+            self.hero_vo.talent_skill_list[pos] = skill_id
+            self.hero_vo.talent_skill_list[tostring(pos)] = nil
+        end
+    else
+        self.talent_skill_cache[pos] = nil
+        if self.hero_vo and self.hero_vo.talent_skill_list then
+            self.hero_vo.talent_skill_list[pos] = nil
+            self.hero_vo.talent_skill_list[tostring(pos)] = nil
+        end
+    end
+end
+
+-- Đồng bộ ngay dữ liệu trả về sau khi học/nâng/quên. Điều này khắc phục
+-- các bản HeroVo cũ chỉ cập nhật tự động ba vị trí đầu.
+function HeroMainTabTalentPanel:syncTalentSkillFromEvent(data, is_forget)
+    if type(data) ~= "table" then return end
+
+    local function firstPositive(...)
+        for i = 1, select("#", ...) do
+            local value = select(i, ...)
+            local number = tonumber(value)
+            if number and number > 0 then
+                return number
+            end
+        end
+        return nil
+    end
+
+    local pos = firstPositive(
+        data.pos, data.position, data.skill_pos,
+        data.slot, data.index, data[1]
+    )
+
+    local skill_id = firstPositive(
+        data.skill_id, data.skill_bid, data.skillId,
+        data.new_skill_id, data.new_skill_bid,
+        data.bid, data.skill, data.val, data[2]
+    )
+
+    local nested = data.skill_data or data.talent_skill
+    if type(nested) == "table" then
+        pos = pos or firstPositive(
+            nested.pos, nested.position, nested.skill_pos,
+            nested.slot, nested.index, nested[1]
+        )
+        skill_id = skill_id or firstPositive(
+            nested.skill_id, nested.skill_bid, nested.skillId,
+            nested.new_skill_id, nested.new_skill_bid,
+            nested.bid, nested.skill, nested.val, nested.id, nested[2]
+        )
+    end
+
+    if pos then
+        self:setTalentSkillIdByPos(pos, is_forget and nil or skill_id)
+    end
+
+    local list = data.talent_skill_list or data.dower_skill or
+                 data.skill_list or data.skills or data.talent_list or data.list
+    local normalized = self:normalizeTalentSkillList(list)
+    if normalized then
+        for value_pos, value_skill in pairs(normalized) do
+            self:setTalentSkillIdByPos(value_pos, value_skill)
+        end
+    end
+end
+
+--点击技能
+--@ config Config.PartnerSkillData.data_partner_skill_pos
+function HeroMainTabTalentPanel:onSkillClickByIndex(index, config)
+    if not self.hero_vo then return end
+    if not config or config.is_missing_config then
+        message(string.format("Chưa cấu hình ô kỹ năng %s", index))
+        return
+    end
+
+    if self.hero_vo:isResonateHero() then
+        message(TI18N("语言_c_3047"))
+        return
+    end
+    if self.hero_vo:ishaveTalentData() then
+        local is_open, lock_str = model:checkOpenTanlentByconfig(config, self.hero_vo)
+        if not is_open then
+            message(lock_str)
+            return
+        end
+        local skill_id = self:getTalentSkillIdByPos(config.pos)
+        if skill_id then
+            controller:openHeroTalentSkillLevelUpPanel(
+                true, self.hero_vo, skill_id, config.pos
+            )
+        else
+            controller:openHeroTalentSkillLearnPanel(
+                true, self.hero_vo, config.pos
+            )
+        end
+    end
+end
+
+--@hero_vo 英雄数据
+--@show_model_type 显示模式 1:英雄模式  2:图鉴模式 定义参考 HeroConst.BagTab.eBagHero
+function HeroMainTabTalentPanel:setData(hero_vo, show_model_type)
+    if not hero_vo then return end
+    self.hero_vo = hero_vo
+    if hero_vo.is_open_talent then
+        --移除6星开启天赋
+        hero_vo.is_open_talent = nil
+        --移除那边的
+        hero_vo:Fire(HeroVo.UPDATE_Partner_ATTR,hero_vo)
+        --更新一下主角按钮的红点
+        HeroCalculate.checkHeroRedPointByRedPointType(HeroConst.RedPointType.eRPTalent)
+    end
+    if self.parent and self.parent.is_hide_talent_Item then
+        for _, special_index in ipairs({3, 6}) do
+            if self.skill_item_list and self.skill_item_list[special_index] and self.skill_item_list[special_index].skill_panel then
+                self.skill_item_list[special_index].skill_panel:setVisible(false)
+            end
+        end
+    end
+    self.talent_skill_cache = {}
+
+    -- Dữ liệu xem người khác thường nằm ở dower_skill; đổi về cùng một format
+    -- để phần hiển thị icon dùng chung một đường xử lý.
+    local normalized = self:normalizeTalentSkillList(self.hero_vo.talent_skill_list)
+    if not normalized then
+        normalized = self:normalizeTalentSkillList(self.hero_vo.dower_skill)
+    end
+    if normalized then
+        self.hero_vo.talent_skill_list = normalized
+    end
+
+    self:updteData()
+
+    -- Luôn xin bản talent mới nhất khi mở/chuyển hero. Trước đây bảng rỗng {}
+    -- bị xem như đã có dữ liệu, nên server không được gọi và UI cứ hiện dấu cộng.
+    if self.hero_vo.partner_id then
+        controller:sender11099({{partner_id = self.hero_vo.partner_id}})
+    end
+
+    -- Ép render lại sau khi model có thời gian nhận response.
+    delayRun(self, 1, function()
+        if self.hero_vo then
+            self.talent_skill_cache = {}
+            self:updteData()
+        end
+    end)
+
+end
+
+
+-- Giữ phần đổi nền theo hệ phái của file gốc và áp dụng cho cả 6 ô.
+function HeroMainTabTalentPanel:setPanelBg()
+    if not self.hero_vo then return end
+
+    local partner_config =
+        Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    if not partner_config then return end
+
+    local normal_bg
+    local special_bg
+
+    if partner_config.hurt_type == 1 then
+        if self.bg_box then
+            self.bg_box:ignoreContentAdaptWithSize(true)
+            local res = PathTool.getPlistImgForDownLoad(
+                "bigbg/hero", "hero_info_nin_bg", false
+            )
+            self.bg_box:loadTexture(res, LOADTEXT_TYPE)
+        end
+        if self.skill_type then
+            local res = PathTool.getPlistImgForDownLoad(
+                "bigbg/hero", "hero_info_nin", false
+            )
+            loadSpriteTexture(self.skill_type, res, LOADTEXT_TYPE)
+        end
+        normal_bg = PathTool.getPlistImgForDownLoad(
+            "bigbg/hero", "hero_bag_talent_bg_new", false
+        )
+        special_bg = PathTool.getPlistImgForDownLoad(
+            "bigbg/hero", "hero_talent_bg", false
+        )
+    elseif partner_config.hurt_type == 2 then
+        if self.bg_box then
+            self.bg_box:ignoreContentAdaptWithSize(true)
+            local res = PathTool.getPlistImgForDownLoad(
+                "bigbg/hero", "hero_info_tai_bg", false
+            )
+            self.bg_box:loadTexture(res, LOADTEXT_TYPE)
+        end
+        if self.skill_type then
+            local res = PathTool.getPlistImgForDownLoad(
+                "bigbg/hero", "hero_info_tai", false
+            )
+            loadSpriteTexture(self.skill_type, res, LOADTEXT_TYPE)
+        end
+        normal_bg = PathTool.getPlistImgForDownLoad(
+            "bigbg/hero", "hero_bag_talent_bg_new1", false
+        )
+        special_bg = PathTool.getPlistImgForDownLoad(
+            "bigbg/hero", "hero_talent_bg2", false
+        )
+    end
+
+    if not normal_bg and not special_bg then return end
+
+    self.slot_bg_loaders = self.slot_bg_loaders or {}
+    for index, item in ipairs(self.skill_item_list or {}) do
+        local skill_bg =
+            item and item.skill_panel and
+            item.skill_panel:getChildByName("skill_bg")
+        local target_bg =
+            self:isSpecialSkillSlot(index) and special_bg or normal_bg
+        if skill_bg and target_bg then
+            self.slot_bg_loaders[index] = loadSpriteTextureFromCDN(
+                skill_bg,
+                target_bg,
+                ResourcesType.single,
+                self.slot_bg_loaders[index]
+            )
+        end
+    end
+end
+
+function HeroMainTabTalentPanel:updteData(  )
+    local show_special_slot = self.hero_vo.star > model.hero_info_upgrade_star_param4
+
+    -- Bố cục 6 ô:
+    -- Hàng trên: 1 - 6(đặc biệt) - 2
+    -- Hàng dưới: 4 - 3(đặc biệt) - 5
+    for i,v in ipairs(self.skill_item_list) do
+        if v and v.skill_panel then
+            if self.skill_grid_pos and self.skill_grid_pos[i] then
+                v.skill_panel:setPosition(self.skill_grid_pos[i])
+            end
+
+            if self:isSpecialSkillSlot(i) then
+                if self.parent and self.parent.is_hide_talent_Item then
+                    v.skill_panel:setVisible(false)
+                else
+                    v.skill_panel:setVisible(show_special_slot)
+                end
+            else
+                v.skill_panel:setVisible(true)
+            end
+        end
+    end
+
+    -- Nền vẫn dùng bản kéo dài để cân bố cục 2 hàng x 3 ô.
+    if self.bg then
+        self.bg:setPositionY(242)
+    end
+
+    self:setPanelBg()
+    self:initSkillItemList()
+    self:checkSkillLevelUpRedpoint()
+    self:checkOpenTanlentEffect()
+end
+
+--检查打开天赋特效
+function HeroMainTabTalentPanel:checkOpenTanlentEffect()
+    if self.parent and self.parent.is_hide_talent_Item and self.parent.is_show_open_talent_effect then
+        for _, special_index in ipairs({3, 6}) do
+            if self.skill_item_list and self.skill_item_list[special_index] and self.skill_item_list[special_index].skill_panel then
+                self.skill_item_list[special_index].skill_panel:setVisible(false)
+            end
+        end
+        self.parent.is_hide_talent_Item = false
+        self:showOnpenThirteenEffect(true)
+    end
+end
+
+
+function HeroMainTabTalentPanel:initSkillItemList()
+    if not self.hero_vo then return end
+    local normalized = self:normalizeTalentSkillList(self.hero_vo.talent_skill_list)
+    if not normalized then
+        normalized = self:normalizeTalentSkillList(self.hero_vo.dower_skill)
+    end
+    if normalized then
+        self.hero_vo.talent_skill_list = normalized
+        self.talent_skill_cache = {}
+    end
+    if type(self.hero_vo.talent_skill_list) ~= "table" then return end
+
+    local function setNodeVisible(node, status)
+        if node then node:setVisible(status) end
+    end
+
+    local function showMissingConfig(item, index)
+        setNodeVisible(item.icon, false)
+        setNodeVisible(item.lock_icon, true)
+        setNodeVisible(item.skill_level_bg, false)
+        setNodeVisible(item.skill_level, false)
+        setNodeVisible(item.skill_name_bg, true)
+        setNodeVisible(item.skill_name, true)
+        if item.skill_name then
+            item.skill_name:setString(string.format("Chưa cấu hình ô %s", index))
+        end
+        if item.redPoint then
+            item.redPoint:setVisible(false)
+        end
+        if item.lock_icon then
+            loadSpriteTexture(item.lock_icon, PathTool.getResFrame("common","common_90009"), LOADTEXT_TYPE_PLIST)
+        end
+    end
+
+    for i,v in ipairs(self.config_list) do
+        local item = self.skill_item_list[i]
+        if item then
+            -- Ô số 3 vẫn là ô đặc biệt mở ở 13 sao. Không dùng break,
+            -- vì skill 4/5 vẫn phải được cập nhật ở phía sau.
+            local skip_special_slot = (self:isSpecialSkillSlot(i) and self.hero_vo.star <= model.hero_info_upgrade_star_param4)
+            if not skip_special_slot then
+                if not v or v.is_missing_config then
+                    showMissingConfig(item, i)
+                else
+                    local skill_id = self:getTalentSkillIdByPos(v.pos)
+                    if skill_id then
+                    local config = Config.SkillData.data_get_skill(tonumber(skill_id) or skill_id)
+                    if config then
+                        setNodeVisible(item.icon, true)
+                        if item.icon then
+                            item.icon:setOpacity(255)
+                        end
+                        setNodeVisible(item.skill_level_bg, true)
+                        setNodeVisible(item.skill_level, true)
+                        setNodeVisible(item.skill_name_bg, true)
+                        setNodeVisible(item.skill_name, true)
+                        setNodeVisible(item.lock_icon, false)
+                        local level = config.level
+                        if config.client_lev and config.client_lev > 0 then
+                            level = config.client_lev
+                        end
+                        if item.skill_level then
+                            item.skill_level:setString(level)
+                        end
+                        if item.skill_name then
+                            item.skill_name:setString(config.name)
+                        end
+                        if item.icon then
+                            item.record_icon = config.icon
+                            local skill_icon = PathTool.getSkillRes(config.icon, false)
+                            loadSpriteTexture(item.icon, skill_icon, LOADTEXT_TYPE)
+                            item.icon:setVisible(true)
+                            item.icon:setOpacity(255)
+                        end
+                        if self:isSpecialSkillSlot(i) then
+                            self:showThirteenEffect1(true, i)
+
+                            local partner_awakening_skill_config = Config.PartnerSkillData.data_partner_awakening_skill
+                            if partner_awakening_skill_config and partner_awakening_skill_config[config.bid] then
+                                self:showThirteenEffect2(true, i)
+                            else
+                                self:showThirteenEffect2(false, i)
+                            end
+                        end
+                    end
+                    else
+                    setNodeVisible(item.icon, false)
+                    setNodeVisible(item.lock_icon, true)
+                    setNodeVisible(item.skill_level_bg, false)
+                    setNodeVisible(item.skill_level, false)
+
+                    if item.redPoint then
+                        item.redPoint:setVisible(false)
+                    end
+                    local is_open, lock_str = model:checkOpenTanlentByconfig(v, self.hero_vo)
+
+                    local res
+                    if is_open then
+                        res = PathTool.getResFrame("common","common_90026")
+                        setNodeVisible(item.skill_name_bg, false)
+                        setNodeVisible(item.skill_name, false)
+                    else
+                        res = PathTool.getResFrame("common","common_90009")
+                        setNodeVisible(item.skill_name_bg, true)
+                        setNodeVisible(item.skill_name, true)
+                        if item.skill_name then
+                            item.skill_name:setString(lock_str)
+                        end
+                    end
+                    if item.lock_icon then
+                        loadSpriteTexture(item.lock_icon, res, LOADTEXT_TYPE_PLIST)
+                    end
+                    if self:isSpecialSkillSlot(i) then
+                        self:showThirteenEffect1(false, i)
+                        self:showThirteenEffect2(false, i)
+                    end
+                    end
+                end
+            end
+        end
+    end
+end
+
+--检查升级的红点 
+function HeroMainTabTalentPanel:checkSkillLevelUpRedpoint()
+    if not self.hero_vo.talent_skill_list then return end
+    for i,v in ipairs(self.config_list) do
+        local item = self.skill_item_list[i]
+        if item and item.redPoint then
+            local skill_id =
+                v and not v.is_missing_config and
+                self:getTalentSkillIdByPos(v.pos) or nil
+            if skill_id then
+                local is_redpoint =
+                    HeroCalculate.checkSingleTalentSkillLevel(skill_id)
+                item.redPoint:setVisible(is_redpoint)
+            else
+                item.redPoint:setVisible(false)
+            end
+        end
+    end
+end
+
+--显示打开13星的效果
+function HeroMainTabTalentPanel:showOnpenThirteenEffect(status)
+    if status then
+        --卡牌扫光
+        if self.open_thirteen_effect == nil then
+            --全屏抖动
+            controller:runShakeScreemAction()
+            self.open_thirteen_effect = createEffectSpine("E27805", cc.p(self.size.width/2,self.size.height/2), cc.p(0.5, 0.5), false, PlayerAction.action, function()
+                if not tolua.isnull(self) then
+                    self.open_thirteen_effect:setVisible(false)
+                    controller:openSkillUnlockWindow(true, 0, {show_type = 2})
+                end
+            end)
+            self.tab_panel:addChild(self.open_thirteen_effect, 1)
+
+            local function animationEventFunc(event)
+                if event.eventData.name == "appear" then
+                    if not tolua.isnull(self) then
+                        for _, special_index in ipairs({3, 6}) do
+                            if self.skill_item_list and self.skill_item_list[special_index] and self.skill_item_list[special_index].skill_panel then
+                                self.skill_item_list[special_index].skill_panel:setVisible(true)
+                            end
+                        end
+                    end
+                end
+            end
+            self.open_thirteen_effect:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_EVENT)
+
+        end 
+    else
+        if self.open_thirteen_effect then 
+            self.open_thirteen_effect:setVisible(false)
+            self.open_thirteen_effect:removeFromParent()
+            self.open_thirteen_effect = nil
+        end
+
+    end
+end
+--显示13星通用特效
+function HeroMainTabTalentPanel:showThirteenEffect1(status, slot_index)
+    slot_index = slot_index or 3
+    self.thirteen_effect_map = self.thirteen_effect_map or {}
+
+    if status then
+        if self.thirteen_effect_map[slot_index] == nil
+            and self.skill_item_list
+            and self.skill_item_list[slot_index]
+            and self.skill_item_list[slot_index].effect_node then
+            self.thirteen_effect_map[slot_index] = createEffectSpine(
+                "E27803", cc.p(0,0), cc.p(0.5, 0.5), true, PlayerAction.action
+            )
+            self.skill_item_list[slot_index].effect_node:addChild(
+                self.thirteen_effect_map[slot_index], 1
+            )
+        end 
+    else
+        if self.thirteen_effect_map[slot_index] then 
+            self.thirteen_effect_map[slot_index]:setVisible(false)
+            self.thirteen_effect_map[slot_index]:removeFromParent()
+            self.thirteen_effect_map[slot_index] = nil
+        end
+    end
+end
+
+--显示13星通用特效
+function HeroMainTabTalentPanel:showThirteenEffect2(status, slot_index)
+    slot_index = slot_index or 3
+    self.thirteen_effect2_map = self.thirteen_effect2_map or {}
+
+    if status then
+        if self.thirteen_effect2_map[slot_index] == nil
+            and self.skill_item_list
+            and self.skill_item_list[slot_index]
+            and self.skill_item_list[slot_index].effect_node_2 then
+            self.thirteen_effect2_map[slot_index] = createEffectSpine(
+                "E27804", cc.p(-9,16), cc.p(0.5, 0.5), true, PlayerAction.action
+            )
+            self.skill_item_list[slot_index].effect_node_2:addChild(
+                self.thirteen_effect2_map[slot_index], 1
+            )
+        end   
+    else
+        if self.thirteen_effect2_map[slot_index] then 
+            self.thirteen_effect2_map[slot_index]:setVisible(false)
+            self.thirteen_effect2_map[slot_index]:removeFromParent()
+            self.thirteen_effect2_map[slot_index] = nil
+        end
+    end
+end
+
+function HeroMainTabTalentPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+--移除
+function HeroMainTabTalentPanel:DeleteMe()
+    self:showOnpenThirteenEffect(false)
+    self:showThirteenEffect1(false, 3)
+    self:showThirteenEffect1(false, 6)
+    self:showThirteenEffect2(false, 3)
+    self:showThirteenEffect2(false, 6)
+
+    if self.modify_goods_event then
+        GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+    if self.add_goods_event then
+        GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.del_goods_event then
+        GlobalEvent:getInstance():UnBind(self.del_goods_event)
+        self.del_goods_event = nil
+    end
+    if self.hero_get_talent_event then
+        GlobalEvent:getInstance():UnBind(self.hero_get_talent_event)
+        self.hero_get_talent_event = nil
+    end
+    if self.hero_learn_talent_event then
+        GlobalEvent:getInstance():UnBind(self.hero_learn_talent_event)
+        self.hero_learn_talent_event = nil
+    end
+    if self.hero_level_up_talent_event then
+        GlobalEvent:getInstance():UnBind(self.hero_level_up_talent_event)
+        self.hero_level_up_talent_event = nil
+    end
+    if self.hero_forget_talent_event then
+        GlobalEvent:getInstance():UnBind(self.hero_forget_talent_event)
+        self.hero_forget_talent_event = nil
+    end
+
+    if self.item_load then
+        self.item_load:DeleteMe()
+    end
+    self.item_load = nil
+    if self.box_item_load then
+        self.box_item_load:DeleteMe()
+    end
+    self.box_item_load = nil
+    if self.skill_bg_item_load then
+        self.skill_bg_item_load:DeleteMe()
+    end
+    self.skill_bg_item_load = nil
+
+    if self.box_item_load_6 then
+        self.box_item_load_6:DeleteMe()
+    end
+    self.box_item_load_6 = nil
+    if self.skill_bg_item_load_6 then
+        self.skill_bg_item_load_6:DeleteMe()
+    end
+    self.skill_bg_item_load_6 = nil
+
+    if self.slot_bg_loaders then
+        for _, loader in pairs(self.slot_bg_loaders) do
+            if loader and loader.DeleteMe then
+                loader:DeleteMe()
+            end
+        end
+    end
+    self.slot_bg_loaders = nil
+
+    if role_vo then
+        if self.role_lev_event then
+            role_vo:UnBind(self.role_lev_event)
+            self.role_lev_event = nil
+        end
+    end
+end

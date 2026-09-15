@@ -1,0 +1,517 @@
+--[[
+	服务器选择界面
+]]
+RoleServerPanel = class("RoleServerPanel", function() 
+	return ccui.Widget:create()
+end)
+
+local table_insert = table.insert
+local string_format = string.format
+local table_sort = table.sort 
+local table_remove = table.remove
+
+function RoleServerPanel:ctor(parent, ctrl)
+	self.ctrl = ctrl
+	self.size = parent and parent:getContentSize() or cc.size(SCREEN_WIDTH, SCREEN_HEIGHT)
+	self.last_login = 0
+	self.model = self.ctrl:getModel()
+	self.data = self.model:getLoginData()
+    self:setContentSize(self.size)
+	self:setPosition(self.size.width/2, self.size.height/2)
+	self:setCascadeOpacityEnabled(true)
+
+	self.server_item_list = {}			-- 当前显示的服务器列表
+	self.server_poll_list = {}			-- 服务器列表对象池
+
+	self.cell_list 		= {}
+	self.tab_list 		= {}
+	self.server_list 	= {}
+	self.tui_list 		= {}
+	self.tab_num 		= 0
+	self.select_item 	= nil
+	self.scroll_w       = 0
+	self.scroll_h 		= 0
+	self.recent_h		= 0
+	self.cell_h			= 104      		-- Y间隔
+	self.cell_w			= 429			-- X间距
+	self.page_sum  		= 10 			-- 一页对多显示服务器列表个数
+	self.pos_y 			= 0
+	self.isRenderFinish = false
+	self.is_have 		= false
+	self:layoutUI()
+	self:registerEvent()
+end
+
+function RoleServerPanel:layoutUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("login/server_panel_view"))
+	self.root_wnd:setAnchorPoint(cc.p(0.5, 0.5))
+	self.root_wnd:setPosition(self.size.width / 2, self.size.height / 2)
+	self:addChild(self.root_wnd)
+	
+	local main_container = self.root_wnd:getChildByName("main_container")
+	main_container:getChildByName("win_title"):setString(TI18N("语言_c_1430"))
+	main_container:setPositionY(680)
+
+	self.btn_close = main_container:getChildByName("close_btn")
+
+	-- 左侧服务器列表的父节点
+	self.server_list = main_container:getChildByName("server_list")
+	
+	-- 右边滚动容器
+	self.server_scroll_view = main_container:getChildByName("server_scroll_view")
+	self.server_scroll_view:setScrollBarEnabled(false)
+	self.scroll_h = self.server_scroll_view:getContentSize().height
+	self.scroll_w = self.server_scroll_view:getContentSize().width
+    
+	for i = 1, 3 do
+		local label = main_container:getChildByName("status_tips_" .. i)
+		if label then
+			if i == 1 then
+				label:setString(TI18N("语言_c_1431"))
+			elseif i == 2 then
+				label:setString(TI18N("语言_c_1432"))
+			else
+				label:setString(TI18N("语言_c_1433"))
+			end
+		end
+	end
+end 
+
+function RoleServerPanel:update()
+	if self.scroll_view == nil then
+		local size = self.server_list:getContentSize()
+		local setting = {
+			item_class = RoleServerListItem,
+			start_x = 0,
+			space_x = 0,
+			start_y = 0,
+			space_y = 0,
+			item_width = 204,
+			item_height = 74,
+			row = 1,
+			col = 1
+		}
+		self.scroll_view = CommonScrollViewLayout.new(self.server_list, nil, nil, nil, size, setting)
+		
+		self:renderPageServerList()
+	end
+end
+
+function RoleServerPanel:renderPageServerList()
+	local PageData = self.model.PageData
+	self.tab_list = {}
+	self.cell_list = {}
+	self.tab_num = #PageData
+	local heronum = PageData.recent_server and #PageData.recent_server or 0
+	self.is_have = false
+	if heronum > 0 then self.is_have = true end 
+		
+	local function click_callback(item)
+		self:changeTabBarIndex(item)
+	end
+	local server_list_data = {}
+	table_insert(server_list_data, {order="recommend", desc=TI18N("语言_c_1363")})
+	table_insert(server_list_data, {order="role", desc=TI18N("语言_c_1434")})
+	for i = self.tab_num, 1, - 1 do
+		local group_data = PageData[i]
+		if group_data and group_data.page > 0 then
+			local group_id = group_data.page
+			local group_name = group_data.name
+			table_insert(server_list_data, {order=i, desc=group_name})
+		end
+	end
+	self.scroll_view:setData(server_list_data, click_callback)
+end
+
+function RoleServerPanel:changeTabBarIndex(item)
+	if item == nil or item.data == nil then return end
+	if self.select_list_item == item then return end
+	if self.select_list_item then
+		self.select_list_item:setSelected(false)
+		self.select_list_item = nil
+	end
+
+	self.select_list_item = item
+	if self.select_list_item then
+		self.select_list_item:setSelected(true)
+	end
+
+	-- 缓存对象池
+	if self.server_scroll_view then
+		for i,v in ipairs(self.server_item_list) do
+			v:clearLayout()
+			table_insert(self.server_poll_list, v)
+		end
+		self.server_item_list = {}
+		self.select_item = nil
+	end
+
+	local index = item.data.order
+	self.cell_list = {}
+	self:changePageServerData(index,true)
+end 
+
+--==============================--
+--desc:创建已有角色服务器列表,也只取12个
+--time:2017-08-03 10:46:29
+--@return 
+--==============================--
+function RoleServerPanel:createRoleServer()
+	local temp_list = {}
+	for i, v in ipairs(self.server_list) do
+		if v.role_count > 0 then
+			table_insert(temp_list, v)
+		end
+	end
+	
+	local role_list = {}
+	if temp_list and #temp_list > 0 then
+		table_sort(temp_list, function(a, b) return b.role_logintime < a.role_logintime end)
+		
+		for i = 1, 100 do
+			if temp_list[i] ~= nil then
+				table_insert(role_list, temp_list[i])
+			end
+		end
+	end
+	self:createServerList(role_list, true)
+end
+
+--==============================--
+--desc:推荐服务器从后面往前选取12个
+--time:2017-08-03 10:42:36
+--@return 
+--==============================--
+function RoleServerPanel:createRecommendServer()
+	local recommend_list = {}
+	if not self.server_list or next(self.server_list) == nil then return end
+	for i=1,2 do
+		if self.server_list[i] then
+			table_insert(recommend_list, self.server_list[i])
+		end
+	end
+	self:createServerList(recommend_list)
+end 
+
+--==============================--
+--desc:创建当前服务器列表
+--time:2017-08-03 10:43:11
+--@data: is_role:标识是否为已有角色
+--@return 
+--==============================--
+function RoleServerPanel:createServerList(data, is_role)
+	self.temp_new_pos = nil
+	local tamp = #data
+	local total = tamp * self.cell_h + (tamp + 1)
+	self.total_h = total
+	self.maxH = math.max(total, self.scroll_h)
+	self.server_scroll_view:stopAutoScroll()
+	self.server_scroll_view:setInnerContainerSize(cc.size(self.scroll_w, self.maxH))
+
+	local _h, vo, _x, _y, cell = 0 
+	for i,v in ipairs(data) do
+		delayRun(self.root_wnd, i / display.DEFAULT_FPS, function (  )
+			vo = {idx=i, v=v}
+			_x = (self.scroll_w - self.cell_w) * 0.5
+			_y = self.maxH - (i-1)*(self.cell_h)
+			if #self.server_poll_list > 0 then
+				cell = table_remove(self.server_poll_list, 1)
+			else
+				cell = RoleServerCell.new()
+			end
+
+			table_insert(self.server_item_list, cell)
+			self.server_scroll_view:addChild(cell)
+			cell:setBaseData(vo, is_role)
+
+			local curPos = cell.idx - 1
+			if self.temp_new_pos and curPos > self.temp_new_pos then
+				local offH = 88
+				if self.select_item then
+					offH = self.select_item.scroll_h or 88
+				end
+				_y = _y - offH
+			end
+			cell:setPosition(_x, _y)
+
+			local function callBack(item)
+				local loginData = LoginController:getInstance():getModel():getLoginData() 
+    			if loginData and loginData.srv_id == v.srv_id then
+					-- 玩家选的是同服，这边考虑加一个提示
+					message(TI18N("语言_c_4960"))
+				else
+					if self.model:checkHotServerCantIn(v) then
+						message(TI18N("语言_c_4961"))
+					else
+						local function logbackFun()
+							LoginController:getInstance():getModel():saveCurSrv(v)
+							if sdkRestartGame then sdkRestartGame() end
+						end
+						log_change_enter_sid(nil,serverId(v.srv_id),logbackFun)
+					end
+				end
+				-- self.model:setCurSrv(v, true)
+				-- local sport = v.port or v.erl_port or ""
+				-- local sip = v.ip or ""
+				-- local susrName = self.ctrl:getModel():getLoginData().usrName
+				-- cc.UserDefault:getInstance():setStringForKey("local_server_ip", sport)
+				-- cc.UserDefault:getInstance():setStringForKey("local_server_port", sip)
+				-- cc.UserDefault:getInstance():setStringForKey("local_server_usrName", susrName)
+		
+				-- local objjsonString = json.encode(v)
+				-- cc.UserDefault:getInstance():setStringForKey("local_server_info", objjsonString)
+				-- local susrName = self.ctrl:getModel():getLoginData().usrName
+				-- cc.UserDefault:getInstance():setStringForKey("local_server_usrName", susrName)
+				-- if restart then restart() end
+			end
+			cell:addCallBack(callBack)
+			self.cell_list[i] = cell
+		end)
+	end
+end
+
+--==============================--
+--desc:点击选择一个服务器之后的具体操作
+--time:2017-08-03 10:48:43
+--@cell:
+--@force:
+--@return 
+--==============================--
+-- function RoleServerPanel:selectItemHandler(cell, force, auto_login)
+-- 	if cell == nil or cell.data == nil or cell.data.v == nil then return end
+-- 	if self.select_item and self.select_item == cell then return end
+-- 	if self.select_item ~= nil then
+-- 		self.select_item:setSelected(false)
+-- 	end
+
+-- 	self.pre_cell = self.select_item
+	
+-- 	local loginData = deepCopy(self.model:getLoginData())
+-- 	local is_connect = GameNet:getInstance():IsServerConnect()
+-- 	if self.select_item ~= cell or force or not is_connect then
+-- 		loginData.ip = cell.data.v.ip
+-- 		loginData.port = cell.data.v.port or cell.data.v.erl_port
+-- 		loginData.srv_id = cell.data.v.srv_id
+--         loginData.host = cell.data.v.host or ""
+--         loginData.open_time = cell.data.v.open_time or 0
+-- 		loginData.rid = 0
+-- 		if is_connect and self.ctrl:isReadyEnterGame() == false then
+-- 	        GameNet:getInstance():DisconnectByClient(false)
+-- 		end
+-- 		local function call_back()
+
+--             loginData.host = cell.data.v.host or ""
+--             loginData.open_time = cell.data.v.open_time or 0
+-- 			self.ctrl:requestLoginGame(loginData.usrName, cell.data.v.ip, cell.data.v.port or cell.data.v.erl_port, false, auto_login)  
+-- 		end
+-- 	end
+
+-- 	loginData.srv_id = cell.data.v.srv_id
+--     loginData.host = cell.data.v.host or ""
+--     loginData.open_time = cell.data.v.open_time or 0
+--     loginData.srv_name = cell.data.v.srv_name or ""
+
+--     self.select_item = cell
+-- 	if self.select_item ~= nil then
+-- 		self.select_item:setSelected(true)
+-- 	end
+-- end
+
+function RoleServerPanel:registerEvent()
+	if self.btn_close then
+	    self.btn_close:addTouchEventListener(function(sender, event_type)
+	        if event_type == ccui.TouchEventType.ended then
+	        	self:DeleteMe()
+	        end
+	    end)
+	end
+	if self.role_list_change_event == nil then
+    	self.role_list_change_event = GlobalEvent:getInstance():Bind(LoginEvent.SERVER_ROLELIST_CHANGE, function()
+			self:updateCell()
+    	end)
+	end
+
+	-- 获得分页服务器
+	if not self.pack_server_success_event then
+		self.pack_server_success_event = GlobalEvent:getInstance():Bind(LoginEvent.GET_PACE_SERVERLIST, function (page)
+			if tolua.isnull(self) then return end
+			if self.changePageServerData then
+				self:changePageServerData(false,page)
+			end
+		end)
+	end
+end
+
+function RoleServerPanel:changePageServerData(issend)
+	if not issend then
+		-- 缓存对象池
+		if self.server_scroll_view then
+			for i,v in ipairs(self.server_item_list) do
+				v:clearLayout()
+				table_insert(self.server_poll_list, v)
+			end
+			self.server_item_list = {}
+			self.select_item = nil
+		end
+	end
+	local index = "recommend"
+	if self.select_list_item then
+		local item = self.select_list_item
+		index = item.data.order
+		-- self.cell_list = {}
+	end
+	local datalist = {}
+	local recommend_list = {}
+	datalist = self.model:getPageServer(index,issend)
+	if datalist and next(datalist) then
+		recommend_list = clone(datalist)
+	end
+	local is_role = index == "role" and true or false
+	self:createServerList(recommend_list,is_role)
+end
+
+
+--==============================--
+--desc:更新选中服务器列表数据
+--time:2018-06-25 06:36:49
+--服务器是否有角色，本想用平台给的，但是需要找服务器获取
+--@return 
+--==============================--
+function RoleServerPanel:updateCell()
+	local roles = self.model:getLoginInfo().roles
+	if self.select_item  then
+		self.select_item:updateRoleData(roles)
+	end
+end
+
+function RoleServerPanel:close()
+	
+end
+
+
+function RoleServerPanel:DeleteMe()
+	doStopAllActions(self.root_wnd)
+	if self.scroll_view then
+		self.scroll_view:DeleteMe()
+		self.scroll_view = nil
+	end
+
+	for i,v in ipairs(self.server_item_list) do
+		v:DeleteMe()
+	end
+	self.server_item_list = nil
+
+	for i,v in ipairs(self.server_poll_list) do
+		v:DeleteMe()
+	end
+	self.server_poll_list = nil
+
+	for i=1,self.server_scroll_view:getChildrenCount() do
+		local cell = self.server_scroll_view:getChildByTag(i)
+		if cell and cell.DeleteMe then
+			cell:DeleteMe()
+		end
+	end
+
+    if self.role_list_change_event then
+        GlobalEvent:getInstance():UnBind(self.role_list_change_event)
+        self.role_list_change_event = nil
+    end
+    if self.pack_server_success_event then
+        GlobalEvent:getInstance():UnBind(self.pack_server_success_event)
+        self.pack_server_success_event = nil
+    end
+
+	self:removeAllChildren()
+    self:removeFromParent()
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      服务器列表左侧列表
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+RoleServerListItem = class("RoleServerListItem", function()
+	return ccui.Layout:create()
+end)
+
+function RoleServerListItem:ctor()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("login/server_list_item"))
+	self.size = self.root_wnd:getContentSize()
+	self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+	self:setTouchEnabled(true)
+	
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+	self:addChild(self.root_wnd)
+
+	self.normal_bg = self.root_wnd:getChildByName("normal_bg")
+	self.select_bg = self.root_wnd:getChildByName("select_bg") 
+	self.list_desc = self.root_wnd:getChildByName("list_desc") 			-- 未选中 68452a   选中 d7a98e
+	
+	self:registerEvent()
+end
+
+function RoleServerListItem:registerEvent()
+	self:addTouchEventListener(function(sender, event_type)
+	if event_type == ccui.TouchEventType.ended then	
+        self.touch_end = sender:getTouchEndPosition()
+			local is_click = true
+			if self.touch_began ~= nil then
+				is_click = math.abs( self.touch_end.x - self.touch_began.x ) <= 20 and math.abs( self.touch_end.y - self.touch_began.y ) <= 20
+			end
+			if is_click == true then
+				if self.call_back and self.data then
+					self.call_back(self)
+				end			
+			end
+		elseif event_type == ccui.TouchEventType.began then			
+            self.touch_began = sender:getTouchBeganPosition()
+		end
+	end)
+end
+
+function RoleServerListItem:addCallBack(call_back)
+	self.call_back = call_back
+end
+
+--==============================--
+--desc:设置选中状态
+--time:2018-06-25 03:56:17
+--@status:
+--@return 
+--==============================--
+function RoleServerListItem:setSelected(status)
+	if status == true then
+		self.list_desc:setTextColor(cc.c4b(248,239,118,255))
+	else
+		self.list_desc:setTextColor(cc.c4b(249,238,208,255))
+	end
+	self.normal_bg:setVisible(status == false)
+	self.select_bg:setVisible(status)
+end
+
+function RoleServerListItem:setData(data)
+	if data ~= nil then
+		self.data = data
+		self.list_desc:setString(data.desc)
+
+		-- 创建之后默认选中第一个
+		if data.order == "recommend" then
+			self.call_back(self)
+		end
+	end
+end
+
+function RoleServerListItem:DeleteMe()
+	if self.rank_num ~= nil then
+		self.rank_num:DeleteMe()
+		self.rank_num = nil
+	end
+	self:removeAllChildren()
+	self:removeFromParent()
+end  

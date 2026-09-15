@@ -1,0 +1,310 @@
+-- --------------------------------------------------------------------
+-- 
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      无尽试炼Buff界面
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ShuraTrailBuffView = ShuraTrailBuffView or BaseClass(BaseView)
+
+local controller = Shura_trailController:getInstance()
+local model = controller:getModel()
+function ShuraTrailBuffView:__init(...)
+    self.is_full_screen = false
+    self.layout_name = "shuratrail/shuratrail_buff_view"
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.partner_list = {}
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("form", "form"), type = ResourcesType.plist}
+    }
+end
+
+function ShuraTrailBuffView:open_callback(...)
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.win_title = self.main_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_1134"))
+    autoSizeTitleBg(self.win_title,self.main_panel:getChildByName("Image_2"))
+    self.desc_label = self.main_panel:getChildByName("desc_label")
+    self.desc_label:setString(TI18N("语言_c_1135"))
+    self.checkbox = self.main_panel:getChildByName("checkbox")
+    self.checkboxname = self.checkbox:getChildByName("name")
+    self.checkboxname:setString(TI18N("语言_c_5140"))
+    self.checkbox:setPositionX(640 - self.checkboxname:getContentSize().width - 10)
+    -- self.checkBox:setSelected(false)
+
+    self.buff_container = self.main_panel:getChildByName("buff_container")
+    self.partner_container = self.main_panel:getChildByName("partner_container")
+    self.form_icon = self.partner_container:getChildByName("form_icon")
+    self.form_label = self.partner_container:getChildByName("form_label")
+    self.desc_label_1 = self.partner_container:getChildByName("desc_label_1")
+    self.desc_label_1:setString(TI18N("语言_c_1370"))
+    --self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.cur_num = createRichLabel(24,175,cc.p(1,0.5),cc.p(650,772),nil,nil,500)
+ 
+    self.main_container:addChild(self.cur_num)
+    self.buff_scroll_size = self.buff_container:getContentSize()
+    local setting = {
+        item_class = ShuraTrailBuffItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 2,                    -- x方向的间隔
+        start_y = 1,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = ShuraTrailBuffItem.Width,               -- 单元的尺寸width
+        item_height = ShuraTrailBuffItem.Height,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1                         -- 列数，作用于垂直滚动类型
+    }
+    self.buff_scrollview = CommonScrollViewLayout.new(self.buff_container, cc.p(2.5,0) , ScrollViewDir.vertical, ScrollViewStartPos.top,self.buff_scroll_size, setting)
+end
+
+function ShuraTrailBuffView:openRootWnd(data)
+    if data then
+        self.buff_data = data
+        self.cur_num:setString(string.format(TI18N("语言_c_1136"), data.round))
+        local form_res = PathTool.getResFrame("form", "form_icon_"..data.formation_type+7)
+        self.form_icon:loadTexture(form_res,LOADTEXT_TYPE_PLIST)
+        if Config.FormationData.data_six_form_data  then
+            local name = Config.FormationData.data_six_form_data[data.formation_type].name
+            self.form_label:setString(name)
+            -- self.form_label:setString(string.format(TI18N("语言_c_4726"),name,data.formation_lev))
+        end
+      
+        self:updateBuffData(data)
+        self:updatePartnerData(data)
+    end
+end
+
+function ShuraTrailBuffView:getData(  )
+    return self.buff_data
+end
+
+function ShuraTrailBuffView:register_event(...)
+    registerButtonEventListener(self.checkbox, function(sender,event_type)
+        local is_select = self.checkbox:isSelected()
+        local list = model:getShuraData()
+        if is_select then
+            playButtonSound2()
+            NewPartnersummonController:getInstance():getModel():setignoreMp4(1)
+            controller:send23929(1,list.pos)
+	    else
+            playButtonSound2()
+            NewPartnersummonController:getInstance():getModel():setignoreMp4(0)
+            controller:send23929(0,list.pos)
+	    end
+    end, true, 1) 
+    if not self.choose_buff then
+        self.choose_buff = GlobalEvent:getInstance():Bind(Shura_trailEvent.CHOOSE_BUFF,function()
+            self:EndAotoChooseBuff()
+        end)
+    end
+    if not self.choose_buff_end then
+        self.choose_buff_end = GlobalEvent:getInstance():Bind(Shura_trailEvent.CHOOSE_BUFF_END,function(data)
+            if data.click == 1 then
+                self:AotoChooseBuff()
+                self.checkbox:setSelected(true)
+            elseif data.click == 0 then
+                self.checkbox:setSelected(false)
+                self:EndAotoChooseBuff()
+            end
+        end)
+    end
+end
+--[[
+    @desc: 增益buff选择
+    author:{author}
+    time:2018-08-16 14:22:38
+    --@args: 
+    @return:
+]]
+function ShuraTrailBuffView:updateBuffData(data)
+    if data then
+        self.buffdata = data
+        table.sort(data.list,function(a,b)
+            return a.buff_id < b.buff_id
+        end)
+        self.buff_scrollview:setData(data.list)
+        self:AotoChooseBuff()
+    end
+end
+
+function ShuraTrailBuffView:EndAotoChooseBuff()
+    -- local list = model:getShuraData()
+    -- if not list then return end
+    -- if list.click == 0 then
+    --     self.checkbox:setSelected(false)
+    -- else
+    --     self.checkbox:setSelected(true)
+    -- end
+    if self.sequence_action then
+        self.buff_scrollview:stopActionByTag(10086)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+function ShuraTrailBuffView:AotoChooseBuff()
+    local list = model:getShuraData()
+    if not list then return end
+    if list.click == 0 then
+        self.checkbox:setSelected(false)
+    else
+        self.checkbox:setSelected(true)
+    end
+    if self.buff_data.round ~= 1 and list.click == 1 and list.pos ~= 0 then
+        message(TI18N("语言_c_5139"))
+        local action = cc.Sequence:create(cc.DelayTime:create(10), cc.CallFunc:create(function() 
+            controller:send23926(self.buffdata.list[list.pos].buff_id)
+        end))
+        self.sequence_action = self.buff_scrollview:runAction(action)
+        self.sequence_action:setTag(10086)
+    end
+end
+function ShuraTrailBuffView:updatePartnerData(data)
+    if data then
+        local pos_info = data.partner
+        if pos_info then
+            local temp = {}
+            for k, v in pairs(pos_info) do
+                v.rare_type = v.quality
+                local vo = HeroVo.New()
+                vo:updateHeroVo(v)
+                table.insert(temp, vo)
+            end
+
+            for i, v in ipairs(temp) do
+                delayRun(self.main_container, i*2 / display.DEFAULT_FPS, function (  )
+                    if not self.partner_list[i] then
+                        local item =  HeroExhibitionItem.new(0.8, true)
+                        self.partner_list[i] = item
+                        self.partner_container:addChild(item)
+                    end
+                    local temp_item = self.partner_list[i]
+                    if temp_item then
+                        temp_item:setExtendData({from_type=HeroConst.ExhibitionItemType.eEndLessHero,scale = 0.8})
+                        temp_item:setData(v,true)
+                        local width = HeroExhibitionItem.Width * 0.8 
+                        temp_item:setPosition(width * 0.5 + 18 + (width + 0)* (i - 1), self.partner_container:getContentSize().height / 2 - 10)
+                    end
+                end)
+            end
+        end
+    end
+end
+
+function ShuraTrailBuffView:close_callback(...)
+    doStopAllActions(self.main_container)
+    if self.partner_list then
+        for k,v in pairs(self.partner_list) do
+            if v.DeleteMe then
+                v:DeleteMe()
+            end
+        end
+        self.partner_list = nil
+    end
+    if self.buff_scrollview then
+        self.buff_scrollview:DeleteMe()
+        self.buff_scrollview = nil
+    end
+    if self.choose_buff then
+        GlobalEvent:getInstance():UnBind(self.choose_buff)
+        self.choose_buff = nil
+    end
+    if self.choose_buff_end then
+        GlobalEvent:getInstance():UnBind(self.choose_buff_end)
+        self.choose_buff_end = nil
+    end
+    controller:openShuraBuffView(false)
+end
+
+
+---buff列表单项
+ShuraTrailBuffItem = class("ShuraTrailBuffItem",function()
+    return ccui.Layout:create()
+end)
+
+ShuraTrailBuffItem.Height = 149
+ShuraTrailBuffItem.Width = 608
+
+function ShuraTrailBuffItem:ctor()
+    self:setContentSize(ShuraTrailBuffItem.Width,ShuraTrailBuffItem.Height)
+    self:setAnchorPoint(cc.p(0,1))
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("shuratrail/shuratrail_buff_item"))
+    self:addChild(self.root_wnd)
+    self.root = self.root_wnd:getChildByName("root")
+    self.buff_icon = self.root:getChildByName("buff_icon")
+
+    -- self.desc_label = createRichLabel(24, 175, cc.p(0, 0.5), cc.p(130, self.root:getContentSize().height / 2), nil, nil, 250)
+    -- self.root:addChild(self.desc_label)
+    self.scrollview_des = self.root:getChildByName("scrollview_des")
+    self.scrollview_des:setScrollBarEnabled(false)
+    local size = self.scrollview_des:getContentSize()
+    self.desc_label = createRichLabel(24,175, cc.p(0.5, 1), cc.p(size.width/2, 0), 2, 0, size.width)
+    self.scrollview_des:addChild(self.desc_label)
+    self.scrollview_des.size = size
+    
+
+    self.select_btn = self.root:getChildByName("select_btn")
+    self.select_label = self.select_btn:getChildByName("select_label")
+    self.select_label:setString(TI18N("语言_c_1137"))
+    self:registerEvent()
+end
+
+function ShuraTrailBuffItem:registerEvent( ... )
+    if self.select_btn then
+        self.select_btn:addTouchEventListener(function(sender,event_type)
+            if event_type == ccui.TouchEventType.ended then
+                if self.data then
+                    controller:send23926(self.data.buff_id)
+                    local list = model:getShuraData()
+                    controller:send23929(list.click,self.data.group_id)
+                    GlobalEvent:getInstance():Fire(Shura_trailEvent.CHOOSE_BUFF)
+                end
+            end
+        end)
+    end
+end
+
+function ShuraTrailBuffItem:setData(data)
+    if data then
+        self.data = data
+        if Config.EndlessHighData.data_buff_data then
+            if Config.EndlessHighData.data_buff_data[data.group_id] then
+                if Config.EndlessHighData.data_buff_data[data.group_id][data.buff_id] then
+                     local config = Config.EndlessHighData.data_buff_data[data.group_id][data.buff_id] 
+                     if config then
+                        self.desc_label:setString(config.desc)
+                        local des_size = self.desc_label:getContentSize()
+                        if des_size.height + 6 > self.scrollview_des.size.height then
+                            self.scrollview_des:setInnerContainerSize(cc.size(self.scrollview_des.size.width, des_size.height + 6))
+                            self.desc_label:setPositionY(des_size.height + 6 - 3)
+                        else
+                            self.desc_label:setPositionY(self.scrollview_des.size.height - 3)
+                        end
+                        if config.icon ~= "" then
+                            loadSpriteTexture(self.buff_icon,PathTool.getBuffRes(config.icon),LOADTEXT_TYPE)
+                        end
+                     end
+                end
+            end
+        end
+       
+    end 
+end
+
+function ShuraTrailBuffItem:getData(...)
+    return self.data
+end
+
+function ShuraTrailBuffItem:DeleteMe( ... )
+    self:removeAllChildren()
+    self:removeFromParent()
+end

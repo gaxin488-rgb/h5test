@@ -1,0 +1,239 @@
+--******** 文件说明 ********
+-- 
+-- @description: 编年史领取奖励
+-- @DateTime:    2019-04-22 16:56:26
+-- *******************************
+
+TreasureRewardWindow = TreasureRewardWindow or BaseClass(BaseView)
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+local back_controller = BackpackController:getInstance()
+local back_model = back_controller:getModel()
+
+function TreasureRewardWindow:__init()
+    self.win_type = WinType.Big      
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG    
+    self.layout_name = "treasure/treasure_reward_window"
+	self.treasure_list = {}
+    self.col_size = 5
+end
+
+function TreasureRewardWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.container = self.root_wnd:getChildByName("main_container")
+    self.title_bg = self.container:getChildByName("title_bg")
+    self.title_label = self.container:getChildByName("title_label")
+    self.title_label:setString(TI18N("语言_c_6575"))
+    self.title_bg:setContentSize(cc.size(math.max(self.title_label:getContentSize().width+120,332), 63))
+    self.goods = self.container:getChildByName("goods")
+end
+function TreasureRewardWindow:register_event()
+	registerButtonEventListener(self.background, function()
+        controller:openTreasureRewardWindow(false)
+    end,false, 2)
+    if self.research_data_event == nil then
+        self.research_data_event = GlobalEvent:getInstance():Bind(TreasureEvent.Research_Data_Event, function() 
+            self:setData()
+        end)
+    end
+end
+function TreasureRewardWindow:openRootWnd(setting)
+    self.setting = setting or {}
+    self.project_num = self.setting.project_num or 1
+    self.click_num = self.setting.click_num or 1
+    self.cfg = Config.NinjaTreasureResearchData.data_base_info[self.project_num][self.click_num]
+    local scroll_view_size = cc.size(619,620)
+    local setting = {
+        item_class = TreasureRewardItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 5,                   -- y方向的间隔
+        item_width = 610,               -- 单元的尺寸width
+        item_height = 148,              -- 单元的尺寸height
+        row = 5,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        once_num = 5,
+        need_dynamic = true,
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.goods, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self:setData()
+end
+function TreasureRewardWindow:setData()
+    local list = deepCopy(self.cfg.rewards)
+    for k, v in pairs(list) do
+        v.project_num = self.project_num
+        v.click_num = self.click_num
+    end
+    self.item_scrollview:setData(list)
+end
+function TreasureRewardWindow:close_callback()
+    if self.research_data_event then
+        GlobalEvent:getInstance():UnBind(self.research_data_event)
+        self.research_data_event = nil
+    end
+    controller:openTreasureRewardWindow(false)
+end
+
+
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      成就使用的单元
+--
+-- --------------------------------------------------------------------
+TreasureRewardItem = class("TreasureRewardItem", function()
+    return ccui.Layout:create()
+end)
+
+function TreasureRewardItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("treasure/treasure_reward_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    self.btn_img_res = PathTool.getResFrame("common", "common_1098")
+    self.container = self.root_wnd:getChildByName("container")
+    self.task_desc = self.container:getChildByName("task_desc")
+    self.task_desc:getVirtualRenderer():setLineSpacing(-6)
+
+    self.btn_container = self.container:getChildByName("btn_container")
+    self.goto_btn = self.btn_container:getChildByName("goto_btn")
+    self.goto_btn_label = self.goto_btn:getChildByName("label")
+    self.goto_btn_label:setString(TI18N("语言_c_108"))
+    self.goto_reward = self.btn_container:getChildByName("goto_reward")
+    self.goto_reward_label = self.goto_reward:getChildByName("label")
+    self.goto_reward_label:setString(TI18N("语言_c_109"))
+
+    self.progress = self.btn_container:getChildByName("progress")
+    self.progress:setScale9Enabled(true)
+    self.progress:setPercent( 0 )
+    self.value = self.btn_container:getChildByName("value")
+    self.value:setString(string.format("%s/%s", 0,0))
+
+    self.completed_img = self.container:getChildByName("completed_img")
+    self.scroll = self.container:getChildByName("scroll")
+    self.scroll:setScrollBarEnabled(false)
+
+    self:registerEvent()
+end
+
+function TreasureRewardItem:registerEvent()
+    self.goto_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            controller:openTreasureRewardWindow(false)
+        end
+    end)
+    self.goto_reward:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            controller:sender22347(self.data.project_num,self.data.click_num,self.data[1])
+        end
+    end)
+	-- 退出的时候移除一下吧.要不然可能有些人不会手动移除,就会报错
+	self:registerScriptHandler(function(event)
+		if "enter" == event then
+		elseif "exit" == event then	
+            if self.data ~= nil then
+                if self.update_self_event ~= nil then
+                    self.data:UnBind(self.update_self_event)
+                    self.update_self_event = nil
+                end
+                self.data = nil
+            end
+		end 
+	end)
+end
+
+function TreasureRewardItem:setData(data)
+    self.data = data
+    -- print("data",vardump(data))
+    self.task_desc:setString(data[2])
+
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 2
+    setting.max_count = 4
+    setting.is_center = false
+    self.item_list1 = commonShowSingleRowItemList(self.scroll, self.item_list1, data[3], setting)
+    self:updateSelf()
+end
+
+function TreasureRewardItem:updateSelf()
+    self.treasure_data = model:ResearchStaData(self.data.project_num,self.data.click_num)
+    -- print("self.treasure_data",vardump(self.treasure_data))
+    local num = 0
+    if self.treasure_data and next(self.treasure_data) then
+        local list = self.treasure_data.quest_list
+        for k, v in pairs(list) do
+            if v.state == 2 then
+                num = num + 1
+            end
+        end
+    end
+    if num > self.data[1] then
+        num = self.data[1]
+    end
+    self.progress:setPercent(num/self.data[1]*100)
+    self.value:setString(string.format("%s/%s", num,self.data[1]))
+
+    local reward_list = self.treasure_data and self.treasure_data.rewards or {}
+    local status = false
+    for k, v in pairs(reward_list) do
+        if v.reward_id == self.data[1] then
+            status = true
+        end
+    end
+    if status then
+        self.completed_img:setVisible(true)
+        self.btn_container:setVisible(false)
+    else
+        self.completed_img:setVisible(false)
+        self.btn_container:setVisible(true)
+        if num >= self.data[1] then
+            self.goto_btn:setVisible(false)
+            self.goto_reward:setVisible(true)
+        else
+            self.goto_btn:setVisible(true)
+            self.goto_reward:setVisible(false)
+        end
+    end
+
+end
+
+function TreasureRewardItem:suspendAllActions()
+    if self.data ~= nil then
+        if self.update_self_event ~= nil then
+            self.data:UnBind(self.update_self_event)
+            self.update_self_event = nil
+        end
+        self.data = nil
+    end
+end
+
+function TreasureRewardItem:DeleteMe()
+    for i,v in ipairs(self.item_list) do
+        v:DeleteMe()
+    end
+    self.item_list = nil
+    if self.data ~= nil then
+        if self.update_self_event ~= nil then
+            self.data:UnBind(self.update_self_event)
+            self.update_self_event = nil
+        end
+        self.data = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

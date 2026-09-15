@@ -1,0 +1,862 @@
+local _controller = MazeController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _string_format = string.format
+local _table_sort = table.sort
+local off_width = 30
+MazeWindow = MazeWindow or BaseClass(BaseView)
+
+function MazeWindow:__init()
+    self.is_full_screen = true
+    self.layout_name = "maze/maze_window"
+    self.win_type = WinType.Full
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("maze", "maze"),type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("activity/activity_warorder", "icon_7"),type = ResourcesType.single}
+    }
+    self.isLeadMove = false
+    self.line = {}
+    self.temp_point = 0
+
+    _model:setMazeLoginRed(false)
+end
+
+function MazeWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    -- self.background:loadTexture(PathTool.getPlistImgForDownLoad("bigbg","bigbg_84",true), LOADTEXT_TYPE)
+    self.background:setScale(display.getMaxScale())
+
+    self.panel_change_effect = self.root_wnd:getChildByName("panel_change_effect")
+    self.panel_change_effect:setVisible(false)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.container_size = self.main_container:getContentSize()
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    self.image_bg_1 = self.main_container:getChildByName("image_bg_1")
+    self.image_bg_2 = self.main_container:getChildByName("image_bg_2")
+    self.image_bg_3 = self.main_container:getChildByName("image_bg_3")
+    self.node_effect_1 = self.main_container:getChildByName("node_effect_1")
+    self.node_effect_2 = self.main_container:getChildByName("node_effect_2")
+    self.node_effect_3 = self.main_container:getChildByName("node_effect_3")
+    self.image_bg_1:ignoreContentAdaptWithSize(true)
+    self.image_bg_2:ignoreContentAdaptWithSize(true)
+    self.image_bg_3:ignoreContentAdaptWithSize(true)
+
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    local wnd_title = self.top_panel:getChildByName("wnd_title")
+    wnd_title:setString(TI18N("语言_c_5071"))
+
+    self.btn_rule = self.top_panel:getChildByName("btn_rule")
+    self.fight_btn = self.top_panel:getChildByName("fight_btn")
+    self.fight_txt = self.top_panel:getChildByName("fight_txt")
+    setTextSpacing(self.shop_txt,-8)
+    self.fight_txt:setString(TI18N("语言_c_6839"))
+    local _sacle = 100/self.fight_txt:getContentSize().width
+    if _sacle > 1 then
+        _sacle = 1
+    end
+    self.fight_txt:setScale(_sacle)
+    self.shop_btn = self.top_panel:getChildByName("shop_btn")
+    self.shop_txt = self.top_panel:getChildByName("shop_txt")
+    setTextSpacing(self.shop_txt,-8)
+    self.shop_txt:setString(TI18N("语言_c_6852"))
+    local _sacle = 100/self.shop_txt:getContentSize().width
+    if _sacle > 1 then
+        _sacle = 1
+    end
+    self.shop_txt:setScale(_sacle)
+    self.war_btn = self.top_panel:getChildByName("war_btn")
+    self.war_txt = self.top_panel:getChildByName("war_txt")
+    setTextSpacing(self.war_txt,-8)
+    self.war_txt:setString(TI18N("语言_act_war_6"))
+    local _sacle = 100/self.war_txt:getContentSize().width
+    if _sacle > 1 then
+        _sacle = 1
+    end
+    self.war_txt:setScale(_sacle)
+
+    -- self.jump_right = self.top_panel:getChildByName("jump_right")
+    -- self.jump_right:getChildByName("label"):setString(TI18N("语言_c_5072"))
+    -- self.jump_left = self.top_panel:getChildByName("jump_left")
+    -- self.jump_left:getChildByName("label"):setString(TI18N("语言_c_5073"))
+
+    -- local spine_model = createSpineByName("E24757", PlayerAction.action)
+    -- self.jump_right:addChild(spine_model)
+    -- spine_model:setScale(0.5)
+    -- spine_model:setPosition(cc.p(self.jump_right:getContentSize().width/2, self.jump_right:getContentSize().height/2))
+    -- spine_model:setAnimation(0, PlayerAction.action_1, true)
+
+    -- local spine_model = createSpineByName("E24758", PlayerAction.action)
+    -- self.jump_left:addChild(spine_model)
+    -- spine_model:setPosition(cc.p(self.jump_left:getContentSize().width/2, self.jump_left:getContentSize().height/2))
+    -- spine_model:setScale(0.5)
+    -- spine_model:setAnimation(0, PlayerAction.action_1, true)
+
+    self.middle_panel = self.main_container:getChildByName("middle_panel")
+    self.map_group = self.middle_panel:getChildByName("map_group")
+    local top_off = display.getTop(self.main_container)
+    local bottom_off = display.getBottom(self.main_container)
+    local safe_width, safe_height = display.getScreenWH()
+    self.safe_height = safe_height
+    self.middle_panel:setContentSize(720,safe_height)
+    if self.safe_height <= 1920 then
+        self.middle_panel:getInnerContainer():setPositionY(0)
+    end
+    
+
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    MainuiController:getInstance():setIsShowMainUIBottom(false) -- 隐藏底部UI
+
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.add_btn = self.bottom_panel:getChildByName("add_btn")
+    self.format_btn = self.bottom_panel:getChildByName("format_btn")
+    self.format_btn_label = self.format_btn:getChildByName("label")
+    self.format_btn_label:setString(TI18N("语言_c_5257"))
+
+    self.refresh_btn = self.bottom_panel:getChildByName("refresh_btn")
+    self.refresh_bg = self.bottom_panel:getChildByName("refresh_bg")
+    self.icon_img = self.bottom_panel:getChildByName("icon_img")
+    local item_config = Config.ItemData.data_get_data(2)
+    self.icon_img:loadTexture(PathTool.getItemRes(item_config.icon), LOADTEXT_TYPE)
+    self.icon_num = self.bottom_panel:getChildByName("icon_num")
+    self.free_txt = self.bottom_panel:getChildByName("free_txt")
+    self.free_txt:setString(TI18N("语言_c_6853"))
+    local _sacle = 100/self.free_txt:getContentSize().width
+    if _sacle > 1 then
+        _sacle = 1
+    end
+    self.free_txt:setScale(_sacle)
+    self.icon_img:setVisible(false)
+    self.icon_num:setVisible(false)
+    self.free_txt:setVisible(false)
+    self.refresh_bg:setVisible(false)
+
+    self.easy_btn = self.bottom_panel:getChildByName("easy_btn")
+    self.normal_btn = self.bottom_panel:getChildByName("normal_btn")
+    self.hard_btn = self.bottom_panel:getChildByName("hard_btn")
+    self.boss_btn = self.bottom_panel:getChildByName("boss_btn")
+    self.easy_btn_label = self.easy_btn:getChildByName("label")
+    self.normal_btn_label = self.normal_btn:getChildByName("label")
+    self.hard_btn_label = self.hard_btn:getChildByName("label")
+    self.boss_btn_label = self.boss_btn:getChildByName("label")
+    local config = Config.MazeData.data_diff_info
+    self.easy_btn_label:setString(TI18N(config[1].name))
+    self.normal_btn_label:setString(TI18N(config[2].name))
+    self.hard_btn_label:setString(TI18N(config[3].name))
+    self.boss_btn_label:setString(TI18N(config[4].name))
+    setChildUnEnabled(true, self.easy_btn)
+    setChildUnEnabled(true, self.normal_btn)
+    setChildUnEnabled(true, self.hard_btn)
+    setChildUnEnabled(true, self.boss_btn)
+    self.max_power_value = self.bottom_panel:getChildByName("max_power_value")
+    self.max_power_value:setString(TI18N("语言_c_7052"))
+    self.maxpower_bg = self.bottom_panel:getChildByName("maxpower_bg")
+    self.max_power_txt = self.bottom_panel:getChildByName("max_power_txt")
+    self:updateMaxPower()
+    self.image_tip = self.bottom_panel:getChildByName("image_tip") -- bg
+    self.tip_key = self.bottom_panel:getChildByName("tip_key")
+    self.tip_key_value = self.tip_key:getChildByName("tip_key_value")
+    self.tip_key:setString(TI18N("语言_c_4091"))
+    ccui.Helper:doLayout(self.tip_key)
+    self.figure_btn = self.bottom_panel:getChildByName("figure_btn")
+    self.figure_btn:getChildByName("label"):setString(TI18N("语言_c_2342"))
+
+    self:adaptationScreen()
+    self:createLine()
+end
+--设置最高战力
+function MazeWindow:updateMaxPower()
+    self.max_power_txt:setString(_model:getMazeMaxPower())
+    local _w = math.max(self.maxpower_bg:getContentSize().width,self.max_power_txt:getContentSize().width + 84)
+    self.maxpower_bg:setContentSize(cc.size(_w,self.maxpower_bg:getContentSize().height))
+end
+-- 设置适配屏幕
+function MazeWindow:adaptationScreen()
+    -- 对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+
+    self.node_effect_1:setPositionY(bottom_y)
+    self.node_effect_2:setPositionY(bottom_y)
+    self.node_effect_3:setPositionY(bottom_y)
+
+    local tab_y = self.image_bg_2:getPositionY()
+    self.image_bg_2:setPositionY(top_y - (self.container_size.height - tab_y))
+
+    local image_bg_3_y = self.image_bg_3:getPositionY()
+    self.image_bg_3:setPositionY(bottom_y + image_bg_3_y)
+
+    local image_bg_1_y = self.image_bg_1:getPositionY()
+    self.image_bg_1:setPositionY(bottom_y + image_bg_1_y)
+    -- 头部
+    local tab_y = self.top_panel:getPositionY()
+    self.top_panel:setPositionY(top_y - (self.container_size.height - tab_y))
+
+    local close_btn_y = self.close_btn:getPositionY()
+    self.close_btn:setPositionY(bottom_y + close_btn_y)
+
+    -- 底部
+    local bottom_panel_y = self.bottom_panel:getPositionY()
+    self.bottom_panel:setPositionY(bottom_y + bottom_panel_y)
+
+end
+
+function MazeWindow:showRoleShowEffect(status, pos_x, pos_y,index)
+    if status then
+        if self.role_show_effect == nil then
+            self.role_show_effect = createEffectSpine("E27533", cc.p(pos_x, pos_y), cc.p(0.5, 0.5), false,
+                PlayerAction.action_2, function()
+                    if tolua.isnull(self.role_show_effect) then
+                        return
+                    end
+                    -- print("-------------showRoleShowEffect执行扫荡---------------")
+                    self.isLeadMove = false
+                    if _model.is_saodang == true then
+                        _controller:sender30321(self.temp_point)
+                        self:showFightEffect(true, pos_x, pos_y,self.temp_point)
+                    else
+                        _controller:openMazeDes(true, self.temp_point)
+                    end
+                end)
+            self.map_group:addChild(self.role_show_effect, 1000)
+        else
+            self.role_show_effect:setPosition(pos_x, pos_y)
+            self.role_show_effect:setVisible(true)
+            self.role_show_effect:setAnimation(0, PlayerAction.action_2, false)
+        end
+    else
+        if self.role_show_effect then
+            self.role_show_effect:clearTracks()
+            self.role_show_effect:removeFromParent()
+            self.role_show_effect = nil
+        end
+    end
+end
+
+function MazeWindow:showFightEffect(status, posx, posy,index)
+    if status then
+        local cfg = Config.MazeData.data_map_info[index]
+        local pos_x = cfg.res_point[1][1]
+        local pos_y = cfg.res_point[1][2]
+        if self.fight_effect == nil then
+            self.fight_effect = createEffectSpine("E23025", cc.p(pos_x, pos_y), cc.p(0.5, 0.5), false,
+                PlayerAction.action_2, function()
+                    if tolua.isnull(self.fight_effect) then
+                        return
+                    end
+                    self.fight_effect:setVisible(false)
+                    -- _controller:sender30303()
+                    -- _controller:sender30321(self.temp_point)
+                end)
+            self.fight_effect:setVisible(true)
+            self.map_group:addChild(self.fight_effect, 1000)
+        else
+            self.fight_effect:setPosition(pos_x, pos_y)
+            self.fight_effect:setVisible(true)
+            self.fight_effect:setAnimation(0, PlayerAction.action_2, false)
+        end
+    else
+        if self.fight_effect then
+            self.fight_effect:clearTracks()
+            self.fight_effect:removeFromParent()
+            self.fight_effect = nil
+        end
+    end
+end
+
+function MazeWindow:updateLead()
+    if self.isLeadMove == true then
+        return
+    end
+    local look_id = HomeworldController:getInstance():getModel():getMyCurHomeFigureId()
+    -- if not look_id or look_id == 0 then
+    --     return 
+    -- end
+    local figure_cfg = Config.HomeData.data_figure[look_id or 0]
+    local effect_id = "H60001"
+    if figure_cfg then
+        effect_id = figure_cfg.look_id
+    end
+    if self.lead_model and self.lead_model.effect_id and self.lead_model.effect_id ~= effect_id then
+        self.lead_model:removeFromParent()
+        self.lead_model = nil
+    end
+    if not self.lead_model then
+        self.lead_model = createSpineByName(effect_id, PlayerAction.action)
+        self.map_group:addChild(self.lead_model, 999)
+        self.lead_model:setScale(0.6)
+        self.lead_model:setAnimation(0, PlayerAction.idle, true)
+        self.lead_model.effect_id = effect_id
+    end
+    self.mazeData = _model:getMazeData()
+    -- self.maze_data = {
+    -- {uint16, floor, "当前所在层数"}
+    -- ,{uint8, index, "当前所在格子序号"}
+    -- ,{uint8, fight_count, "战斗次数"}
+    -- ,{uint8, reset_count, "每日重置次数"}
+    -- ,{uint8, sneak_count, "奇袭次数"}
+    -- ,{uint8, fight_index, "当前正在战斗的点位"}
+    -- ,{uint8, power_group, "当前分的战力组"}
+    -- ,{array, maze_tile, tile_list, "格子列表", ?p_g_set(tile_info, [
+    --     {uint8, index, "格子序号"}
+    --     ,{uint8,  type, "格子类型 1初始点 2怪物 3随机宝箱 4终点宝箱"}
+    --     ,{uint8,  is_walk, "是否行走过, 1是0否"}
+    --     ,{uint32,  combat_power, "战斗事件战力"}
+    --     ,{uint8, is_sneak, "是否奇袭过"}
+    --     ,{uint32, chest_id, "宝箱id"}
+    -- ])}
+    --  }
+    -- }
+    self.curIndex = self.mazeData.index
+    self.temp_point = self.curIndex
+    self.maze_cfg = Config.MazeData.data_map_info[self.curIndex]
+    -- if self.lead_model.is_play_dun and self.lead_model.is_play_dun ~= self.curIndex then
+    --     -- 刷新坑位
+    --     self.isLeadMove = true
+    --     self.lead_model:runAction(cc.FadeOut:create(0.2))
+    --     self:showRoleShowEffect(true, PlayerAction.action_1)
+    -- else
+    self.lead_model:setAnimation(0, PlayerAction.idle, true)
+    self.lead_model.is_play_dun = self.lead_id
+    if self.maze_cfg then
+        self.lead_model:setPosition(self.maze_cfg.res_point[1][1]+20, self.maze_cfg.res_point[1][2])
+        if self.middle_panel then
+            if self.safe_height > 1920 then return end
+            local set_scrollY = math.max(-self.maze_cfg.res_point[1][2]*0.5,-640)
+            self.middle_panel:getInnerContainer():setPositionY(set_scrollY)
+        end
+    end
+    -- end
+end
+
+function MazeWindow:createLine()
+    local list = Config.MazeData.data_map_info
+    for k, v in pairs(list) do
+        local res_road = v.res_road
+        if res_road and #res_road > 0 then
+            -- if not self.line[v.type] then
+            --     self.line[v.type] = {}
+            -- end
+            if not self.line[v.id] then
+                self.line[v.id] = {}
+            end
+            -- if not self.line[v.type][v.id] then
+            -- self.line[v.type][v.id] = {}
+            for i, j in ipairs(res_road) do
+                if not self.line[v.id][i] then
+                    self.line[v.id][i] = {}
+                end
+                local res = j[1]
+                local p_x = j[2]
+                local p_y = j[3]
+                local scale = j[4]
+                local line = createImage(self.map_group, PathTool.getResFrame("maze", res), p_x, p_y, cc.p(0.5, 0.5),
+                    true, 1, true)
+                line:setScale(scale, 1)
+                line:setName("line_" .. v.type .. v.id .. i)
+                self.line[v.id][i].img = line
+                self.line[v.id][i].res = res
+                self.line[v.id][i].type = v.type
+                self.line[v.id][i].id = v.id
+            end
+            -- end
+        end
+    end
+end
+
+function MazeWindow:updateLine(tile_list) -- 参数：格子列表
+    --      {uint8, index, "格子序号"}
+    --     ,{uint8,  type, "格子类型 1初始点 2怪物 3随机宝箱 4终点宝箱"}
+    --     ,{uint8,  is_walk, "是否行走过, 1是0否"}
+    --     ,{uint32,  combat_power, "战斗事件战力"}
+    --     ,{uint8, is_sneak, "是否奇袭过"}
+    --     ,{uint32, chest_id, "宝箱id"}
+
+    local cfg = Config.MazeData.data_map_info
+    for idx, line in pairs(self.line) do
+        for i, j in pairs(line) do
+            local id = j.id
+            local type = j.type
+            local img = j.img
+            local res = j.res
+            if img then
+                img:loadTexture(PathTool.getResFrame("maze", res), LOADTEXT_TYPE_PLIST)
+            end
+            if type == MazeConst.Dun_Type.StartPoint then
+                local res_name = res .. "_light"
+                img:loadTexture(PathTool.getResFrame("maze", res_name), LOADTEXT_TYPE_PLIST)
+            else
+                if cfg[id] then
+                    local chest_point = cfg[id].chest_point
+                    if chest_point then
+                        for c, p in pairs(chest_point) do
+                            for k, v in ipairs(tile_list) do
+                                if v.index == p then
+                                    if v.is_walk == 1 then
+                                        local res_name = res .. "_light"
+                                        img:loadTexture(PathTool.getResFrame("maze", res_name), LOADTEXT_TYPE_PLIST)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function MazeWindow:createMap(maze_tile, fight_index) -- 参数：格子列表，当前正在战斗的点位
+    self.map = self.map or {}
+    local maze_tile = maze_tile or {}
+    local list = Config.MazeData.data_map_info
+    for k, v in pairs(list) do
+        if not self.map[v.id] then
+            self.map[v.id] = {}
+            if not MazeItem then
+                require("game.maze.view.maze_item")
+            end
+        	local mazeItem = MazeItem.new()
+            if v.type == 3 then
+                mazeItem:setName("box")
+            end
+            local res_point = v.res_point
+            local p_x = res_point[1][1]
+            local p_y = res_point[1][2]
+            mazeItem:setPosition(p_x, p_y)
+            self.map_group:addChild(mazeItem, 1)
+            self.map[v.id] = mazeItem
+        end
+        local is_walk = 0
+        local combat_power = 0
+        local is_sneak = 0
+        local is_fight = 0
+        local chest_id = 0
+        for i, j in ipairs(maze_tile) do
+            if j.index == v.id then
+                is_walk = j.is_walk
+                combat_power = j.combat_power
+                is_sneak = j.is_sneak
+                if j.index == fight_index and j.is_walk == 0 then
+                    is_fight = 1
+                end
+                chest_id = j.chest_id
+                break
+            end
+        end
+        self.map[v.id]:setData({
+            id = v.id,
+            round_point = v.round_point,
+            maze_type = v.type,
+            is_walk = is_walk,
+            combat_power = combat_power,
+            is_sneak = is_sneak,
+            is_fight = is_fight,
+            chest_id = chest_id
+        })
+        -- if not self.map[k][p] then
+        --     local dungeonItem = MazeItem.new()
+        --     self.map_group:addChild(dungeonItem, 9)
+        --     self.dungeonList[k][p] = dungeonItem
+        -- end
+        -- self.dungeonList[k][p]:setData({cid = self.cid, dun_id = q.dun_id, dun_type = MazeConst.Dun_Type.Mobs})
+    end
+    -- debug_Print(" self.map", self.map)
+end
+
+function MazeWindow:onClickFigureBtn()
+    if not self.floor then
+        return
+    end
+    local look_id = _model:getPlanesRoleLookId()
+    if not look_id or look_id == 0 then
+        local limit_cfg = Config.HomeData.data_const["open_lev"]
+        local open_lv = 70
+        if limit_cfg then
+            open_lv = limit_cfg.val or 70
+        end
+        message(string_format(TI18N("语言_c_4370"), open_lv))
+    else
+        HomeworldController:getInstance():openHomeworldFigureWindow(true)
+    end
+end
+
+function MazeWindow:onClickShopBtn()
+    if _model.is_saodang == true then
+        return
+    end
+    MallController:getInstance():openMallPanel(true, MallConst.MallType.MazeShop)
+end
+
+function MazeWindow:onClickFormatBtn()
+    HeroController:getInstance():openFormMainWindow(true, PartnerConst.Fun_Form.Maze)
+    -- HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.Maze, nil, HeroConst.FormShowType.eFormSave)
+end
+
+function MazeWindow:register_event()
+    registerButtonEventListener(self.shop_btn, handler(self, self.onClickShopBtn), true)
+    registerButtonEventListener(self.format_btn, handler(self, self.onClickFormatBtn), true)
+
+    registerButtonEventListener(self.close_btn, function()
+        if _model.is_saodang == true then
+            return
+        end
+        _controller:openMazeWindow(false)
+    end, true, 2)
+
+    registerButtonEventListener(self.refresh_btn, function()
+        if _model.is_saodang == true then
+            return
+        end
+        local reset_cost = Config.MazeData.data_const["reset_cost"].val
+        local max_reset = #reset_cost
+        if self.mazeData and self.mazeData.reset_count and self.mazeData.reset_count < max_reset then
+            local function call_back()
+                _controller:send30302()
+            end
+            local str = TI18N("语言_c_6854")
+            CommonAlert.show(str, TI18N("语言_c_63"), call_back, TI18N("语言_c_62"))
+        else
+            message(TI18N("语言_c_6855"))
+        end
+    end, true, 2)
+
+    registerButtonEventListener(self.add_btn, function()
+        if _model.is_saodang == true then
+            return
+        end
+        _controller:openMazeExchangeTips(true, Config.MazeData.data_const["challenge_tickets"].val[1])
+    end, true, 2)
+
+    registerButtonEventListener(self.fight_btn, function()
+        if _model.is_saodang == true then
+            return
+        end
+        _controller:openMazeMainWindow(true)
+    end, true, 2)
+    registerButtonEventListener(self.war_btn, function()
+        if _model.is_saodang == true then
+            return
+        end
+        _controller:openMazeMainWindow(true,3)
+    end, true, 2)
+    registerButtonEventListener(self.figure_btn, handler(self, self.onClickFigureBtn), true, 2)
+
+    -- 规则说明
+    registerButtonEventListener(self.btn_rule, function(param, sender, event_type)
+        if _model.is_saodang == true then
+            return
+        end
+        local desc= Config.MazeData.data_rule_info
+        if desc then
+            MainuiController:getInstance():openCommonExplainView(true, Config.MazeData.data_rule_info)
+        end
+    end, true, 2)
+
+    self:addGlobalEvent(MazeEvent.Update_Maze, function(data)
+        self:setData(data)
+    end)
+
+    self:addGlobalEvent(MazeEvent.Maze_SaoDang_Next_Index, function(index)
+        GlobalEvent:getInstance():Fire(MazeEvent.MOVE_ROLE,{id = index})
+    end)
+
+    self:addGlobalEvent(MazeEvent.Update_Maze_RedStatus, function()
+        local is_red = MazeController:getInstance():getModel():getMazeRedPoint()
+        addRedPointToNodeByStatus(self.easy_btn,false)
+        addRedPointToNodeByStatus(self.normal_btn,false)
+        addRedPointToNodeByStatus(self.hard_btn,false)
+        addRedPointToNodeByStatus(self.boss_btn,false)
+        if self.floor == 1 then
+            addRedPointToNodeByStatus(self.easy_btn,is_red)
+        elseif self.floor == 2 then
+            addRedPointToNodeByStatus(self.normal_btn,is_red)
+        elseif self.floor == 3 then
+            addRedPointToNodeByStatus(self.hard_btn,is_red)
+        elseif self.floor == 4 then
+            addRedPointToNodeByStatus(self.boss_btn,is_red)
+        end
+    end)
+    
+    self:addGlobalEvent(MazeEvent.Update_Maze_Daily_RedStatus, function()
+        local achieve_red = MazeController:getInstance():getModel():getAchieveRedPoint()
+        local task_red = MazeController:getInstance():getModel():getTaskRedPoint()
+        local order_red = MazeController:getInstance():getModel():getOrderRedPoint()
+        local is_red = false
+        if achieve_red == true or task_red == true or order_red == true then
+            is_red = true
+        end
+        addRedPointToNodeByStatus(self.fight_btn,is_red)
+    end)
+
+    self:addGlobalEvent(MazeEvent.Update_Maze_Task_RedStatus, function()
+        local achieve_red = MazeController:getInstance():getModel():getAchieveRedPoint()
+        local task_red = MazeController:getInstance():getModel():getTaskRedPoint()
+        local order_red = MazeController:getInstance():getModel():getOrderRedPoint()
+        local is_red = false
+        if achieve_red == true or task_red == true or order_red == true then
+            is_red = true
+        end
+        addRedPointToNodeByStatus(self.fight_btn,is_red)
+    end)
+
+    self:addGlobalEvent(MazeEvent.Update_Maze_Order_RedStatus, function()
+        local achieve_red = MazeController:getInstance():getModel():getAchieveRedPoint()
+        local task_red = MazeController:getInstance():getModel():getTaskRedPoint()
+        local order_red = MazeController:getInstance():getModel():getOrderRedPoint()
+        local is_red = false
+        if achieve_red == true or task_red == true or order_red == true then
+            is_red = true
+        end
+        addRedPointToNodeByStatus(self.fight_btn,is_red)
+        addRedPointToNodeByStatus(self.war_btn,is_red)
+    end)
+    
+    self:addGlobalEvent(MazeEvent.Update_Fight_Count, function(data)
+        self:updateFightCount(data)
+    end)
+
+    self:addGlobalEvent(MazeEvent.MOVE_ROLE, function(data)
+        self:showFightEffect(false)
+        local index = data.id
+        local config = Config.MazeData.data_map_info[index]
+        local cur_index = self.temp_point
+        local cur_config = Config.MazeData.data_map_info[cur_index]
+        local can_move = false
+        if cur_config and cur_config.round_point then
+            for i, v in ipairs(cur_config.round_point) do
+                if index == v then
+                    can_move = true
+                    break
+                end
+            end
+        end
+
+        if config then
+            if can_move then
+                if self.isLeadMove == false then
+                    self.isLeadMove = true
+                    self.temp_point = data.id
+                    self.lead_model:setAnimation(0, PlayerAction.move, true)
+                    local getroleX = self.lead_model:getPositionX()
+                    if config.res_point[1][1] < getroleX then
+                        self.lead_model:setScaleX(-0.6)
+                    else
+                        self.lead_model:setScaleX(0.6)
+                    end
+                    local moveto = cc.MoveTo:create(1, cc.p(config.res_point[1][1], config.res_point[1][2]))
+                    self.lead_model:runAction(cc.Sequence:create(moveto, cc.CallFunc:create(function()
+                        self.lead_model:setPositionX(config.res_point[1][1]+20)
+                        self.isLeadMove = false
+                        -- print("-------------MOVE_ROLE执行扫荡can_move---------------")
+                        if _model.is_saodang == true then
+                            -- _model.is_saodang = false
+                            _controller:sender30321(self.temp_point)
+                            self:showFightEffect(true, config.res_point[1][1], config.res_point[1][2],self.temp_point)
+                        else
+                            _controller:openMazeDes(true, data.id)
+                        end
+                        self.lead_model:setAnimation(0, PlayerAction.idle, true)
+                        if self.middle_panel then
+                            if self.safe_height > 1920 then return end
+                            local set_scrollY = math.max(-config.res_point[1][2]*0.5,-640)
+                            self.middle_panel:getInnerContainer():setPositionY(set_scrollY)
+                        end
+                    end)))
+
+                end
+            else
+                if self.isLeadMove then return end
+                if self.temp_point == data.id then
+                    -- print("-------------MOVE_ROLE执行扫荡---------------")
+                    self.isLeadMove = false
+                    if _model.is_saodang == true then
+                        -- _model.is_saodang = false
+                        _controller:sender30321(self.temp_point)
+                        self:showFightEffect(true, config.res_point[1][1], config.res_point[1][2],self.temp_point)
+                    else
+                        _controller:openMazeDes(true, self.temp_point)
+                    end
+                else
+                    self.isLeadMove = true
+                    self.temp_point = data.id
+                    self.lead_model:setPosition(config.res_point[1][1] + 20, config.res_point[1][2])
+                    -- if _model.is_saodang == true then
+                    --     -- _model.is_saodang = false
+                    --     _controller:sender30321(self.temp_point)
+                    --     self:showFightEffect(true,config.res_point[1][1], config.res_point[1][2])
+                    --     -- self:showFightEffect(true,config.res_point[1][1], config.res_point[1][2])
+                    -- end
+                    self:showRoleShowEffect(true, config.res_point[1][1], config.res_point[1][2])
+                end
+
+            end
+        end
+    end)
+
+    -- 更换形象
+    self:addGlobalEvent(HomeworldEvent.Update_My_Home_Figure_Event, function (  )
+        self:updateLead()
+    end)
+end
+
+function MazeWindow:updateBg(floor)
+    if self.floor and self.floor == floor then
+        return
+    end
+    self.node_effect_1:removeAllChildren()
+    self.node_effect_2:removeAllChildren()
+    self.node_effect_3:removeAllChildren()
+    self.floor = floor
+    setChildUnEnabled(true, self.easy_btn)
+    setChildUnEnabled(true, self.normal_btn)
+    setChildUnEnabled(true, self.hard_btn)
+    setChildUnEnabled(true, self.boss_btn)
+    if floor == 1 then
+        setChildUnEnabled(false, self.easy_btn)
+    elseif floor == 2 then
+        setChildUnEnabled(false, self.normal_btn)
+    elseif floor == 3 then
+        setChildUnEnabled(false, self.hard_btn)
+    elseif floor == 4 then
+        setChildUnEnabled(false, self.boss_btn)
+    end
+    -- if not boss_cfg then return end
+    -- local resource = boss_cfg.resource or 1 
+    -- local res = PathTool.getPlistImgForDownLoad("bigbg/limit_training_bg/"..resource, "limit_training_bg_1")
+    -- self.bg_load_1 = loadImageTextureFromCDN(self.image_bg_1, res, ResourcesType.single, self.bg_load_1)
+    -- local res = PathTool.getPlistImgForDownLoad("bigbg/limit_training_bg/"..resource, "limit_training_bg_2", true)
+    -- self.bg_load_2 = loadImageTextureFromCDN(self.image_bg_2, res, ResourcesType.single, self.bg_load_2)
+    -- local res = PathTool.getPlistImgForDownLoad("bigbg/limit_training_bg/"..resource, "limit_training_bg_3", true)
+    -- self.bg_load_3 = loadImageTextureFromCDN(self.image_bg_3, res, ResourcesType.single, self.bg_load_3)
+end
+
+function MazeWindow:showEffect(next_index)
+    -- local spine_id = "E51130"
+    -- local next_index = next_index
+    -- local function finish_callback(event)
+
+    -- end
+    -- delayRun(self.root_wnd, 1/display.DEFAULT_FPS, function ()
+    --     local spine_png = string_format("spine/%s/%s.png", spine_id, "action")
+    --     display.loadImage(spine_png, function(texture)
+    --         if tolua.isnull(self.panel_change_effect) then return end
+    --         local play_effect = createEffectSpine(spine_id, cc.p(0,0), cc.p(0.5, 0.5), false, PlayerAction.action, finish_callback)
+    --         self.panel_change_effect:addChild(play_effect)
+    --         play_effect:setPosition(cc.p(360, 640))
+    --         delayOnce(function()
+    --             if tolua.isnull(self.panel_change_effect) then return end
+    --             self:setData(cid)
+    --         end, 0.6)
+    --     end)
+    -- end)
+end
+
+function MazeWindow:openRootWnd()
+    _controller:sender30303()
+    _controller:sender30323()
+    _controller:sender30319()
+    _controller:sender30313()
+    _controller:sender30317()
+end
+
+function MazeWindow:setData(data)
+    -- print("------------------------MazeWindow:setData--------------------------")
+    -- self.maze_data = {
+        -- {uint16, floor, "当前所在层数"}
+        -- ,{uint8, index, "当前所在格子序号"}
+        -- ,{uint8, fight_count, "战斗次数"}
+    -- ,{uint8, reset_count, "每日重置次数"}
+    -- ,{uint8, sneak_count, "奇袭次数"}
+    -- ,{uint8, fight_index, "当前正在战斗的点位"}
+    -- ,{uint8, power_group, "当前分的战力组"}
+    -- ,{array, maze_tile, tile_list, "格子列表", ?p_g_set(tile_info, [
+    --     {uint8, index, "格子序号"}
+    --     ,{uint8,  type, "格子类型 1初始点 2怪物 3随机宝箱 4终点宝箱"}
+    --     ,{uint8,  is_walk, "是否行走过, 1是0否"}
+    --     ,{uint32,  combat_power, "战斗事件战力"}
+    --     ,{uint8, is_sneak, "是否奇袭过"}
+    --     ,{uint32, chest_id, "宝箱id"}
+    -- ])}
+    --  }
+    -- }
+    if data then
+        self:updateMaxPower()
+        self:updateBg(data.floor)
+        self:updateLine(data.tile_list)
+        self:createMap(data.tile_list, data.fight_index)
+        self:updateLead()
+        self:updateFightCount(data)
+        self:updateResetCount(data)
+    end
+end
+
+function MazeWindow:updateFightCount(data)
+    local fightCount = data.fight_count
+    self.tip_key_value:setString(fightCount)
+end
+
+function MazeWindow:updateResetCount(data)
+    local reset_count = data.reset_count
+    self.icon_img:setVisible(false)
+    self.icon_num:setVisible(false)
+    self.free_txt:setVisible(false)
+    self.refresh_bg:setVisible(false)
+    addRedPointToNodeByStatus(self.refresh_btn,false)
+    local cost = 0
+    local can_reset = true
+    local reset_cost = Config.MazeData.data_const["reset_cost"].val
+    if reset_cost[reset_count + 1] then
+        local item_config = Config.ItemData.data_get_data(reset_cost[reset_count + 1][1])
+        self.icon_img:loadTexture(PathTool.getItemRes(item_config.icon), LOADTEXT_TYPE)
+        cost = reset_cost[reset_count + 1][2]
+    else
+        can_reset = false
+    end
+    if can_reset then
+        if cost > 0 then
+            addRedPointToNodeByStatus(self.refresh_btn,false)
+            self.icon_img:setVisible(true)
+            self.icon_num:setVisible(true)
+            self.refresh_bg:setVisible(true)
+            self.icon_num:setString(cost)
+        else
+            addRedPointToNodeByStatus(self.refresh_btn,true)
+            self.free_txt:setVisible(true)
+            self.refresh_bg:setVisible(true)
+        end        
+    end
+end
+
+function MazeWindow:setVisible(bool)
+    self.is_visible = bool
+    if self.root_wnd == nil or tolua.isnull(self.root_wnd) then
+        return
+    end
+    self.root_wnd:setVisible(bool)
+    if bool == true then
+        MainuiController:getInstance():setIsShowMainUIBottom(false) -- 隐藏底部UI
+    else
+        MainuiController:getInstance():setIsShowMainUIBottom(true) -- 隐藏底部UI
+    end
+end
+
+function MazeWindow:close_callback()
+    _model.is_saodang = false
+    if self.bg_load_1 then
+        self.bg_load_1:DeleteMe()
+        self.bg_load_1 = nil
+    end
+    if self.bg_load_2 then
+        self.bg_load_2:DeleteMe()
+        self.bg_load_2 = nil
+    end
+    if self.bg_load_3 then
+        self.bg_load_3:DeleteMe()
+        self.bg_load_3 = nil
+    end
+    self:showRoleShowEffect(false)
+    self:showFightEffect(false)
+    MainuiController:getInstance():setIsShowMainUIBottom(true) -- 隐藏底部UI
+    _controller:openMazeWindow(false)
+end

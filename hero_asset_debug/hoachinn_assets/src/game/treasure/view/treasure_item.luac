@@ -1,0 +1,468 @@
+-- --------------------------------------------------------------------
+-- 背包的通用物品 
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+TreasureItem = class("TreasureItem", function() 
+	return ccui.Layout:create()
+end)
+
+TreasureItem.Width = 119
+TreasureItem.Height = 119
+
+local role_vo = RoleController:getInstance():getRoleVo()
+
+--==============================--
+--desc:创建物品对象
+--time:2018-06-05 04:41:34
+--@click:是否可点击
+--@scale:缩放值
+--@effect:点击时候是否要处理回弹效果
+--@is_show_tips:是否显示tips
+--@tips_data:tips参数 is_book是否是图鉴 is_btn是否显示底部按钮  is_bag是否是魔导器背包出来的
+--@return 
+--==============================--
+function TreasureItem:ctor(click, scale, effect, is_show_tips, swallow_touch, tips_data)
+	self.click = click
+	if self.click == nil then -- 不传默认为可点击
+		self.click = true
+	end
+	self.click = self.click and true or false
+	self.is_hero = false
+	if is_show_tips == nil then
+		is_show_tips = true
+	end
+	self.is_show_tips = is_show_tips or false
+	self.scale = scale or 1
+	self.swallow_touch = swallow_touch
+	self.tips_data = tips_data
+	if effect == nil then
+		effect = true
+	end
+	self.effect = effect
+
+	self.isDebris = true  --是否是碎片
+
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("treasure/treasure_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+	self:setTouchEnabled(self.click)
+	self:setCascadeOpacityEnabled(true)
+	if self.scale ~= 1 then
+		self:setScale(self.scale)
+	end
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+  	self.background = self.main_container:getChildByName("background")
+	self.item_icon = self.main_container:getChildByName("icon")
+	self.num_label = self.main_container:getChildByName("num")
+	self.star_con = self.main_container:getChildByName("star_con")
+	self.has_break = self.main_container:getChildByName("has_break")
+	self.has_break:setVisible(false)
+	self.background_res_id = PathTool.getQualityBg(0)
+
+	self:registerEvent()
+end
+function TreasureItem:getData()
+	return self.data
+end
+--==============================--
+--desc:点击回调
+--time:2017-07-03 08:02:23
+--@callback:
+--@return 
+--==============================--
+function TreasureItem:addCallBack(callback)
+	self.callback = callback
+end
+--添加长时间点击的回调
+function TreasureItem:addLongTimeTouchCallback(callback)
+    --默认有效果
+    self:setLongTimeTouchEffect(true)
+    self.long_time_callback = callback
+end
+
+--设置长时间点击的回调效果
+function TreasureItem:setLongTimeTouchEffect(is_touch)
+    self.have_long_time_effect = is_touch
+end
+function TreasureItem:setTipsData(data)
+	self.tips_data = data
+end
+--==============================--
+--desc:注册相关事件
+--time:2017-07-03 01:53:49
+--@return 
+--==============================--
+function TreasureItem:registerEvent()
+	if self.click == true then
+		self:setTouchEnabled(true)
+		self:addTouchEventListener(function(sender, event_type) 
+			if self.effect == true then
+				customClickAction_2(self.main_container, event_type)
+			end
+			if self.tips_data and self.tips_data.is_wake then
+				if self.callback then
+					self:callback()
+				end
+			else
+				if event_type == ccui.TouchEventType.ended then
+					if self.have_long_time_effect then
+						if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+							doStopAllActions(self.background)
+							self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+						elseif self.long_touch_type == LONG_TOUCH_END_TYPE then
+							--事件触发了就不处理点击事件了
+							return
+						end
+					end
+					
+					self.touch_end = sender:getTouchEndPosition()
+					local is_click = true
+					if self.touch_began ~= nil then
+						is_click =
+							math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+							math.abs(self.touch_end.y - self.touch_began.y) <= 20
+					end
+					if is_click == true then
+						playButtonSound2()
+						if self.btn_call_fun then
+							self:btn_call_fun()
+						else
+							if self.callback then
+								self:callback(self)
+							else
+								if self.is_show_tips and self.data ~= nil and tableLen(self.data)>1 then
+									if not self.isDebris then
+										TreasureController:getInstance():openTreasureTips(true, self.data, self.tips_data)
+									else
+										TreasureController:getInstance():openTreasureFragmentsTips(true, self.data, self.tips_data)
+									end
+									return
+								end
+							end
+						end
+					end
+				elseif event_type == ccui.TouchEventType.moved then
+					if self.have_long_time_effect then
+						if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+							local touch_began = self.touch_began
+							local touch_move = sender:getTouchMovePosition()
+							if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 20 or math.abs(touch_move.y - touch_began.y) > 20) then 
+								--移动大于20了..表示取消长点击效果
+								doStopAllActions(self.background)
+								self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+							end 
+						end
+					end
+				elseif event_type == ccui.TouchEventType.began then
+					self.touch_began = sender:getTouchBeganPosition()
+					if self.have_long_time_effect then
+						--有长点击效果
+						doStopAllActions(self.background)
+						self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+						delayRun(self.background, 0.6, function ()
+							if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+								if self.long_time_callback then
+									self.long_time_callback()
+								end
+							end
+							self.long_touch_type = LONG_TOUCH_END_TYPE
+						end)
+					end
+				elseif event_type == ccui.TouchEventType.canceled then
+					if self.have_long_time_effect then
+						if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+							doStopAllActions(self.background)
+							self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+						end
+					end
+				end
+			end
+		end)
+		if self.swallow_touch == false then
+			self:setSwallowTouches(self.swallow_touch)
+		end
+	end
+	-- 退出的时候移除一下吧.要不然可能有些人不会手动移除,就会报错
+	self:registerScriptHandler(function(event)
+		if "enter" == event then
+		elseif "exit" == event then		
+			if self.data then
+				if self.item_update_event ~= nil then
+					self.data:UnBind(self.item_update_event)
+					self.item_update_event = nil
+				end
+				self.data = nil
+			end
+		end 
+	end)
+end
+--显示物品服数字（现在用到召唤的概率）
+function TreasureItem:setSummonNumber(label)
+	if not self.summon_text then
+		self.summon_text = createLabel(22,cc.c4b(0xea,0xb5,0x50,0xff),nil,62,-15,"",self.main_container,nil, cc.p(0.5,0.5))
+	end
+	self.summon_text:setString(label.."%")
+end
+--==============================--
+--desc:设置显示数据,暂时支持的格式有treasure_vo  id id,num [1],[2]
+--time:2017-07-31 01:58:10
+--@data:
+--@return 
+--==============================--
+function TreasureItem:setData(data,list)
+	
+	if list then
+		self.tips_data = list
+	end
+	local id = 0
+	if type(data) == "table" then
+		id = data.id or data[1]
+	else
+		id = data
+	end
+	if not id then return end
+	local list = Config.ItemData.data_get_data(id)
+	if list then
+		self.isDebris = true
+		self.data = list
+	else
+		self.isDebris = false
+		self.data = data
+	end
+	if not self.isDebris then
+		self.cfg = self.data.config
+		if self.cfg then
+			self.background:loadTexture(PathTool.getQualityBg(self.cfg.quality), LOADTEXT_TYPE_PLIST)
+		end
+		local star_cfg = Config.NinjaTreasureData.data_star_info[self.data.id]
+		if star_cfg then
+			local res = string.format("resource/ninja_treasure/treasure_item/%s.png",star_cfg[data.star].icon)
+			loadSpriteTexture(self.item_icon, res, LOADTEXT_TYPE)
+		end
+		local base_cfg = Config.NinjaTreasureData.data_base_info[self.data.id]
+		if next(base_cfg.mv) then
+			self.item_icon:setScale(base_cfg.mv[1][1]*0.01)
+			self.item_icon:setPosition(cc.p(60+base_cfg.mv[1][2],60+base_cfg.mv[1][3]))
+		else
+			self.item_icon:setScale(0.7)
+			self.item_icon:setPosition(cc.p(60,60))
+		end
+		if data.star then
+			self.star_setting = self:createStar(data.star,tableLen(star_cfg),self.star_con,self.star_setting)
+		end
+		if data.is_wakeup and data.is_wakeup == 1 then
+			self.star_con:setVisible(false)
+			self.has_break:setVisible(true)
+		else
+			self.star_con:setVisible(true)
+			self.has_break:setVisible(false)
+		end
+	else
+		local quality = self.data.quality
+		if data[3] and data[3] == "sp" then
+			quality = data[1]
+		end
+		self.background:loadTexture(PathTool.getQualityBg(quality), LOADTEXT_TYPE_PLIST)
+		self.bg_res = PathTool.getResFrame("common",string.format("ninja_treasure_%s_1",quality),false,"common_1")
+		if not self.icon_bg then
+			self.icon_bg = createSprite(self.bg_res,TreasureItem.Width*0.5,TreasureItem.Height*0.5,self.main_container,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+		else
+			loadSpriteTexture(self.icon_bg, self.bg_res, LOADTEXT_TYPE_PLIST)
+		end
+		self.mask_res = PathTool.getResFrame("ninja_treasure","ninja_treasure_6",false,"ninja_treasure")
+		if not self.mask then 
+			self.mask = createSprite(self.mask_res, TreasureItem.Width*0.5,TreasureItem.Height*0.5, nil, cc.p(0.5, 0.5))--模板
+		else
+			loadSpriteTexture(self.mask, self.mask_res, LOADTEXT_TYPE_PLIST)
+		end
+		if not self.clipNode then
+			self.clipNode = cc.ClippingNode:create(self.mask)
+			self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+			self.clipNode:setContentSize(cc.size(TreasureItem.Width,TreasureItem.Height))
+			self.clipNode:setCascadeOpacityEnabled(true)
+			self.clipNode:setPosition(cc.p(TreasureItem.Width*0.5,TreasureItem.Height*0.5))
+			self.clipNode:setAlphaThreshold(0)
+			self.main_container:addChild(self.clipNode,2)
+		end
+		
+		if not self.icon then
+			self.icon = ccui.ImageView:create()
+			self.icon:setCascadeOpacityEnabled(true)
+			self.icon:setAnchorPoint(0.5,0.5)
+			self.icon:setPosition(cc.p(TreasureItem.Width*0.5,TreasureItem.Height*0.5))--底板
+			self.clipNode:addChild(self.icon,3)
+		end
+
+		local res = PathTool.getItemRes(self.data.icon)
+		self.icon:loadTexture(res, LOADTEXT_TYPE)
+		self.kuang_res = PathTool.getResFrame("common",string.format("ninja_treasure_%s",quality),false,"common_1")
+		if not self.kuang then
+			self.kuang = createSprite(self.kuang_res,TreasureItem.Width*0.5,TreasureItem.Height*0.5,self.main_container,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST,99)
+		else
+			loadSpriteTexture(self.kuang, self.kuang_res, LOADTEXT_TYPE_PLIST)
+		end
+	end
+	if data.num then
+		self:setNum(data.num)
+	else
+		self:setNum(data[2])
+	end
+	if self.tips_data and self.tips_data.is_book == true then
+		self:setLev(false)
+	else
+		self:setLev(true,data.lev)
+	end
+	if self.isDebris then
+		self:setLev(false)
+	end
+end
+function TreasureItem:setLev(status,lev)
+	if status then
+		if not self.lev_bg then
+			local res = PathTool.getResFrame("ninja_treasure","ninja_treasure_37",false,"ninja_treasure")
+			self.lev_bg = createImage(self.main_container,res,TreasureItem.Width,TreasureItem.Height,cc.p(1,1),true)
+			self.lev_bg:setScale(1.3)
+		end
+		self.lev_bg:setVisible(true)
+		if not self.lev then
+			self.lev = createLabel(18,cc.c3b(0xff,0xff,0xff),nil,12,self.lev_bg:getContentSize().height/2,lev,self.lev_bg,nil,cc.p(0.5,0.5))
+			self.lev:setScale(0.8)
+		else
+			self.lev:setString(lev)
+		end
+		self.lev:setVisible(true)
+	else
+		if self.lev_bg then
+			self.lev_bg:setVisible(false)
+		end
+		if self.lev then
+			self.lev:setVisible(false)
+		end
+	end
+end
+function TreasureItem:setNum(num)
+	if num and num > 1 then
+		self.num_label:setString(num)
+		self.num_label:setVisible(true)
+	else
+		self.num_label:setString("")
+		self.num_label:setVisible(false)
+	end
+end
+function TreasureItem:setStarStatus(status)
+	self.star_con:setVisible(status)
+end
+function TreasureItem:createStar(num ,max_num, star_con, star_setting)
+	local num = num or 0
+    local star_setting = star_setting or {}
+	if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+	for i,v in pairs(star_setting.star_list) do
+        v:setVisible(false)
+    end
+	local _cStar = function(star_count, max_count, star_list,moveW)
+        local width = 12
+        local x = - max_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,max_count do
+            if not star_list[i] then 
+				local res = PathTool.getResFrame("common","common_90074")
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+			if i > star_count then
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90093"), LOADTEXT_TYPE_PLIST)	
+			else
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90074"), LOADTEXT_TYPE_PLIST)
+			end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+	_cStar(num,max_num, star_setting.star_list)
+	return star_setting
+end
+--设置随机
+function TreasureItem:setRandImg()
+	self.icon:loadTexture(PathTool.getResFrame("common","common_99999"), LOADTEXT_TYPE_PLIST)
+end
+--加号
+function TreasureItem:showAddIcon(bool)
+	if bool == false and not self.add_btn then return end
+	if not self.add_btn then 
+		local res = PathTool.getResFrame("common","common_90026")
+		self.add_btn = createSprite(res,60,60,self.main_container,cc.p(0.5, 0.5),LOADTEXT_TYPE_PLIST,10)
+	end
+	self.add_btn:setVisible(bool)
+end
+--战令活动的个锁
+function TreasureItem:showOrderWarLock(bool,pos,scal)
+	if bool == false and not self.order_war_lock then return end
+	local scal = scal or 1
+	if not self.order_war_lock then 
+		local temp_pos = pos or cc.p(7,97)
+		self.order_war_lock = createSprite(PathTool.getResFrame("common","common_90009"), temp_pos.x,temp_pos.y, self.root_wnd, cc.p(0.5,0.5))
+	end
+	self.order_war_lock:setScale(scal)
+	self.order_war_lock:setVisible(bool)
+end
+-- 设置战令已领取标志
+function TreasureItem:setReceiveIcon(status)
+	if status == false then
+		if self.receive_icon then
+			self.receive_icon:setVisible(false)
+		end
+	else
+		if self.receive_icon == nil then
+			self.receive_icon = createSprite(PathTool.getResFrame("planesafkorderaction","txt_cn_planesafkaction_1"),60,60,self.main_container,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST,20)
+		end
+		self.receive_icon:setZOrder(999)
+		self.receive_icon:setVisible(true)
+	end
+end
+
+-- 设置主线奖励已领取标志
+function TreasureItem:setDungeonReceiveIcon(status)
+	if status == false then
+		if self.deungeon_receive_icon then
+			self.deungeon_receive_icon:setVisible(false)
+		end
+	else
+		if self.deungeon_receive_icon == nil then
+			self.deungeon_receive_icon = createSprite(PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable_get"),60,60,self.main_container,cc.p(0.5,0.5),LOADTEXT_TYPE)
+		end
+		self.deungeon_receive_icon:setVisible(true)
+	end
+end
+-- 设置主线奖励可领取标志
+function TreasureItem:setCanDungeonReceiveIcon(status)
+	if status == false then
+		if self.can_deungeon_receive_icon then
+			self.can_deungeon_receive_icon:setVisible(false)
+		end
+	else
+		if self.can_deungeon_receive_icon == nil then
+			self.can_deungeon_receive_icon = createSprite(PathTool.getPlistImgForDownLoad("dugeon_reward","txt_dugeon_rewardavailable"),60,60,self.main_container,cc.p(0.5,0.5),LOADTEXT_TYPE)
+		end
+		self.can_deungeon_receive_icon:setVisible(true)
+	end
+end
+function TreasureItem:DeleteMe()
+	self:removeAllChildren()
+    self:removeFromParent()
+end

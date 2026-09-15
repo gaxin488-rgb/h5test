@@ -1,0 +1,463 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-13 15:36:39
+-- @description    : 
+		-- 时空争霸赛   常驻商店
+---------------------------------
+ActionMallPanel = class("ActionMallPanel",function()
+    return ccui.Layout:create()
+end)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function ActionMallPanel:ctor()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/action_mall_panel"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+
+    -- 资源加载
+    local res_list = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("tips", "tips"), type = ResourcesType.plist})
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("common", "common_1"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.stronghold_list = {}
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function ActionMallPanel:loadResListCompleted( )
+	self:initView()
+    self:registerEvent()
+end
+
+
+-- 初始化数据
+function ActionMallPanel:initElfinData(  )
+    MallController:getInstance():send16660()
+end
+
+-- 初始化界面
+function ActionMallPanel:initView(  )
+	self.container = self.root_wnd:getChildByName("container")
+    self.scrollCon = self.container:getChildByName("scrollCon")
+    self.coin = self.container:getChildByName("coin")
+    self.count = self.container:getChildByName("count")
+	self.count:setString(role_vo.arena_world_p_coin)
+    self.add_btn = self.container:getChildByName("add_btn")
+    self.refresh_count = self.container:getChildByName("refresh_count")
+    self.tips = self.container:getChildByName("tips")
+    self.tips:setString(TI18N("语言_c_6749"))
+    setTextMaxWidth(self.tips,380)
+    self.good_cons = self.container:getChildByName("good_cons")
+    if self.common_scrollview == nil then
+        local scroll_view_size = self.good_cons:getContentSize()
+        local setting = {
+            start_x = 4,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 306,                -- 单元的尺寸width
+            item_height = 147,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 2,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.common_scrollview = CommonScrollViewSingleLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.common_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.common_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.common_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    local shop_list = Config.ExchangeData.data_shop_list[MallConst.MallType.WorldBullySeasonShop]
+    loadSpriteTexture(self.coin,PathTool.getItemRes(shop_list.item_bid),LOADTEXT_TYPE)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ActionMallPanel:createNewCell(width, height)
+    local cell = ccui.Widget:create()
+    cell.root_wnd = createCSBNote(PathTool.getTargetCSB("mall/mall_item"))
+    cell:addChild(cell.root_wnd)
+    cell:setCascadeOpacityEnabled(true)
+    cell:setAnchorPoint(0,0)
+    cell:setContentSize(cc.size(width, height))
+    cell:setTouchEnabled(true)
+    cell.main_container = cell.root_wnd:getChildByName("main_container")
+    cell.main_container:setSwallowTouches(false)
+    local count_bg = cell.main_container:getChildByName("count_bg")
+    --名字
+    cell.name_panel = cell.main_container:getChildByName("name_panel")
+	cell.name = cell.name_panel:getChildByName("name")
+	cell.name:ignoreContentAdaptWithSize(true)
+	cell.name:setTextAreaSize(cc.size(165, 0))
+	setTextSpacing(cell.name, -6)
+
+    --消耗icon
+    cell.coin = count_bg:getChildByName("coin")
+    cell.price = count_bg:getChildByName("price")
+    
+    --超值或者折扣图片
+    cell.discount = cell.main_container:getChildByName("discount")
+    cell.discount:setLocalZOrder(20)
+    cell.discount_num = cell.discount:getChildByName("discount_num")
+    cell.discount_num:setString(TI18N("语言_c_1543"))
+    setTextSpacing(cell.discount_num, -10)
+    --售完图片
+    cell.sold = cell.main_container:getChildByName("sold")
+    cell.sold:setLocalZOrder(20)
+
+    --变灰
+    cell.grey = cell.main_container:getChildByName("grey")
+
+    --不要显示的
+    cell.main_container:getChildByName("need_icon"):setVisible(false)
+    cell.main_container:getChildByName("need_label"):setVisible(false)
+
+    --限购
+    cell.discount_label = createRichLabel(20,58,cc.p(0,1),cc.p(133,40),FONT_COMMON_LINE_SPACE,nil,174) createRichLabel(20,58,cc.p(0,1),cc.p(133,25))
+    cell.main_container:addChild(cell.discount_label)
+
+    -- 解锁条件
+    cell.lock_label = createRichLabel(20,cc.c3b(0xff,0x15,0x15),cc.p(0.5,0.5),cc.p(211,71),-4,nil,174)
+    cell.main_container:addChild(cell.lock_label, 99)
+    cell.lock_label:setHorizontalLayoutType(2)
+
+    --道具item
+    cell.goods_item = BackPackItem.new(true,true)
+    cell.goods_item:setPosition(10+cell.goods_item:getContentSize().width/2,height/2)
+    cell.goods_item:setDefaultTip()
+    cell.main_container:addChild(cell.goods_item)
+    registerButtonEventListener(cell, function() self:setCellTouched(cell) end ,false, 0)
+
+    --回收用
+    cell.DeleteMe = function() 
+        if cell.goods_item ~= nil then
+            cell.goods_item:DeleteMe()
+            cell.goods_item = nil
+        end
+    end
+
+    return cell
+end
+--获取数据数量
+function ActionMallPanel:numberOfCells()
+    if not self.action_data_list then return 0 end
+    return #(self.action_data_list[self.cur_index].exchange_list)
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function ActionMallPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    --结构参考 16660协议
+    local cell_data = self.action_data_list[self.cur_index].exchange_list[index]
+    if not cell_data then return end
+
+    if self.dic_item_config[cell_data.expend_id] == nil then
+        self.dic_item_config[cell_data.expend_id] = Config.ItemData.data_get_data(cell_data.expend_id)
+    end
+    --消耗配置
+    local cost_config = self.dic_item_config[cell_data.expend_id]
+    --名字
+    local cfg = Config.ItemData.data_get_data(cell_data.item_list[1].bid)
+    -- cell.name:setString(cell_data.aim_str)
+    cell.name:setString(cfg.name)
+    if cell.name:getContentSize().height > 100 then
+        cell.name:setString(transformTextToShort(cfg.name,14))
+        addEvt2showAllTextTips(cell.name,cfg.name,14)
+    end
+    --消耗icon
+    if cost_config then
+        local res = PathTool.getItemRes(cost_config.icon, false)
+        if cell.record_cost_res == nil or cell.record_cost_res ~= res then
+            loadSpriteTexture(cell.coin, res, LOADTEXT_TYPE) 
+        end
+    end
+    --出售价格
+    cell.price:setString(cell_data.expend_num)
+    
+    --超值或者折扣图片
+    if cell_data.lable == 1 then
+        cell.discount:setVisible(true)
+    else
+        cell.discount:setVisible(false)
+    end
+
+    -- 扩展参数
+    local limit_buy_type = 4
+    local cross_battle_num = 0
+    local cross_rank_num = 0
+    local overlord_rank_num = 0
+    for k, args in pairs(cell_data.aim_args) do
+        if args.aim_args_key == 2 then  --限购类型  日 周 月 限购等
+            limit_buy_type = args.aim_args_val
+        -- elseif args.aim_args_key == 3 then  --是否解锁 在上面判定了
+        elseif args.aim_args_key == 4 then  --新年扫荡解锁需要获取货币数量或者关闭天数
+            if args.aim_args_str == "purgatory_num" then --本赛季炼狱场挑战%s次
+                cross_battle_num = args.aim_args_val
+            elseif args.aim_args_str == "purgatory_rank" then --本赛季炼狱场（跨服）结算后达到第%s名
+                cross_rank_num = args.aim_args_val
+            elseif args.aim_args_str == "virtuoso_rank" then --本赛季天道战结算后达到第%s名
+                overlord_rank_num = args.aim_args_val
+            end
+        end
+    end
+
+    local gray_is_show = false
+    if cell_data.buy_count >= cell_data.limit_buy then
+        cell.sold:setVisible(true)
+        cell.grey:setVisible(true)
+        cell.discount_label:setString("")
+        gray_is_show = true
+    else
+        cell.sold:setVisible(false)
+        cell.grey:setVisible(false)
+        self:showLimitBuyInfo(cell, cell_data, limit_buy_type)
+    end
+    if cell_data.sort_lock >= 1 then --锁上的
+        cell.grey:setVisible(true)
+        if cross_battle_num ~= 0 then --本赛季炼狱场挑战%s次
+            cell.lock_label:setString(string.format(TI18N("语言_c_6580"),cross_battle_num))
+        elseif cross_rank_num ~= 0 then --本赛季炼狱场（跨服）结算后达到第%s名
+            cell.lock_label:setString(string.format(TI18N("语言_c_6581"),cross_rank_num))
+        elseif overlord_rank_num ~= 0 then --本赛季天道战结算后达到第%s名
+            cell.lock_label:setString(string.format(TI18N("语言_c_6582"),overlord_rank_num))
+        else --其他的..需要的添加
+            cell.lock_label:setString(string.format(TI18N("语言_c_4026")))
+        end
+        
+        cell.is_lock = true
+    else
+        if not gray_is_show then
+            cell.grey:setVisible(false)
+        end
+        cell.lock_label:setString("")
+        cell.is_lock = false 
+    end
+
+    --道具
+    if cell_data.item_list and #cell_data.item_list > 0 then
+        local bid = cell_data.item_list[1].bid
+        cell.bid = bid
+        local num = cell_data.item_list[1].num
+        cell.goods_item:setBaseData(bid, num, true)
+        if bid then
+            local cfg = Config.ItemData.data_get_data(bid)
+            if cfg.type == BackPackConst.item_type.HERO_HUN then
+                -- local starNum = cfg.eqm_jie
+                -- cell.goods_item:createStar(starNum,15)
+                if cfg.camp_type ~= 0 then
+                    cell.goods_item:initCamp(cfg.camp_type)
+                end
+            end
+        end
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function ActionMallPanel:setCellTouched(cell)
+    if not cell.index then return end
+    local cell_data = self.action_data_list[self.cur_index].exchange_list[cell.index]
+    if not cell_data then return end
+    if cell.is_lock then
+        message(cell.lock_label:getString())
+        return 
+    end
+    if cell_data.buy_count >= cell_data.limit_buy then
+        return
+    end
+    --按钮 
+    local shop_data = {}
+    shop_data.shop_type = MallConst.MallType.WorldBullySeasonShop
+    shop_data.item_id = cell.bid or 1
+    shop_data.name = cell_data.aim_str
+    shop_data.limit_num = cell_data.limit_buy
+    shop_data.has_buy = cell_data.buy_count
+    shop_data.price = cell_data.expend_num
+    shop_data.pay_type = cell_data.expend_id
+    shop_data.is_show_limit_label = true
+
+    shop_data.bid = self.action_data_list[self.cur_index].bid --子活动编号
+    shop_data.aim = cell_data.aim
+
+    if cell_data.item_list and cell_data.item_list[1] then
+        shop_data.item_num = cell_data.item_list[1].num or 1
+    end
+    MallController:getInstance():openMallBuyWindow(true,shop_data)
+end
+
+function ActionMallPanel:showLimitBuyInfo(cell, cell_data, limit_buy_type)
+    if not cell then return end
+    if limit_buy_type == 1 then
+        cell.discount_label:setString(string_format(TI18N("语言_c_4027"), cell_data.buy_count, cell_data.limit_buy))
+    elseif limit_buy_type == 2 then
+        cell.discount_label:setString(string_format(TI18N("语言_c_4028"), cell_data.buy_count, cell_data.limit_buy))
+    elseif limit_buy_type == 3 then
+        cell.discount_label:setString(string_format(TI18N("语言_c_4029"), cell_data.buy_count, cell_data.limit_buy))
+    elseif limit_buy_type == 0 then
+        cell.discount_label:setString("")
+    else
+        cell.discount_label:setString(string_format(TI18N("语言_c_4030"), cell_data.buy_count, cell_data.limit_buy))
+    end
+end
+function ActionMallPanel:registerEvent(  )
+    self.add_btn:addTouchEventListener(function ( sender,event_type )
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local item_bid = Config.ExchangeData.data_shop_list[MallConst.MallType.WorldBullySeasonShop].item_bid
+            local data = Config.ItemData.data_get_data(item_bid)
+            BackpackController:getInstance():openTipsSource( true,data )
+        end
+    end)
+    if not self.update_action_event then
+        self.update_action_event = GlobalEvent:getInstance():Bind(MallEvent.Update_Action_event, function(data)
+            for k, v in pairs(data.holiday_exchanges) do
+                if v.bid == ActionRankCommonType.Arenaworld_Shop1 or
+                    v.bid == ActionRankCommonType.Arenaworld_Shop2 or
+                    v.bid == ActionRankCommonType.Arenaworld_Shop3 then
+                        self:updateData(v)
+                end
+            end
+        end)
+    end
+
+    --获取所有活动数据  购买返回
+    if not self.buy_action_shop_success_event then
+        self.buy_action_shop_success_event = GlobalEvent:getInstance():Bind(MallEvent.Buy_Action_Shop_Success_event, function(data)
+            if not self.action_data_list then return end
+            if self.cur_index and self.action_data_list[self.cur_index] then
+                if self.action_data_list[self.cur_index].bid == data.bid then
+                    local exchange_list = self.action_data_list[self.cur_index].exchange_list
+                    local list = self.common_scrollview:getActiveCellList()
+                    for i,cell in ipairs(list) do
+                        if cell.index and exchange_list[cell.index].aim == data.aim then
+                            exchange_list[cell.index].buy_count = data.buy_count
+                            self.common_scrollview:resetItemByIndex(cell.index)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+
+    if role_vo ~= nil then
+        if self.role_assets_event == nil then
+            self.role_assets_event = role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+                if key == "arena_world_p_coin" then
+                    self.count:setString(value)
+                end
+            end)
+        end
+    end
+end
+
+
+function ActionMallPanel:updateData(data)
+    if not data then return end
+    if data and next(data) == nil then return end
+    --记录道具信息
+    self.dic_item_config = {}
+    --商城数据
+    self.action_data_list = {}
+    self.cur_index = 1
+    for _,v in ipairs(data.exchange_list) do
+        --查找解锁的
+        v.sort_lock = 0 --不锁
+        if v.aim_args and next(v.aim_args) ~= nil then
+            for __,args in ipairs(v.aim_args) do
+                --解锁类型 args.aim_args_val == 1 表示解锁
+                if args.aim_args_key == 3 and args.aim_args_val ~= 1 then
+                    v.sort_lock = 1 --表示锁上了
+                elseif args.aim_args_key == 4 then
+                    if args.aim_args_str == "virtuoso_rank" then  --本赛季天道战结算后达到第%s名
+                        local rank_num = ArenaworldbullyController:getInstance():getModel():getOverRank()
+                        local state = ArenaworldbullyController:getInstance():getModel():getStatus()
+                        local now_group = ArenaworldbullyController:getInstance():getModel():getOverChampionOrder()
+                        local self_group = ArenaworldbullyController:getInstance():getModel():getPreGroupId()
+                        local self_cfg = Config.ArenaTimeWarpData.data_group[self_group]
+                        local self_order = self_cfg.champion_order
+                        local status = now_group > self_order
+                        if not status and state < ArenaworldbullyConst.stage.settlement then
+                            v.sort_lock = 1
+                        else
+                            if rank_num == 0 or rank_num > args.aim_args_val then
+                                v.sort_lock = 1
+                            else
+                                v.sort_lock = 0
+                            end
+                        end
+                    elseif args.aim_args_str == "purgatory_rank" then  --本赛季炼狱场（跨服）结算后达到第%s名
+                        local is_cross = ArenaworldbullyController:getInstance():getModel():getSelfIsCross()
+                        local rank_num = ArenaworldbullyController:getInstance():getModel():getPreRank()
+                        local state = ArenaworldbullyController:getInstance():getModel():getStatus()
+                        if state < ArenaworldbullyConst.stage.prepare then
+                            v.sort_lock = 1
+                        else
+                            if is_cross and rank_num ~= 0 and rank_num <= args.aim_args_val then
+                                v.sort_lock = 0
+                            else
+                                v.sort_lock = 1
+                            end
+                        end
+                    elseif args.aim_args_str == "purgatory_num" then  --本赛季炼狱场（跨服）挑战%s次
+                        local is_cross = ArenaworldbullyController:getInstance():getModel():getSelfIsCross()
+                        local battle_num = ArenaworldbullyController:getInstance():getModel():getBattleNum()
+                        if is_cross and battle_num >= args.aim_args_val then
+                            v.sort_lock = 0
+                        else
+                            v.sort_lock = 1
+                        end
+                    end
+                    break
+                end
+            end
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"sort_lock", false}, {"aim", false}})
+    table.sort(data.exchange_list , sort_func )
+    self.action_data_list[self.cur_index] = data
+    self.common_scrollview:reloadData()
+end
+
+function ActionMallPanel:DeleteMe(  )
+    
+	if self.buy_action_shop_success_event then
+        GlobalEvent:getInstance():UnBind(self.buy_action_shop_success_event)
+        self.buy_action_shop_success_event = nil
+    end
+	if self.update_action_event then
+        GlobalEvent:getInstance():UnBind(self.update_action_event)
+        self.update_action_event = nil
+    end
+    if role_vo ~= nil then
+        if self.role_assets_event ~= nil then
+            role_vo:UnBind(self.role_assets_event)
+            self.role_assets_event = nil
+        end
+    end
+    
+    if self.common_scrollview then
+        self.common_scrollview:DeleteMe()
+        self.common_scrollview = nil
+    end
+end

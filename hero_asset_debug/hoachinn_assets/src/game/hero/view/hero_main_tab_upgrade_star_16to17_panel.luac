@@ -1,0 +1,367 @@
+ -- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--     16升17星 神将功能
+-- <br/>
+-- --------------------------------------------------------------------
+HeroMainTabUpgradeStar16to17Panel = class("HeroMainTabUpgradeStar16to17Panel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeroMainTabUpgradeStar16to17Panel:ctor(parent)  
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function HeroMainTabUpgradeStar16to17Panel:config()
+    self.bg_line = {}
+    self.not_upgraded = {}
+    self.line = {}
+    self.upgraded = {}
+    self.skill_panel_list = {}
+    self.skill_bg_list = {}
+    self.skill_lock_list = {}
+    self.skill_icon_list = {}
+    self.skill_add_list = {}
+    self.star_txt_list = {}
+    self.star_list = {}
+end
+
+function HeroMainTabUpgradeStar16to17Panel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_main_tab_upgrade_star_16to17_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    --config ui 
+    local tab_panel = self.root_wnd:getChildByName("tab_panel")
+    self.tab_panel = tab_panel
+    for i=1,5 do
+        local bg_line = tab_panel:getChildByName("bg_line_"..i)
+        table.insert(self.bg_line, i, bg_line)
+        local not_upgraded = tab_panel:getChildByName("not_upgraded_"..i)
+        not_upgraded:ignoreContentAdaptWithSize(true)
+        table.insert(self.not_upgraded, i, not_upgraded)
+        local line = tab_panel:getChildByName("line_"..i)
+        table.insert(self.line, i, line)
+        local upgraded = tab_panel:getChildByName("upgraded_"..i)
+        upgraded:ignoreContentAdaptWithSize(true)
+        table.insert(self.upgraded, i, upgraded)
+    end
+
+    local node_5 = tab_panel:getChildByName("Node_5")
+    for i=1,5 do
+        local bg_line = node_5:getChildByName("star_"..i)
+        setChildUnEnabled(true,bg_line)
+        table.insert(self.star_list, i, bg_line)
+    end
+
+
+    self.star_ur_bg = tab_panel:getChildByName("star_ur_bg")
+    self.img_attr_des = tab_panel:getChildByName("img_attr_des")
+    self.img_attr_des_txt = self.img_attr_des:getChildByName("label")
+    self.img_attr_des_txt:setString(TI18N("语言_c_4892"))
+    self.up_btn = tab_panel:getChildByName("up_btn")
+    self.up_btn_txt = self.up_btn:getChildByName("label")
+    self.up_btn_txt:setString(TI18N("语言_c_7143"))
+
+    self.act_btn = tab_panel:getChildByName("act_btn")
+    self.act_btn_txt = self.act_btn:getChildByName("label")
+    self.act_btn_txt:setString(TI18N("语言_c_7570"))
+    self.info_txt = tab_panel:getChildByName("info_txt")
+    self.info_txt:setString("")--TI18N("语言_c_4392"))
+
+    self.show_btn = tab_panel:getChildByName("show_btn")
+    self.show_btn_txt = self.show_btn:getChildByName("label")
+    self.show_btn_txt:setString(TI18N("语言_c_154"))
+end
+
+function HeroMainTabUpgradeStar16to17Panel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+
+function HeroMainTabUpgradeStar16to17Panel:setData(hero_vo)
+    if not hero_vo then return end
+    self.hero_vo = hero_vo
+    -- self:updataInfo(self.hero_vo)
+    self.cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+
+    -- if self.cfg.score == 9 then
+        -- self.show_btn:setVisible(false)
+    -- end
+
+    self:updataStarInfo()
+    self:setRedPoint(self.hero_vo)
+    if not self.look_txt then
+        self.look_txt = createRichLabel(20,cc.c3b(0x08,0xe9,0x08),cc.p(0,1),cc.p(0,373))
+        self.root_wnd:addChild(self.look_txt)
+        self.look_txt:setString(TI18N("语言_c_6875"))
+        self.look_txt:addTouchLinkListener(function()
+            if not self.hero_vo then return end
+            local pokedex_config = Config.PartnerData.data_partner_pokedex[self.hero_vo.bid]
+            if pokedex_config and pokedex_config[1] then
+                local star = pokedex_config[1].star or 1
+                -- controller:openHeroInfoWindowByBidStar(self.hero_vo.bid, star)
+                local key = getNorKey(self.hero_vo.bid, star)
+                local hero_list = model:getHeroPokedexByBid(key)
+                if hero_list then
+                    controller:getHeroMainInfoWindow().cur_tab_index = nil
+                    controller:getHeroMainInfoWindow():openRootWnd(hero_list, {hero_list}, {show_model_type = HeroConst.BagTab.eBagPokedex, is_hide_ui = true,show_type = HeroConst.MainInfoTab.eMainTrain})
+                end
+            end
+        end, { "click", "href" })
+    end
+end
+
+function HeroMainTabUpgradeStar16to17Panel:updataStarInfo()
+    for key, value in pairs(self.line) do
+        value:setVisible(self.hero_vo.star_step >= key)
+    end
+    for key, value in pairs(self.upgraded) do
+        doStopAllActions(value)
+        value:setOpacity(255)
+        value:setVisible(self.hero_vo.star_step >= key)
+    end
+    for key, value in pairs(self.not_upgraded) do
+        value:setVisible(self.hero_vo.star_step < key)
+    end
+    for key, value in pairs(self.bg_line) do
+        value:setVisible(self.hero_vo.star_step < key)
+    end
+    for key, value in pairs(self.star_list) do
+        setChildUnEnabled(self.hero_vo.star_step < key,value)
+    end
+
+    if self.cfg.score == 9 then
+        for key, value in pairs(self.upgraded) do
+            value:loadTexture(PathTool.getResFrame("hero_star","hero_star_ying_4"), LOADTEXT_TYPE_PLIST)
+        end
+        for key, value in pairs(self.not_upgraded) do
+            value:loadTexture(PathTool.getResFrame("hero_star","hero_star_ying_3"), LOADTEXT_TYPE_PLIST)
+        end
+    end
+
+    self.up_btn:setVisible(self.hero_vo.star_step < 5)
+    local max_star = Config.PartnerData.data_partner_max_star[self.hero_vo.bid]
+    self.act_btn:setVisible(self.hero_vo.star >= 13 and self.hero_vo.star_step >= 5 and self.hero_vo.star < max_star)
+    setChildUnEnabled(true, self.act_btn)
+    if self.hero_vo.star_step < 5 then
+        if self.upgraded[self.hero_vo.star_step + 1] then
+            self.upgraded[self.hero_vo.star_step + 1]:setVisible(true)
+            self.upgraded[self.hero_vo.star_step + 1]:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.FadeTo:create(1.0, 100), cc.FadeTo:create(1.0, 255))))
+        end
+    end
+
+end
+
+--事件
+function HeroMainTabUpgradeStar16to17Panel:registerEvents()
+    registerButtonEventListener(self.up_btn, handler(self, self.onClickBtnStar) ,true, 1)
+    registerButtonEventListener(self.act_btn, handler(self, self.onClickBtnAct) ,true, 1)
+    registerButtonEventListener(self.img_attr_des, handler(self, self.onClickBtnDes) ,true, 1)
+    registerButtonEventListener(self.show_btn, handler(self, self.onClickBtnLook) ,true, 1)
+    -- registerButtonEventListener(self.change_btn, handler(self, self.onClickBtnLook) ,true, 1)
+    for key, value in pairs(self.not_upgraded) do
+        registerButtonEventListener(value, handler(self, function()
+            if self.hero_vo.resonate_star and self.hero_vo.resonate_star ~= 0 then
+                message(TI18N("语言_c_6039"))
+                return
+            end
+            local data = {
+                star_rank = key,
+                hero_vo = self.hero_vo,
+                page_index = self.page_index,
+            }
+            if self.hero_vo.score == 9 and self.hero_vo.star == 16 then
+                controller:openSpStar15to17Panel(true, data)
+            else
+                controller:openHeroUpgrade16Panel(true, data)
+            end
+        end) ,false, 1)
+    end
+    for key, value in pairs(self.upgraded) do
+        registerButtonEventListener(value, handler(self, function()
+            if self.hero_vo.resonate_star and self.hero_vo.resonate_star ~= 0 then
+                message(TI18N("语言_c_6039"))
+                return
+            end
+            local data = {
+                star_rank = key,
+                hero_vo = self.hero_vo,
+                page_index = self.page_index,
+            }
+            if self.hero_vo.score == 9 and self.hero_vo.star == 16 then
+                controller:openSpStar15to17Panel(true, data)
+            else
+                controller:openHeroUpgrade16Panel(true, data)
+            end
+        end) ,false, 1)
+    end
+
+    --英雄信息更新
+    if self.hero_data_update_event == nil then
+        self.hero_data_update_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Update, function(hero_vo)
+            if not hero_vo or not self.hero_vo then return end
+            if self.hero_vo.partner_id == hero_vo.partner_id then
+               -- print(vardump(self.hero_vo))
+                self:checkUpdateCurrentInfo()
+                self:setRedPoint(hero_vo)
+                self:setData(hero_vo)
+                -- self:updataCampIcon()
+            end
+        end)
+    end
+
+    --删除英雄
+    if self.hero_data_delete_event == nil then
+        self.hero_data_delete_event = GlobalEvent:getInstance():Bind(HeroEvent.Del_Hero_Event, function()
+            if not self.hero_vo then return end
+            -- self.is_del_hero_event = true
+            self:checkUpdateCurrentInfo()
+        end)
+    end
+
+    --新增英雄
+    if self.hero_data_add_event == nil then
+        self.hero_data_add_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Add, function()
+            if not self.hero_vo then return end
+            self:checkUpdateCurrentInfo(true)
+        end)
+    end
+
+    --物品道具增加 判断红点
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+            if not self.hero_vo then return end
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                self:checkUpdateCurrentInfo(true)
+            end
+        end)
+    end
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+            if not self.hero_vo then return end
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                self:checkUpdateCurrentInfo(true)
+            end
+        end)
+    end
+
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            if not self.hero_vo then return end
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                self:checkUpdateCurrentInfo(true)
+            end
+        end)
+    end
+
+end
+function HeroMainTabUpgradeStar16to17Panel:onClickBtnLook()
+    controller:openYingShowPlayWindow(true,self.hero_vo)
+end
+-- function HeroMainTabUpgradeStar16to17Panel:onClickBtnLook()
+--     controller:openHeroStarupLookCostHelpPanel(true,self.hero_vo,true)
+-- end
+function HeroMainTabUpgradeStar16to17Panel:checkUpdateCurrentInfo(is_not_check)
+        -- self:updataInfo(self.hero_vo)
+end
+function HeroMainTabUpgradeStar16to17Panel:setRedPoint(hero_vo)
+    local star_rank = 0
+    for i=1,4 do
+        if hero_vo.star_step < i then
+            star_rank = star_rank + 1
+            -- if not HeroModel:checkStarStepCompleteByIndex(hero_vo, star_rank) then
+            if hero_vo.star_step < star_rank then
+                if self.hero_vo.resonate_star and self.hero_vo.resonate_star ~= 0 then
+                    addRedPointToNodeByStatus(self.up_btn,false)
+                else
+                    addRedPointToNodeByStatus(self.up_btn,HeroCalculate.getHeroUpRed(hero_vo,star_rank),10,15)
+                end
+            else
+                addRedPointToNodeByStatus(self.up_btn,false)
+            end
+            break
+        else
+            star_rank = i
+        end
+    end
+    if self.hero_vo.resonate_star and self.hero_vo.resonate_star ~= 0 then
+        addRedPointToNodeByStatus(self.act_btn,false)
+    else
+        local max_star = Config.PartnerData.data_partner_max_star[self.hero_vo.bid]
+        -- addRedPointToNodeByStatus(self.act_btn,self.hero_vo.star >= 13 and self.hero_vo.star_step >= 4 and self.hero_vo.star < max_star)
+    end
+end
+function HeroMainTabUpgradeStar16to17Panel:onClickBtnStar(param, sender, event_type)
+    if self.hero_vo.resonate_star and self.hero_vo.resonate_star ~= 0 then
+        message(TI18N("语言_c_6039"))
+        return
+    end
+    local data = {
+        star_rank = self.hero_vo.star_step+1,
+        hero_vo = self.hero_vo,
+        page_index = self.page_index,
+    }
+    if self.hero_vo.score == 9 and self.hero_vo.star == 16 then
+        controller:openSpStar15to17Panel(true, data)
+    else
+        controller:openHeroUpgrade16Panel(true, data)
+    end
+end
+function HeroMainTabUpgradeStar16to17Panel:onClickBtnAct(param, sender, event_type)
+    message(TI18N("语言_c_1668"))
+    return
+end
+function HeroMainTabUpgradeStar16to17Panel:onClickBtnDes()
+    controller:openHeroMainTabUpgradeStarHigherAttrtips(true, {hero_vo = self.hero_vo,index = 1})
+end
+
+--移除
+function HeroMainTabUpgradeStar16to17Panel:DeleteMe()
+    
+    if self.hero_data_update_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_update_event)
+        self.hero_data_update_event = nil
+    end
+
+    if self.hero_data_delete_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_delete_event)
+        self.hero_data_delete_event = nil
+    end
+    if self.hero_data_add_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_add_event)
+        self.hero_data_add_event = nil
+    end
+
+    if self.modify_goods_event then
+        GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+    if self.updateAwaken then
+        GlobalEvent:getInstance():UnBind(self.updateAwaken)
+        self.updateAwaken = nil
+    end
+    if self.add_goods_event then
+        GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.del_goods_event then
+        GlobalEvent:getInstance():UnBind(self.del_goods_event)
+        self.del_goods_event = nil
+    end
+end

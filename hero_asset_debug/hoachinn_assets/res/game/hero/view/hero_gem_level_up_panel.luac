@@ -1,0 +1,182 @@
+-- HERO GEM LEVEL UP PANEL
+-- UI: dùng hero_talent_skill_level_up_panel CSB (giống nhẫn thuật)
+-- Hiển thị ngọc đang mang, nút Tháo / Đổi Ngọc
+-- Tháo: sender22801(partner_id, 0, pos, 0)
+-- Đổi:  đóng panel → mở GemstoneEquipWindow theo slot
+
+HeroGemLevelUpPanel = HeroGemLevelUpPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model      = controller:getModel()
+
+local GEM_TYPE_BY_POS = {51, 52, 53, 54, 55}
+
+local function getGemVoByPos(hero_vo, pos)
+    if not hero_vo or not pos then return nil end
+    local eqm_list = hero_vo.eqm_list or {}
+    local gem_type = GEM_TYPE_BY_POS[pos]
+    return (gem_type and eqm_list[gem_type]) or (hero_vo.gem_list or {})[pos]
+end
+
+function HeroGemLevelUpPanel:__init()
+    self.view_tag       = ViewMgrTag.DIALOGUE_TAG
+    self.win_type       = WinType.Mini
+    self.is_full_screen = false
+    self.layout_name    = "hero/hero_talent_skill_level_up_panel"
+    self.cost_items     = {}
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLevelUpPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    -- Tiêu đề
+    local title = self.main_container:getChildByName("win_title")
+    if title then title:setString("Ngọc Đang Khảm") end
+
+    -- Panel trên: hiện ngọc đang mang
+    self.up_panel = self.main_container:getChildByName("skill_up_panel")
+    local up_node = self.up_panel:getChildByName("show_item_node")
+    self.up_item  = BackPackItem.new(false, false, nil, 0.9, false)
+    up_node:addChild(self.up_item)
+    self.up_name  = self.up_panel:getChildByName("skill_name")
+    local up_dec  = self.up_panel:getChildByName("dec_node")
+    self.up_desc  = createRichLabel(22, cc.c4b(0x64, 0x32, 0x23, 0xff),
+                                    cc.p(0,1), cc.p(0,0), nil, nil, 440)
+    up_dec:addChild(self.up_desc)
+
+    -- Panel dưới: ẩn đi (không dùng nâng cấp)
+    self.down_panel = self.main_container:getChildByName("skill_down_panel")
+    if self.down_panel then self.down_panel:setVisible(false) end
+
+    -- Ẩn arrow và max label
+    local arrow = self.main_container:getChildByName("Sprite_1")
+    if arrow then arrow:setVisible(false) end
+    local max_lab = self.main_container:getChildByName("skill_max_label")
+    if max_lab then max_lab:setString("") end
+
+    -- Nhãn trang
+    local p1 = self.main_container:getChildByName("page_name_1")
+    local p2 = self.main_container:getChildByName("page_name_2")
+    if p1 then p1:setString("Ngọc Hiện Tại") end
+    if p2 then p2:setString("") end
+
+    -- Cost node (ẩn)
+    self.cost_node = self.main_container:getChildByName("cost_node")
+    if self.cost_node then self.cost_node:setVisible(false) end
+
+    -- Nút: left = Tháo Ngọc, right = Đổi Ngọc, center = ẩn
+    self.left_btn   = self.main_container:getChildByName("left_btn")
+    self.right_btn  = self.main_container:getChildByName("right_btn")
+    self.center_btn = self.main_container:getChildByName("center_btn")
+    if self.left_btn   then self.left_btn:getChildByName("label"):setString("Tháo Ngọc")  end
+    if self.right_btn  then self.right_btn:getChildByName("label"):setString("Đổi Ngọc")  end
+    if self.center_btn then self.center_btn:setVisible(false)                              end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLevelUpPanel:register_event()
+    registerButtonEventListener(self.background,
+        handler(self, self.onClickClose), false, 1)
+    if self.left_btn then
+        registerButtonEventListener(self.left_btn,
+            handler(self, self.onClickRemove), true, 2)
+    end
+    if self.right_btn then
+        registerButtonEventListener(self.right_btn,
+            handler(self, self.onClickReplace), true, 2)
+    end
+
+    -- Refresh khi server push 11012 sau khi tháo/đổi
+    self:addGlobalEvent(HeroEvent.Equip_Update_Event, function()
+        if not self.hero_vo then return end
+        self.hero_vo = model:getHeroById(self.hero_vo.partner_id) or self.hero_vo
+        local gem_vo = getGemVoByPos(self.hero_vo, self.slot_pos)
+        if gem_vo and gem_vo.config then
+            self:showGemInfo(gem_vo)
+        else
+            self:onClickClose()
+        end
+    end)
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLevelUpPanel:openRootWnd(hero_vo, gem_vo, slot_pos)
+    if not hero_vo or not gem_vo or not slot_pos then return end
+    self.hero_vo  = hero_vo
+    self.gem_vo   = gem_vo
+    self.slot_pos = slot_pos
+    self:showGemInfo(gem_vo)
+end
+
+function HeroGemLevelUpPanel:showGemInfo(gem_vo)
+    if not gem_vo or not gem_vo.config then return end
+    self.gem_vo = gem_vo
+
+    -- Hiện item icon
+    if self.up_item then self.up_item:setData(gem_vo) end
+
+    -- Tên
+    if self.up_name then
+        self.up_name:setString(gem_vo.config.name or "")
+    end
+
+    -- Chỉ số
+    if self.up_desc then
+        local lines = {}
+        if gem_vo.config.ext then
+            for _, ext in ipairs(gem_vo.config.ext) do
+                if ext[1] == "main_attr" and ext[2] then
+                    for _, attr in ipairs(ext[2]) do
+                        local key  = attr[1]
+                        local val  = attr[2] or 0
+                        local name = (Config.AttrData and Config.AttrData.data_key_to_name
+                                     and Config.AttrData.data_key_to_name[key]) or key
+                        table.insert(lines, (name or key) .. ": +" .. tostring(val))
+                    end
+                end
+            end
+        end
+        -- Fallback từ main_attr server data
+        if #lines == 0 and gem_vo.main_attr then
+            for _, pair in ipairs(gem_vo.main_attr) do
+                local key  = pair[1]
+                local val  = pair[2] or 0
+                local name = (Config.AttrData and Config.AttrData.data_key_to_name
+                             and Config.AttrData.data_key_to_name[key]) or key
+                table.insert(lines, (name or key) .. ": +" .. tostring(val))
+            end
+        end
+        self.up_desc:setString(table.concat(lines, "\n"))
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLevelUpPanel:onClickRemove()
+    if not self.hero_vo or not self.gem_vo then return end
+    controller:sender11011(self.hero_vo.partner_id, self.gem_vo.id)
+end
+
+function HeroGemLevelUpPanel:onClickReplace()
+    if not self.hero_vo or not self.slot_pos then return end
+    self:onClickClose()
+    controller:openHeroGemLearnPanel(true, self.hero_vo, self.slot_pos)
+end
+
+function HeroGemLevelUpPanel:onClickClose()
+    controller:openHeroGemLevelUpPanel(false)
+end
+
+function HeroGemLevelUpPanel:close_callback()
+    if self.up_item then
+        self.up_item:DeleteMe()
+        self.up_item = nil
+    end
+    controller:openHeroGemLevelUpPanel(false)
+end

@@ -1,0 +1,476 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020.05
+-- --------------------------------------------------------------------
+local _table_insert = table.insert
+
+MazeModel = MazeModel or BaseClass()
+
+function MazeModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+    self.maze_data = {}
+    self.task_list = {}
+    self.is_saodang = false
+    self.maze_Login_red = false
+end
+
+function MazeModel:config()
+
+end
+
+function MazeModel:setFightCount(fight_count)
+    if self.maze_data and self.maze_data.fight_count then
+        self.maze_data.fight_count = fight_count
+    end
+end
+
+function MazeModel:setMazeData(data)
+    -- self.maze_data = {
+    -- {uint16, floor, "当前所在层数"}
+    -- ,{uint8, index, "当前所在格子序号"}
+    -- ,{uint8, fight_count, "战斗次数"}
+    -- ,{uint8, reset_count, "每日重置次数"}
+    -- ,{uint8, sneak_count, "奇袭次数"}
+    -- ,{uint8, fight_index, "当前正在战斗的点位"}
+    -- ,{uint8, power_group, "当前分的战力组"}
+    -- ,{array, maze_tile, tile_list, "格子列表", ?p_g_set(tile_info, [
+    --     {uint8, index, "格子序号"}
+    --     ,{uint8,  type, "格子类型 1初始点 2怪物 3随机宝箱 4终点宝箱"}
+    --     ,{uint8,  is_walk, "是否行走过, 1是0否"}
+    --     ,{uint32,  combat_power, "战斗事件战力"}
+    --     ,{uint8, is_sneak, "是否奇袭过"}
+    --     ,{uint32, chest_id, "宝箱id"}
+    -- ])}
+    --  }
+    -- }
+    self.maze_data = data
+end
+function MazeModel:getMazeMaxPower()
+    return self.maze_data and self.maze_data.max_power or 0
+end
+function MazeModel:getMazeData()
+    return self.maze_data
+end
+
+-- 获取某一章节 某一关卡 的通关状态 
+function MazeModel:getOpenStatus(floor, id)
+    -- debug_Print("getOpenStatus", id)
+    -- debug_Print("self.maze_data.tile_list", self.maze_data.tile_list)
+    local maze_tile = self.maze_data.tile_list
+    if not maze_tile then
+        return false
+    end
+    for i, v in ipairs(maze_tile) do
+        if v.index == id then
+            if v.is_walk == 1 then
+                return true
+            end
+        end
+    end
+    -- debug_Print("maze_tile",maze_tile)
+   
+    -- for i, v in ipairs(maze_tile.index) do
+        -- if v.id == id then
+        --     if v.is_walk == 1 then
+        --         return true
+        --     end
+        -- end
+    -- end
+    return false
+end
+
+-- 获取对应路的通过信息
+function MazeModel:getTargetRoadPass(floor, pos)
+    local maze_tile = self.maze_data.tile_list[floor]
+    if not maze_tile then
+        return {}
+    end
+    local road_ids = {}
+    for k, v in pairs(maze_tile) do
+        local config = Config.MazeData.data_map_info[v.id]
+        if config.pos == pos then
+            road_ids[#road_ids + 1] = v
+        end
+    end
+    return road_ids
+end
+
+-- 检查卡位的激活
+function MazeModel:checkPointIsOpen(floor, id)
+    if floor == self.maze_data.floor then
+        local maze_tile = self.maze_data.tile_list
+        if not maze_tile then
+            return false
+        end
+        local config = Config.MazeData.data_map_info[id]
+        local is_open = false
+        for i, v in ipairs(config.round_point) do
+            for k, j in pairs(maze_tile) do
+                if j.index == v then
+                    if j.is_walk == 1 then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- 检查宝箱的激活
+function MazeModel:checkBoxCanGet(floor, id)
+    if floor == self.maze_data.floor then
+        local maze_tile = self.maze_data.tile_list
+        if not maze_tile then
+            return false
+        end
+        local config = Config.MazeData.data_map_info[id]
+        local is_open = false
+        for i, v in ipairs(config.chest_point) do
+            for k, j in pairs(maze_tile) do
+                if j.index == v then
+                    if j.is_walk == 1 then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- 检查是否所有激活的宝箱都已领取
+function MazeModel:checkBoxAllGet(floor)
+    if floor == self.maze_data.floor then
+        local maze_tile = self.maze_data.tile_list
+        if not maze_tile then
+            return false
+        end
+        local allget = true
+        for k, j in pairs(maze_tile) do
+            if self:checkBoxCanGet(floor, j.index) and j.is_walk == 0 then -- 已激活的宝箱未领取
+                return false
+            end
+        end
+    end
+    return true
+end
+
+-- 获取某一章节 某一关卡 的奇袭状态 
+function MazeModel:getIsSneakStatus(floor, id)
+    local maze_tile = self.maze_data.tile_list[floor]
+    if not maze_tile then
+        return false
+    end
+    for i, v in ipairs(maze_tile.ids) do
+        if v.id == id then
+            if v.is_sneak ~= 0 then
+                return true
+            end
+        end
+    end
+    return false
+end
+function MazeModel:getTaskData()
+    return self.task_list
+end
+
+function MazeModel:getOrderRedPoint()
+    local red_Point = false
+    if not Config or not Config.MazeData then
+        require("config.maze_data")
+    end
+    self.reward_cfg = Config.MazeData.data_war_order
+    --start_time = 1696867200,
+    --end_time = 1698163199,
+    --list = {
+    --},
+    --rmb_status = 0,
+    --score = 0,
+    if self.order_list then
+        local list = {}
+        local order_list_list = self.order_list.list
+        -- award_status = 1,
+        -- rmb_award_status = 0,
+        -- id = 1,
+        for k, v in pairs(self.reward_cfg) do
+            local list_obj = {}
+            list_obj.id = v.id
+            list_obj.award_status = 0
+            list_obj.rmb_award_status = 0
+            list_obj.score = v.score
+            for i, j in ipairs(order_list_list) do
+                if v.id == j.id then
+                    list_obj.award_status = j.award_status
+                    list_obj.rmb_award_status = j.rmb_award_status
+                    break
+                end
+            end
+            table.insert(list,list_obj)
+        end
+        for i, j in ipairs(list) do
+            if self.order_list.score >= j.score  then -- 积分已满足
+                if j.award_status == 0 then -- 普通未领取
+                    red_Point = true
+                    break
+                else -- 普通已领取
+                    if self.order_list.rmb_status == 1 then -- 战令激活
+                        if j.rmb_award_status == 0 then -- 进阶奖励未领取
+                            red_Point = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return red_Point
+end
+
+function MazeModel:getAchieveRedPoint()
+    local red_Point = false
+    if self.achieve_list then
+        for k, v in pairs(self.achieve_list) do
+            if v.state == 1 then
+                red_Point = true
+                break
+            end
+        end
+    end
+    return red_Point
+end
+
+function MazeModel:getTaskRedPoint()
+    local red_Point = false
+    if self.task_list then
+        for k, v in pairs(self.task_list) do
+            if v.status == 1 then
+                red_Point = true
+                break
+            end
+        end
+    end
+    return red_Point
+end
+
+-- 有挑战次数和有可领取未领取的宝箱
+function MazeModel:getMazeRedPoint()
+    local red_Point = false
+    if self.maze_data and self.maze_data.fight_count then
+        if self.maze_data.fight_count > 0 then
+            red_Point = true
+        end
+        local checkBoxAllGet = self:checkBoxAllGet(self.maze_data.floor)
+        if checkBoxAllGet == false then
+            red_Point = true
+        end
+    end
+    return red_Point
+end
+
+-- 有免费重置次数
+function MazeModel:getMazeResetRedPoint()
+    local red_Point = false
+    if self.maze_data and self.maze_data.reset_count  then
+        local reset_count = self.maze_data.reset_count
+        local cost = 0
+        local reset_cost = Config.MazeData.data_const["reset_cost"].val
+        if reset_cost[reset_count + 1] then
+            cost = reset_cost[reset_count + 1][2]
+        else
+            return false
+        end
+        if cost > 0 then
+        else
+            red_Point = true
+        end
+    end
+    return red_Point
+end
+
+function MazeModel:setTaskData(data)
+
+    -- {array,  tuple,  task_info,  "任务信息", [
+    --     {uint32,   id,          "任务id"}
+    --     ,{uint32,  value,       "完成数量"}
+    --     ,{uint32,  status,      "领取状态 0未领取 1已领取"}
+    -- ]}
+
+    local task_info = data.task_info
+    self.task_list = {}
+    local config = Config.MazeData.data_task
+    -- [1001] = {id=1001, name="", sort=1, floor=1, param=1, commit_rewards={{1,99},{80251,100}}},
+    -- [1002] = {id=1002, name="", sort=2, floor=2, param=2, commit_rewards={{1,99},{80251,100}}},
+    -- [1003] = {id=1003, name="", sort=3, floor=3, param=3, commit_rewards={{1,99},{80251,100}}},
+    -- [1004] = {id=1004, name="", sort=4, floor=4, param=4, commit_rewards={{1,99},{80251,100}}}
+    if config ~= nil then
+        for i, v in pairs(config) do
+            local taskObj = {}
+            taskObj.id = v.id
+            taskObj.name = v.name
+            taskObj.sort = v.sort
+            taskObj.floor = v.floor
+            taskObj.param = v.param
+            taskObj.commit_rewards = v.commit_rewards
+            taskObj.status = 0 -- 0不可领取 1 可领取 2 已领取
+            taskObj.sort = 2 -- 2不可领取 3 可领取 1 已领取
+            taskObj.finish_num = 0
+            for a, b in pairs(task_info) do
+                if v.id == b.id then
+                    taskObj.finish_num = b.value
+                    if b.value >= v.param then
+                        if b.status == 1 then
+                            taskObj.status = 2
+                            taskObj.sort = 1
+                        else
+                            taskObj.status = 1
+                            taskObj.sort = 3
+                        end
+                    else
+                        taskObj.status = 0
+                        taskObj.sort = 2
+                    end
+                    break
+                end
+            end
+            table.insert(self.task_list, taskObj)
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"sort", true}, {"id", false}})
+    table.sort(self.task_list, sort_func)
+end
+
+-- function MazeModel:setTaskCompleted(id)
+--     local taskVo = self.task_list[id]
+--     if self.task_list then
+--         for k, v in pairs(self.task_list) do
+--             if v.id == id then
+--                 v.status = 2
+--                 break
+--             end
+--         end
+--         GlobalEvent:getInstance():Fire(MazeEvent.UpdateTaskList)
+--     end
+-- end
+
+function MazeModel:getFeatData()
+    return self.achieve_list
+end
+
+function MazeModel:setFeatData(data)
+    -- {array,  tuple,  achieve_info,  "成就信息", [
+    --     {uint32, id, "id"}
+    --     ,{uint32, point, "红点状态"}
+    --     ,{uint32, state, "任务完成状态 0 1 2"}
+    --     ,{array, tuple, quest_state, "任务进度", [
+    --         {string, label, "任务标签"}
+    --         ,{uint32, num, "当前值"}
+    --         ,{uint32, need_num, "所需值"}
+    --     ]}
+    -- ]}
+    local achieve_info = data.achieve_info
+    self.achieve_list = {}
+    local config = Config.MazeData.data_achieve
+    if achieve_info ~= nil then
+        for i, v in pairs(achieve_info) do
+            local achieveObj = {}
+            achieveObj.id = v.id
+            achieveObj.state = v.state -- 0不可领取 1 可领取 2 已领取
+            achieveObj.sort = 1 -- 1不可领取 2 可领取 0 已领取
+            if v.state == 1 then
+                achieveObj.sort = 2
+            elseif v.state == 2 then
+                achieveObj.sort = 0
+            end
+            achieveObj.num = v.quest_state[1].num
+            achieveObj.need_num = v.quest_state[1].need_num
+            achieveObj.commit_rewards = {}
+            achieveObj.name = ""
+            if config and config[v.id] then
+                achieveObj.commit_rewards = deepCopy(config[v.id].commit_rewards)
+                achieveObj.name = deepCopy(config[v.id].name)
+            end
+            table.insert(self.achieve_list, achieveObj)
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"sort", true}, {"id", false}})
+    table.sort(self.achieve_list, sort_func)
+end
+
+function MazeModel:getOrderData()
+    return self.order_list
+end
+
+function MazeModel:setOrderData(data)
+    -- {uint32, start_time, "开始时间"}
+    -- ,{uint32, end_time, "结束时间"}
+    -- ,{uint32, score, "积分"}
+    -- ,{uint8, rmb_status, "是否激活特权"}
+    -- ,{array, tuple, list, "奖励列表", [
+    --     {uint32,    id,  "ID"}
+    --     ,{uint8,    award_status,  "普通奖励领取状态（0：未领取，1：已领取）"}
+    --     ,{uint8,    rmb_award_status, "进阶奖励领取状态（0：未领取，1：已领取）"}
+    -- ]}
+
+    self.order_list = deepCopy(data)
+end
+
+function MazeModel:setAdventureRedStatus()
+    local scene_adventure_redpiont = self:getAdventureRedPoint()
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.adventure, {
+        bid = AdventureActivityConst.Red_Type.maze,
+        status = scene_adventure_redpiont
+    })
+end
+
+function MazeModel:getAdventureRedPoint()
+    local red_status = false
+    local achieve_red = self:getAchieveRedPoint()
+    local task_red = self:getTaskRedPoint()
+    local order_red = self:getOrderRedPoint()
+    local maze_red = self:getMazeRedPoint()
+    local reset_red = self:getMazeResetRedPoint()
+    if achieve_red == true or task_red == true or order_red == true or maze_red == true or reset_red == true or self.maze_Login_red then
+        red_status = true
+    end
+    return red_status
+end
+
+function MazeModel:setSaoSelect(num,is_req)
+	if self.isSaoSelect ~= num then
+		self.isSaoSelect = num
+        if is_req then
+            MazeController:getInstance():sender30324(num)
+        end
+	end
+end
+function MazeModel:getSaoSelect()
+	if self.isSaoSelect then
+		return self.isSaoSelect
+	end
+	return 0
+end
+
+-- 是否屏蔽功能
+function MazeModel:isHideMaze()
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	local featuresId = MainuiConst.FeaturesShield.maze
+    if not table.indexof(nohideIds,featuresId) then
+		return true
+	end
+end
+
+function MazeModel:setMazeLoginRed(bl)
+    self.maze_Login_red = bl
+
+	self:setAdventureRedStatus()
+end
+
+function MazeModel:__delete()
+end

@@ -1,0 +1,223 @@
+-- --------------------------------------------------------------------
+-- @author: lwc@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      自选礼包第二种样式
+-- <br/> 2020年5月16日
+-- --------------------------------------------------------------------
+GiftSelectTwo = GiftSelectTwo or BaseClass(BaseView)
+
+local controller = BackpackController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+function GiftSelectTwo:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "backpack/gift_select_two"
+
+    self.empty_res = PathTool.getPlistImgForDownLoad("bigbg","bigbg_3")
+    self.res_list = {
+        { path = self.empty_res, type = ResourcesType.single }
+    }
+end
+
+function GiftSelectTwo:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.title = self.main_panel:getChildByName("win_title")
+    self.title:setString(TI18N("自选礼包"))
+
+    self.tips = createRichLabel(22, cc.c4b(0x64,0x32,0x23,0xff), cc.p(0.5, 0.5), cc.p(339,124),nil,nil,600)
+    self.main_container:addChild(self.tips)
+    self.tips:setString(TI18N("请从以上奖励选择1个"))
+    self.scroll_view = self.main_container:getChildByName("scroll_view")
+
+    self.right_btn = self.main_container:getChildByName("right_btn")
+    self.right_btn:getChildByName("label"):setString(TI18N("领取奖励"))
+end
+
+function GiftSelectTwo:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.right_btn, handler(self, self.onClickBtnRight) ,true, 2)
+
+end
+
+--关闭
+function GiftSelectTwo:_onClickBtnClose()
+    controller:openGiftSelectTwo(false)
+end
+
+function GiftSelectTwo:onClickBtnRight()
+    if not self.giftBid then return end
+    if not self.gift_vo then return end
+    if self.select_index == nil then
+        message(TI18N("请选择1个物品！"))
+        return
+    end
+    local item_data = self.item_list[self.select_index]
+    if not item_data then return end
+    local chose_ids = {}
+    table.insert(chose_ids, {name=1,value = item_data.bid,str =""})
+    table.insert(chose_ids, {name=2,value = item_data.sort_id,str =""})
+
+    local gift_id = self.gift_vo.id
+    local count = BackpackController:getInstance():getModel():getPackItemNumByBid(BackPackConst.Bag_Code.BACKPACK,self.giftBid)
+    if count > 1  then
+        local item_config = Config.ItemData.data_get_data(self.giftBid)
+        if item_config and item_config.overlap == 1 then --如果堆叠数 是1 就直接打开吧
+            controller:sender10515(gift_id,1,chose_ids)
+            controller:openGiftSelectTwo(false)
+        else
+            controller:openBatchUseItemView(true, self.gift_vo,1, chose_ids)
+        end
+    else
+        controller:sender10515(gift_id,1,chose_ids)
+        controller:openGiftSelectTwo(false)
+    end
+end
+
+function GiftSelectTwo:getGiftIDList()
+    local desc_config = Config.ItemData.data_multiple_desc
+    if desc_config and desc_config[self.giftBid] then
+        local role_vo = RoleController:getInstance():getRoleVo()
+        if role_vo and role_vo.lev then
+            for k, v in pairs(desc_config[self.giftBid]) do
+                if v.min_lev <= role_vo.lev and v.max_lev >= role_vo.lev then
+                    return v.id_list
+                end
+            end
+        end
+    end
+    return {}
+end
+
+
+function GiftSelectTwo:openRootWnd(giftvo)
+    self.gift_vo = giftvo
+    if not giftvo then return end
+    local giftId = giftvo.id
+    local giftBid = giftvo.base_id
+    self.giftBid = giftBid
+    self.item_list = {}
+
+    local id_list =self:getGiftIDList()
+    local dic_list = {}
+    local is_id_list = false --标志是否用id_list来选择 礼包数据 
+    if id_list and next(id_list) ~= nil then
+        is_id_list = true
+        for i,id in pairs(id_list) do
+            dic_list[id] = true
+        end
+    end
+    local table_insert = table.insert
+    if Config.GiftData.data_choose_gift[giftBid] then
+        local gift_cfg = Config.GiftData.data_choose_gift[giftBid]
+        for k,v in pairs(gift_cfg) do
+            if is_id_list then
+                if dic_list[v.bid]  then
+                    table_insert(self.item_list, v)
+                end
+            else
+                table_insert(self.item_list, v)
+            end
+        end
+    end
+    table.sort(self.item_list, SortTools.KeyLowerSorter("sort_id"))
+
+    self:updateList()
+end
+
+
+function GiftSelectTwo:updateList()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.scroll_view:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            end_y = 35,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = scroll_view_size.width / 4 ,                -- 单元的尺寸width
+            item_height = BackPackItem.Height + 35,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 4,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.scroll_view, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.item_scrollview:reloadData()
+
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function GiftSelectTwo:createNewCell(width, height)
+    local cell = BackPackItem.new(false, true, false, 1, false)
+    -- cell:setIsScrollName(true)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function GiftSelectTwo:numberOfCells()
+    if not self.item_list then return 0 end
+    return #self.item_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function GiftSelectTwo:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.item_list[index]
+    if not data then return end
+    cell:setBaseData(data.bid, data.num)
+    if self.select_index == index then
+        cell:IsGetStatus(true)
+    else
+        cell:IsGetStatus(false)
+    end
+    if cell.item_config then
+        cell:setGoodsName(cell.item_config.name, nil, 20)
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function GiftSelectTwo:onCellTouched(cell)
+    if not cell.index then return end
+    local data = self.item_list[cell.index]
+    if not data then return end
+
+    if self.select_cell then
+        self.select_cell:IsGetStatus(false)
+    end
+    if self.select_index == cell.index then
+        self.select_index = nil
+        self.select_cell = nil
+    else
+        self.select_index = cell.index
+        self.select_cell = cell
+        cell:IsGetStatus(true)    
+    end
+end
+
+
+function GiftSelectTwo:close_callback()
+    if self.item_scrollview then 
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    controller:openGiftSelectTwo(false)
+end

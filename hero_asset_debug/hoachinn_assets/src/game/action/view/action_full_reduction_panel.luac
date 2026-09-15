@@ -1,0 +1,483 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-02-22 11:07:55
+-- @description    : 
+		-- 黑色星期五满减
+---------------------------------
+ActionFullReductionPanel = class("ActionFullReductionPanel", function()
+    return ccui.Widget:create()
+end)
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionFullReductionPanel:ctor(bid)
+	self.holiday_bid = bid
+	self:configUI()
+	self:register_event()
+end
+
+function ActionFullReductionPanel:configUI(  )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_full_reduction_panel"))
+    self:addChild(self.root_wnd)
+    self:setPosition(-40, -84)
+    self:setAnchorPoint(0, 0)
+    
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.tips = createRichLabel(20, cc.c4b(0xff,0xfb,0xeb,0xff), cc.p(0,0), cc.p(20,695), -10,nil,700)
+    self.tips:setHorizontalLayoutType(2)
+    main_container:addChild(self.tips)
+
+    self.time_panel = main_container:getChildByName("time_panel")
+    self.time_txt = self.time_panel:getChildByName("time_txt")
+    self.time_txt:setString(TI18N("语言_c_13"))
+    self.time_value = self.time_panel:getChildByName("time_value")
+
+    -- 横幅图片
+    local title_img = main_container:getChildByName("image_bg")
+    local title_str = "txt_cn_welfare_banner17"
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if tab_vo then
+        --网络传过来的优先拿网络的
+        if tab_vo.reward_title ~= nil and tab_vo.reward_title ~= "" then
+            title_str = tab_vo.reward_title
+        end
+    end
+    local res = PathTool.getWelfareBannerRes(title_str, false)
+    self.item_load = loadSpriteTextureFromCDN(title_img, res, ResourcesType.single, self.item_load)
+
+    self.price_panel = main_container:getChildByName("price_panel")
+    self.original_price_txt = self.price_panel:getChildByName("original_price_txt")
+    self.original_price_txt:setString(TI18N("语言_c_5436"))
+    self.original_price = createRichLabel(22, cc.c4b(0x5c,0x27,0x05,0xff), cc.p(0,1), cc.p(self.original_price_txt:getPositionX() + self.original_price_txt:getContentSize().width,65), nil,nil,600)
+    self.price_panel:addChild(self.original_price,1)
+    self.price_image = self.price_panel:getChildByName("price_image")
+    self.price_image:setZOrder(2)
+    self.now_price_txt = self.price_panel:getChildByName("now_price_txt")
+    self.now_price_txt:setString(TI18N("语言_c_5437"))
+    self.now_price = createRichLabel(22, cc.c4b(0x5c,0x27,0x05,0xff), cc.p(0,1), cc.p(self.now_price_txt:getPositionX() + self.now_price_txt:getContentSize().width,30), nil,nil,600)
+    self.price_panel:addChild(self.now_price,3)
+    self.Spread = createRichLabel(26, cc.c4b(0x0e,0xa8,0x0e,0xff), cc.p(1,1), cc.p(125,50), nil,nil,600)
+    self.price_panel:addChild(self.Spread)
+
+    self.settlement_btn = main_container:getChildByName("settlement_btn")
+    self.settlement_btn_txt = self.settlement_btn:getChildByName("label")
+    self.settlement_btn_txt:setString(TI18N("语言_c_5400"))
+
+    local item_list = main_container:getChildByName("item_list")
+    local scroll_view_size = item_list:getContentSize()
+    local setting = {
+        item_class = ActionFullReductionItem,      -- 单元类
+        start_x = 10,                  -- 第一个单元的X起点
+        space_x = 5,                    -- x方向的间隔
+        start_y = 2,                    -- 第一个单元的Y起点
+        space_y = 5,                   -- y方向的间隔
+        item_width = 340,               -- 单元的尺寸width
+        item_height = 185,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 2                         -- 列数，作用于垂直滚动类型
+    }
+    self.child_scrollview = CommonScrollViewLayout.new(item_list,cc.p(0,0),ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+    self.child_scrollview:setSwallowTouches(false)
+    controller:sender16814(self.holiday_bid)
+    controller:sender21721(self.holiday_bid)
+end
+
+function ActionFullReductionPanel:register_event(  )
+    registerButtonEventListener(self.settlement_btn, function()
+        if not self.item_list then return end
+        local list = {}
+        list.bid = self.item_list.bid
+        list.buy_list = {}
+        for key, value in pairs(self.item_list.buy_list) do
+            local data = {}
+            data.id = value.id
+            data.save_num = value.save_num
+            table.insert(list.buy_list, data)
+        end
+        controller:sender21720(list.bid,list.buy_list)
+        local role_vo = RoleController:getInstance():getRoleVo()
+        if self.costList and self.costList[2] > role_vo["gold"] then
+            local function fun()
+                VipController:getInstance():openVipMainWindow(true, VIPTABCONST.CHARGE)
+            end
+            local str = string.format(TI18N("语言_c_5408"), self.costList[2] - role_vo["gold"])
+            CommonAlert.show(str, TI18N("语言_c_63"), fun, TI18N("语言_c_62"), nil, CommonAlert.type.rich, nil, nil, nil, true)
+            return
+        end
+        for key, value in pairs(list.buy_list) do
+            if value.save_num ~= 0 then
+                local function fun()
+                    controller:openFullReductionSettlementPanel(true,list)
+                end
+                local str1 = TI18N("语言_c_5443")
+                local list = {}
+                table.insert(list,self.costList[4])
+                table.insert(list,self.costList[5])
+                local str = string.format(TI18N(LangStringFormat(str1,list)))
+                CommonAlert.show(str, TI18N("语言_c_5445"), fun, TI18N("语言_c_5444"), nil, CommonAlert.type.rich, nil, nil, nil, true)
+                return
+            end
+        end
+        message(TI18N("语言_c_2016"))
+	end, true)
+
+    if not self.full_reduction_choose  then
+        self.full_reduction_choose = GlobalEvent:getInstance():Bind(ActionEvent.FullReductionChoose,function (data)
+            for key, value in pairs(self.item_list.buy_list) do
+                if value.id == data[1] then
+                    value.save_num = data[2]
+                end
+            end
+            self:setPrice()
+        end)
+    end
+
+    --更新信息
+    if not self.full_reduction_update_data  then
+        self.full_reduction_update_data = GlobalEvent:getInstance():Bind(ActionEvent.FullReductionUpdataData,function (data)
+            self:setData(data)
+        end)
+    end
+end
+function ActionFullReductionPanel:setData(data)
+    self.item_list = data
+    local action_data = controller:getActionSubTabVo(self.holiday_bid)
+    controller:sender16809(ActionStorageBool.FullReduction + action_data.camp_id,1,"")
+    doStopAllActions(self.time_value)
+    local actInfo = controller:getActionSubTabVo(self.holiday_bid)
+    controller:getModel():setCountDownTime(self.time_value,actInfo.remain_sec)
+    self.time_panel:setContentSize(cc.size(self.time_value:getContentSize().width + self.time_txt:getContentSize().width + 10,self.time_panel:getContentSize().height))
+    self.time_value:setPositionX(self.time_panel:getContentSize().width-2)
+    self.time_txt:setPositionX(self.time_value:getPositionX() - self.time_value:getContentSize().width - 5)
+    self:setTip()
+    self:setScroll()
+    self:setPrice()
+end
+function ActionFullReductionPanel:setPrice()
+    local costList = deepCopy(model:setCostNum(controller:getActionSubTabVo(self.holiday_bid).camp_id,self.item_list.buy_list))
+    self.costList = costList
+    local str = "<div fontcolor=#5c2705><img src=\'%s\' scale=0.3 />%s</div>"
+    self.original_price:setString(TI18N(string.format(str,PathTool.getItemRes(3),costList[1])))
+    self.price_image:setContentSize(cc.size(self.original_price:getContentSize().width + self.original_price_txt:getContentSize().width + 30, 2))
+    self.now_price:setString(TI18N(string.format(str,PathTool.getItemRes(3),costList[2])))
+    local str = "<div fontcolor=#0ea80e>-<img src=\'%s\' scale=0.3 />%s</div>"
+    self.Spread:setString(TI18N(string.format(str,PathTool.getItemRes(3),costList[3])))
+    if costList[3] == 0 then
+        self.Spread:setVisible(false)
+    else
+        self.Spread:setVisible(true)
+    end
+    local _w = math.max(380, self.Spread:getContentSize().width + self.price_image:getContentSize().width + 100)
+    self.price_panel:setContentSize(cc.size(_w,70))
+    self.settlement_btn:setPositionX(self.price_panel:getContentSize().width + self.price_panel:getPositionX() + 40)
+end
+function ActionFullReductionPanel:setTip()
+    self.cfg = deepCopy(Config.HolidayBlackFridayData.data_const[controller:getActionSubTabVo(self.holiday_bid).camp_id])
+    local str = TI18N("语言_hol_bl_fr_01_1")
+    local list = {}
+    for key, value in pairs(self.cfg.discount) do
+        for k, v in pairs(value) do
+            table.insert(list,v)
+        end
+    end
+    self.tips:setString(TI18N(LangStringFormat(str,list)))
+end
+function ActionFullReductionPanel:setScroll()
+    self.child_scrollview:setData(self.item_list.buy_list,nil,nil,ActionController:getInstance():getActionSubTabVo(self.item_list.bid).camp_id)
+end
+function ActionFullReductionPanel:DeleteMe()
+    doStopAllActions(self.time_value)
+    
+    if self.full_reduction_choose then
+        self.full_reduction_choose = GlobalEvent:getInstance():UnBind(self.full_reduction_choose)
+        self.full_reduction_choose = nil
+    end
+    if self.full_reduction_update_data then
+        self.full_reduction_update_data = GlobalEvent:getInstance():UnBind(self.full_reduction_update_data)
+        self.full_reduction_update_data = nil
+    end
+    
+end
+
+---------------------------@ 子项
+ActionFullReductionItem = class("ActionFullReductionItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionFullReductionItem:ctor()
+    self.choose_num =  0 -- 保存的数量
+	self:configUI()
+	self:register_event()
+end
+
+function ActionFullReductionItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_full_reduction_item"))
+    self:addChild(self.root_wnd)
+    self:setContentSize(cc.size(688,136))
+    self:setAnchorPoint(0,0)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.name_panel = main_container:getChildByName("name_panel")
+    self.name_txt = main_container:getChildByName("name")
+    self.name_txt:setSwallowTouches(false)
+    setTextMaxWidth(self.name_txt,147)
+    self.count_bg = main_container:getChildByName("count_bg")
+    self.coin = self.count_bg:getChildByName("coin")
+    self.price = self.count_bg:getChildByName("price")
+    self.discount = main_container:getChildByName("discount")
+    self.discount_num = self.discount:getChildByName("discount_num")
+    self.discount_num:setString(TI18N("语言_c_1543"))
+    self.back_node = main_container:getChildByName("back_node")
+    self.sold = main_container:getChildByName("sold")
+    self.sold:setVisible(false)
+    self.grey = main_container:getChildByName("grey")
+    self.grey:setVisible(false)
+    self.Image_5 = main_container:getChildByName("Image_5")
+    self.buy_num = main_container:getChildByName("buy_num")
+    local res = PathTool.getResFrame("common", "common_99998")
+    self.num = createEditBox(main_container, res, cc.size(90, 30), nil, 20, cc.c4b(0x00,0x00,0x00,0x00), 22, "", nil, nil, LOADTEXT_TYPE_PLIST)
+    self.num:setInputMode(cc.EDITBOX_INPUT_MODE_NUMERIC)
+    self.num:setAnchorPoint(cc.p(0.5, 0.5))
+    self.num:setPlaceholderFontColor(Config.ColorData.data_color4[151])
+    self.num:setFontColor(cc.c4b(0xf8,0xef,0x76,0x00))
+    self.num:setPosition(cc.p(222,55))
+    -- self.num:setVisible(false)
+    -- self.num:setText("0")
+    self.num:setOpacity(0)
+    self.num:setSwallowTouches(false)
+    self.buy_num:setString("0")
+    
+    self.buy_add = main_container:getChildByName("buy_add")
+    self.buy_less = main_container:getChildByName("buy_less")
+    self.purchase_limit = createRichLabel(22, cc.c4b(0x5c,0x27,0x05,0xff), cc.p(0,0), cc.p(10,5))
+    main_container:addChild(self.purchase_limit)
+    self.backItem = BackPackItem.new(false,true,false,0.9,true,true)
+    self.back_node:addChild(self.backItem)
+    self.backItem:setPosition(cc.p(0,0))
+    self.backItem:setSwallowTouches(false)
+end
+function ActionFullReductionItem:touchNum( status )
+	if status then
+		self.choose_num = self.choose_num + 1
+	else
+		self.choose_num = self.choose_num - 1
+	end
+	self:setLevelbtn()
+end
+function ActionFullReductionItem:setLevelbtn()
+    if not self.cfg then return end
+    self.buy_num:setString(self.choose_num)
+    if self.choose_num == 0 then
+        self.num:setText("")
+    else
+        self.num:setText(self.choose_num)
+    end
+    if self.choose_num <= 0 then
+		self:clearTimeTicket2()
+        setChildUnEnabled(true,self.buy_less)
+        self.buy_less:setTouchEnabled(false)
+    else
+        setChildUnEnabled(false,self.buy_less)
+        self.buy_less:setTouchEnabled(true)
+    end 
+    if self.choose_num >= self.cfg.limit - self.data.purchased_num then
+		self:clearTimeTicket()
+        setChildUnEnabled(true,self.buy_add)
+        self.buy_add:setTouchEnabled(false)
+    else
+        setChildUnEnabled(false,self.buy_add)
+        self.buy_add:setTouchEnabled(true)
+    end
+	GlobalEvent:getInstance():Fire(ActionEvent.FullReductionChoose,{self.data.id,self.choose_num})
+end
+function ActionFullReductionItem:startTimeTicket()
+    local _callback = function()
+        if self.touchNum then
+            self:touchNum(true)
+        end
+	end
+	self.time_ticket = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+end
+function ActionFullReductionItem:startTimeTicket2()
+    local _callback = function()
+        if self.touchNum then
+            self:touchNum(false)
+        end
+	end
+	self.time_ticket2 = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+end
+function ActionFullReductionItem:clearTimeTicket()
+    if self.sequence_action then
+        self.buy_add:stopActionByTag(1)
+        self.sequence_action = nil
+    end
+	if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end  
+function ActionFullReductionItem:clearTimeTicket2()
+    if self.sequence_action2 then
+        self.buy_less:stopActionByTag(1)
+        self.sequence_action2 = nil
+    end
+	if self.time_ticket2 ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket2)
+        self.time_ticket2 = nil
+    end
+end 
+function ActionFullReductionItem:register_event()
+    self.num:registerScriptEditBoxHandler(function(eventType)
+        if not self.cfg then return end
+        if eventType == "return" or eventType == "ended" then
+            if not tolua.isnull(self.num) and self.num:getText() ~= "" then
+                local numT = tonumber(self.num:getText())
+                if numT then
+                    if numT <= 0 then
+                        self.choose_num = 0
+                    elseif numT >= self.cfg.limit - self.data.purchased_num then
+                        self.choose_num = self.cfg.limit - self.data.purchased_num
+                    else
+                        self.choose_num = numT
+                    end
+                else
+                    self.choose_num = 0
+                end
+            else
+                self.choose_num = 0
+            end
+	        self:setLevelbtn()
+            if self.choose_num == 0 then
+                self.num:setText("")
+            else
+                self.num:setText(self.choose_num)
+            end
+            self.num:setOpacity(0)
+            self.buy_num:setVisible(true)
+        elseif eventType == "changed" then
+            local str = self.num:getText()
+            if str == "" then str = 0 end
+            self.buy_num:setString(str)
+        elseif eventType == "began" then
+            self.num:setOpacity(255)
+            self.buy_num:setVisible(false)
+        end
+    end)
+
+    self.buy_add:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)        
+        if event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function()
+                self:startTimeTicket()
+            end))
+            self.sequence_action = self.buy_add:runAction(sequence_action)
+            self.sequence_action:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+            local touch_began = self.touch_began
+            local touch_move = sender:getTouchMovePosition()
+            if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 40 or math.abs(touch_move.y - touch_began.y) > 40) then 
+                --移动大于20了..表示取消长点击效果
+                self:clearTimeTicket()
+            end 
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+			playButtonSound2()
+			self:touchNum(true)
+        end
+    end)
+	self.buy_less:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function()
+                self:startTimeTicket2()
+            end))
+            self.sequence_action2 = self.buy_less:runAction(sequence_action)
+            self.sequence_action2:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+            local touch_began = self.touch_began
+            local touch_move = sender:getTouchMovePosition()
+            if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 40 or math.abs(touch_move.y - touch_began.y) > 40) then 
+                --移动大于20了..表示取消长点击效果
+                self:clearTimeTicket2()
+            end 
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket2()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket2()
+			playButtonSound2()
+			self:touchNum(false)
+        end
+    end)
+end
+
+function ActionFullReductionItem:setExtendData(act_id)
+    self.act_id = act_id
+end
+
+function ActionFullReductionItem:setData( data )
+    self.data = data
+    self.choose_num = self.data.save_num
+    local cfg = deepCopy(Config.HolidayBlackFridayData.data_buy_info[self.act_id])
+    if not cfg then return end
+    self.cfg = deepCopy(cfg[data.id])
+    if not self.cfg then return end
+    if self.cfg.buy_type == 0 then
+        local str1 = TI18N("语言_c_5401")
+        local str2 = TI18N("语言_c_5402")
+        local str3 = TI18N("语言_c_5403")
+        if self.cfg.limit_day == 1 then -- 每日限购
+            self.purchase_limit:setString(string.format(str2, self.data.purchased_num,self.cfg.limit))
+        elseif self.cfg.limit_day == 999 then -- 活动限购
+            self.purchase_limit:setString(string.format(str1, self.data.purchased_num,self.cfg.limit))
+        else-- 每%s限购
+            self.purchase_limit:setString(string.format(str3, self.cfg.limit_day, self.data.purchased_num,self.cfg.limit))
+        end
+        self.Image_5:setVisible(true)
+        self.buy_num:setVisible(true)
+        self.buy_add:setVisible(true)
+        self.buy_less:setVisible(true)
+        self.num:setVisible(true)
+    elseif self.cfg.buy_type == 1 then
+        self.purchase_limit:setString(string.format(TI18N("语言_c_6362"), self.data.purchased_num,self.cfg.limit))
+        self.Image_5:setVisible(true)
+        self.buy_num:setVisible(true)
+        self.buy_add:setVisible(true)
+        self.buy_less:setVisible(true)
+        self.num:setVisible(true)
+    elseif self.cfg.buy_type == 2 then
+        self.purchase_limit:setString(TI18N("语言_c_6363"))
+        self.Image_5:setVisible(false)
+        self.buy_num:setVisible(false)
+        self.buy_add:setVisible(false)
+        self.buy_less:setVisible(false)
+        self.num:setVisible(false)
+    end
+    self.backItem:setData(self.cfg.reward[1],nil,true)
+    self.price:setString(self.cfg.num)
+    self.back_cfg = Config.ItemData.data_get_data(self.cfg.reward[1][1])
+    if not self.back_cfg then return end
+    self.name_txt:setString(self.back_cfg.name)
+    if self.name_txt:getContentSize().height > 60 then
+        self.name_txt:setString(transformTextToShort(self.back_cfg.name,14))
+        addEvt2showAllTextTips(self.name_txt,self.back_cfg.name,14)
+    end
+    if self.data.purchased_num >= self.cfg.limit then
+        self.sold:setVisible(true)
+        self.grey:setVisible(true)
+    else
+        self.sold:setVisible(false)
+        self.grey:setVisible(false)
+    end
+    self.discount:setVisible(self.cfg.good_id == 1)
+	self:setLevelbtn()
+end
+
+function ActionFullReductionItem:DeleteMe()
+    self:clearTimeTicket()
+    self:clearTimeTicket2()
+end

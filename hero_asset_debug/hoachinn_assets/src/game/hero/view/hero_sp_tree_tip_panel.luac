@@ -1,0 +1,215 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      sp忍者上下神树回退提示
+-- <br/>Create: 2018年11月12日
+--
+-- --------------------------------------------------------------------
+HeroSpTreeTipPanel = HeroSpTreeTipPanel or BaseClass(BaseView)
+
+local table_insert = table.insert
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function HeroSpTreeTipPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini
+    self.layout_name = "hero/hero_sp_tree_tip_panel"
+end 
+
+function HeroSpTreeTipPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(container , 2)  
+    self.image_2 = container:getChildByName("Image_2")
+    self.win_title = container:getChildByName("win_title")
+    self.win_title:setString(TI18N("提示"))
+    autoSizeTitleBg(self.win_title,self.image_2,60,332)
+
+    self.scroll_view = container:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.dec_val = createRichLabel(24, cc.c4b(0x68, 0x45, 0x2a, 0xff), cc.p(0,1), cc.p(0,160),FONT_COMMON_LINE_SPACE,nil,550)--50 491
+    self.scroll_view:addChild(self.dec_val)
+
+    -- container:addChild(self.dec_val)
+    self.cancel_btn = container:getChildByName("cancel_btn")
+    self.cancel_btn_label = self.cancel_btn:getChildByName("label")
+    self.cancel_btn_label:setString(TI18N("语言_c_395"))
+    self.cancel_btn_label:enableOutline(Config.ColorData.data_color4[263], 2)
+
+    self.confirm_btn = container:getChildByName("confirm_btn")
+    self.confirm_btn_label = self.confirm_btn:getChildByName("label")
+    self.confirm_btn_label:setString(TI18N("语言_c_261"))
+    self.confirm_btn_label:enableOutline(Config.ColorData.data_color4[264], 2)
+    self.list_view = container:getChildByName("list_view")
+    local size = self.list_view:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 16,                  -- 第一个单元的X起点
+        space_x = 32,                    -- x方向的间隔
+        start_y = 6,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = 119,               -- 单元的尺寸width
+        item_height = 119,              -- 单元的尺寸height
+        row = 4,                        -- 行数，作用于水平滚动类型
+        col = 4,                         -- 列数，作用于垂直滚动类型
+        once_num = 4,
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.list_view, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, setting)
+    self.close_btn = container:getChildByName("close_btn")
+    self.container = container
+end
+
+function HeroSpTreeTipPanel:register_event()
+    registerButtonEventListener(self.close_btn, function() controller:openHeroSpTreeTipPanel(false) end ,true, 1)
+
+    registerButtonEventListener(self.cancel_btn, function() controller:openHeroSpTreeTipPanel(false) end ,true, 2)
+    registerButtonEventListener(self.confirm_btn, function() self:onConfirmButton() end ,true, 2)
+    if not self.hero_sp_up_look_event then
+        self.hero_sp_up_look_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Sp_Up_Look_Event,function (data)
+            self:setHeroReturnData(data.list)
+        end)
+    end
+end
+
+function HeroSpTreeTipPanel:onConfirmButton()
+    if self.type == 1 then
+        controller:sender26446(self.hero_vo.partner_id,self.pos)
+    else
+        controller:sender26447(self.hero_vo.partner_id,self.pos)
+    end
+    controller:openHeroSpTreeTipPanel(false)
+end
+--type 1上树  2下树
+function HeroSpTreeTipPanel:openRootWnd(hero_vo,pos,type)
+    self.hero_vo = hero_vo
+    self.pos = pos
+    self.type = type
+    self:setData()
+end
+
+function HeroSpTreeTipPanel:setData()
+    if self.type == 1 then
+        self.dec_val:setString(string.format(TI18N("语言_c_6832"),self.hero_vo.star,0))
+        controller:sender26443(self.hero_vo.partner_id)
+    else
+        controller:sender26444(self.hero_vo.partner_id)
+    end
+    local _h = math.max(self.scroll_view:getContentSize().height,self.dec_val:getContentSize().height+10)
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_view:getContentSize().width,_h))
+    self.dec_val:setPositionY(_h)
+end
+
+-- 设置英雄回退信息
+function HeroSpTreeTipPanel:setHeroReturnData(list)
+    if not list then return end
+    if #list == 0 then
+        commonShowEmptyIcon(self.list_view, true, {font_size = 22,scale = 1, text = TI18N("语言_c_3132")})
+        return
+    end
+    if self.type == 2 then
+        for k,v in pairs(list) do
+            if v.is_partner == 1 then
+                self.dec_val:setString(string.format(TI18N("上树中升星阶材料回退%s星%s星阶"),v.star,0))
+            end
+        end
+    end
+    local setting = {
+        item_class = HeroSpTreeTipItem,      -- 单元类
+        start_x = 16,                  -- 第一个单元的X起点
+        space_x = 32,                    -- x方向的间隔
+        start_y = 6,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = 119,               -- 单元的尺寸width
+        item_height = 119,              -- 单元的尺寸height
+        row = 4,                        -- 行数，作用于水平滚动类型
+        col = 4,                         -- 列数，作用于垂直滚动类型
+        once_num = 4,
+        need_dynamic = true
+    }
+    self.item_scrollview:setData(list,nil,setting)
+end
+
+function HeroSpTreeTipPanel:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    
+    if self.hero_sp_up_look_event then
+        GlobalEvent:getInstance():UnBind(self.hero_sp_up_look_event)
+        self.hero_sp_up_look_event = nil
+    end
+    controller:openHeroSpTreeTipPanel(false)
+end
+
+-- 常驻英雄回退道具item--------------------------------------------------------------------------------------------
+HeroSpTreeTipItem = class("HeroSpTreeTipItem", function() 
+    return ccui.Widget:create()
+end)
+
+function HeroSpTreeTipItem:ctor()
+    self.size = cc.size(119, 119)
+    self:setTouchEnabled(false)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self:addChild(self.root_wnd)
+
+    self:registerEvent()
+end
+
+function HeroSpTreeTipItem:registerEvent()
+    
+end
+
+--@config 结构是 Config.PartnerData.data_partner_base
+function HeroSpTreeTipItem:setData(data)
+    if data == nil then return end
+    if self.item then
+        self.item:DeleteMe()
+        self.item = nil
+    end
+    local item = nil
+    if data.is_partner == 1 then
+        local info = {}
+        info.bid = data.id
+        info.star = data.star
+        info.lev = data.lev
+        info.show_type = MainuiConst.item_exhibition_type.partner_type
+        item = HeroExhibitionItem.new(1, true)
+        item:setPosition(self.size.width/2, self.size.height/2)
+        item:setData(info)
+        self.root_wnd:addChild(item)
+    else
+        item = BackPackItem.new(false, true)
+        item:setPosition(self.size.width/2, self.size.height/2)
+        item:setSwallowTouches(false)
+        item:setDefaultTip()
+        item:setBaseData(data.id, data.num, true)
+        if data.id then
+            local cfg = Config.ItemData.data_get_data(data.id)
+            if cfg.type == BackPackConst.item_type.HERO_HUN then
+                item:initCamp(cfg.camp_type)
+                item:createStar(cfg.eqm_jie)
+            end
+        end
+        self.root_wnd:addChild(item)
+    end
+    self.item = item
+end
+
+function HeroSpTreeTipItem:DeleteMe()
+    if self.item then
+        self.item:DeleteMe()
+        self.item = nil
+    end
+
+    self:removeAllChildren()
+    self:removeFromParent()
+end

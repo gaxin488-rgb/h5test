@@ -1,0 +1,213 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      魂器回退界面
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+ExclusiveBackPanel = ExclusiveBackPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+
+function ExclusiveBackPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/exclusive_back_panel"
+    self.cost_item_list = {}
+    self.res_list = {
+    }
+end
+
+function ExclusiveBackPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+    self.imgTitleBg = self.main_container:getChildByName("imgTitleBg")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6745"))
+    autoSizeTitleBg(self.win_title,self.imgTitleBg,60,332)
+    self.item_1 = self.main_container:getChildByName("item_1")
+    self.exItem_1 = ExclusiveItem.new()
+    self.item_1:addChild(self.exItem_1)
+    self.name_bg_1 = self.main_container:getChildByName("name_bg_1")
+    self.name_1 = self.main_container:getChildByName("name_1")
+    self.item_2 = self.main_container:getChildByName("item_2")
+    self.exItem_2 = ExclusiveItem.new()
+    self.item_2:addChild(self.exItem_2)
+    self.name_bg_2 = self.main_container:getChildByName("name_bg_2")
+    self.name_2 = self.main_container:getChildByName("name_2")
+    self.left_line = self.main_container:getChildByName("left_line")
+    self.right_line = self.main_container:getChildByName("right_line")
+    self.tip_bg = self.main_container:getChildByName("tip_bg")
+    self.tip_txt = self.main_container:getChildByName("tip_txt")
+    self.tip_txt:setString(TI18N("语言_c_6746"))
+    autoSizeTitleBg(self.tip_txt,self.tip_bg,20,231)
+    self.back_scroll = self.main_container:getChildByName("back_scroll")
+    self.back_scroll:setScrollBarEnabled(false)
+    self.tips = self.main_container:getChildByName("tips")
+    self.tips:setString(string.format(TI18N("语言_c_6747"),Config.PartnerSoulData.data_const.clear_return.val*0.1))
+    self.cost_bg = self.main_container:getChildByName("cost_bg")
+    self.cost_txt = self.main_container:getChildByName("cost_txt")
+    self.cost_txt:setString(TI18N("语言_c_1360"))
+    self.item_node = self.main_container:getChildByName("item_node")
+    self.comfirm_btn = self.main_container:getChildByName("comfirm_btn")
+    self.comfirm_txt = self.comfirm_btn:getChildByName("label")
+    self.comfirm_txt:setString(TI18N("语言_c_6528"))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+end
+
+function ExclusiveBackPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 1)
+    registerButtonEventListener(self.comfirm_btn, handler(self, self.onClickBtnComfirm) ,true, 1)
+    if not self.Hero_Soul_Back_Event then
+        self.Hero_Soul_Back_Event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_SOUL_BACK_Event, function(data)
+            self:updateItemList(data.list)
+        end)
+    end
+end
+
+function ExclusiveBackPanel:onClickBtnComfirm()
+    local str = TI18N("语言_c_6748")
+    CommonAlert.show( str, TI18N("语言_c_63"), function()
+        controller:sender11413(self.hero_vo.partner_id)
+    end, TI18N("语言_c_62"),nil,nil,nil,{timer=3, timer_for=true, off_y = 10, title = TI18N("语言_c_6745"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+end
+
+function ExclusiveBackPanel:onClickBtnClose()
+    controller:openExclusiveBackPanel(false)
+end
+function ExclusiveBackPanel:updateItemList(list)
+    if tolua.isnull(self.root_wnd) then
+        return
+    end
+    
+    local data_list = {}
+    for i,v in ipairs(list) do
+        if v.num ~= 0 then
+            if v.is_partner == 1 then
+                local info = {}
+                info.bid = v.id
+                info.star = v.star
+                info.lev = v.lev
+                info.show_type = MainuiConst.item_exhibition_type.partner_type
+                table.insert(data_list, info)
+            else
+                table.insert(data_list, {v.id,v.num})
+            end
+        end
+    end
+
+    local setting = {}
+    setting.scale = 1
+    setting.max_count = 4
+    setting.is_center = true
+    setting.space_x = 20
+    self.item_list1 = controller:showSingleRowItemList(self.back_scroll, self.item_list1, data_list, setting)
+end
+function ExclusiveBackPanel:openRootWnd(data)
+    self.data = data
+    self.hero_vo = data.hero_vo or {}
+    self.config = data.config
+    if self.config then
+        local max_lev = controller:getModel():getHorcruxesMaxLev()
+        self.base_data = {id = self.config.horcruxes, lev = data.lev or max_lev, score_val = controller:getModel():getHorcruxesScore(self.config.horcruxes, HERO_SOUL_TYPE, max_lev)}
+    else
+        local h_cfg = Config.PartnerData.data_partner_base_fun(self.hero_vo.bid)
+        self.base_data = {id = (self.hero_vo.hid == 0 and h_cfg.horcruxes or self.hero_vo.hid), lev = self.hero_vo.h_lev or 1, score_val = self.hero_vo.h_score or 500}
+        if self.base_data.lev == 0 then
+            self.base_data.lev = 1
+        end
+    end
+    self.base_cfg = Config.PartnerSoulData.data_base_info[self.base_data.id]
+    local res_id = PathTool.getQualityBg(self.base_cfg.quality)
+    local item_data = {}
+    item_data.is_lock = false
+    item_data.bg = res_id
+    item_data.icon = PathTool.getSoulHorcruxIcon(self.base_cfg.icon)
+    item_data.lev = self.base_data.lev
+    self.exItem_1:setData(item_data)
+    self.name_1:setString(string.format("%s+%s",self.base_cfg.name,self.base_data.lev))
+    setTextMaxWidth(self.name_1,250)
+    autoSizeTitleBg(self.name_1,self.name_bg_1,20,190)
+    local res_id = PathTool.getQualityBg(self.base_cfg.quality)
+    local item_data = {}
+    item_data.is_lock = true
+    item_data.bg = res_id
+    item_data.icon = PathTool.getSoulHorcruxIcon(self.base_cfg.icon)
+    item_data.lev = 0
+    self.exItem_2:setData(item_data)
+    self.name_2:setString(string.format("%s+%s",self.base_cfg.name,0))
+    setTextMaxWidth(self.name_2,250)
+    autoSizeTitleBg(self.name_2,self.name_bg_2,20,190)
+    controller:sender11414(self.hero_vo.partner_id)
+    self:setCostPanel()
+    
+    if self.hero_vo.isTryoutHero and self.hero_vo:isTryoutHero() then
+        setChildUnEnabled(true, self.comfirm_btn)
+    end
+end
+
+function ExclusiveBackPanel:setCostPanel()
+    -- 额外材料
+    for k,item in pairs(self.cost_item_list) do
+        item:setVisible(false)
+    end
+    local list = Config.PartnerSoulData.data_rollback_info[self.base_data.lev].cost or {}
+    -- local setting = {}
+    -- setting.scale = 1
+    -- setting.space_x = 5
+    -- setting.max_count = 3
+    -- setting.is_center = false
+    -- self.item_list2 = commonShowSingleRowItemList(self.cost_scroll, self.item_list2, list, setting)
+    for i=1,tableLen(list) do
+        local bid = list[i][1]
+        local need_num = list[i][2]
+        local item = self.cost_item_list[1]
+        if not item then
+            item = BackPackItem.new(false, true, false, 1)
+            self.item_node:addChild(item)
+            self.cost_item_list[1] = item
+        end
+        item:setPosition( BackPackItem.Width * (i-1) , 0)
+        local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+        item:setBaseData(bid)
+        item:setNeedNum(need_num, have_num, 1, true, 2)
+        if need_num > have_num then
+            item:setDefaultTip(true, true)
+        else
+            item:setDefaultTip()
+        end
+        item:setVisible(true)
+    end
+end
+
+function ExclusiveBackPanel:close_callback()    
+    if self.Hero_Soul_Back_Event then
+        GlobalEvent:getInstance():UnBind(self.Hero_Soul_Back_Event)
+        self.Hero_Soul_Back_Event = nil
+    end
+    
+    if self.item_list1 then
+        for i,v in pairs(self.item_list1) do
+            if v then
+                v:DeleteMe()
+            end
+        end
+        self.item_list1 = nil
+    end
+    
+    if self.item_list2 then
+        for i,v in pairs(self.item_list2) do
+            if v then
+                v:DeleteMe()
+            end
+        end
+        self.item_list2 = nil
+    end
+end

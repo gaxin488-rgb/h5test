@@ -1,0 +1,466 @@
+-- --------------------------------------------------------------------
+-- --------------------------------------------------------------------
+DungeonAbyssMainItem = class("DungeonAbyssMainItem", function()
+    return ccui.Widget:create()
+end)
+
+function DungeonAbyssMainItem:ctor(type)
+    self:config(type)
+    self:layoutUI()
+    self:registerEvents()
+end
+function DungeonAbyssMainItem:config(type)
+    self.ctrl = DungeonAbyssController:getInstance()
+    self.size = cc.size(720,370)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+    self.is_lock = false
+    self:retain()
+    self.is_open_tower = true
+    self.star_list = {}
+    self.cur_type = type or 1 --
+end
+function DungeonAbyssMainItem:layoutUI()
+    local csbPath = PathTool.getTargetCSB("dungeon_abyss/dungeon_abyss_main_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    --背景
+    self.background = self.main_panel:getChildByName("bg")
+    --选中背景
+    self.select_bg = self.main_panel:getChildByName("select_bg")
+    self.select_bg:setVisible(false)
+
+    self.name_bg1 = self.main_panel:getChildByName("name_bg1")
+    self.name_bg1.init_size = self.name_bg1:getContentSize()
+    self.tower_name = self.main_panel:getChildByName("name")
+    --锁
+    -- self.lock_icon = self.main_panel:getChildByName("lock")
+    --通关图标
+    self.pass_icon = self.main_panel:getChildByName("pass_icon")
+    self.pass_icon:setVisible(false)
+    self.pass_icon:setTouchEnabled(true)
+    --关键层奖励
+    self._floorAward = self.main_panel:getChildByName("floorAward")
+    self._firstAward = self._floorAward:getChildByName("firstAward")
+    self._floorAward:setVisible(false)
+    --扫荡次数
+    self:countVisible(false)
+    self.countBG = self.main_panel:getChildByName("countBG")
+    self.clean_layout = self.countBG:getChildByName("layou_click")
+    --点击进入
+    self.come_label =self.main_panel:getChildByName("Image_4")
+    self.come_label:setVisible(false) 
+    --关卡信息
+    self.des_btn = self.main_panel:getChildByName("des_btn")
+    local label = self.des_btn:getChildByName("label")
+    label:setString(TI18N("语言_c_2511"))
+    setTextMaxWidth(label,76,-10)
+    --通关录像
+    self.video_btn = self.main_panel:getChildByName("video_btn")
+    local label = self.video_btn:getChildByName("label")
+    label:setString(TI18N("语言_c_1605"))
+    self.video_btn:setVisible(false)
+    setTextMaxWidth(label,76,-10)
+    --模型展示
+    local model_node = self.main_panel:getChildByName("model_node")
+    self.model_node = model_node
+    self.modelList = {}
+    for i=1,5 do
+        local item = {}
+        item.bg = model_node:getChildByName("model_img_"..i)
+        item.bg.init_pos = cc.p(item.bg:getPosition())
+        item.model = item.bg:getChildByName("model")
+        item.name = item.bg:getChildByName("name")
+        item.name_bg = item.bg:getChildByName("name_bg")
+        item.camp_img = item.bg:getChildByName("camp_img")
+        self.modelList[#self.modelList + 1] = item
+    end
+    --挑战
+    self.comfirm_btn = self.main_panel:getChildByName("comfirm_btn")
+    self.comfirm_btn.label = self.comfirm_btn:getChildByName("label")
+
+    self.star_list = {}
+    for i = 1, 3, 1 do
+        local image_star_bg = self.main_panel:getChildByName("image_star_bg"..i)
+        local image_star = image_star_bg:getChildByName("image_star")
+        image_star:setVisible(false)
+        image_star_bg.image_star = image_star
+        self.star_list[#self.star_list + 1] = image_star_bg
+        image_star_bg:setPosition(cc.p(image_star_bg:getPositionX() + 150, image_star_bg:getPositionY() + 36))
+    end
+end
+
+function DungeonAbyssMainItem:createModel(parent, monster_id, hero_vo, info, index)
+    --spine
+    -- if parent.spine_model then
+    --     parent.spine_model:DeleteMe()
+    --     parent.spine_model = nil
+    -- end
+    if not parent.spine_model then
+        parent.spine_model = BaseRole.new(BaseRole.type.unit, monster_id)
+        parent.spine_model:setAnimation(0, info.monster_action[index] or PlayerAction.show, true)
+        parent.spine_model:setCascade(true)
+        parent.spine_model:setScale(0.6)
+        parent.spine_model:setAnchorPoint(cc.p(0.5, 0.5))
+        parent.spine_model:setPosition(cc.p(info.move[index][1], info.move[index][2]))
+        parent.spine_model:setScale(info.add[1][index]/100)
+        parent.model:addChild(parent.spine_model)
+    end
+    --name camp
+    parent.name:setString(string.format(TI18N("语言_c_540"), hero_vo.lev))
+    local res = PathTool.getHeroCampTypeIcon(hero_vo.camp_type)
+    parent.camp_img:loadTexture(res, LOADTEXT_TYPE_PLIST)
+end
+
+function DungeonAbyssMainItem:updateMode(bool)
+    for i,v in ipairs(self.modelList) do
+        if v.spine_model then
+            v.spine_model:DeleteMe()
+            v.spine_model = nil
+        end
+    end
+    if not bool then
+        self.model_node:setVisible(false)
+        return
+    end
+    self.model_node:setVisible(true)
+    local data = self.data
+    -- local unit_cfg = Config.UnitData.data_unit(data.unit_id[1])
+    local monsters = {}--{unit_cfg.monster1, unit_cfg.monster2, unit_cfg.monster3, unit_cfg.monster4, unit_cfg.monster5}
+    for i, v in ipairs(data.monster_model) do
+        monsters[#monsters + 1] = tonumber(v)
+    end
+    local count = #monsters
+    for i,v in ipairs(self.modelList) do
+        local monster_id = monsters[i]
+        local monster_cfg = Config.UnitData.data_unit(monster_id)
+        if monster_cfg then
+            local hero_vo 
+            hero_vo = HeroVo.New()
+            hero_vo.bid = tonumber(monster_cfg.head_icon)
+            hero_vo.master_head_id = tonumber(monster_cfg.head_icon)
+            hero_vo.lev = monster_cfg.lev
+            hero_vo.star = monster_cfg.star
+            hero_vo.camp_type = monster_cfg.camp_type
+            hero_vo.name = monster_cfg.name
+            delayRun(self, 3 * i / display.DEFAULT_FPS, function()
+                self:createModel(v, monster_id, hero_vo, data, i)
+            end)
+            v.bg:setVisible(true)
+            v.bg:setPositionX(display.width/count/2 + (i - 1)*display.width/count - display.width/2 + (data.move[i][3] or 0))
+        else
+            v.bg:setVisible(false)
+        end
+    end
+    
+end
+
+function DungeonAbyssMainItem:countVisible(visible)
+    local countBG = self.main_panel:getChildByName("countBG")
+    countBG:setVisible(visible)
+    self._textCount = countBG:getChildByName("textCount")
+    self._textCount:setVisible(visible)
+    self._dianmond = countBG:getChildByName("dianmond")
+    self._dianmond:setVisible(false)
+end
+
+function DungeonAbyssMainItem:setData(index)
+    if not index then return end
+    self.index = index
+    local _config = nil
+    if self.cur_type == 2 then
+        local group_id = self.ctrl:getModel():getAdvanceGroupId()
+        local diff_id = self.ctrl:getModel():getAdvanceDiff()
+        _config = Config.DungeonAbyssCircleData.data_dif_challenge_data[group_id][diff_id]
+    else
+        _config = Config.DungeonAbyssCircleData.data_nor_challenge_data
+    end
+    local data = clone(_config[index])
+    self.data = data
+    self.data.type = self.cur_type
+    self.data.lev = data.id or data.dun_id
+    local name = data.gr_name or ""
+    self.tower_name:setString(name)
+    if self.tower_name:getContentSize().width > self.name_bg1.init_size.width - 80 then
+        self.name_bg1:setContentSize(cc.size(self.tower_name:getContentSize().width + 80, self.name_bg1.init_size.height))
+    end
+    --bu
+    if self.halo_load then
+        self.halo_load:DeleteMe()
+        self.halo_load = nil
+    end
+    local halo_res = PathTool.checkRes(string_format("resource/dungeon_abyss_circle/dungeon_ab_c_f_%s.png", data.bg))
+    self.halo_load = loadImageTextureFromCDN(self.background, halo_res, ResourcesType.single, self.halo_load)
+
+    -- 引导需要
+    self:setName("guildsign_startower_"..data.lev)
+    local max_tower = self.ctrl:getModel():getNowTowerId(self.cur_type) or 0
+    if index>max_tower then
+        if not self.lock_icon then
+            local pos = {}
+            pos.x = 360
+            pos.y = 185
+            self.lock_icon = createEffectSpine( "E00004", pos, cc.p(0.5,0.5), true, PlayerAction.action)
+            self.main_panel:addChild(self.lock_icon)
+        end
+    else
+        if self.lock_icon then
+            self.lock_icon:clearTracks()
+            self.lock_icon:removeFromParent()
+            self.lock_icon = nil
+        end
+    end
+    local info = self.ctrl:getModel():getDunInfoById(self.cur_type, self.data.lev)
+
+    self.pass_icon:setVisible(index<=max_tower and info.star >= 3)
+
+    --星星
+    for i, v in ipairs(self.star_list) do
+        if info then
+            v.image_star:setVisible(info.star >= i)
+        else
+            v.image_star:setVisible(false)
+        end
+    end
+
+    self:updateMessage()
+end
+
+function DungeonAbyssMainItem:updateMessage()
+    if not self.data then return end
+    local max_tower = self.ctrl:getModel():getNowTowerId(self.cur_type) or 0
+    -- print("-----------------------------DungeonAbyssMainItem updateMessage", max_tower, self.data.lev)
+    local bool = false
+    if self.data.lev <= max_tower then
+        bool = true
+    end
+    self.is_pass = bool
+
+    self.is_lock = self.data.lev > max_tower+1
+    -- self.lock_icon:setVisible(self.is_lock)
+    -- self.video_btn:setVisible(not self.is_lock)
+    self.come_label:setVisible(false)
+    doStopAllActions(self.come_label)
+    local info = self.ctrl:getModel():getDunInfoById(self.cur_type, self.data.lev)
+    self.is_open_tower = true
+    if self.is_pass == false and self.is_lock == false then
+        local limit_dun_id = self.data.limit_dun_id or 0
+        local data = BattleDramaController:getInstance():getModel():getDramaData()
+        if limit_dun_id~=0 and data and data.max_dun_id and data.max_dun_id < limit_dun_id then 
+           self.is_open_tower = false
+           return
+        end
+        if self.data.lev == max_tower+1 then
+            -- self.come_label:setVisible(false)
+            -- breatheShineAction(self.come_label,1,1)
+            self:setSelectStatus(true)
+            self:updateMode(true)
+        else
+            self:setSelectStatus(false)
+            self:updateMode(false)
+        end
+    else
+        if self.is_pass and info.star < 3 then
+            self:setSelectStatus(true)
+        else
+            self:setSelectStatus(false)
+        end
+        -- if self.data.lev == max_tower+1+1 or self.data.lev == max_tower+1+2 then
+        if self.data.lev >= max_tower + 1 then
+            self:updateMode(true)
+        else
+            if info.star < 3 then
+                self:updateMode(true)
+            else
+                self:updateMode(false)
+            end
+        end
+    end
+end
+
+--事件
+function DungeonAbyssMainItem:registerEvents()
+    self:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click =
+                    math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                    math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                local index = self.data.lev
+                local cur_lev = self.ctrl:getModel():getNowTowerId(self.cur_type) + 1
+                if index > cur_lev then
+                    message(TI18N("语言_c_4095"))
+                    return
+                end
+            end
+        elseif event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+        end
+    end)
+    self.pass_icon:addTouchEventListener(function(sender, event_type) 
+        customClickAction_2(self.countBG, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click =
+                    math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                    math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                -- self:clickHandler()
+                -- self.ctrl:openDungeonAbyssFightInfoPanel(true, self.data)
+                DungeonAbyssController:getInstance():openDungeonAbyssDes(true, {index = self.index, type = self.cur_type})
+				if sender.guide_call_back ~= nil then
+					sender.guide_call_back(sender)
+				end
+            end
+        elseif event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+        end
+    end)
+
+
+    self.comfirm_btn:addTouchEventListener(function(sender, event_type) 
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click =
+                    math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                    math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                if not self.data then return end
+                local tower = self.data.lev or 0
+                -- HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.DungeonAbyss, {tower_lev = tower})
+                -- if self.cur_type == 2 and not self.ctrl:getModel():checkIsChooseDifDone() then
+                --     self.ctrl:openDungeonAbyssChooseDifficultyPanel(true)
+                -- else
+                    self.ctrl:openDungeonAbyssFightInfoPanel(true, self.data)
+                -- end
+				if self.guide_call_back ~= nil then
+					self.guide_call_back(self)
+				end
+            end
+        elseif event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+        end
+    end)
+
+    self.des_btn:addTouchEventListener(function(sender, event_type) 
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            sender.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if sender.touch_began ~= nil then
+                is_click =
+                    math.abs(sender.touch_end.x - sender.touch_began.x) <= 20 and
+                    math.abs(sender.touch_end.y - sender.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                self:clickDesHandler()
+            end
+        elseif event_type == ccui.TouchEventType.began then
+            sender.touch_began = sender:getTouchBeganPosition()
+        end
+    end)
+    self.video_btn:addTouchEventListener(function(sender, event_type) 
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            sender.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if sender.touch_began ~= nil then
+                is_click =
+                    math.abs(sender.touch_end.x - sender.touch_began.x) <= 20 and
+                    math.abs(sender.touch_end.y - sender.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                if self.data then
+                    self.ctrl:sender11325(self.data.lev, true)
+                end
+            end
+        elseif event_type == ccui.TouchEventType.began then
+            sender.touch_began = sender:getTouchBeganPosition()
+        end
+    end)
+end
+
+function DungeonAbyssMainItem:clickDesHandler()
+    DungeonAbyssController:getInstance():openDungeonAbyssDes(true, {index = self.index, type = self.cur_type})
+end
+
+function DungeonAbyssMainItem:clickHandler()
+    if self.call_fun then 
+        self:call_fun(self.data)
+    end
+end
+function DungeonAbyssMainItem:addCallBack(call_fun)
+    self.call_fun =call_fun
+end
+
+function DungeonAbyssMainItem:setSelectStatus(bool)
+    if self.lock_icon then
+        if bool then
+            self.lock_icon:setAnimation(0, PlayerAction.action_2, false)
+        else
+            self.lock_icon:setAnimation(0, PlayerAction.action, true)
+        end
+    end
+    self.select_bg:setVisible(false)
+    self.comfirm_btn:setVisible(bool)
+    if bool then
+        self:setLocalZOrder(999 - self.index)
+    else 
+        self:setLocalZOrder(10)
+    end
+end
+
+function DungeonAbyssMainItem:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+function DungeonAbyssMainItem:getData()
+    return self.data
+end
+
+function DungeonAbyssMainItem:clearInfo()
+    self:setSelectStatus(false)
+    self:updateMode(false)
+    self:removeFromParent()
+end
+
+
+function DungeonAbyssMainItem:DeleteMe()
+    for i,v in ipairs(self.modelList) do
+        if v.spine_model then
+            v.spine_model:DeleteMe()
+            v.spine_model = nil
+        end
+    end
+    if self.lock_icon then
+        self.lock_icon:clearTracks()
+        self.lock_icon:removeFromParent()
+        self.lock_icon = nil
+    end
+    if self.halo_load then
+        self.halo_load:DeleteMe()
+        self.halo_load = nil
+    end
+    self:removeFromParent()
+    self:removeAllChildren()
+    self:release()
+end
+
+
+

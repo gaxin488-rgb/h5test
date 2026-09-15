@@ -1,0 +1,240 @@
+UrShowMoreEliteWindow = UrShowMoreEliteWindow or BaseClass(BaseView)
+local table_insert = table.insert
+local _controller = EliteSummonController:getInstance()
+local action_controller = ActionController:getInstance()
+local model = action_controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+function UrShowMoreEliteWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "elitesummon/ur_show_more_elite_window"
+    -- self.res_list = {
+    --     { path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"), type = ResourcesType.plist },
+    --     { path = PathTool.getPlistImgForDownLoad("hero", "hero"), type = ResourcesType.plist}
+    -- }
+    self.skill_item_list = {}
+    self.select_index = 0
+end
+
+function UrShowMoreEliteWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.model_icon = self.main_panel:getChildByName("model_icon")
+    self.model_icon:ignoreContentAdaptWithSize(true)
+    self.title_2 = self.main_panel:getChildByName("title_2")
+    self.container = self.main_panel:getChildByName("container")
+    self.skill_container = self.container:getChildByName("skill_container")
+    self.desc_txt = createRichLabel(22,cc.c3b(0x5c,0x27,0x05),cc.p(0,1),cc.p(0,0),nil,nil,530)
+    self.skill_container:addChild(self.desc_txt)
+    self.skill_container:setScrollBarEnabled(false)
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.elfin_btn = self.main_panel:getChildByName("elfin_btn")
+    self.elfin_btn:getChildByName("label"):setString("技能预览")
+    self.elfin_btn:setVisible(false)
+    self.btn_panel = self.main_panel:getChildByName("btn_panel")
+    self.Image_1 = self.btn_panel:getChildByName("Image_1")
+    self.click_bg = self.btn_panel:getChildByName("click_bg")
+    self.btn_list = {}
+    local label_list = {
+        [1]=TI18N("语言_c_7264"),
+        [2]=TI18N("语言_c_7265"),
+        [3]=TI18N("语言_c_7266"),
+        [4]=TI18N("语言_c_7267"),
+    }
+    for i=1,4 do
+        local item = self.btn_panel:getChildByName("btn_"..i)
+        item.label = item:getChildByName("label")
+        item.label:setString(label_list[i])
+        item.index = i
+        item.label:setChangeScaleOffWidth(-9999)
+        setTextMaxWidth(item.label,120,-8)
+        self.btn_list[i] = item
+
+    end
+end
+-- type 1活动2常驻抽奖
+function UrShowMoreEliteWindow:openRootWnd(bid,type)
+    self.holiday_bid = bid
+    self.type = type
+    self:updateBtn()
+    self:ocClickBtn(1)
+    self:checkShowTip()
+end
+function UrShowMoreEliteWindow:updateBtn()
+    local cfg = {}
+    self.tab_vo = action_controller:getActionSubTabVo(self.holiday_bid)
+    if self.type == EliteSummonConst.ShowType.ElfinSummon then
+        local config = Config.HolidaySpriteLotteryData.data_action[self.tab_vo.camp_id]
+        if config then
+            if config.flash_show and next(config.flash_show) then
+                cfg = config.flash_show
+            end
+        end
+    elseif self.type == EliteSummonConst.ShowType.IslandExploration then
+        local config = Config.IslandExplorationData.data_wonderland_act_list[self.tab_vo.camp_id]
+        if config then
+            if config.pop_tips and next(config.pop_tips) then
+                cfg = config.pop_tips
+            end
+        end
+    end
+    if cfg and next(cfg) then
+        local statr_x = 0
+        local end_x = 0
+        for i=1,#self.btn_list do
+            local item = self.btn_list[i]
+            if cfg[i] then
+                item:setVisible(true)
+                item.label:setString(cfg[i][8])
+                local res = PathTool.getPlistImgForDownLoad("recruit_ninja",cfg[i][9], false)
+                item:loadTexture(res,LOADTEXT_TYPE)
+                item:setPositionX(cfg[i][10] or i*100)
+                if i == 1 then
+                    statr_x = cfg[i][10] or i*100
+                elseif i == #cfg then
+                    end_x = cfg[i][10] or i*100
+                end
+            else
+                item:setVisible(false)
+            end
+        end
+        self.Image_1:setContentSize(cc.size(end_x - statr_x,self.Image_1:getContentSize().height))
+    end
+    
+end
+function UrShowMoreEliteWindow:checkShowTip()
+    if self.tab_vo and self.tab_vo.camp_id and not model:getfirstUrElfin(self.tab_vo.camp_id) then
+        model:updatefirstUrElfin(self.tab_vo.camp_id)
+    end
+end
+function UrShowMoreEliteWindow:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        _controller:openUrShowMoreEliteWindow(false)
+        if self.type == EliteSummonConst.ShowType.SpElitePanel then
+            ActionController:getInstance():sender16809(ActionStorageBool.SpElitePanel,1,"")
+        elseif self.type == EliteSummonConst.ShowType.ElfinSummon then
+            ActionController:getInstance():sender16612(ActionRankCommonType.time_elfin_summon)
+        elseif self.type == EliteSummonConst.ShowType.IslandExploration then
+            ActionController:getInstance():sender16612(ActionRankCommonType.mooncombatmono)
+        else
+            ActionController:getInstance():sender16809(ActionStorageBool.SpSummon,1,"")
+        end
+    end, true, 2)
+    registerButtonEventListener(self.background, function()
+        _controller:openUrShowMoreEliteWindow(false)
+        if self.type == EliteSummonConst.ShowType.SpElitePanel then
+            ActionController:getInstance():sender16809(ActionStorageBool.SpElitePanel,1,"")
+        elseif self.type == EliteSummonConst.ShowType.ElfinSummon then
+            ActionController:getInstance():sender16612(ActionRankCommonType.time_elfin_summon)
+        elseif self.type == EliteSummonConst.ShowType.IslandExploration then
+            ActionController:getInstance():sender16612(ActionRankCommonType.mooncombatmono)
+        else
+            ActionController:getInstance():sender16809(ActionStorageBool.SpSummon,1,"")
+        end
+    end, false, 2)
+    registerButtonEventListener(self.elfin_btn, function()
+        ElfinController:getInstance():openElfinAttachBookWindow(true)
+        _controller:openUrShowMoreEliteWindow(false)
+    end, false, 2)
+    for k, v in pairs(self.btn_list) do
+        registerButtonEventListener(v, function()
+            self:ocClickBtn(k)
+        end, false, 2)
+    end
+end
+
+function UrShowMoreEliteWindow:ocClickBtn(index)
+    if self.select_index == index then return end
+    self.select_index = index
+    for k, v in pairs(self.btn_list) do
+        if k == self.select_index then
+            v.label:setTextColor(cc.c3b(0xff,0xee,0x8e))
+			v.label:enableOutline(cc.c3b(0x46,0x0f,0x00),2)
+        else
+            v.label:setTextColor(cc.c3b(0xff,0xff,0xff))
+			v.label:enableOutline(cc.c3b(0x00,0x00,0x00),2)
+        end
+    end
+    self.click_bg:setPosition(cc.p(self.btn_list[index]:getPositionX(),self.btn_list[index]:getPositionY()))
+    self:updatePage()
+end
+function UrShowMoreEliteWindow:updatePage()
+    if self.type == EliteSummonConst.ShowType.SpElitePanel then
+        self.tab_vo = action_controller:getActionSubTabVo(self.holiday_bid)
+        local config = Config.RecruitHolidayHeroData.data_action[self.tab_vo.camp_id]
+        if config then
+            self.cfg = config.flash_show[self.select_index]
+        end
+        if self.cfg and next(self.cfg) then
+            self.desc_txt:setString(self.cfg[2])
+            
+            self.model_icon:loadTexture(PathTool.getTargetRes("ninjacontract",self.cfg[3],false),LOADTEXT_TYPE)
+            loadSpriteTexture(self.title_2,PathTool.getPlistImgForDownLoad("recruit_ninja",self.cfg[4], false),LOADTEXT_TYPE)
+            self.title_2:setScale(self.cfg[5])
+            self.title_2:setPosition(cc.p(self.cfg[6],self.cfg[7]))
+        end
+    elseif self.type == EliteSummonConst.ShowType.ElfinSummon then
+        self.tab_vo = action_controller:getActionSubTabVo(self.holiday_bid)
+        local config = Config.HolidaySpriteLotteryData.data_action[self.tab_vo.camp_id]
+        if config then
+            self.cfg = config.flash_show[self.select_index]
+        end
+        if self.cfg and next(self.cfg) then
+            self.desc_txt:setString(self.cfg[2])
+            
+            self.model_icon:loadTexture(PathTool.getTargetRes("ninjacontract",self.cfg[3],false),LOADTEXT_TYPE)
+            loadSpriteTexture(self.title_2,PathTool.getPlistImgForDownLoad("recruit_ninja",self.cfg[4], false),LOADTEXT_TYPE)
+            self.title_2:setScale(self.cfg[5])
+            self.title_2:setPosition(cc.p(self.cfg[6],self.cfg[7]))
+        end
+        self.elfin_btn:setVisible(true)
+    elseif self.type == EliteSummonConst.ShowType.SpSummon then
+        local config = Config.RecruitData.data_hero_data[700][self.holiday_bid]
+        if config then
+            self.cfg = config.flash_show[self.select_index]
+        end
+        if self.cfg and next(self.cfg) then
+            self.desc_txt:setString(self.cfg[2])
+            
+            self.model_icon:loadTexture(PathTool.getTargetRes("ninjacontract",self.cfg[3],false),LOADTEXT_TYPE)
+            loadSpriteTexture(self.title_2,PathTool.getPlistImgForDownLoad("recruit_ninja",self.cfg[4], false),LOADTEXT_TYPE)
+            self.title_2:setScale(self.cfg[5])
+            self.title_2:setPosition(cc.p(self.cfg[6],self.cfg[7]))
+        end
+    elseif self.type == EliteSummonConst.ShowType.IslandExploration then
+        self.tab_vo = action_controller:getActionSubTabVo(self.holiday_bid)
+        local config = Config.IslandExplorationData.data_wonderland_act_list[self.tab_vo.camp_id]
+        if config then
+            self.cfg = config.pop_tips[self.select_index]
+        end
+        if self.cfg and next(self.cfg) then
+            self.desc_txt:setString(self.cfg[2])
+            
+            self.model_icon:loadTexture(PathTool.getTargetRes("ninjacontract",self.cfg[3],false),LOADTEXT_TYPE)
+            loadSpriteTexture(self.title_2,PathTool.getPlistImgForDownLoad("recruit_ninja",self.cfg[4], false),LOADTEXT_TYPE)
+            self.title_2:setScale(self.cfg[5])
+            self.title_2:setPosition(cc.p(self.cfg[6],self.cfg[7]))
+        end
+    end
+    local _h = math.max(self.desc_txt:getContentSize().height,self.skill_container:getContentSize().height)
+    self.skill_container:setInnerContainerSize(cc.size(self.skill_container:getContentSize().width,_h))
+    self.desc_txt:setPositionY(_h)
+end
+function UrShowMoreEliteWindow:close_callback()
+    _controller:openUrShowMoreEliteWindow(false)
+    if self.type == EliteSummonConst.ShowType.SpElitePanel then
+        ActionController:getInstance():sender16809(ActionStorageBool.SpElitePanel,1,"")
+    elseif self.type == EliteSummonConst.ShowType.ElfinSummon then
+        ActionController:getInstance():sender16612(ActionRankCommonType.time_elfin_summon)
+    elseif self.type == EliteSummonConst.ShowType.IslandExploration then
+        ActionController:getInstance():sender16612(ActionRankCommonType.mooncombatmono)
+    else
+        ActionController:getInstance():sender16809(ActionStorageBool.SpSummon,1,"")
+    end
+end
+

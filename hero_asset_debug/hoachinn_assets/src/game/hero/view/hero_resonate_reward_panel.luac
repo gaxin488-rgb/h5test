@@ -1,0 +1,193 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      共鸣水晶同步进度
+-- <br/> 2020年3月6日
+-- --------------------------------------------------------------------
+HeroResonateRewardPanel = HeroResonateRewardPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+
+function HeroResonateRewardPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big
+    self.camp_btn_list = {}
+    self.is_full_screen = false
+    self.click_index = 1
+    self.click_sort = 1 -- 1大-小 2 小-大
+    self.layout_name = "hero/hero_resonate_reward_panel"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        {path = PathTool.getPlistImgForDownLoad("get_ninja", "get_ninja"), type = ResourcesType.plist},
+    }
+    
+end
+
+function HeroResonateRewardPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title = self.main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_c_6508"))
+    local _w = math.max(self.title:getContentSize().width+120,self.title_bg:getContentSize().width)
+    self.title_bg:setContentSize(cc.size(_w, self.title_bg:getContentSize().height))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.item_scroll = self.main_container:getChildByName("item_scroll")
+end
+
+function HeroResonateRewardPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,false, 2)
+end
+
+--关闭
+function HeroResonateRewardPanel:onClickBtnClose()
+    controller:openHeroResonateRewardPanel(false)
+end
+
+function HeroResonateRewardPanel:openRootWnd()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.item_scroll:getContentSize()
+        self.setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 10,                     -- y方向的间隔
+            item_width = 638,                -- 单元的尺寸width
+            item_height = 124,               -- 单元的尺寸height
+            -- row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 1,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.item_scroll, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, self.setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    self.list_data = Config.ResonateData.data_crystal_sync
+    self.child_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroResonateRewardPanel:createNewCell(width, height)
+    local cell = HeroResonateRewardItem.new()
+	return cell
+end
+
+--获取数据数量
+function HeroResonateRewardPanel:numberOfCells()
+    if not self.list_data then return 0 end
+    return #self.list_data
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroResonateRewardPanel:updateCellByIndex(cell, index)
+    if not self.list_data then return end
+    cell.index = index
+    local cell_data = self.list_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+function HeroResonateRewardPanel:close_callback()
+    self:onClickBtnClose()
+end
+
+
+
+--子项
+HeroResonateRewardItem = class("HeroResonateRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeroResonateRewardItem:ctor()
+    self.node_list = {}
+    self.cost_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function HeroResonateRewardItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_resonate_reward_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(638,124))
+	self:setTouchEnabled(true)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.now_bg = self.main_container:getChildByName("now_bg")
+    self.now_txt = self.main_container:getChildByName("now_txt")
+    self.now_txt:setString(TI18N("语言_c_6509"))
+    self.now_bg:setContentSize(cc.size(self.now_txt:getContentSize().width + 100, self.now_bg:getContentSize().height))
+    self.need_txt = self.main_container:getChildByName("need_txt")
+    self.lev_txt = self.main_container:getChildByName("lev_txt")
+    self.item_scroll = self.main_container:getChildByName("item_scroll")
+    self.item_scroll:setScrollBarEnabled(false)
+end
+
+function HeroResonateRewardItem:setData( data )
+    self.data = data
+    if data.reward_limit > 0 then
+        self.need_txt:setString(string.format(TI18N("语言_c_6515"), data.reward_limit))
+        self.need_txt:setVisible(true)
+    else
+        self.need_txt:setVisible(false)
+    end
+    self.lev_txt:setString(string.format(TI18N("语言_c_6510"), data.lev))
+    local sync_data = model:getResonateDetailsData()
+    if sync_data.lev_reward == data.lev then
+        self.now_bg:setVisible(true)
+        self.now_txt:setVisible(true)
+    else
+        self.now_bg:setVisible(false)
+        self.now_txt:setVisible(false)
+    end
+    if data.reward_limit > 0 and sync_data.lev_reward ~= data.lev then
+        self.need_txt:setPositionY(44)
+        self.lev_txt:setPositionY(79)
+    else
+        self.need_txt:setPositionY(23)
+        self.lev_txt:setPositionY(56)
+    end
+    if self.item_list1 then
+        for i,v in ipairs(self.item_list1) do
+            v:DeleteMe()
+        end
+    end
+    self.item_list1 = nil
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 2
+    setting.max_count = 2
+    setting.is_center = true
+    setting.is_get_status = sync_data.lev_reward >= data.lev
+    setting.get_status_res = PathTool.getResFrame("get_ninja","txt_cn_get_ninja_lingqu")
+    self.item_list1 = commonShowSingleRowItemList(self.item_scroll, self.item_list1, data.show_reward, setting)
+
+end
+function HeroResonateRewardItem:register_event( )
+    
+end
+function HeroResonateRewardItem:DeleteMe()
+    if self.item_list1 then
+        for i,v in ipairs(self.item_list1) do
+            v:DeleteMe()
+        end
+    end
+    self.item_list1 = nil
+end

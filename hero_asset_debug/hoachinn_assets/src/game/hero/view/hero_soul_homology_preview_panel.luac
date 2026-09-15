@@ -1,0 +1,212 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      英雄灵魂同调弹窗
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+HeroSoulHomologyPreviewPanel = HeroSoulHomologyPreviewPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local string_format = string.format
+function HeroSoulHomologyPreviewPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/hero_soul_homology_preview_panel"
+
+    -- self.empty_res = PathTool.getPlistImgForDownLoad("bigbg","bigbg_3")
+    -- self.res_list = {
+    --     { path = self.empty_res, type = ResourcesType.single }
+    -- }
+end
+
+function HeroSoulHomologyPreviewPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.title = self.main_container:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_4563"))
+
+    --head
+    local head_change_node = self.main_container:getChildByName("head_change_node")
+    local before_node = head_change_node:getChildByName("before_node")
+    local item = HeroExhibitionItem.new(1, false)
+    before_node:addChild(item)
+    self.before_head = item
+    local after_node = head_change_node:getChildByName("after_node")
+    local item = HeroExhibitionItem.new(1, false)
+    after_node:addChild(item)
+    self.after_head = item
+    --属性
+    local attr_panel = self.main_container:getChildByName("attr_panel")
+    self.attr_icon_list = {}
+    self.attr_label_key_list = {}
+    self.attr_labe_left_list = {}
+    self.attr_labe_right_list = {}
+    for i=1,6 do
+        self.attr_icon_list[i] = attr_panel:getChildByName("attr_icon"..i)
+        self.attr_icon_list[i]:setVisible(false)
+        self.attr_label_key_list[i] = attr_panel:getChildByName("attr_label_key"..i)
+        self.attr_labe_left_list[i] = attr_panel:getChildByName("attr_label_left"..i)
+        self.attr_labe_right_list[i] = attr_panel:getChildByName("attr_label_right"..i)
+    end
+    self.attr_label_key_list[1]:setString(TI18N("语言_c_2000"))
+
+    self.comfim_btn = self.main_container:getChildByName("comfim_btn")
+    self.comfim_btn:getChildByName("label"):setString(TI18N("语言_c_645"))
+
+    self.cancel_btn = self.main_container:getChildByName("cancel_btn")
+    self.cancel_btn:getChildByName("label"):setString(TI18N("语言_c_62"))
+    self.main_container:getChildByName("soul_des_title"):setString(TI18N("语言_c_4564"))
+    self.main_container:getChildByName("soul_des_1"):setString(TI18N("语言_c_4565"))
+    self.main_container:getChildByName("soul_des_1"):ignoreContentAdaptWithSize(true)
+    self.main_container:getChildByName("soul_des_1"):setTextAreaSize(cc.size(590, 0))
+    setTextSpacing(self.main_container:getChildByName("soul_des_1"))
+    self.main_container:getChildByName("soul_des_2"):setString(TI18N("语言_c_4566"))
+    self.main_container:getChildByName("soul_des_2"):ignoreContentAdaptWithSize(true)
+    self.main_container:getChildByName("soul_des_2"):setTextAreaSize(cc.size(590, 0))
+    setTextSpacing(self.main_container:getChildByName("soul_des_2"))
+    self.main_container:getChildByName("soul_des_3"):setString(TI18N("语言_c_4567"))
+    self.main_container:getChildByName("soul_des_3"):ignoreContentAdaptWithSize(true)
+    self.main_container:getChildByName("soul_des_3"):setTextAreaSize(cc.size(590, 0))
+    setTextSpacing(self.main_container:getChildByName("soul_des_3"))
+    local px1 = self.main_container:getChildByName("soul_des_1"):getPositionY()
+    local sh1 = self.main_container:getChildByName("soul_des_1"):getContentSize().height
+    local sh2 = self.main_container:getChildByName("soul_des_2"):getContentSize().height
+    self.main_container:getChildByName("soul_des_2"):setPositionY(px1 - (sh1/2 + 6 + sh2/2))
+    local sh3 = self.main_container:getChildByName("soul_des_3"):getContentSize().height
+    self.main_container:getChildByName("soul_des_3"):setPositionY(px1 - (sh1/2 + 6 + sh2 + 6 + sh3/2))
+end
+
+function HeroSoulHomologyPreviewPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.comfim_btn, handler(self, self._onClickBtnComfirm) ,true, 2)
+    registerButtonEventListener(self.cancel_btn, handler(self, self._onClickBtnClose) ,true, 2)
+
+    --英雄同调预览数据
+    self:addGlobalEvent(HeroEvent.Next_Soul_Homology_Info_Event, function(next_attr) 
+        if not next_attr then return end
+        if not self.hero_vo then return end
+        if not self.next_hero_vo then return end
+        self:setData(self.hero_vo, self.next_hero_vo, next_attr)
+    end)
+end
+
+--关闭
+function HeroSoulHomologyPreviewPanel:_onClickBtnClose()
+    controller:openHeroSoulHomologyPreviewPanel(false)
+end
+
+--同调
+function HeroSoulHomologyPreviewPanel:_onClickBtnComfirm()
+    if not self.hero_vo then return end
+    if not self.hero_vo or not self.p_hero_vo then return end
+    local type_state = 0
+    if self.hero_vo:isLockByLocktype(HeroConst.LockType.eHeroSoulLock) then
+        type_state = 1
+    end
+    -- controller:sender11021(self.hero_vo.partner_id, self.p_hero_vo.partner_id, type_state)
+    if self.callback then
+        self.callback(self.hero_vo.partner_id, self.p_hero_vo.partner_id, type_state)
+    end
+    controller:openHeroSoulHomologyPreviewPanel(false)
+end
+
+function HeroSoulHomologyPreviewPanel:openRootWnd(a_hero_vo, p_hero_vo, callback)
+    print("HeroSoulHomologyPreviewPanel openRootWnd ", a_hero_vo.bid, p_hero_vo.bid)
+    if not a_hero_vo or not p_hero_vo then return end
+    self.hero_vo = a_hero_vo
+    self.p_hero_vo = p_hero_vo
+    self.next_hero_vo = clone(a_hero_vo)
+    -- --星级  等级  (圣物等级)
+    self.next_hero_vo.star = p_hero_vo.star
+
+    self.next_hero_vo.lev = p_hero_vo.lev
+
+    for i,v in ipairs(self.next_hero_vo.ext_data or {}) do
+        if v.id == 3 then
+            for p,q in ipairs(p_hero_vo.ext_data or {}) do
+                if q.id == 3 then
+                    v.val = q.val
+                end
+            end
+        end
+    end
+    self.callback = callback
+    --同调后的数据需要后端获取
+    -- self:setData(self.hero_vo,self.next_hero_vo)
+    controller:sender11022(self.hero_vo.partner_id, self.p_hero_vo.partner_id)
+end
+
+function HeroSoulHomologyPreviewPanel:getHeroMaxLv(hero_vo)
+    local key = getNorKey(hero_vo.type, hero_vo.break_id, hero_vo.break_lev)
+    local break_config = Config.PartnerData.data_partner_brach[key]
+    local next_key = getNorKey(hero_vo.type, hero_vo.break_id, hero_vo.break_lev + 1)
+    local next_break_config = Config.PartnerData.data_partner_brach[next_key]
+
+    --上限等级
+    local lev_max = break_config.lev_max
+    if next_break_config == nil then
+        local key = getNorKey(hero_vo.bid, hero_vo.star)
+        local star_config = Config.PartnerData.data_partner_star(key)
+        local star_step_add_lev = HeroController:getInstance():getModel():getStarStepCompleteAddLev(hero_vo)
+        local star_lev_max = star_config.lev_max + star_step_add_lev
+        if star_config and lev_max < star_lev_max then
+            lev_max = star_lev_max
+        end
+    end
+    return lev_max
+end
+
+function HeroSoulHomologyPreviewPanel:setData(hero_vo, next_data, next_attr)
+    --head
+    self.before_head:setData(hero_vo)
+    self.after_head:setData(next_data)
+
+    local key = getNorKey(hero_vo.bid, hero_vo.star)
+    local old_star_config = Config.PartnerData.data_partner_star(key)
+    -- local new_key = getNorKey(next_data.bid, next_data.star)
+    -- local new_star_config = Config.PartnerData.data_partner_star(new_key)
+
+    if not old_star_config then return end
+    local show_list = {} 
+    --战斗力
+    show_list[#show_list + 1] = {left_value = hero_vo.power, right_value = next_attr.power}
+    show_list[#show_list + 1] = {left_value = self:getHeroMaxLv(hero_vo), right_value = self:getHeroMaxLv(next_data)}
+    --属性
+    local attr_list = {"hp","atk","def","speed"}
+    for i,attr_str in ipairs(attr_list) do
+        local attr_name = Config.AttrData.data_key_to_name[attr_str]
+        local old_value = hero_vo[attr_str] or 0
+        local new_value = next_attr[attr_str] or 0
+        -- local str2 = string_format("%s: %s", attr_name, old_value)
+        local str2 = string_format("%s", old_value)
+        show_list[#show_list + 1] = {left_value = str2, right_value = new_value}
+    end
+    for i,v in ipairs(show_list) do
+        self.attr_labe_left_list[i]:setString(v.left_value)
+        self.attr_labe_right_list[i]:setString(v.right_value)
+        --name
+        if i == 1 then
+            self.attr_label_key_list[i]:setString(TI18N("语言_c_4568"))
+        elseif i == 2 then
+            self.attr_label_key_list[i]:setString(TI18N("语言_c_4569"))
+        else
+            local attr_name = Config.AttrData.data_key_to_name[attr_list[i - 2]]
+            self.attr_label_key_list[i]:setString(attr_name..":")
+        end
+    end
+end
+
+function HeroSoulHomologyPreviewPanel:close_callback()
+    if self.skill_item then 
+        self.skill_item:DeleteMe()
+        self.skill_item = nil
+    end
+    controller:openHeroSoulHomologyPreviewPanel(false)
+end

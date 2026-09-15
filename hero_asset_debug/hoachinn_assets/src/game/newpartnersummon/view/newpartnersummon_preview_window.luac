@@ -1,0 +1,187 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2023-08-17 17:11:20
+-- @description    : 
+-- 新版精灵展示
+---------------------------------
+local _controller = NewPartnersummonController:getInstance()
+local _model = _controller:getModel()
+
+local hero_model = HeroController:getInstance():getModel()
+
+NewPartnersummonPreviewWindow = NewPartnersummonPreviewWindow or BaseClass(BaseView)
+
+function NewPartnersummonPreviewWindow:__init()
+	self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "newpartnersummon/newpartnersummon_preview_window"
+
+end
+
+function NewPartnersummonPreviewWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(container, 2)
+	
+	self.image_bg = container:getChildByName("image_bg")
+	self.bottom_bg = container:getChildByName("bottom_bg")
+	self.title_bg = container:getChildByName("title_bg")
+	self.hero_img = container:getChildByName("hero_img")
+	self.title_txt2 = container:getChildByName("title_txt2")
+	-- setTextMaxWidth(self.title_txt2, 600)
+	self.title_txt2:setString(TI18N("语言_c_7377"))
+	local _width = math.max(self.title_txt2:getContentSize().width+50, 384)
+	self.title_bg:setContentSize(cc.size(_width, 92))
+
+	self.tips1 = createRichLabel(20, cc.c4b(0x47, 0x21, 0x03, 0xff), cc.p(0.5, 0.5), cc.p(295, 214), nil, -4, 565)
+	container:addChild(self.tips1)
+	self.tips1:setHorizontalLayoutType(2)
+
+	self.tips2 = container:getChildByName("tips2")
+	setTextMaxWidth(self.tips2, 580,-2)
+	self.line = container:getChildByName("line")
+	self.close_btn = container:getChildByName("close_btn")
+	self.right_btn = container:getChildByName("right_btn")
+	self.right_btn:getChildByName("label"):setString(TI18N("语言_c_766"))
+	self.right_btn:setVisible(false)
+	self.show_btn = container:getChildByName("show_btn")
+    self.show_btn_txt = self.show_btn:getChildByName("Text_16")
+    self.show_btn_txt:setString(TI18N("语言_c_154"))
+    setTextMaxWidth(self.show_btn_txt,75)
+    self.sp_look_btn = container:getChildByName("sp_look_btn")
+    self.sp_look_txt = self.sp_look_btn:getChildByName("sp_look_txt")
+    self.sp_look_txt:setChangeScaleOffWidth(-9999)
+    self.sp_look_txt:setString(TI18N("语言_c_21"))
+    self.shop_btn = container:getChildByName("shop_btn")
+    self.shop_btn_txt = self.shop_btn:getChildByName("Text_16")
+    self.shop_btn_txt:setChangeScaleOffWidth(-9999)
+    self.shop_btn_txt:setString(TI18N("语言_c_7327"))
+end
+
+function NewPartnersummonPreviewWindow:register_event(  )
+	registerButtonEventListener(self.background, function (  )
+		_controller:openNewPartnersummonPreviewWindow(false)
+	end, false, 2)
+
+	registerButtonEventListener(self.close_btn, function (  )
+		_controller:openNewPartnersummonPreviewWindow(false)
+	end, true, 1)
+
+	registerButtonEventListener(self.right_btn, function (  )
+		if self.is_up == 1 then
+			_controller:send23273(self.open_type)
+			_controller:openNewPartnersummonPreviewWindow(false)
+		end
+	end, true, 1)
+	
+    registerButtonEventListener(self.show_btn,function()
+		EliteSummonController:getInstance():openUrShowMoreEliteWindow(true,self.cfg.window_id,EliteSummonConst.ShowType.SpSummon)
+    end,true)
+
+    registerButtonEventListener(self.sp_look_btn,function()
+        SeerpalaceController:getInstance():openSeerpalacePreviewWindow(true, 8, 1 )
+    end)
+    registerButtonEventListener(self.shop_btn,function()
+		_controller:openNewPartnersummonPreviewWindow(false)
+		MainuiController:getInstance():changeMainUIStatus(MainuiConst.btn_index.main_scene)
+		MallController:getInstance():openMallPanel(true, MallConst.MallType.NewPartnersummonShop)
+    end)
+end
+
+function NewPartnersummonPreviewWindow:openRootWnd(type)
+	self.open_type = type or 600
+	self.cfg = Config.RecruitData.data_partnersummon_data[self.open_type]
+	self.up_type = self.cfg.next_group_id
+	self.hero_bid = 0
+	local vo = deepCopy(Config.ItemData.data_get_data(self.cfg.window_id))
+	if vo and next(vo) then
+		local item_id = vo.effect[1].val[1]
+		local item_cfg = Config.PartnerData.data_partner_base[item_id]
+		if item_cfg then
+			self.hero_bid = item_cfg.bid
+		end
+	end
+	self:setData()
+	self:showBottomEffect()
+end
+
+function NewPartnersummonPreviewWindow:setData()
+	self.data = _model:getPartnersummonUpData(self.open_type)
+	self.is_up = _model:getPartnersummonIsUp(self.open_type)
+	if self.data then
+		if self.is_up == 2 then --已升级
+			self.right_btn:setVisible(false)
+			self.tips2:setString(TI18N("语言_c_6951"))
+			self.tips2:setPositionY(108)
+		elseif self.is_up == 1 then --可升级
+			self.right_btn:setVisible(true)
+			self.tips2:setString(TI18N("语言_c_7330"))
+			self.tips2:setPositionY(58)
+		else
+			self.right_btn:setVisible(false)
+			self.tips2:setString(TI18N("语言_c_6952"))
+			self.tips2:setPositionY(108)
+		end
+	end
+	local now_summon_num = self.data.draw_times or 0
+	local have_num = 0
+	local list = HeroController:getInstance():getModel():getHeroList()
+	local _score = {}
+	local _star = 0
+	for key, value in pairs(self.cfg.next_group_cond) do
+		for k, v in pairs(value) do
+			if v[1] == "partner" then
+				for _k, _v in pairs(v[2]) do
+					if _v[1] == "score" then
+						_score = _v[2]
+					elseif _v[1] == "star_gr" then
+						_star = _v[2]
+					end
+				end
+			end
+		end
+	end
+    for k,v in pairs(list) do
+		local score = hero_model:heroBidScore(v.bid)
+        if table.indexof(_score,score) and v.star >= _star and not v:isTryoutHero() then
+			have_num = have_num + 1
+		end
+    end
+	local _str = self.cfg.next_group_cond_desc[1]
+	local desc_list = deepCopy(self.cfg.next_group_cond_desc[2])
+	if desc_list and next(desc_list) then
+		if now_summon_num >= desc_list[1] then
+			table.insert(desc_list,string.format("<div fontcolor=#0ea80e>%s</div>",now_summon_num))
+		else
+			table.insert(desc_list,string.format("<div fontcolor=#ff1515>%s</div>",now_summon_num))
+		end
+		if have_num >= desc_list[3] then
+			table.insert(desc_list,string.format("<div fontcolor=#0ea80e>%s</div>",have_num))
+		else
+			table.insert(desc_list,string.format("<div fontcolor=#ff1515>%s</div>",have_num))
+		end
+		self.tips1:setString(LangStringFormat(_str,desc_list))
+	end
+end
+
+function NewPartnersummonPreviewWindow:showBottomEffect()
+	local res = PathTool.getPlistImgForDownLoad("ninjacontract","ninjacontract_"..self.hero_bid, false)
+	loadSpriteTexture(self.hero_img, res, LOADTEXT_TYPE)
+	if self.cfg.window_shif and self.cfg.window_shif[1] then
+		local _scale = self.cfg.window_shif[1][1] or 1
+		local _x = (self.cfg.window_shif[1][2] or 0) + 295
+		local _y = (self.cfg.window_shif[1][3] or 0) + 441
+		self.hero_img:setScale(_scale)
+		self.hero_img:setPosition(cc.p(_x,_y))
+	end
+end
+
+function NewPartnersummonPreviewWindow:close_callback(  )
+	_controller:openNewPartnersummonPreviewWindow(false)
+end

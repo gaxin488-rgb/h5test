@@ -1,0 +1,207 @@
+-- --------------------------------------------------------------------
+-- @author: huachuanyu@syg.com(必填, 创建模块的人员)
+-- @description:
+--      圣器装备重铸选择的tips
+-- <br/>Create: 2020-08-05 17:20:01
+--
+-- --------------------------------------------------------------------
+HallowsResetChooseTips = HallowsResetChooseTips or BaseClass(BaseView)
+
+local controller = HallowsController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+
+function HallowsResetChooseTips:__init()
+    self.is_full_screen = false
+    self.layout_name = "hallows/hallows_reset_choose_tips"
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+end
+
+function HallowsResetChooseTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_container = self.root_wnd:getChildByName("container")
+    self.close_btn = self.main_container:getChildByName("close_btn")
+
+    -- 普通铸造
+    self.nomal_panel = self.main_container:getChildByName("nomal_panel")
+    self.nomal_txt_contatiner = self.nomal_panel:getChildByName("txt_container")
+    self.nomal_resign_btn = self.nomal_panel:getChildByName("btn_resign")
+    self.nomal_resign_btn.label = self.nomal_resign_btn:getChildByName("label")
+
+    -- 钻石铸造
+    self.diamond_panel = self.main_container:getChildByName("diamond_panel")
+    self.diamond_txt_contatiner = self.diamond_panel:getChildByName("txt_container")
+    self.diamond_resign_btn = self.diamond_panel:getChildByName("btn_resign")
+    self.diamond_resign_btn.label = self.diamond_resign_btn:getChildByName("label")
+
+    -- 重铸价格
+    local count_bg = self.diamond_panel:getChildByName("count_bg")
+    self.coin = count_bg:getChildByName("coin")
+    self.coin_count = count_bg:getChildByName("price")
+end
+
+function HallowsResetChooseTips:register_event()
+    self.background:addTouchEventListener(
+        function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                controller:openResetChooseTips(false)
+            end
+        end
+    )
+
+    self.close_btn:addTouchEventListener(
+        function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                controller:openResetChooseTips(false)
+            end
+        end
+    )
+
+    registerButtonEventListener(self.nomal_resign_btn, handler(self, self.onClickNomalResign), true, 1)
+    registerButtonEventListener(self.diamond_resign_btn, handler(self, self.onClickDiamondResign), true, 1)
+end
+
+function HallowsResetChooseTips:openRootWnd(id, cost_num)
+    self.hallows_id = id
+    self.cost_coin_num = cost_num
+
+    self.normal_desc_label = createRichLabel(28, cc.c4b(0x64, 0x32, 0x23, 0xff), cc.p(0.0, 0.0), cc.p(0, 0), 4, nil, 280)
+    self.nomal_txt_contatiner:addChild(self.normal_desc_label)
+    self.normal_desc_label:setPosition(cc.p(0, 20))
+    self.normal_desc_label:setString(string.format(TI18N("        重铸后，本神器将回到初始状态，同时返还<div fontcolor=#249003>除金币外</div>所有资源，是否确认重铸？ ")))
+
+    self.diamond_desc_label = createRichLabel(28, cc.c4b(0x64, 0x32, 0x23, 0xff), cc.p(0.0, 0.0), cc.p(0, 0), 4, nil, 280)
+    self.diamond_txt_contatiner:addChild(self.diamond_desc_label)
+    self.diamond_desc_label:setPosition(cc.p(0, 20))
+    self.diamond_desc_str =
+        string.format(
+        TI18N("        重铸后，本神器将回到初始状态，同时<div fontcolor=#249003>返还所有</div>资源，是否确认花费<img src=%s scale=0.25 visible=true /><div fontcolor=#249003>%s</div>重铸？"),
+        PathTool.getItemRes(Config.ItemData.data_assets_label2id.gold),
+        tostring(self.cost_coin_num)
+    )
+    self.diamond_desc_label:setString(self.diamond_desc_str)
+
+    loadSpriteTexture(self.coin, PathTool.getItemRes(Config.ItemData.data_assets_label2id.gold), LOADTEXT_TYPE)
+    self.coin_count:setString(tostring(self.cost_coin_num))
+
+    self.timer = 3
+
+    self:setNomalTimerBtn(self.nomal_resign_btn, TI18N("普通重铸"), self.onClickNomalResign)
+    setChildUnEnabled(true, self.nomal_resign_btn)
+    self.nomal_resign_btn:setTouchEnabled(false)
+    if self.nomal_resign_btn.label then
+        self.nomal_resign_btn.label:enableOutline(Config.ColorData.data_color4[84], 2)
+    end
+
+    self:setDiamondTimerBtn(self.diamond_resign_btn, TI18N("钻石重铸"), self.onClickDiamondResign)
+    setChildUnEnabled(true, self.diamond_resign_btn)
+    self.diamond_resign_btn:setTouchEnabled(false)
+    if self.diamond_resign_btn.label then
+        self.diamond_resign_btn.label:enableOutline(Config.ColorData.data_color4[84], 2)
+    end
+end
+
+function HallowsResetChooseTips:onClickNomalResign()
+    controller:requestHallowsReset(self.hallows_id)
+    controller:openResetChooseTips(false)
+end
+
+function HallowsResetChooseTips:onClickDiamondResign()
+    controller:requestHallowsDiamondReset(self.hallows_id)
+    controller:openResetChooseTips(false)
+end
+
+function HallowsResetChooseTips:close_callback()
+    self.hallows_data = nil
+    self.cost_coin_num = nil
+
+    if self.timer_diamond then
+        GlobalTimeTicket:getInstance():remove(self.timer_diamond)
+    end
+
+    if self.timer_nomal then
+        GlobalTimeTicket:getInstance():remove(self.timer_nomal)
+    end
+
+    controller:openResetChooseTips(false)
+end
+
+function HallowsResetChooseTips:setNomalTimerBtn(btn, btn_label)
+    if btn_label == nil or btn_label == "" then return end
+    if btn.label == nil then return end
+    if tolua.isnull(btn.label) then return end
+    
+    btn.label:setString(string.format("%s(%s)", btn_label, self.timer))
+      
+    if self.timer > 0 then
+        setChildUnEnabled(true, btn)
+        btn:setTouchEnabled(false)
+        if btn.label then
+            btn.label:enableOutline(Config.ColorData.data_color4[84], 2)
+        end
+    end
+
+    self.timer_nomal = GlobalTimeTicket:getInstance():add(function()
+        if self.timer > 1 then
+            self.timer = self.timer - 1
+            if not tolua.isnull(btn.label) then
+                btn.label:setString(string.format("%s(%s)", btn_label, self.timer))
+            end
+        else
+            if not tolua.isnull(btn) then
+                setChildUnEnabled(false, btn)
+                btn:setTouchEnabled(true)
+            end
+            
+            if not tolua.isnull(btn.label) then
+                if btn.label then
+                    btn.label:enableOutline(Config.ColorData.data_color4[264],2)
+                end 
+                btn.label:setString(string.format("%s", btn_label))
+            end
+        end
+    end, 1, self.timer)
+end
+
+function HallowsResetChooseTips:setDiamondTimerBtn(btn, btn_label)
+    if btn_label == nil or btn_label == "" then return end
+    if btn.label == nil then return end
+    if tolua.isnull(btn.label) then return end
+    
+    btn.label:setString(string.format("%s(%s)", btn_label, self.timer))
+      
+    if self.timer > 0 then
+        setChildUnEnabled(true, btn)
+        btn:setTouchEnabled(false)
+        if btn.label then
+            btn.label:enableOutline(Config.ColorData.data_color4[84], 2)
+        end
+    end
+
+    self.timer_diamond = GlobalTimeTicket:getInstance():add(function()
+        if self.timer > 1 then
+            self.timer = self.timer - 1
+            if not tolua.isnull(btn.label) then
+                btn.label:setString(string.format("%s(%s)", btn_label, self.timer))
+            end
+        else
+            if not tolua.isnull(btn) then
+                setChildUnEnabled(false, btn)
+                btn:setTouchEnabled(true)
+            end
+            
+            if not tolua.isnull(btn.label) then
+                if btn.label then
+                    btn.label:enableOutline(Config.ColorData.data_color4[264],2)
+                end 
+                btn.label:setString(string.format("%s", btn_label))
+            end
+        end
+    end, 1, self.timer)
+end

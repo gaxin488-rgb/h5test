@@ -1,0 +1,539 @@
+--******** 文件说明 ********
+-- 
+-- @description: 疯狂火鸡节图鉴
+-- @DateTime:    2020-02-20
+-- *******************************
+ActionTurkeyBookPanel = ActionTurkeyBookPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+function ActionTurkeyBookPanel:__init()
+    self.is_full_screen = true
+    self.title_btn_list = {}
+    self.reward_btn_list = {}
+    self.item_list = {}
+    self.click_index = 0
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "action/action_turkey_book_panel"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("partnersummon", "partnersummon"), type = ResourcesType.plist },
+    }
+    self.tab_name = {
+        [1] = TI18N("语言_c_7623"),
+        [2] = TI18N("语言_c_7624"),
+    }
+    self.bottom_tab_list = {}
+end
+
+function ActionTurkeyBookPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)
+    self.title = self.main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_c_6409"))
+    self.choose_panel = self.main_container:getChildByName("choose_panel")
+    self.choose_bg = self.choose_panel:getChildByName("choose_bg")
+    self.click_icon = self.choose_panel:getChildByName("click_icon")
+    -- self.click_icon:setZOrder(999)
+    self.progress_panel = self.main_container:getChildByName("progress_panel")
+    self.progress_panel_width = self.progress_panel:getContentSize().width
+    self.progress_bg = self.progress_panel:getChildByName("progress_bg")
+    self.progress = self.progress_panel:getChildByName("progress")
+    self.progress:setPercent(0)
+    self.num_label = self.progress_panel:getChildByName("num_label")
+    self.num_label:setString("0%")
+    self.book_panel = self.main_container:getChildByName("book_panel")
+    self.ScrollView = self.book_panel:getChildByName("ScrollView")
+    self.ScrollView:setScrollBarEnabled(false)
+    self.ScrollView_size = self.ScrollView:getContentSize()
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.botton_panel = self.root_wnd:getChildByName("botton_panel")
+    self.botton_panel:setVisible(false)
+    for i = 1, #self.tab_name, 1 do
+        local tab_btn = {}
+        local item = self.botton_panel:getChildByName("tab_btn_"..i)
+        tab_btn.btn = item
+        tab_btn.index = i
+        tab_btn.select_bg = item:getChildByName("select_bg")
+        -- tab_btn.select_bg:setVisible(false)
+        tab_btn.select_img = item:getChildByName("select_img")
+        -- tab_btn.select_img:setVisible(false)
+        tab_btn.normal_img = item:getChildByName("normal_img")
+        tab_btn.label = item:getChildByName("label")
+        setTextSpacing(tab_btn.label,-8)
+        tab_btn.label:setString(self.tab_name[i])
+        tab_btn.red_point = item:getChildByName("red_point")
+        tab_btn.red_point:setVisible(false)
+        -- tab_btn.btn:setVisible(false)
+        self.bottom_tab_list[i] = tab_btn
+    end
+
+    
+    local bottom_y = display.getBottom()
+    self.botton_panel:setPositionY(bottom_y)
+end
+
+function ActionTurkeyBookPanel:register_event()
+    registerButtonEventListener(self.background,function()
+        controller:openActionTurkeyBookPanel(false)
+    end,false,2)
+    registerButtonEventListener(self.close_btn,function()
+        controller:openActionTurkeyBookPanel(false)
+    end,false,2)
+    for index, tab_btn in ipairs(self.bottom_tab_list) do
+        registerButtonEventListener(tab_btn.btn, function() self:changeTabFun(index, true, tab_btn.btn) end ,false, 1) 
+    end
+    
+    -- 火鸡节数据返回
+	if not self.update_turke_book_data then
+        self.update_turke_book_data = GlobalEvent:getInstance():Bind(ActionEvent.UpdateTurkeyBookData, function()
+            self:setTitlePanel()
+            if self.click_index == 0 then
+                self:ClickTitleBtn(self.index)
+            else
+                self:setProgressPanel()
+            end
+        end)
+    end
+    
+    self:addGlobalEvent(HomeworldEvent.Update_Puzzle_Red_Event, function()
+        self:updatePuaaleRed()
+    end)
+end
+function ActionTurkeyBookPanel:changeTabFun(index)
+    -- if self.select_bottom_tab and self.select_bottom_tab.index == index then return end
+    -- if self.select_bottom_tab then 
+    --     self.select_bottom_tab.select_bg:setVisible(false)
+    --     self.select_bottom_tab.select_img:setVisible(false)
+    --     self.select_bottom_tab.normal_img:setVisible(true)
+    --     self.select_bottom_tab.label:setTextColor(cc.c4b(255,255,255,255))
+    --     self.select_bottom_tab.label:enableOutline(cc.c4b(0x00,0x00,0x00,0xff),2)
+    -- end
+
+    -- self.select_bottom_tab = self.bottom_tab_list[index]
+    -- if self.select_bottom_tab then
+    --     self.select_bottom_tab.select_bg:setVisible(true)
+    --     self.select_bottom_tab.select_img:setVisible(true)
+    --     self.select_bottom_tab.normal_img:setVisible(false)
+    --     self.select_bottom_tab.label:setTextColor(cc.c4b(0xf5,0xd2,0x69,0xff))
+    --     self.select_bottom_tab.label:enableOutline(cc.c4b(0x00,0x00,0x00,0xff),2)
+    -- end
+
+    if index == 2 then
+        controller:openActionTurkeyBookPanel(false)
+        HomeworldController:getInstance():openPuzzleBookMainWindow(true)
+    end
+end
+function ActionTurkeyBookPanel:updatePuaaleRed()
+    self.bottom_tab_list[2].red_point:setVisible(HomeworldController:getInstance():getModel():getPuzzleRed())
+end
+function ActionTurkeyBookPanel:openRootWnd(index)
+    self.index = index or 1
+    controller:sender22405()
+    if HomeworldController:getInstance():getModel():getPuzzleIsOpen() then
+        self.botton_panel:setVisible(true)
+        self:changeTabFun(1)
+        self:updatePuaaleRed()
+    end
+end
+function ActionTurkeyBookPanel:ClickTitleBtn(index)
+    if index == self.click_index then return end
+    self.click_index = index
+    self.click_icon:setPositionX(self.title_btn_list[index]:getPositionX())
+    for key, value in pairs(self.title_btn_list) do
+        if key ~= 1 then
+            local res = ""
+            if key ~= index then
+                res = PathTool.getResFrame("holiday_collect_manual", self.title_cfg[value.index].no_chose)
+            else
+                res = PathTool.getResFrame("holiday_collect_manual", self.title_cfg[value.index].chose)
+            end
+            value:loadTexture(res, LOADTEXT_TYPE_PLIST)
+        end
+    end
+    self:setProgressPanel()
+    local cfg = deepCopy(Config.HolidayCollectManualData.data_title_info[self.click_index-1])
+    if cfg then
+        local data = model:getTurkeyBookDataForType(cfg.type)
+        if data then
+            self.progress:setPercent(tableLen(data.list) / self.reward_cfg[tableLen(self.reward_cfg)].num * 100)
+            local txt = math.floor(tableLen(data.list) / self.reward_cfg[tableLen(self.reward_cfg)].num * 100)
+            if txt > 100 then
+                txt = 100
+            elseif txt < 0 then
+                txt = 0
+            end
+            self.num_label:setString(txt.."%")
+        else
+            self.num_label:setString("0%")
+            self.progress:setPercent(0)
+        end
+    end
+    self:setBookPanel()
+end
+function ActionTurkeyBookPanel:setTitlePanel()
+    self.title_cfg = deepCopy(Config.HolidayCollectManualData.data_title_info)
+    local list = {type=0, chose="common_90066", no_chose="common_90066"}
+    table.insert(self.title_cfg, 1, list)
+    local num = tableLen(self.title_cfg)
+    self.choose_bg:setContentSize(cc.size(num * 66, 42))
+    for i = 1, num do
+        local data = self.title_cfg[i]
+        if not self.title_btn_list[i] then
+            local res = ""
+            local item = nil
+            if i == 1 then
+                res = PathTool.getResFrame("common", "common_90066")
+                item = createImage(self.choose_panel,res,630-(num-i)*50,25,cc.p(0.5,0.5),true)
+                item:setScale(0.6)
+            else
+                res = PathTool.getResFrame("holiday_collect_manual", data.no_chose)
+                item = createImage(self.choose_panel,res,630-(num-i)*50,25,cc.p(0.5,0.5),true)
+            end
+            item:setTouchEnabled(true)
+            self.title_btn_list[i] = item
+            self.title_btn_list[i].index = i
+            registerButtonEventListener(item,function()
+                self:ClickTitleBtn(item.index)
+            end,false,2)
+        end
+        local reward_data = model:getTurkeyBookRewardForType(data.type)
+        addRedPointToNodeByStatus(self.title_btn_list[i],false,10,10)
+        if reward_data then
+            for key, value in pairs(reward_data) do
+                if value == 1 then
+                    addRedPointToNodeByStatus(self.title_btn_list[i],true,10,10)
+                end
+            end
+        end
+    end
+end
+function ActionTurkeyBookPanel:setProgressPanel()
+    local list = deepCopy(Config.HolidayCollectManualData.data_reward_info[self.click_index-1])
+    if not list then
+        self.progress_panel:setVisible(false)
+        self.book_panel:setContentSize(cc.size(self.book_panel:getContentSize().width,805))
+        self.ScrollView:setContentSize(cc.size(self.book_panel:getContentSize().width,781))
+        return
+    end
+    local cfg = deepCopy(Config.HolidayCollectManualData.data_title_info[self.click_index-1])
+    local reward_data = {}
+    if cfg then
+        reward_data = model:getTurkeyBookRewardForType(cfg.type)
+    end
+    self.reward_cfg = {}
+    for key, value in pairs(list) do
+        if value and value.reward and next(value.reward) and value.resource ~= "" then
+            table.insert(self.reward_cfg,value)
+        end
+    end
+    self.progress_panel:setVisible(true)
+    self.book_panel:setContentSize(cc.size(self.book_panel:getContentSize().width,772))
+    self.ScrollView:setContentSize(cc.size(self.book_panel:getContentSize().width,748))
+    table.sort(self.reward_cfg,function(a,b) return a.num<b.num end)
+    local max_data = self.reward_cfg[tableLen(self.reward_cfg)]
+    for i = 1, tableLen(self.reward_cfg) do
+        local data = self.reward_cfg[i]
+        local btn = self.reward_btn_list[i]
+        if not btn then
+            btn = ccui.Widget:create()
+            btn:setContentSize(cc.size(60,60))
+            btn:setAnchorPoint(cc.p(0.5,0.5))
+            self.progress_panel:addChild(btn)
+            btn:setTouchEnabled(true)
+            btn:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.began then
+                    doStopAllActions(btn)
+                    self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+                    delayRun(btn, 0.2, function ()
+                        if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                            self:showRewardItems(self.reward_cfg[i].reward, i)
+                        end
+                        self.long_touch_type = LONG_TOUCH_END_TYPE
+                    end)
+                elseif event_type == ccui.TouchEventType.ended then
+                    if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                        doStopAllActions(btn)
+                        self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+                        self:onClickBoxItemBtn(self.reward_cfg[i])
+                    end
+                elseif event_type == ccui.TouchEventType.canceled then
+                    if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                        doStopAllActions(btn)
+                        self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+                    end
+                end
+            end)
+            local res = PathTool.getResFrame("holiday_collect_manual", "holiday_collect_manual_21")
+            btn.num_bg = createSprite(res,30,8,btn,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST,4)
+            btn.num = createLabel(18,cc.c3b(0xff,0xff,0xff),cc.c3b(0x00,0x00,0x00),30,8,"",btn,2,cc.p(0.5,0.5))
+            btn.num:setZOrder(5)
+            self.reward_btn_list[i] = btn
+        end
+        if btn.spine and not tolua.isnull(btn.spine) then
+            btn.spine:clearTracks()
+            btn.spine:removeFromParent()
+            btn.spine = nil
+        end
+        local action = PlayerAction.action_1
+        if reward_data then
+            if reward_data[data.num] == 0 then
+                action = PlayerAction.action_1
+            elseif reward_data[data.num] == 1 then
+                action = PlayerAction.action_2
+            elseif reward_data[data.num] == 2 then
+                action = PlayerAction.action_3
+            end
+        end
+        btn.spine = createEffectSpine(data.resource, cc.p(30, 10), cc.p(0.5, 0.5), true, action)
+        btn:addChild(btn.spine,3)
+        btn:setPosition(cc.p(self.progress_panel_width / max_data.num * data.num,30))
+        local str = math.floor(data.num/max_data.num * 100)
+        btn.num:setString(str.."%")
+        if reward_data then
+            addRedPointToNodeByStatus(btn,reward_data[data.num] == 1,10)
+        else
+            addRedPointToNodeByStatus(btn,false,10)
+        end
+        local pos = self.progress_panel:convertToWorldSpace(cc.p(self.progress_panel_width / max_data.num * data.num, self.progress_panel:getContentSize().height * 0.5))
+        local newpos = self.main_container:convertToNodeSpace(pos)
+        btn.pos = newpos
+    end
+end
+
+--抄过来的
+function ActionTurkeyBookPanel:showRewardItems(data, index)
+    local size = self.main_container:getContentSize()
+    if not self.tips_layer then
+        self.tips_layer = ccui.Layout:create()
+        self.tips_layer:setContentSize(size)
+        self.main_container:addChild(self.tips_layer)
+        self.tips_layer:setTouchEnabled(true)
+        registerButtonEventListener(self.tips_layer, function()
+            self.tips_bg:removeFromParent()
+            self.tips_bg = nil
+            self.tips_layer:removeFromParent()
+            self.tips_layer = nil
+        end,false, 1)
+    end
+    
+    local list = {}
+    if not self.tips_bg then
+        self.tips_bg = createImage(self.tips_layer, PathTool.getResFrame("common","common_1056"), size.width*0.5, 100, cc.p(0,0), true, 10, true)
+        self.tips_bg:setTouchEnabled(true)
+    end
+    if self.tips_bg then
+        local pos = self.reward_btn_list[index].pos
+        self.tips_bg:setContentSize(cc.size(BackPackItem.Width*#data+50,BackPackItem.Height+50))
+        local ccp = cc.p(0.5,0)
+        local tips_bg_width = self.tips_bg:getContentSize().width
+        if tips_bg_width * 0.5 + pos.x >= 720 then
+            ccp = cc.p(0.86,0)
+        elseif pos.x - tips_bg_width * 0.5 < 0 then
+            ccp = cc.p(0.3,0)
+        end
+
+        self.tips_bg:setAnchorPoint(ccp)
+        self.tips_bg:setPosition(self.reward_btn_list[index].pos.x, self.reward_btn_list[index].pos.y - 190)
+    end
+    local size = self.tips_bg:getContentSize()
+    local x =  25 + BackPackItem.Width * 0.5
+    for i,v in pairs(data) do
+        if not list[i] then
+            list[i] = BackPackItem.new(nil,true,nil,0.8)
+            list[i]:setAnchorPoint(cc.p(0.5,0.5))
+            self.tips_bg:addChild(list[i])
+            list[i]:setBaseData(v[1])
+            list[i]:setPosition(cc.p(x + (i-1) * BackPackItem.Width, 100))
+            list[i]:setDefaultTip()
+            
+            self.text_num = createLabel(22,cc.c4b(0xff,0xee,0xdd,0xff),nil,60,-25,"",list[i],nil, cc.p(0.5,0.5))
+            self.text_num:setString("x"..v[2])
+        else
+            list[i]:setBaseData(v[1])
+            list[i]:setPosition(cc.p(x + (i-1) * BackPackItem.Width, 100))
+            self.text_num:setString("x"..v[2])
+        end
+    end
+end
+
+function ActionTurkeyBookPanel:onClickBoxItemBtn(data)
+    local cfg = deepCopy(Config.HolidayCollectManualData.data_title_info[self.click_index-1])
+    local reward_data = {}
+    if cfg then
+        reward_data = model:getTurkeyBookRewardForType(cfg.type) or {}
+    end
+    if reward_data and reward_data[data.num] then
+        if reward_data[data.num] == 0 then
+            message(TI18N("语言_c_6425"))
+        elseif reward_data[data.num] == 1 then
+            controller:sender22407(self.click_index-1,data.num)
+        elseif reward_data[data.num] == 2 then
+            message(TI18N("语言_c_298"))
+        end
+    end
+end
+
+function ActionTurkeyBookPanel:setBookPanel()
+    local cfg = deepCopy(Config.HolidayCollectManualData.data_show_info)
+    local list = {}
+    self.show_cfg = {}
+    if self.click_index > 1 then
+        for key, value in pairs(cfg[self.click_index - 1]) do
+            if not list[key] or (list[key] and not next(list[key])) then
+                list[key] = {}
+            end
+            for k, v in pairs(value) do
+                table.insert(list[key],v)
+            end
+        end
+    else
+        for key, value in pairs(cfg) do
+            for a, b in pairs(value) do
+                if not list[a] or (list[a] and not next(list[a])) then
+                    list[a] = {}
+                end
+                for k, v in pairs(b) do
+                    table.insert(list[a],v)
+                end
+            end
+        end
+    end
+    for i = tableLen(list), 1,-1 do
+        table.sort(list[i], function(a,b) return a.sort < b.sort end)
+        self.show_cfg[tableLen(list)-i+1] = list[i]
+    end
+    for k, v in pairs(self.show_cfg) do
+        table.sort(v, function(a,b) return a.id < b.id end)
+    end
+    local _h = 0
+    for i = 1, tableLen(self.show_cfg) do
+        if next(self.show_cfg[i]) then
+            if self.item_list[i] and not tolua.isnull(self.item_list[i]) and not tolua.isnull(self.ScrollView) then
+                self.ScrollView:removeChild(self.item_list[i])
+            end
+            self.item_list[i] = nil
+            local item = ccui.Layout:create()
+            item:setAnchorPoint(cc.p(0, 1))
+            local item_height = 70 + 251*math.ceil(tableLen(self.show_cfg[i])/3)
+            item:setContentSize(cc.size(self.ScrollView_size.width, item_height))
+            local res = PathTool.getResFrame("holiday_collect_manual", "holiday_collect_manual_2")
+            item.title_bg = createSprite(res,0,item_height-25,item,cc.p(0,1),LOADTEXT_TYPE_PLIST)
+            item.txt = createLabel(26,cc.c3b(0xff,0xff,0xff),cc.c3b(0x5c,0x27,0x05),115,0,TI18N("语言_c_6410"),item.title_bg,2,cc.p(0,0))
+            local res = PathTool.getResFrame('partnersummon', self.show_cfg[i][1].picture, false)
+            item.quality_icon = createSprite(res,17,item_height+8,item,cc.p(0,1),LOADTEXT_TYPE_PLIST)
+            item.quality_icon:setScale(0.6)
+            self.ScrollView:addChild(item)
+            self.item_list[i] = item
+            item.item = {}
+            for k, v in pairs(self.show_cfg[i]) do
+                local booksitem = ActionTurkeyBookItem.new()
+                item:addChild(booksitem)
+                booksitem:setPositionX((k-1)%3*206)
+                booksitem:setPositionY(item:getContentSize().height-70 - math.floor((k-1)/3)*245)
+                booksitem:setData(v)
+                item.item[k] = booksitem
+            end
+            _h = _h + item_height
+        end
+    end
+    if _h < self.ScrollView_size.height then
+        _h = self.ScrollView_size.height
+    end
+    self.ScrollView:setInnerContainerSize(cc.size(self.ScrollView_size.width,_h))
+    local _y = deepCopy(_h)
+    for key, value in pairs(self.item_list) do
+        value:setPositionY(_y)
+        _y = _y - value:getContentSize().height
+    end
+end
+function ActionTurkeyBookPanel:close_callback()
+    if self.update_turke_book_data then
+        GlobalEvent:getInstance():UnBind(self.update_turke_book_data)
+        self.update_turke_book_data = nil
+    end
+    controller:openActionTurkeyBookPanel(false)
+end
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      火鸡节图鉴item
+-- Create: 2020-02-19
+-- --------------------------------------------------------------------
+ActionTurkeyBookItem = class("ActionTurkeyBookItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionTurkeyBookItem:ctor()
+	self.ctrl = ActionController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+end
+
+function ActionTurkeyBookItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_turkey_book_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(201,241))
+    self:setAnchorPoint(0,1)
+
+    self.cont_con = self.root_wnd:getChildByName("cont_con")
+    self.cont_con:setSwallowTouches(false)
+    self.bg = self.cont_con:getChildByName("bg")
+    self.quality = self.cont_con:getChildByName("quality")
+    self.icon = self.cont_con:getChildByName("icon")
+    self.lock_panel = self.cont_con:getChildByName("lock_panel")
+    self.tip = self.lock_panel:getChildByName("tip")
+    self.tip:setString(TI18N("语言_c_6411"))
+    self.txt = self.lock_panel:getChildByName("txt")
+    self.txt:setString(TI18N("语言_c_6412"))
+    self.unlock_panel = self.cont_con:getChildByName("unlock_panel")
+    self.appear_bg = self.unlock_panel:getChildByName("appear_bg")
+    self.appear_num = self.unlock_panel:getChildByName("appear_num")
+    self.name = self.unlock_panel:getChildByName("name")
+    setTextSpacing(self.name,-10)
+    self.name:setChangeScaleOffWidth(10)
+end
+
+function ActionTurkeyBookItem:register_event(  )
+    registerButtonEventListener(self.cont_con,function()
+        if self.book_data then
+            message(self.data.talk)
+        end
+    end,false,2)
+end
+
+function ActionTurkeyBookItem:setData(data)
+    self.data = data
+    self.book_data = model:getTurkeyBookDataForId(self.data.type,self.data.id)
+    self.camp_id = model:getTurkeyCampId()
+    self.const_cfg = Config.HolidayCollectManualData.data_title_info[self.data.type]
+    local res = PathTool.getResFrame("holiday_collect_manual",self.const_cfg.pic_bg)
+    loadSpriteTexture(self.bg,res,LOADTEXT_TYPE_PLIST)
+    local res = PathTool.getResFrame('partnersummon', data.picture, false)
+    loadSpriteTexture(self.quality,res,LOADTEXT_TYPE_PLIST)
+    local res = PathTool.checkRes(string_format("resource/holiday_collect_manual/manual_pic/%s.png", data.picture2))
+    loadSpriteTexture(self.icon,res,LOADTEXT_TYPE)
+    if self.book_data then
+        self.unlock_panel:setVisible(true)
+        self.lock_panel:setVisible(false)
+        self.name:setString(data.name)
+        self.appear_num:setString(string.format(TI18N("语言_c_6408"),self.book_data.num))
+        setTextSpacing(self.appear_num)
+        self.appear_bg:setContentSize(cc.size(self.appear_bg:getContentSize().width,self.appear_num:getContentSize().height+5))
+    else
+        self.unlock_panel:setVisible(false)
+        self.lock_panel:setVisible(true)
+        self.icon:setCascadeColorEnabled(true)
+        self.icon:setColor(cc.c3b(0x00,0x00,0x00))
+    end
+end
+
+function ActionTurkeyBookItem:DeleteMe()
+end

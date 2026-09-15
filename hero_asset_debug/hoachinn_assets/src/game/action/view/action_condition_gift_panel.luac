@@ -1,0 +1,289 @@
+--******** 文件说明 ********
+-- 
+-- @description: 条件礼包
+-- @DateTime:    2019-04-25 10:51:42
+-- *******************************
+
+ActionConditionGiftPanel = class("ActionConditionGiftPanel", function()
+	return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = ActionController:getInstance():getModel()
+
+function ActionConditionGiftPanel:ctor(bid,id,remain_sec)
+    self.holiday_bid = bid
+    self.remain_sec = remain_sec
+    self.cell_data_list = {}
+	self:configUI()
+	self:register_event()
+    controller:cs16603(self.holiday_bid)
+end
+
+function ActionConditionGiftPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_condition_gift_panel"))
+	self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setPosition(-40, -66)
+	self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_con = self.main_container:getChildByName("title_con")
+    self.time_pnael = self.title_con:getChildByName("time_pnael")
+    self.surplus_time = self.title_con:getChildByName("surplus_time")
+    controller:getModel():setCountDownTime(self.surplus_time,self.remain_sec or 0)
+    self.surplus_txt = self.title_con:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_txt:setPositionX(self.surplus_time:getPositionX() - self.surplus_time:getContentSize().width - 10)
+    self.time_pnael:setContentSize(cc.size(self.surplus_txt:getContentSize().width + self.surplus_time:getContentSize().width + 50,40))
+    self:loadBannerImage()
+    self.tip_txt = createLabel(22,cc.c3b(0xff,0xff,0xff),nil,15,35,"",self.title_con,nil,cc.p(0,0.5))
+    self.good_cons = self.main_container:getChildByName("charge_con")
+end
+
+function ActionConditionGiftPanel:updateScrollviewList()
+    local action_vo = controller:getActionSubTabVo(self.holiday_bid)
+    local camp_id = action_vo.camp_id
+    self.cell_data_list = deepCopy(Config.HolidayConditionGiftData.data_gift_info[camp_id])
+    table.sort(self.cell_data_list, function(a,b) return a.rank < b.rank end)
+    self.tip_txt:setLineSpacing(-10)
+    self.tip_txt:setChangeScaleOffWidth(self.title_con:getContentSize().width-460)
+    self.tip_txt:setString(TI18N("语言_c_6310"))
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.good_cons:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 688,                -- 单元的尺寸width
+            item_height = 150,               -- 单元的尺寸height
+            row = 0,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    self.child_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ActionConditionGiftPanel:createNewCell(width, height)
+    local cell = ActionConditionGiftItem.new()
+	return cell
+end
+
+--获取数据数量
+function ActionConditionGiftPanel:numberOfCells()
+    if not self.cell_data_list then return 0 end
+    return #self.cell_data_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function ActionConditionGiftPanel:updateCellByIndex(cell, index)
+    if not self.cell_data_list then return end
+    cell.index = index
+    local cell_data = self.cell_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+--加载banner图片
+function ActionConditionGiftPanel:loadBannerImage()
+    -- 横幅图片
+    local title_img = self.title_con:getChildByName("title_img")
+    local str_banner = ""
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if tab_vo and tab_vo.reward_title ~= "" and tab_vo.reward_title then
+        str_banner = tab_vo.reward_title
+    end
+    
+
+    local res = PathTool.getWelfareBannerRes(str_banner)
+    if not self.item_load then
+        self.item_load = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(title_img) then
+                loadSpriteTexture(title_img, res, LOADTEXT_TYPE)
+            end
+        end,self.item_load)
+    end
+end
+
+function ActionConditionGiftPanel:register_event()
+    if not self.conditiongiftevent then
+        self.conditiongiftevent = GlobalEvent:getInstance():Bind(ActionEvent.ConditionGiftEvent ,function()
+            self:updateScrollviewList()
+        end)
+    end
+end
+
+function ActionConditionGiftPanel:DeleteMe()
+    if self.item_load then 
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    if self.child_scrollview then
+        self.child_scrollview:DeleteMe()
+    end
+    if self.conditiongiftevent then
+        GlobalEvent:getInstance():UnBind(self.conditiongiftevent)
+        self.conditiongiftevent = nil
+    end
+    self.child_scrollview = nil
+end
+
+------------------------------------------
+-- 条件礼包子项
+------------------------------------------
+ActionConditionGiftItem = class("ActionConditionGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionConditionGiftItem:ctor()
+    self:configUI()
+    self:register_event()
+    self.cost_list_data = {}
+    self.get_list_data = {}
+end
+
+function ActionConditionGiftItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("action/action_condition_gift_item"))
+    self:setContentSize(cc.size(688,150))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.title_panel = main_container:getChildByName("title_panel")
+    self.txt_title = createRichLabel(24,cc.c3b(0x0a,0x8a,0x0a),cc.p(0,0.5),cc.p(21,19),nil,nil,1000)
+    self.title_panel:addChild(self.txt_title)
+    self.content_panel = main_container:getChildByName("content_panel")
+    self.good_cons = self.content_panel:getChildByName("good_cons")
+    self.good_cons:setScrollBarEnabled(false)
+    self.img_has_get = self.content_panel:getChildByName("img_has_get")
+    self.img_has_get:setVisible(false)
+    self.btn_exchange = self.content_panel:getChildByName("btn_exchange")
+    self.txt_exchange = self.btn_exchange:getChildByName("txt_exchange")
+    self.txt_exchange:setString("")
+    self.remaining_txt = self.content_panel:getChildByName("remaining_txt")
+end
+
+function ActionConditionGiftItem:register_event()
+    registerButtonEventListener(self.btn_exchange, function()
+        self:btnExchange()
+    end ,true, 1)
+end
+
+function ActionConditionGiftItem:btnExchange()
+    if self.touch_summon then 
+        message(TI18N("语言_c_4414"))
+        return 
+    end
+    if self.touch_summon_ticket == nil then
+        self.touch_summon_ticket = GlobalTimeTicket:getInstance():add(function()
+            self.touch_summon = nil
+            if self.touch_summon_ticket ~= nil then
+                GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+                self.touch_summon_ticket = nil
+            end
+        end,2)
+    end
+    self.touch_summon = true
+    if self.list.status == 1 then
+        local config = Config.ChargeData.data_charge_data[self.data.charge_id]
+        if config then
+            sdkOnPay(config.val, nil, config.id, config.name)
+        end
+    else
+        message(TI18N("语言_c_6201"))
+    end
+end
+
+function ActionConditionGiftItem:setData(data)
+    if not data then return end
+    self.list = model:getConditionGiftData(data.id)
+    self.remain_num = data.limit_count - self.list.aim_args[1].aim_args_val
+    if self.remain_num <= 0 then
+        self.remaining_txt:setVisible(false)
+        self.remain_num = 0
+    else
+        self.remaining_txt:setVisible(true)
+    end
+    self:setChangeData(data)
+end
+
+function ActionConditionGiftItem:setChangeData(data)
+    if tolua.isnull(self.btn_exchange) then return end
+    self.data = data
+    if next(self.data.mapping_cond) then
+        self.title_panel:setVisible(true)
+        self.content_panel:setPositionY(54)
+        self.txt_title:setString(self.data.cond_txt)
+        local str = LangStringFormat(self.data.cond_txt,self.data.limit_args[1])
+        if self.txt_title:getContentSize().width > 655 then
+            local setting = {}
+            setting.max_width = 655
+            setting.start_x = 21
+            setting.content = str
+            commonShowRollStr(self.txt_title,setting)
+        else
+            self.txt_title:setString(str)
+        end
+    else
+        self.title_panel:setVisible(false)
+        self.content_panel:setPositionY(75)
+    end
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 2
+    setting.max_count = 4
+    setting.is_center = false
+    setting.is_backpack_item = true
+    self.item_list = commonShowSingleRowItemList(self.good_cons, self.item_list, self.data.award, setting)
+    self:setSpriceTxt()
+    if self.remain_num > 0 then
+        self.remaining_txt:setTextColor(cc.c3b(0x9b,0x61,0x30))
+    else
+        self.remaining_txt:setTextColor(cc.c3b(0xff,0x15,0x15))
+    end
+    self.remaining_txt:setString(string.format(TI18N("语言_c_4050"),self.remain_num))
+    if self.remain_num == 0 then
+        self.btn_exchange:setVisible(false)
+        self.img_has_get:setVisible(true)
+    else
+        self.btn_exchange:setVisible(true)
+        self.img_has_get:setVisible(false)
+        if self.list.status == 1 then
+            setChildUnEnabled(false,self.btn_exchange)
+        else
+            setChildUnEnabled(true,self.btn_exchange)
+        end
+    end
+end
+
+function ActionConditionGiftItem:setSpriceTxt()
+    local config = Config.ChargeData.data_charge_data[self.data.charge_id]
+    local val = 88
+    if config then
+        val = GetMoneyNum(config,"val")
+    end
+    local label_str = string.format(TI18N("语言_c_4441"),val)
+    self.txt_exchange:setString(label_str)
+end
+
+function ActionConditionGiftItem:DeleteMe()
+    if self.touch_summon_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+        self.touch_summon_ticket = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

@@ -1,0 +1,437 @@
+-- --------------------------------------------------------------------
+-- z装备新版tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ArtifactGoldTips = ArtifactGoldTips or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function ArtifactGoldTips:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/artifact_gold_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        -- { path = PathTool.getPlistImgForDownLoad("holy_starup","holy_starup"), type = ResourcesType.plist },
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+end
+
+function ArtifactGoldTips:open_callback()
+    self._ui = self:getExportUI()
+    local _ui = self._ui
+    _ui._background:setScale(display.getMaxScale())
+    _ui._score_title:setString(TI18N("语言_c_1742"))
+    self.power_label = CommonNum.new(1, _ui._base_panel, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(230, 32))
+    self.power_label:setNum(0)
+    self.power_label:setScale(0.8)
+    _ui._hero_tip:setString(TI18N("语言_c_7550"))
+    _ui._attr_label:setString(TI18N("语言_c_1282"))
+    _ui._attr_soul_txt:setString(TI18N("语言_c_7556"))
+    _ui._attr_soul_txt:setVisible(false)
+    _ui._attr_soul_txt:setPositionX(_ui._attr_label:getPositionX() + _ui._attr_label:getContentSize().width)
+    _ui._attr_soul_label:setString(TI18N("语言_c_7441"))
+    _ui._attr_soul_tip:setString(TI18N("语言_c_7444"))
+    _ui._skill_label:setString(TI18N("语言_c_2940"))
+    _ui._skill_soul_txt:setString(TI18N("语言_c_7556"))
+    _ui._skill_soul_txt:setVisible(false)
+    _ui._skill_soul_txt:setPositionX(_ui._skill_label:getPositionX() + _ui._skill_label:getContentSize().width)
+    _ui._skill_soul_label:setString(TI18N("语言_c_7557"))
+    _ui._skill_soul_tip:setString(TI18N("语言_c_7444"))
+    _ui._tab_btn_txt_1:setString(TI18N("语言_c_4967"))
+    _ui._tab_btn_txt_2:setString(TI18N("语言_c_7558"))
+
+end
+
+function ArtifactGoldTips:register_event()
+    local _ui = self._ui
+    registerButtonEventListener(_ui._background, function(param,sender, event_type)
+        self:onClickCloseBtn()
+    end ,false, 2)
+    registerButtonEventListener(_ui._close_btn, function(param,sender, event_type)
+        self:onClickCloseBtn()
+    end ,true, 2)
+    registerButtonEventListener(_ui._tab_btn_1, function(param,sender, event_type)
+        self:onClickStrongBtn()
+    end ,true, 2)
+    registerButtonEventListener(_ui._tab_btn_2, function(param,sender, event_type)
+        self:onClickChangeSkillBtn()
+    end ,true, 2)
+    registerButtonEventListener(_ui._hero_panel, function(param,sender, event_type)
+        if not self.no_btn then
+            controller:openArtifactGoldTipsAttachPop(true,self.hero_vo,self.pos_id)
+        else
+            controller:openArtifactTipsWindow(true, self.soul_vo, PartnerConst.ArtifactTips.normal, self.hero_vo.partner_id, self.pos_id, false)
+        end
+    end ,true, 2,nil,0.7)
+    registerButtonEventListener(_ui._look_btn, function(param,sender, event_type)
+        local cfg = Config.PartnerArtifactGoldenData.data_const["game_rule1"]
+        local desc = cfg.desc
+        local array = {
+            [1] = {funct=4, lable=1, title=TI18N("语言_gui_ma_03_1"), desc=desc},
+        }
+        MainuiController:getInstance():openCommonExplainView(true, array)
+    end ,true, 2)
+    
+    self:addGlobalEvent(HeroEvent.Artifact_Save_Event, function()
+        self:setData()
+    end)
+    self:addGlobalEvent(HeroEvent.Artifact_Tempering_Event, function()
+        self:setData()
+    end)
+    self:addGlobalEvent(HeroEvent.Artifact_Update_Event, function(hero_vo)
+        if hero_vo.partner_id == self.hero_vo.partner_id then
+            self.hero_vo = hero_vo
+            self:setData()
+        end
+    end)
+end
+--关闭
+function ArtifactGoldTips:onClickCloseBtn()
+    controller:openArtifactGoldTips(false)
+end
+--强化
+function ArtifactGoldTips:onClickStrongBtn()
+    controller:openArtifactGoldTips(false)
+    controller:openArtifactGoldMainWindow(true,self.hero_vo,self.pos_id,1)
+end
+--更换技能
+function ArtifactGoldTips:onClickChangeSkillBtn()
+    controller:openArtifactGoldTips(false)
+    controller:openArtifactGoldMainWindow(true,self.hero_vo,self.pos_id,2)
+end
+
+function ArtifactGoldTips:openRootWnd(hero_vo,pos_id,no_btn)
+    self.hero_vo = hero_vo
+    self.pos_id = pos_id
+    self.no_btn = no_btn
+    self:setData()
+end
+
+function ArtifactGoldTips:setData()
+    self.gold_artiface_data = self.hero_vo.golden_artifact[self.pos_id]
+    if self.hero_vo.artifacts ~= nil then
+        --说明是网络返回的
+        for i,artifact_data in ipairs(self.hero_vo.artifacts) do
+            --因为有可能是神装 artifact_data.artifact_pos == 123 ~ 126 而神器的位置是1, 2
+            if artifact_data.artifact_pos < 100 then
+                if artifact_data.artifact_pos == self.pos_id then
+                    local vo = GoodsVo.New(artifact_data.base_id)
+                    if vo["initAttrData"] then
+                        vo:initAttrData(artifact_data)
+                    end    
+                    self.soul_vo = vo
+                end
+            end
+        end
+    else
+        self.soul_vo = self.hero_vo.artifact_list[self.pos_id]
+    end
+    self.score_val = 0 -- 符文评分（技能评分+属性评分）
+    self.base_h = 0
+    self.attr_h = 0
+    self.soul_attr_h = 0
+    self.skill_h = 0
+    self.soul_skill_h = 0
+    self.runic_h = self._ui._runic_panel:getContentSize().height
+    if self.no_btn then
+        self.tab_h = 0
+        self._ui._tab_panel:setVisible(false)
+    else
+        self.tab_h = self._ui._tab_panel:getContentSize().height
+        self._ui._tab_panel:setVisible(true)
+    end
+    self.top_spacing = 11
+    self.bottom_spacing2 = 10--属性距离底部
+    self:updateBasePanel()
+    self:updateAttrPanel()
+    self:updateSoulAttrPanel()
+    self:updateSkillPanel()
+    self:updateSoulSkillPanel()
+    self:updateRunicPanel()
+    self:updatePagePanel()
+    self.power_label:setNum(self.score_val)
+    if not self.no_btn then
+        self:updateSoulRed()
+        self:updateStrengRed()
+        self:updateSkillRed()
+    end
+end
+--设置基础信息
+function ArtifactGoldTips:updateBasePanel()
+    local _ui = self._ui
+    if not self.g_artifact then
+        self.g_artifact = GoldArtifactItem.new()
+        _ui._base_item:addChild(self.g_artifact)
+    end
+    self.g_artifact:setData({data = self.gold_artiface_data,show_type = HeroConst.Artiface_Gold_Type.tip})
+    local item_cfg = Config.ItemData.data_get_data(self.gold_artiface_data.artifact_id)
+    _ui._name:setString(item_cfg.name)
+    _ui._equip_type:setString(TI18N("语言_c_1728")..item_cfg.type_desc)
+    local equip_vo = self.soul_vo
+    if equip_vo and next(equip_vo) then
+        _ui._have_panel:setVisible(true)
+        _ui._no_panel:setVisible(false)
+        if not self.soul_artifact_item then
+            self.soul_artifact_item = BackPackItem.new(true, false, false, 1, false, false)
+            _ui._have_item:addChild(self.soul_artifact_item)
+        end
+        self.soul_artifact_item:setData(equip_vo)
+    else
+        _ui._have_panel:setVisible(false)
+        _ui._no_panel:setVisible(true)
+    end
+    self.base_h = _ui._base_panel:getContentSize().height
+end
+--设置属性
+function ArtifactGoldTips:updateAttrPanel()
+    local _ui = self._ui
+    if not self.attr_list then
+        self.attr_list = {}
+    end
+    if self.attr_list and next(self.attr_list) then
+        for k,v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.attr_list = {}
+    end
+    _ui._attr_soul_txt:setVisible((self.soul_vo and next(self.soul_vo)) and true or false)
+    if not Config.PartnerArtifactGoldenData.data_enhance[self.gold_artiface_data.artifact_id] or not Config.PartnerArtifactGoldenData.data_enhance[self.gold_artiface_data.artifact_id][self.gold_artiface_data.enhance_level] then return end
+    local lev_cfg = Config.PartnerArtifactGoldenData.data_enhance[self.gold_artiface_data.artifact_id][self.gold_artiface_data.enhance_level]
+    local panel_h = math.ceil(#lev_cfg.attr*0.5)*40 + 53
+    _ui._attr_panel:setContentSize(cc.size(_ui._attr_panel:getContentSize().width,panel_h))
+    _ui._attr_label:setPositionY(panel_h - self.top_spacing)
+    _ui._attr_soul_txt:setPositionY(_ui._attr_label:getPositionY())
+    self.score_val = HeroCalculate.calculatePower(lev_cfg.attr)
+    for k,v in pairs(lev_cfg.attr) do
+        local item = ArtifactGoldAttrItem1.new()
+        item:setData(v)
+        local _x = 20 + (k-1)%2*328
+        local _y = self.bottom_spacing2 + math.ceil(#lev_cfg.attr*0.5)*item:getContentSize().height - (math.floor((k-1)/2)+1)*item:getContentSize().height
+        item:setPosition(cc.p(_x,_y))
+        _ui._attr_panel:addChild(item)
+        table.insert(self.attr_list,item)
+    end
+    self.attr_h = panel_h
+end
+--设置附魂属性
+function ArtifactGoldTips:updateSoulAttrPanel()
+    local _ui = self._ui
+    local panel_h = 87
+    if not self.soul_attr_list then
+        self.soul_attr_list = {}
+    end
+    if self.soul_attr_list and next(self.soul_attr_list) then
+        for k,v in pairs(self.soul_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.soul_attr_list = {}
+    end
+    if self.soul_vo and next(self.soul_vo) then --已赋魂
+        _ui._attr_soul_lock:setVisible(false)
+        _ui._attr_soul_tip:setVisible(false)
+        panel_h = math.ceil(#self.soul_vo.attr*0.5)*40 + 53
+        _ui._attr_soul_panel:setContentSize(cc.size(_ui._attr_soul_panel:getContentSize().width,panel_h))
+        for k,v in pairs(self.soul_vo.attr) do
+            local item = ArtifactGoldAttrItem1.new()
+            item:setData(v)
+            local _x = 20 + (k-1)%2*328
+            local _y = self.bottom_spacing2 + math.ceil(#self.soul_vo.attr*0.5)*item:getContentSize().height - (math.floor((k-1)/2)+1)*item:getContentSize().height
+            item:setPosition(cc.p(_x,_y))
+            _ui._attr_soul_panel:addChild(item)
+            table.insert(self.soul_attr_list,item)
+        end
+    else --未赋魂
+        _ui._attr_soul_lock:setVisible(true)
+        _ui._attr_soul_tip:setVisible(true)
+    end
+    _ui._attr_soul_label:setPositionY(panel_h - self.top_spacing)
+    _ui._attr_soul_panel:setContentSize(cc.size(_ui._attr_soul_panel:getContentSize().width,panel_h))
+    self.soul_attr_h = panel_h
+end
+--设置技能
+function ArtifactGoldTips:updateSkillPanel()
+    local _ui = self._ui
+    if not self.skill_list then
+        self.skill_list = {}
+    end
+    if self.skill_list and next(self.skill_list) then
+        for k,v in pairs(self.skill_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.skill_list = {}
+    end
+    _ui._skill_soul_txt:setVisible((self.soul_vo and next(self.soul_vo)) and true or false)
+    local skill_id = self.gold_artiface_data.skill_id
+    local item = ArtifactGoldSkillItem1.new()
+    item:setData(skill_id,not self.no_btn)
+    local fun = function()
+        controller:openArtifactGoldTips(false)
+        controller:openArtifactGoldMainWindow(true,self.hero_vo,self.pos_id,2)
+    end
+    item:addCallBack(fun)
+    local _x = 6
+    local _y = 0
+    item:setPosition(cc.p(_x,_y))
+    table.insert(self.skill_list,item)
+    _ui._skill_panel:addChild(item)
+    self.skill_h = _ui._skill_panel:getContentSize().height
+end
+--设置赋魂技能
+function ArtifactGoldTips:updateSoulSkillPanel()
+    local _ui = self._ui
+    local panel_h = 87
+    if not self.soul_skill_list then
+        self.soul_skill_list = {}
+    end
+    if self.soul_skill_list and next(self.soul_skill_list) then
+        for k,v in pairs(self.soul_skill_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.soul_skill_list = {}
+    end
+    if self.soul_vo and next(self.soul_vo) then --已赋魂
+        _ui._skill_soul_lock:setVisible(false)
+        _ui._skill_soul_tip:setVisible(false)
+        local index = 0
+        for i,value in ipairs(self.soul_vo.extra) do
+            if value and value.extra_k and (value.extra_k == 1 or value.extra_k == 2 or value.extra_k == 8) then
+                local skill_id = value.extra_v
+                local item = ArtifactGoldSkillItem1.new()
+                item:setData(skill_id,false)
+                index = index + 1
+                _ui._skill_soul_panel:addChild(item)
+                table.insert(self.soul_skill_list,item)
+            end
+        end
+        if self.soul_skill_list and next(self.soul_skill_list) then
+            panel_h = 43 + index * ArtifactGoldSkillItem1.Height
+            for k, v in ipairs(self.soul_skill_list) do
+                v:setPosition(cc.p(6,panel_h - 43 - k * ArtifactGoldSkillItem1.Height))
+            end
+        else
+            panel_h = 87
+            _ui._skill_soul_tip:setString(TI18N("语言_c_7559"))
+            _ui._skill_soul_tip:setPositionX(16)
+            _ui._skill_soul_tip:setVisible(true)    
+        end
+    else --未赋魂
+        _ui._skill_soul_lock:setVisible(true)
+        _ui._skill_soul_tip:setString(TI18N("语言_c_7444"))
+        _ui._skill_soul_tip:setPositionX(51)
+        _ui._skill_soul_tip:setVisible(true)
+    end
+    _ui._skill_soul_label:setPositionY(panel_h - self.top_spacing)
+    _ui._skill_soul_panel:setContentSize(cc.size(_ui._skill_soul_panel:getContentSize().width,panel_h))
+    self.soul_skill_h = panel_h
+end
+--设置秘术能量
+function ArtifactGoldTips:updateRunicPanel()
+    local _ui = self._ui
+    local runic_power = 0
+    local soul_runic_power = 0
+    local energy_cfg = Config.PartnerSkillDataEnergy.data_skill_energy_level[self.gold_artiface_data.skill_id]
+    if energy_cfg then
+        runic_power = runic_power + energy_cfg.energy
+    end
+    if self.soul_vo and self.soul_vo.extra then
+        for i,value in ipairs(self.soul_vo.extra) do
+            if value and value.extra_k and (value.extra_k == 1 or value.extra_k == 2 or value.extra_k == 8) then
+                local energy_cfg = Config.PartnerSkillDataEnergy.data_skill_energy_level[value.extra_v]
+                if energy_cfg then
+                    soul_runic_power = soul_runic_power + energy_cfg.energy
+                end
+            end
+        end
+    end
+    local txt = "" .. runic_power
+    if soul_runic_power ~= 0 then
+        txt = txt .. string.format(" (+%s)",soul_runic_power)
+    end
+    if not self.runic_power then
+        self.runic_power = createRichLabel(22,cc.c3b(0xff,0xee,0xdd),cc.p(0.5,0.5),cc.p(_ui._runic_panel:getContentSize().width*0.5,_ui._runic_panel:getContentSize().height*0.5),nil,nil,400)
+        _ui._runic_panel:addChild(self.runic_power)
+    end
+    self.runic_power:setString(string.format(TI18N("语言_c_6287"),txt))
+end
+--设置页面自适应
+function ArtifactGoldTips:updatePagePanel()
+    local _ui = self._ui
+
+    local _h = self.base_h + self.attr_h + self.soul_attr_h + self.skill_h + self.soul_skill_h + self.runic_h + self.tab_h
+    _ui._main_panel:setContentSize(cc.size(_ui._main_panel:getContentSize().width,_h))
+    _ui._tab_panel:setPositionY(self.tab_h)
+    _ui._runic_panel:setPositionY(self.runic_h + self.tab_h)
+    _ui._skill_soul_panel:setPositionY(self.soul_skill_h + self.runic_h + self.tab_h)
+    _ui._skill_panel:setPositionY(self.skill_h + self.soul_skill_h + self.runic_h + self.tab_h)
+    _ui._attr_soul_panel:setPositionY(self.soul_attr_h + self.skill_h + self.soul_skill_h + self.runic_h + self.tab_h)
+    _ui._attr_panel:setPositionY(self.attr_h + self.soul_attr_h + self.skill_h + self.soul_skill_h + self.runic_h + self.tab_h)
+    _ui._base_panel:setPositionY(self.base_h + self.attr_h + self.soul_attr_h + self.skill_h + self.soul_skill_h + self.runic_h + self.tab_h)
+end
+--设置赋魂红点
+function ArtifactGoldTips:updateSoulRed()
+    local is_redpoint = HeroCalculate.checkSingleHeroArtifactGoldSoulRedPoint(self.hero_vo,self.pos_id)
+    addRedPointToNodeByStatus(self._ui._no_panel,is_redpoint,10,10)
+end
+--设置强化红点
+function ArtifactGoldTips:updateStrengRed()
+    local artifact_list = self.hero_vo.golden_artifact[self.pos_id] or {}
+    local is_redpoint = HeroCalculate.checkSingleHeroArtifactGoldStrongRedPoint(artifact_list)
+    addRedPointToNodeByStatus(self._ui._tab_btn_1,is_redpoint,10,10)
+end
+--设置技能列表红点
+function ArtifactGoldTips:updateSkillRed()
+    local artifact_list = self.hero_vo.golden_artifact[self.pos_id] or {}
+    local is_redpoint = HeroCalculate.checkSingleHeroArtifactGoldSkillUpRedPoint(artifact_list.skill_id)
+    addRedPointToNodeByStatus(self._ui._tab_btn_2,is_redpoint,10,10)
+end
+
+function ArtifactGoldTips:close_callback()
+    if self.attr_list and next(self.attr_list) then
+        for k,v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.attr_list = nil
+    end
+    if self.soul_attr_list and next(self.soul_attr_list) then
+        for k,v in pairs(self.soul_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.soul_attr_list = nil
+    end
+    if self.skill_list and next(self.skill_list) then
+        for k,v in pairs(self.skill_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.skill_list = nil
+    end
+    if self.soul_skill_list and next(self.soul_skill_list) then
+        for k,v in pairs(self.soul_skill_list) do
+            v:removeFromParent()
+            v=nil
+        end
+        self.soul_skill_list = nil
+    end
+    if self.power_label then
+        self.power_label:DeleteMe()
+    end
+    self.power_label = nil
+    controller:openArtifactGoldTips(false)
+end
+

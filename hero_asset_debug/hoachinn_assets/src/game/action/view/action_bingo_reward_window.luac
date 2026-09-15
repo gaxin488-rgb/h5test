@@ -1,0 +1,285 @@
+--------------------------------------------
+-- 
+-- @Date    : 2020年1月5日
+-- @description    :
+-- 不放回抽奖选择自选奖励
+---------------------------------
+ActionBingoRewardWindow = ActionBingoRewardWindow or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+local table_insert = table.insert
+local table_sort = table.sort
+local string_format = string.format
+
+function ActionBingoRewardWindow:__init()
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.item_list = {}
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("holiday_bingo", "holiday_bingo"), type = ResourcesType.plist}
+    }
+    self.layout_name = "action/action_bingo_reward_window"
+end
+
+function ActionBingoRewardWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+    local Image_2= self.main_container:getChildByName("Image_2")
+    self.title = self.main_container:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_625"))
+    autoSizeTitleBg(self.title,Image_2)
+    self.skill_panel = self.main_container:getChildByName("skill_panel")
+    self.skill_panel:setScrollBarEnabled(false)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+end
+
+function ActionBingoRewardWindow:register_event()
+    registerButtonEventListener(
+        self.background,
+        function()
+            self:onClosedBtn()
+        end,
+        false,
+        2
+    )
+    registerButtonEventListener(
+        self.close_btn,
+        function()
+            self:onClosedBtn()
+        end,
+        true,
+        2
+    )
+
+end
+
+--关闭
+function ActionBingoRewardWindow:onClosedBtn()
+    controller:openBingoRewardView(false)
+end
+
+function ActionBingoRewardWindow:openRootWnd(raund_list,holiday_bid,open_round)
+
+    self.raund_list = raund_list 
+    self.holiday_bid = holiday_bid
+    self.open_round = open_round or 1 --不知道为啥，这个参数在某些特殊情况下会没有，给一个默认值1
+    --print(self.open_round,"++++++++++++++++")
+    self:setData()
+end
+function ActionBingoRewardWindow:setData()
+    local camp_id = controller:getActionSubTabVo(self.holiday_bid).camp_id
+    local cfg = Config.HolidayBingoData.data_get_base[camp_id]
+    local rule_id --= --tonumber(cfg[1].desc) 
+    local star_round
+    for k, v in pairs(cfg) do
+        local data = cfg[k]
+        if data.desc and data.desc ~= "" then
+            rule_id = tonumber(data.desc) 
+        end
+        if not star_round then
+            star_round = data.num
+        end
+        if data.num < star_round then
+            star_round = data.num
+        end
+    end
+    --print(star_round,"---------")
+    local rule_cfg = Config.HolidayBingoData.data_get_desc[rule_id]
+
+    self.desc_layer = ccui.Layout:create()
+    self.skill_panel:addChild(self.desc_layer)
+    local res = PathTool.getResFrame("common", "common_1037")
+    self.desc_bg = createImage(self.desc_layer, res, 0, 0, cc.p(0, 0), true, nil, true)
+    self.desc_bg:setCapInsets(cc.rect(3,19,20,20))
+    local res = PathTool.getResFrame("common", "common_90025")
+    self.title_bg = createImage(self.desc_layer, res, 0, 0, cc.p(0, 1), true, nil, true)
+    self.rule_txt = createRichLabel(22, cc.c4b(0x64,0x35,0x23,0xff), cc.p(0,0), cc.p(0, 0), 6, nil, 500)
+    self.desc_layer:addChild(self.rule_txt)
+    self.rule_txt:setString(rule_cfg.desc)
+    self.title_txt = createRichLabel(26, cc.c4b(0xff,0xf2,0xc7,0xff), cc.p(0,1), cc.p(0, 1), 0)
+    self.desc_layer:addChild(self.title_txt)
+    self.title_txt:setString(rule_cfg.name)
+    local rule_height = self.rule_txt:getContentSize().height
+    local total_height = rule_height + 30 + 44
+    self.desc_layer:setContentSize(cc.size(595, total_height))
+    self.title_bg:setContentSize(cc.size(595, 44))
+    self.desc_bg:setPosition(cc.p(0,0))
+    self.desc_bg:setContentSize(cc.size(595, total_height))
+    self.title_bg:setPosition(cc.p(0, total_height))
+    self.title_txt:setPosition(cc.p(20,(total_height-(44-self.title_txt:getContentSize().height)/2)))
+    self.rule_txt:setPosition(30, 15)
+    self.desc_layer:setAnchorPoint(cc.p(0,1))
+
+    -- self.divide_layer = ccui.Layout:create()
+    -- self.divide_layer:setAnchorPoint(0, 1)
+    -- self.divide_layer:setContentSize(cc.size(595,50))
+    -- self.skill_panel:addChild(self.divide_layer)
+    -- local tips = createRichLabel(20, cc.c4b(0x64,0x35,0x23,0xff), cc.p(0.5,0.5), cc.p(297, 25))
+    -- self.divide_layer:addChild(tips)
+    -- tips:setString("道具奖励")
+    -- local res = PathTool.getResFrame("holiday_bingo", "holiday_bingo_12")
+    -- local img1 = createSprite(res, 0, 25, self.divide_layer, cc.p(0.5, 0.5))
+    -- local img2 = createSprite(res, 0, 25, self.divide_layer, cc.p(0.5, 0.5))
+    -- img2:setScaleX(-1)
+    -- local tips_width = tips:getContentSize().width
+    -- local img_width = img1:getContentSize().width
+    -- local pos1 = 297 - tips_width/2 - img_width/2 - 20
+    -- local pos2 = 297 + tips_width/2 + img_width/2 + 20
+    -- img1:setPositionX(pos2)
+    -- img2:setPositionX(pos1)
+
+    if not star_round then return end
+    self.reward_layer =  ccui.Layout:create()
+    self.reward_layer:setTouchEnabled(false)
+    self.reward_layer:setAnchorPoint(cc.p(0, 1))
+    self.skill_panel:addChild(self.reward_layer)
+    local unlock_id = self.open_round
+    local cfg = Config.HolidayBingoData.data_get_rewards
+    local index = 1
+    for i = star_round, unlock_id do
+        --print(i,"******************")
+        local info = cfg[i]
+        local item = ActionBingoRewardItem.new()
+        self.reward_layer:addChild(item)
+        item:setData(info,index)
+        self.item_list[index] = item
+        index = index + 1
+    end
+    local _height = 0
+    for k, v in pairs(self.item_list) do
+        local item = v
+        _height = _height + item:getContentSize().height + 5
+    end
+    self.reward_layer:setContentSize(cc.size(595, _height))
+    for k, v in pairs(self.item_list) do
+        local item = v
+        local height = item:getContentSize().height
+        item:setPositionY(_height-(k-1)*height)
+    end
+    -- print(_height + total_height)
+    local in_height = math.max((_height + total_height), 785)
+    self.skill_panel:setInnerContainerSize(cc.size(595, in_height))
+    self.desc_layer:setPositionY(in_height)
+    -- self.divide_layer:setPositionY(in_height - total_height)
+    self.reward_layer:setPositionY(in_height - total_height)
+end
+
+
+function ActionBingoRewardWindow:close_callback()
+    if self.update_balloon_house_ultimate_event then
+        GlobalEvent:getInstance():UnBind(self.update_balloon_house_ultimate_event)
+        self.update_balloon_house_ultimate_event = nil
+    end
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+    end
+    self.item_scrollview = nil
+    -- controller:openBalloonHouseSelectWindow(false)
+end
+
+
+ActionBingoRewardItem =
+    class(
+    "ActionBingoRewardItem",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+function ActionBingoRewardItem:ctor()
+    self:configUI()
+    -- self:register_event()
+end
+
+function ActionBingoRewardItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_bingo_task_item"))
+    self:addChild(self.root_wnd)
+    self:setAnchorPoint(0, 1)
+    self:setTouchEnabled(false)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg = self.main_container:getChildByName("bg")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.img = self.title_bg:getChildByName("img")
+    self.img:getChildByName("tip"):setString(TI18N("语言_c_6379"))
+    self.item_node = self.title_bg:getChildByName("item_node")
+    self.goods_item = BackPackItem.new(false,true,false,0.65,false,true)
+    self.goods_item:setAnchorPoint(0.5, 0.5)
+    self.item_node:addChild(self.goods_item)
+    self.Sprite_1 = self.main_container:getChildByName("Sprite_1")
+    self.Sprite_2 = self.main_container:getChildByName("Sprite_2")
+    self.title = self.main_container:getChildByName("title")
+    self.item_list = {}
+end
+
+function ActionBingoRewardItem:setData(data,index)
+    -- print(vardump(data))
+    if data == nil then
+        return
+    end
+    self.data = data
+    local card_id = index
+    self.title:setString(string_format(TI18N("语言_c_6394"), card_id or 1))
+    local title_posx = self.title:getPositionX()
+    local title_width = self.title:getContentSize().width
+    self.Sprite_1:setPositionX(title_posx-title_width/2 - 20)
+    self.Sprite_2:setPositionX(title_posx+title_width/2 + 20)
+    self.goods_item:setBaseData(data[9][1][1], data[9][1][2])
+    local show_num = #data - 1
+    for i = 1, show_num, 1 do
+        if not self.item_list[i] then
+            local item = ccui.Layout:create()
+            self.main_container:addChild(item)
+            item:setContentSize(cc.size(597, 45))
+            local txt = createRichLabel(20, cc.c3b(0x64, 0x35, 0x23), cc.p(0, 0.5), cc.p(30,22))
+            item:addChild(txt)
+            local res = PathTool.getResFrame("holiday_bingo","holiday_bingo_10")
+            local img = createSprite(res, 160, 22, item, cc.p(0, 0.5)) --createImage(item, res,50, 22, cc.p(0, 0.5))
+            local back_item = BackPackItem.new(false, true, false, 0.35, false, true)
+            back_item:showNumLabel(false)
+            back_item:setPosition(cc.p(510, 22))
+            item:addChild(back_item)
+            local item_num = createRichLabel(20, cc.c3b(0x64, 0x35, 0x23), cc.p(0, 0.5), cc.p(535,22))
+            item:addChild(item_num)
+            local obj = {}
+            obj.item = item
+            obj.txt = txt
+            obj.img = img
+            obj.item_num = item_num
+            obj.back_item = back_item
+            self.item_list[i] = obj
+        end
+        self.item_list[i].txt:setString(string_format(TI18N("语言_c_6395"), i))
+        self.item_list[i].back_item:setBaseData(data[i][1][1], data[i][1][2])
+        self.item_list[i].back_item:showNumLabel(false)
+        self.item_list[i].item_num:setString("x"..data[i][1][2])
+    end
+    local add_height = show_num*45 + 20
+    self:setContentSize(cc.size(593, add_height + 110 + 40))
+    self.main_container:setContentSize(cc.size(593,add_height+110+40))
+    self.main_container:setPositionY(add_height+110+40)
+    self.bg:setContentSize(cc.size(593,add_height+110))
+    self.bg:setPositionY(add_height+110)
+    self.Sprite_1:setPositionY(add_height+110+20)
+    self.Sprite_2:setPositionY(add_height+110+20)
+    self.title:setPositionY(add_height+110+20)
+    self.title_bg:setPositionY(add_height+110)
+    for k, v in pairs(self.item_list) do
+        local item = v.item
+        item:setPositionY(add_height-10-45*k)
+    end
+end
+
+function ActionBingoRewardItem:DeleteMe()
+    if self.goods_item then
+        self.goods_item:DeleteMe()
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

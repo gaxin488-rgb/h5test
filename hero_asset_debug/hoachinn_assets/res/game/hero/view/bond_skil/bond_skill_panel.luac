@@ -1,0 +1,830 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      羁绊技
+-- <br/> 2019年8月1日
+-- --------------------------------------------------------------------
+BondSkillPanel = class("BondSkillPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+--每个羁绊技的位置
+local item_pos = {
+    [1] = cc.p(411,261),
+    [2] = cc.p(235,396),
+    [3] = cc.p(66,537),
+    [4] = cc.p(281,697),
+    [5] = cc.p(443,851),
+    [6] = cc.p(274,977),
+    [7] = cc.p(116,1110),
+    [8] = cc.p(315,1244),
+    [9] = cc.p(489,1365),
+}
+--技能属性的位置
+local pos_list = {
+    [1] = cc.p(50,45),
+    [2] = cc.p(200,45),
+    [3] = cc.p(350,45),
+    [4] = cc.p(50,15),
+    [5] = cc.p(200,15),
+}
+
+function BondSkillPanel:ctor(id)  
+    self.partner_id = id
+    model.bond_par_id = id
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function BondSkillPanel:config()
+    self.career_list = {}
+    self.bond_skill = {}
+    self.bg_list = {}
+    self.bond_skill_list = {}
+    self.attr_list = {}
+    self.click_id = 0 --当前选择的羁绊技的id
+    self.bond_atr_list = {}
+    self.page_index = 0
+    self.scroll_y = 0
+end
+
+function BondSkillPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("skill/bond_skill_window")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.main_panel:setScrollBarEnabled(false)
+    local _h = display.size.height
+    self.main_panel:setContentSize(cc.size(720, _h))
+    self.main_panel:setPositionY(0-(_h - 1280)/2)
+    self.bottom_bg = self.main_container:getChildByName("bottom_bg")
+    self.gift_btn = self.main_container:getChildByName("gift_btn")
+    self.gift_txt = self.gift_btn:getChildByName("txt")
+    self.gift_txt:setChangeScaleOffWidth(-1000)
+    self.gift_txt:setString(TI18N("语言_c_3435"))
+    setTextMaxWidth(self.gift_txt,120,-4)
+    self.shop_btn = self.main_container:getChildByName("shop_btn")
+    self.shop_txt = self.shop_btn:getChildByName("txt")
+    self.shop_txt:setChangeScaleOffWidth(-1000)
+    self.shop_txt:setString(TI18N("语言_c_3044"))
+    setTextMaxWidth(self.shop_txt,120,-4)
+    self.war_btn = self.main_container:getChildByName("war_btn")
+    self.war_txt = self.war_btn:getChildByName("txt")
+    self.war_txt:setChangeScaleOffWidth(-1000)
+    self.war_txt:setString(TI18N("语言_c_4836"))
+    setTextMaxWidth(self.war_txt,120,-4)
+
+    self.career_panel = self.main_container:getChildByName("career_panel")
+    self.career_bg = self.career_panel:getChildByName("career_bg")
+    for i = 1, 4 do
+        local item = self.career_panel:getChildByName("btn_"..i)
+        item.red = self.career_panel:getChildByName("red_"..i)
+        item.red:setVisible(false)
+        self.career_list[i] = item
+    end
+    self.career_click = self.career_panel:getChildByName("career_click")
+    self.info_panel = self.main_container:getChildByName("info_panel")
+    self.skill_panel = self.info_panel:getChildByName("skill_panel")
+    self.skill_name = self.skill_panel:getChildByName("skill_name")
+    self.eff_panel = self.info_panel:getChildByName("eff_panel")
+    self.base_panel = self.eff_panel:getChildByName("base_panel")
+    self.base_bg = self.base_panel:getChildByName("base_bg")
+    self.base_name = self.base_panel:getChildByName("base_name")
+    self.base_name:setString(TI18N("语言_c_6180"))
+    self.base_bg:setContentSize(cc.size(math.max(self.base_name:getContentSize().width+100,311),27))
+    self.effect_panel = self.eff_panel:getChildByName("effect_panel")
+    self.eff_bg = self.effect_panel:getChildByName("eff_bg")
+    self.eff_name = self.effect_panel:getChildByName("eff_name")
+    self.eff_name:setString(TI18N("语言_c_6181"))
+    self.eff_bg:setContentSize(cc.size(math.max(self.eff_name:getContentSize().width+100,311),27))
+    self.eff_desc = self.effect_panel:getChildByName("eff_desc")
+    self.eff_desc:setScrollBarEnabled(false)
+    self.equip_btn = self.info_panel:getChildByName("equip_btn")
+    self.equip_txt = self.equip_btn:getChildByName("label")
+    self.equip_txt:setChangeScaleOffWidth(10)
+    self.equip_txt:setString(TI18N("语言_c_6183"))
+    setTextSpacing(self.equip_txt,-10)
+    self.remove_btn = self.info_panel:getChildByName("remove_btn")
+    self.remove_txt = self.remove_btn:getChildByName("label")
+    self.remove_txt:setChangeScaleOffWidth(10)
+    self.remove_txt:setString(TI18N("语言_c_6182"))
+    setTextSpacing(self.remove_txt,-10)
+    self.up_btn = self.info_panel:getChildByName("up_btn")
+    self.up_txt = self.up_btn:getChildByName("label")
+    self.up_txt:setChangeScaleOffWidth(10)
+    self.up_txt:setString(TI18N("语言_c_6184"))
+    setTextSpacing(self.up_txt,-10)
+    self.act_btn = self.info_panel:getChildByName("act_btn")
+    self.act_txt = self.act_btn:getChildByName("label")
+    self.act_txt:setChangeScaleOffWidth(10)
+    self.act_txt:setString(TI18N("语言_c_6185"))
+    setTextSpacing(self.act_txt,-10)
+    self.wash_btn = self.info_panel:getChildByName("wash_btn")
+    self.wash_txt = self.wash_btn:getChildByName("label")
+    local lev = Config.PartnerBondSkillData.data_const["open_refresh_lev_condition"].val
+    if role_vo.lev < lev then
+        setChildUnEnabled(true,self.wash_btn)
+    else
+        setChildUnEnabled(false,self.wash_btn)
+    end
+    self.wash_txt:setChangeScaleOffWidth(10)
+    self.wash_txt:setString(TI18N("语言_c_6186"))
+    setTextSpacing(self.wash_txt,-10)
+    self.equip_btn:setTouchEnabled(false)
+    self.remove_btn:setTouchEnabled(false)
+    self.up_btn:setTouchEnabled(false)
+    self.act_btn:setTouchEnabled(false)
+    self.wash_btn:setTouchEnabled(false)
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.tip_panel = self.main_container:getChildByName("tip_panel")
+    self.tip_panel:setVisible(false)
+    self.tip_bg = self.tip_panel:getChildByName("tip_bg")
+    self.atr_panel = self.tip_panel:getChildByName("atr_panel")
+    self.atr_panel:setScrollBarEnabled(false)
+    self:adaptationScreen()
+end
+
+--设置适配屏幕
+function BondSkillPanel:adaptationScreen()
+    --对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    local left_x = display.getLeft(self.main_container)
+    local right_x = display.getRight(self.main_container)
+
+    local container_size = self.main_container:getContentSize()
+    local tab_y = self.career_panel:getPositionY()
+    self.career_panel:setPositionY(top_y - (container_size.height - tab_y))
+    local tab_y = self.btn_rule:getPositionY()
+    self.btn_rule:setPositionY(top_y - (container_size.height - tab_y))
+    local close_btn_y = self.info_panel:getPositionY()
+    self.info_panel:setPositionY(bottom_y + close_btn_y)
+    local tab_y = self.gift_btn:getPositionY()
+    self.gift_btn:setPositionY(top_y - (container_size.height - tab_y))
+    local tab_y = self.shop_btn:getPositionY()
+    self.shop_btn:setPositionY(top_y - (container_size.height - tab_y))
+    local tab_y = self.war_btn:getPositionY()
+    self.war_btn:setPositionY(top_y - (container_size.height - tab_y))
+    local close_btn_y = self.bottom_bg:getPositionY()
+    self.bottom_bg:setPositionY(bottom_y + close_btn_y)
+end
+--事件
+function BondSkillPanel:registerEvents()
+    for i = 1, 4 do
+        if self.career_list[i] then
+            self.career_list[i]:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    if self.page_index ~= i then
+                        self:setMainPanel(i)
+                        self:itemClickBtn(tableLen(self.bond_skill_list))
+                    end
+                end
+            end)
+        end
+    end
+    self.tip_panel:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.tip_panel:setVisible(false)
+        end
+    end)
+    self.btn_rule:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local reward_desc_cfg = Config.PartnerBondSkillData.data_const["bond_skill_desc"]
+            if reward_desc_cfg then
+                TipsManager:getInstance():showAdventureBuffTipsScroll(reward_desc_cfg.desc, sender:getTouchBeganPosition(),nil,nil,550,nil,600)
+            end
+        end
+    end)
+    self.gift_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            local cfg = Config.SourceData.data_source_data[359]
+            if cfg then
+                BackpackController:getInstance():gotoItemSources(cfg.evt_type, cfg.extend)
+            end
+        end
+    end)
+    self.shop_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local cfg = Config.SourceData.data_source_data[114]
+            if cfg then
+                BackpackController:getInstance():gotoItemSources(cfg.evt_type, cfg.extend)
+            end
+        end
+    end)
+    self.war_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local cfg = Config.SourceData.data_source_data[338]
+            if cfg then
+                BackpackController:getInstance():gotoItemSources(cfg.evt_type, cfg.extend)
+            end
+        end
+    end)
+    --刷新数据
+    if not self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Bond_Skill_Event,function ( data )
+			if not data then return end
+            if self.click_id == data.bsid then
+                self.scroll_y = self.main_panel:getInnerContainer():getPositionY()
+                self:setMainPanel(self.page_index)
+                self:itemClickBtn(data.bsid)
+            end
+        end)
+    end
+    registerButtonEventListener(self.equip_btn, handler(self, self.onClickBtnEquip) ,true, 2)
+    registerButtonEventListener(self.remove_btn, handler(self, self.onClickBtnRemove) ,true, 2)
+    registerButtonEventListener(self.up_btn, handler(self, self.onClickBtnUp) ,true, 2)
+    registerButtonEventListener(self.wash_btn, handler(self, self.onClickBtnWash) ,true, 2)
+    registerButtonEventListener(self.act_btn, handler(self, self.onClickBtnAct) ,true, 2)
+end
+
+function BondSkillPanel:onClickBtnEquip()
+    if self.touch_summon then 
+        message(TI18N("语言_c_4414"))
+        return 
+    end
+    if self.touch_summon_ticket == nil then
+        self.touch_summon_ticket = GlobalTimeTicket:getInstance():add(function()
+            self.touch_summon = nil
+            if self.touch_summon_ticket ~= nil then
+                GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+                self.touch_summon_ticket = nil
+            end
+        end,2)
+    end
+    self.touch_summon = true
+    local data = model:getBondDataForId(self.click_id)
+    local cfg = deepCopy(Config.PartnerBondSkillData.data_base_info[self.click_id][data.b_lev])
+    local hero_vo = model:getHeroById(model.bond_par_id)
+    local hero_cfg_1 = Config.PartnerData.data_partner_base[cfg.partner_id]
+    local hero_cfg_2 = Config.PartnerData.data_partner_base[hero_vo.bid]
+    if cfg.partner_id == hero_vo.bid then
+        message(TI18N("语言_c_6187"))
+    elseif hero_cfg_1.type ~= hero_cfg_2.type then
+        message(TI18N("语言_c_6188"))
+    else
+        if data.b_partner_id == 0 then
+            controller:sender11404(model.bond_par_id,self.click_id,1)
+        else
+            local str = TI18N("语言_c_6257")
+            CommonAlert.show( str, TI18N("语言_c_63"), function()
+                controller:sender11404(model.bond_par_id,self.click_id,1)
+            end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+        end
+    end
+end
+function BondSkillPanel:onClickBtnRemove()
+    if self.touch_summon then 
+        message(TI18N("语言_c_4414"))
+        return 
+    end
+    if self.touch_summon_ticket == nil then
+        self.touch_summon_ticket = GlobalTimeTicket:getInstance():add(function()
+            self.touch_summon = nil
+            if self.touch_summon_ticket ~= nil then
+                GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+                self.touch_summon_ticket = nil
+            end
+        end,2)
+    end
+    self.touch_summon = true
+    controller:sender11404(model.bond_par_id,self.click_id,0)
+end
+function BondSkillPanel:onClickBtnUp()
+    controller:openBondSkillUpWindow(true,self.click_id)
+end
+function BondSkillPanel:onClickBtnWash()
+    local lev = Config.PartnerBondSkillData.data_const["open_refresh_lev_condition"].val
+    if role_vo.lev < lev then
+        message(string.format(TI18N("语言_c_6189"),lev))
+    else
+        controller:openBondSkillWashWindow(true,self.click_id)
+    end
+end
+function BondSkillPanel:onClickBtnAct()
+    controller:openBondSkillUpWindow(true,self.click_id)
+end
+
+function BondSkillPanel:setData(parent)
+    -- controller:sender11400()
+    self.equip_btn:setTouchEnabled(true)
+    self.remove_btn:setTouchEnabled(true)
+    self.up_btn:setTouchEnabled(true)
+    self.act_btn:setTouchEnabled(true)
+    self.wash_btn:setTouchEnabled(true)
+    if BattleDramaController:getInstance():getModel():checkDramaWarIsOpen() then
+        self.war_btn:setVisible(true)
+    else
+        self.war_btn:setVisible(false)
+    end
+    self.parent = parent
+    self.is_init_hero = true
+    self.hero_vo = model:getHeroById(self.partner_id)
+    if self.hero_vo and self.hero_vo.bsid and self.hero_vo.bsid ~= 0 then
+        model.bond_id = self.hero_vo.bsid
+        local cfg = deepCopy(Config.PartnerBondSkillData.data_base_info[self.hero_vo.bsid][1])
+        if cfg then
+            for i = 1, 4 do
+                setChildUnEnabled(cfg.career_type-1 ~= i,self.career_list[i])
+            end
+            self:setMainPanel(cfg.career_type-1)
+            self:itemClickBtn(self.hero_vo.bsid)
+        else
+            self:setMainPanel(1)
+            self:itemClickBtn(tableLen(self.bond_skill_list))
+        end
+    else
+        model.bond_id = 0
+        local cfg = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+        if cfg then
+            for i = 1, 4 do
+                setChildUnEnabled(cfg.type-1 ~= i,self.career_list[i])
+            end
+            self:setMainPanel(cfg.type - 1)
+        else
+            self:setMainPanel(1)
+        end
+        if self.click_id == 0 then
+            self:itemClickBtn(tableLen(self.bond_skill_list))
+        else
+            self:itemClickBtn(self.click_id)
+        end
+    end
+    --查看预览
+    if not self.preview_btn then
+        self.preview_btn = createRichLabel(20,cc.c3b(0x0e,0xa8,0x0e),cc.p(0.5,0.5),cc.p(80,25),-4,nil,150)
+        self.preview_btn:setHorizontalLayoutType(2)
+        self.preview_btn:setLineSpace(2)
+        self.skill_panel:addChild(self.preview_btn)
+    end
+    local res = PathTool.getResFrame("bondskill","bondskill_23",false,"bondskill")
+    self.preview_btn:setString(string.format(TI18N("语言_c_6190"),res))
+    self.preview_btn:addTouchLinkListener(function()
+        self:ClickPreviewBtn()
+    end, { "click", "href" })
+
+    --查看全部
+    if not self.look_all_btn then
+        self.look_all_btn = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(1,0),cc.p(700,300))
+        self.info_panel:addChild(self.look_all_btn)
+    end
+    self.look_all_btn:setString(TI18N("语言_c_6191"))
+    self.look_all_btn:addTouchLinkListener(function()
+        controller:openBondBookWindow(true)        
+    end, { "click", "href" })
+    -- if self.is_send_26400 then return end
+    -- self.is_send_26400 = true
+end
+
+--- 查看升级预览
+function BondSkillPanel:ClickPreviewBtn()
+    self.tip_panel:setVisible(true)
+    self:setAtrPanel(self.bond_data)
+end
+
+function BondSkillPanel:itemClickBtn(index)
+    if self.bond_skill_list[index] then
+        self.click_id = self.bond_skill_list[index]:getData().id
+    else
+        self.click_id = index
+        for key, value in pairs(self.bond_skill_list) do
+            if value:getData().id == index then
+                index = key
+                break
+            end
+        end
+    end
+    if self.bond_skill_list[index] then
+        self.click_item_bg:setPosition(cc.p(self.bond_skill_list[index]:getPositionX() - 1,self.bond_skill_list[index]:getPositionY() - 9))
+    end
+    self:updateInfoPanel(self.bond_skill_list[index])
+end
+
+function BondSkillPanel:setMainPanel(index)
+    local status = false
+    if self.page_index == index then
+        status = true
+    end
+    self.page_index = index
+    self.bond_skill = model:getBondSkillList()
+    for i = 1, tableLen(self.career_list) do
+        if i == index then
+            self.career_list[i].red:setVisible(false)
+        else
+            if self.bond_skill[i] then
+                for key, value in pairs(self.bond_skill[i]) do
+                    local status = model:getBondSkillAct(value.id)
+                    if status then
+                        self.career_list[i].red:setVisible(true)
+                        break
+                    end
+                end
+            else
+                self.career_list[i].red:setVisible(false)
+            end
+        end
+    end
+    self.career_click:setPositionX(self.career_list[index]:getPositionX())
+    local res = string.format("resource/bondskill/bg/%s/bondskill_bg2_%s.png",index,index)
+    loadSpriteTexture(self.bottom_bg,res,LOADTEXT_TYPE)
+    local list = deepCopy(self.bond_skill[index])
+    table.sort(list,function(a,b) return a.sort > b.sort end)
+    local _h = 0
+    for k, v in pairs(self.bond_skill_list) do
+        v:DeleteMe()
+    end
+    self.bond_skill_list = {}
+    local i = tableLen(list)
+    local id_list = {}
+    for key, value in pairs(list) do
+        local list = {}
+        list.id = value.id
+        list.sort = value.sort
+        table.insert(id_list, list)
+    end
+    table.sort(id_list,function(a,b) return a.sort > b.sort end)
+    for i = 1, tableLen(id_list) do
+        local res = PathTool.getResFrame("bondskill","bondskill_1",false,"bondskill")
+        local num = i%tableLen(item_pos)
+        if num == 0 then
+            num = tableLen(item_pos)
+        end
+        local _x = item_pos[num].x + 50
+        local add_y = 0
+        if i % tableLen(item_pos) == 0 then
+            add_y = (math.floor(i/tableLen(item_pos))-1)*1280
+        else
+            add_y = math.floor(i/tableLen(item_pos))*1280
+        end
+        local _y = item_pos[num].y + add_y + 350
+        if not self.bond_skill_list[i] then
+            self.bond_skill_list[i] = BondSkillItem.new()
+            self.main_panel:addChild(self.bond_skill_list[i])
+            self.bond_skill_list[i]:setPosition(cc.p(_x,_y))
+            self.bond_skill_list[i]:setZOrder(200+i)
+        end
+        self.bond_skill_list[i]:setData(list[id_list[i].id])  
+        self.bond_skill_list[i]:setRed(model:getBondSkillAct(list[id_list[i].id].id))
+        i = i - 1
+    end
+    _h = self.bond_skill_list[tableLen(list)]:getPositionY()
+    if not self.click_item_bg then
+        self.click_item_bg = createSprite(PathTool.getResFrame("common", "common_1101"),0,0,self.main_panel,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST,200)
+        self.click_item_bg:setScale(1.15)
+    end
+    for i = 1, tableLen(self.bond_skill_list) do
+        self.bond_skill_list[i]:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self:itemClickBtn(i)
+            end
+        end)
+    end
+    self.main_panel:setInnerContainerSize(cc.size(720, _h + 260))
+    if status then
+        self.main_panel:getInnerContainer():setPositionY(self.scroll_y)
+    end
+    local bg_num = math.ceil((_h - 400)/1280) + 2
+    local bg_y = -880
+    for i = 1, bg_num do
+        local res = string.format("resource/bondskill/bg/%s/bondskill_bg_%s.png",index,index)
+        if not self.bg_list[i] then
+            local item = createSprite(res, 360, bg_y, self.main_panel, cc.p(0.5,0), LOADTEXT_TYPE,100+i)
+            self.bg_list[i] = item
+            local cat_effect = createEffectSpine("E00005", cc.p(360, 640), cc.p(0.5, 0.5), true, PlayerAction.action)
+            item:addChild(cat_effect)
+        else
+            loadSpriteTexture(self.bg_list[i],res,LOADTEXT_TYPE)
+            self.bg_list[i]:setPositionY(bg_y)
+        end
+        bg_y = bg_y + 1280
+    end
+end
+
+function BondSkillPanel:updateInfoPanel(bond_item)
+    if not bond_item then return end
+    local data = bond_item:getData()
+    self.bond_data = bond_item:getData()
+    local skill_cfg = Config.SkillData.data_get_skill(data.skill_ids[1])
+    self.skill_name:setChangeScaleOffWidth(-500)
+    setTextMaxWidth(self.skill_name,160)
+    self.skill_name:setString(transformTextToShort(skill_cfg.name, 22))
+    self.skill_name:setTouchEnabled(true)
+    addEvt2showAllTextTips(self.skill_name,skill_cfg.name,22)
+    -- self.skill_name:setString(skill_cfg.name)
+
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true,true,true,0.8, true)
+        self.skill_panel:addChild(self.skill_item)
+        self.skill_item:setPosition(cc.p(self.skill_panel:getContentSize().width*0.5,92))
+    end
+    self.skill_item:setData(skill_cfg)
+    if data.data and data.data.b_attr then
+        local list = {}
+        for k, v in pairs(data.data.b_attr) do
+            if v.pos < 100 then
+                table.insert(list,v)
+            end
+        end
+        self:setAttrPanel(list,data.data.b_lev)
+    else
+        self:setAttrPanel(data.attr_c)
+    end
+    if not self.skill_desc then
+        self.skill_desc = createRichLabel(20,cc.c4b(0x7c,0x55,0x36,0xff),cc.p(0,1),cc.p(34,10),0,nil,400)
+        self.eff_desc:addChild(self.skill_desc)
+    end
+    self.skill_desc:setString(skill_cfg.des)
+    local _h = math.max(self.skill_desc:getContentSize().height,self.eff_desc:getContentSize().height)
+    if _h > self.eff_desc:getContentSize().height then
+        self.eff_desc:setTouchEnabled(true)
+    else
+        self.eff_desc:setTouchEnabled(false)
+    end
+    self.eff_desc:setInnerContainerSize(cc.size(468,_h))
+    self.skill_desc:setPositionY(_h)
+    local type = bond_item:getSelfState()
+    if type == 0 or type == 1 then --未激活
+        self.act_btn:setVisible(true)
+        self.up_btn:setVisible(false)
+        self.wash_btn:setVisible(false)
+        self.remove_btn:setVisible(false)
+        self.equip_btn:setVisible(false)
+    elseif type == 2 then --已激活
+        self.act_btn:setVisible(false)
+        self.up_btn:setVisible(true)
+        self.wash_btn:setVisible(true)
+        self.remove_btn:setVisible(false)
+        self.equip_btn:setVisible(true)
+    elseif type == 3 then --已装备
+        self.act_btn:setVisible(false)
+        self.up_btn:setVisible(true)
+        self.wash_btn:setVisible(true)
+        self.remove_btn:setVisible(true)
+        self.equip_btn:setVisible(false)
+    end
+    local cfg = Config.PartnerBondSkillData.data_base_info[data.id]
+    if data.lev >= tableLen(cfg) then
+        self.up_btn:setVisible(false)
+        self.base_name:setString(TI18N("语言_c_6192"))
+        self.eff_name:setString(TI18N("语言_c_6193"))
+    else
+        -- self.up_btn:setVisible(true)
+        self.base_name:setString(TI18N("语言_c_6180"))
+        self.eff_name:setString(TI18N("语言_c_6181"))
+    end
+    addRedPointToNodeByStatus(self.up_btn,model:getBondSkillAct(data.id),15,15)
+    addRedPointToNodeByStatus(self.act_btn,model:getBondSkillAct(data.id),15,15)
+end
+--设置属性
+function BondSkillPanel:setAttrPanel(data,lev)
+    data = deepCopy(data)
+    if not lev then
+        lev = 1
+    end
+    table.sort(data,function(a,b) return a.pos < b.pos end)
+    for key, value in pairs(self.attr_list) do
+		if value and not tolua.isnull(value) and not tolua.isnull(self.base_panel) then
+			self.base_panel:removeChild(value)
+		end
+		value = nil
+	end
+    for i = 1, tableLen(data) do
+        if i <= lev then
+            local item = self:setAttrItem(data[i])
+            self.base_panel:addChild(item)
+            item:setPosition(pos_list[i])
+            self.attr_list[i] = item
+        end
+    end
+end
+function BondSkillPanel:setAttrItem(data)
+    local id = data[1] or Config.AttrData.data_id_to_key[data.attr_id]
+    local val = data[2] or data.attr_val
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 0.5))
+    item:setTouchEnabled(true)
+    local label = createRichLabel(20, cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0), cc.p(0, 0), -4, nil, 456)
+    item:addChild(label)
+    local icon = PathTool.getAttrIconByStr(id)
+    local is_per = PartnerCalculate.isShowPerByStr(id)
+    local num = deepCopy(val)
+    if is_per == true then
+        num = (val*0.1).."%"
+    end
+    local attr_str = string.format("<img src='%s' scale=0.8 /><div fontcolor=#7c5536>   %s</div>", PathTool.getResFrame("common", icon), num)
+    label:setString(attr_str)
+    item:setContentSize(label:getContentSize())
+    item:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local txt = Config.AttrData.data_key_to_name[id]
+            TipsManager:getInstance():showCommonTips(txt, sender:getTouchBeganPosition(),24,30,300,false,0,50,true)
+        end
+    end)
+    return item
+end
+function BondSkillPanel:setAttrItem2(data,is_this,is_line)
+    local id = data[1] or Config.AttrData.data_id_to_key[data.attr_id]
+    local val = data[2] or data.attr_val
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 0.5))
+    item:setTouchEnabled(true)
+    local label = createRichLabel(20, cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0), cc.p(0, 0), -4, nil, 456)
+    item:addChild(label)
+    local icon = PathTool.getAttrIconByStr(id)
+    local is_per = PartnerCalculate.isShowPerByStr(id)
+    local num = deepCopy(val)
+    if is_per == true then
+        num = (val*0.1).."%"
+    end
+    local attr_str = string.format("<img src='%s' scale=0.8 /><div fontcolor=#ffffff>   %s</div>", PathTool.getResFrame("common", icon), num)
+    if is_this then
+        attr_str = string.format("<img src='%s' scale=0.8 /><div fontcolor=#157E22>   %s</div>", PathTool.getResFrame("common", icon), num)
+    end
+    label:setString(attr_str)
+    item:setContentSize(label:getContentSize())
+    item:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local txt = Config.AttrData.data_key_to_name[id]
+            TipsManager:getInstance():showCommonTips(txt, sender:getTouchBeganPosition(),24,30,300,false,0,50,true)
+        end
+    end)
+    return item
+end
+
+function BondSkillPanel:setAtrPanel(data)
+    local _h = 20
+    if self.top_item then
+        if not tolua.isnull(self.top_item) and not tolua.isnull(self.atr_panel) then
+			self.tip_panel:removeChild(self.top_item)
+		end
+        self.top_item = nil
+    end
+    self.top_item = ccui.Layout:create()
+    self.top_item:setAnchorPoint(cc.p(0.5, 0))
+    self.top_item:setContentSize(cc.size(400,40))
+    local title = createLabel(24,cc.c3b(0xfe,0xee,0xba),nil,self.top_item:getContentSize().width*0.5,self.top_item:getContentSize().height-5,TI18N("语言_c_6364"),self.top_item,nil,cc.p(0.5,1))
+    local line = createImage(self.top_item,PathTool.getResFrame("common_2", "tips_8"),self.top_item:getContentSize().width*0.5,0,cc.p(0.5,0),true,nil,true)
+    line:setContentSize(cc.size(340,2))
+    self.tip_panel:addChild(self.top_item)
+    if not self.atr_panel.bg then
+        local bg = createImage(self.atr_panel,PathTool.getResFrame("common", "common_2040"),self.atr_panel:getContentSize().width*0.5,0,cc.p(0.5,1),true,nil,true)
+        bg:setCapInsets(cc.rect(10, 12, 2, 2))
+        bg:setVisible(false)
+        self.atr_panel.bg = bg
+    end
+    if not self.atr_panel.icon then
+        local txt_res = PathTool.getResFrame("bondskill","txt_cn_bondskill_2",false,"bondskill")
+        local icon = createImage(self.atr_panel.bg,txt_res,self.atr_panel:getContentSize().width-5,0,cc.p(1,1),true)
+        self.atr_panel.icon = icon
+    end
+    local bond_cfg = deepCopy(Config.PartnerBondSkillData.data_base_info[data.id])
+    if data.data then
+        self.atr_panel.bg:setVisible(true)
+    else
+        self.atr_panel.bg:setVisible(false)
+    end
+    for key, value in pairs(self.bond_atr_list) do
+		if value and not tolua.isnull(value) and not tolua.isnull(self.atr_panel) then
+			self.atr_panel:removeChild(value)
+		end
+		value = nil
+	end
+    self.bond_atr_list = {}
+    for i = 1, tableLen(bond_cfg) do
+        local is_line = i ~= tableLen(bond_cfg)
+        local is_this = false
+        if data.data then
+            is_this = data.data.b_lev == i
+        else
+            is_this = false
+        end
+        local item = self:setAtrItem(bond_cfg[i],is_this,is_line)
+        self.atr_panel:addChild(item)
+        self.bond_atr_list[i] = item
+        _h = _h + item:getContentSize().height
+    end
+    self.atr_panel:setContentSize(cc.size(400,math.min(_h,500)))
+    self.atr_panel:setInnerContainerSize(cc.size(400,_h))
+    self.tip_bg:setContentSize(cc.size(405,math.min(_h,500)+15 + self.top_item:getContentSize().height))
+    self.tip_bg:setPositionY(640 + self.top_item:getContentSize().height*0.5)
+    local _y = self.atr_panel:getContentSize().height*0.5+self.atr_panel:getPositionY()
+    self.top_item:setPosition(cc.p(360,_y))
+    for i = 1, tableLen(self.bond_atr_list) do
+        self.bond_atr_list[i]:setPositionY(_h)
+        if (data.data and data.data.b_lev == i) or (data.lev and data.lev == i) then
+            self.atr_panel.bg:setContentSize(cc.size(400,self.bond_atr_list[i]:getContentSize().height + 10))
+            self.atr_panel.bg:setPositionY(_h + 6)
+            self.atr_panel.icon:setPositionY(self.bond_atr_list[i]:getContentSize().height-5)
+        end
+        _h = _h - self.bond_atr_list[i]:getContentSize().height
+    end
+end
+function BondSkillPanel:setAtrItem(data,is_this,is_line)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 1))
+    local _h = 10
+    local lv_txt = createLabel(22,cc.c3b(0xea,0xb5,0x50),nil,10,0,TI18N("语言_c_3191"),item,nil,cc.p(0,1))
+    local lv = createLabel(22,cc.c3b(0xfe,0xee,0xba),nil,10,0,data.lev,item,nil,cc.p(0,1))
+    lv:setPositionX(lv_txt:getPositionX() + lv_txt:getContentSize().width + 5)
+    _h = _h + lv_txt:getContentSize().height
+    local con_txt = createRichLabel(20,cc.c3b(0xff,0xee,0xd3),cc.p(0,1),cc.p(10,0),nil,nil,380)
+    item:addChild(con_txt)
+    local list = {}
+    for i = 1, tableLen(data.limit) do
+        table.insert(list,data.limit[i][2])
+        table.insert(list,"")
+    end
+    local par_id = data.partner_id
+    local par_cfg = Config.PartnerData.data_partner_base[par_id]
+    local name = par_cfg.name
+    local _str = LangStringFormat(data.lev_up_desc,list)
+    if tableLen(data.limit) == 1 then
+        _str = string.format(_str,name)
+    else
+        _str = string.format(_str,name,name)
+    end
+    local txt = string.format(TI18N("语言_c_6194"),_str)
+    con_txt:setString(txt)
+    _h = _h + con_txt:getContentSize().height
+    local atr_panel = ccui.Layout:create()
+    atr_panel:setAnchorPoint(cc.p(0, 1))
+    local atr_list = data.attr_c
+    local attr_list = model:getBondDataForId(data.id)
+    if attr_list then
+    --     atr_list = {}
+        for i = 1, tableLen(attr_list.b_attr) do
+            local list = attr_list.b_attr[i]
+            if list.pos <= data.lev then
+                local list_1 = {}
+                list_1[1] = Config.AttrData.data_id_to_key[list.attr_id]
+                list_1[2] = list.attr_val
+                atr_list[list.pos] = list_1
+            end
+        end
+    end
+    local atr_h = math.ceil(tableLen(atr_list)/2)*30
+    atr_panel:setContentSize(cc.size(400,atr_h))
+    local atr_txt = createLabel(20,cc.c3b(0xea,0xb5,0x50),nil,10,atr_h - 15,TI18N("语言_c_6195"),atr_panel,nil,cc.p(0,0.5))
+    for i = 1, tableLen(atr_list) do
+        local item = self:setAttrItem2(atr_list[i],is_this,is_line)
+        item:setAnchorPoint(cc.p(0, 1))
+        atr_panel:addChild(item)
+        local _x = (i-1)%2*150+90
+        local _y = (math.ceil(tableLen(atr_list)/2) - math.ceil(i/2) + 1 ) * 30
+        item:setPosition(cc.p(_x,_y))
+    end
+    _h = _h + atr_h
+    item:addChild(atr_panel)
+    local eff_txt = createRichLabel(20,cc.c3b(0xff,0xee,0xd3),cc.p(0,1),cc.p(10,0),nil,nil,380)
+    item:addChild(eff_txt)
+    local eff_str = string.format(TI18N("语言_c_6196"),Config.SkillData.data_get_skill(data.skill_ids[1]).des)
+    eff_txt:setString(eff_str)
+    _h = _h + eff_txt:getContentSize().height
+    local line = createImage(item,PathTool.getResFrame("common_2", "tips_8"),self.top_item:getContentSize().width*0.5,0,cc.p(0.5,0),true,nil,true)
+    line:setContentSize(cc.size(340,2))
+    line:setVisible(is_line)
+    item:setContentSize(cc.size(400,_h))
+    lv_txt:setPositionY(_h)
+    lv:setPositionY(_h)
+    _h = _h - lv_txt:getContentSize().height
+    con_txt:setPositionY(_h)
+    _h = _h - con_txt:getContentSize().height
+    atr_panel:setPositionY(_h)
+    _h = _h - atr_panel:getContentSize().height
+    eff_txt:setPositionY(_h)
+    line:setPositionY(0)
+    return item
+end
+
+function BondSkillPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+--移除
+function BondSkillPanel:DeleteMe()
+    if self.touch_summon_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+        self.touch_summon_ticket = nil
+    end
+    for k, v in pairs(self.bond_skill_list) do
+        v:DeleteMe()
+    end
+    self.bond_skill_list = {}
+    if self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():UnBind(self.updateBond)
+        self.updateBond = nil
+    end
+end

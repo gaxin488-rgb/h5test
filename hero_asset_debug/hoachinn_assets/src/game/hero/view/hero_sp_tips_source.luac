@@ -1,0 +1,251 @@
+-- --------------------------------------------------------------------
+-- tips来源
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+HeroSpTipsSource = HeroSpTipsSource or BaseClass(BaseView)
+
+local hero_controller = HeroController:getInstance()
+local controller = BackpackController:getInstance()
+local model = BackpackController:getInstance():getModel()
+
+function HeroSpTipsSource:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/hero_sp_tips_source"
+    self.win_type = WinType.Mini   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.item_list = {}
+end
+
+function HeroSpTipsSource:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self:playEnterAnimatianByObj(self.main_container, 2)
+    local title_con = self.main_container:getChildByName("title_con")
+    local title_label = title_con:getChildByName("title_label")
+    title_label:setString(TI18N("语言_c_970"))
+	self.txt_scroll = self.main_container:getChildByName("txt_scroll")
+    self.own_label = self.txt_scroll:getChildByName("own_label")
+
+    self.scrollCon = self.main_container:getChildByName("scrollCon")
+    self.scroll_size = self.scrollCon:getContentSize()
+    self.scrollView = createScrollView(self.scroll_size.width,self.scroll_size.height-3,-6,2,self.scrollCon,ccui.ScrollViewDir.vertical)
+
+    self.close_btn = self.main_container:getChildByName("close_btn")
+
+end
+
+function HeroSpTipsSource:register_event()
+	self.background:addTouchEventListener(function(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			playCloseSound()
+			hero_controller:openHeroSpTipsSource(false)
+		end
+	end)
+	if self.close_btn then
+		self.close_btn:addTouchEventListener(function(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playCloseSound()
+				hero_controller:openHeroSpTipsSource(false)
+			end
+		end)
+	end
+end
+
+function HeroSpTipsSource:openRootWnd()
+	self:setData()
+	self:createSourceList()
+end
+
+function HeroSpTipsSource:setData(  )
+	self.own_label:setString(TI18N("语言_c_6783"))
+	setTextMaxWidth(self.own_label,560)
+	local _h = math.max(self.txt_scroll:getContentSize().height,self.own_label:getContentSize().height)
+	self.txt_scroll:setInnerContainerSize(cc.size(self.txt_scroll:getContentSize().width,_h))
+	self.own_label:setPositionY(_h)
+end
+
+function HeroSpTipsSource:createSourceList(  )
+	local cfg = Config.PartnerSpecialData.data_const["origin_tips"].desc
+	local txt_list = string.split(cfg, ",") or {}
+	local source_list = {}
+	for k,v in pairs(txt_list) do
+		table.insert(source_list,{tonumber(v)})
+	end
+	if source_list and next(source_list)~=nil then
+		local list = {}
+		for k,v in pairs(source_list) do
+			local data = Config.SourceData.data_source_data[v[1]]
+			if data and data.evt_type ~= "evt_league_help" then --帮内求助特殊处理下 只出现在特定场合 
+				if data.evt_type == "evt_festival_feather" then --先知豪礼
+					local tab_vo = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.recruit_luxury)
+			        if tab_vo then
+			        	table.insert(list,v)
+			        end
+			    elseif data.evt_type == "evt_war_first" or data.evt_type == "evt_war_first_1" or data.evt_type == "evt_mul_war_first" or data.evt_type == "evt_war_first_2" then --突破极限
+			    	local tab_vo = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.year_monster_fight)
+			        if tab_vo then
+			        	table.insert(list,v)
+			        end
+				elseif data.evt_type == "evt_war_order" or data.evt_type == "evt_war_order_1" or data.evt_type == "evt_mul_war_order" or data.evt_type == "evt_war_order_2" then --年兽战令
+			    	local tab_vo = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.YearMonsterWarOrder)
+			        if tab_vo then
+			        	table.insert(list,v)
+			        end
+				elseif data.evt_type == "evt_summon_feather" then --召唤豪礼
+			    	local tab_vo = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.summon_luxury)
+			        if tab_vo then
+			        	table.insert(list,v)
+			        end
+			    else
+					table.insert(list,v)
+				end		        
+			else
+				if self.extend_data and next(self.extend_data)~=nil then 
+					if self.extend_data[1] == "evt_league_help" and self.extend_data[2] then
+						table.insert(list,v)
+					end
+				end
+			end
+		end
+		local max_height = math.max(self.scroll_size.height,(SourceItem.HEIGHT)*#list)
+		self.scrollView:setInnerContainerSize(cc.size(self.scroll_size.width,max_height))
+		local final_list = {}
+		for k,v in pairs(list) do
+			local data = Config.SourceData.data_source_data[v[1]]
+			local is_lock ,str = self:checIsOpen(data.lev_limit)
+			if data.evt_type == "evt_sp_partnersummon" then --sp招募
+				if is_lock == FALSE then
+					if not NewPartnersummonController:getInstance():getModel():getSpShield() then
+						is_lock = TRUE
+						str = TI18N("语言_c_6675")
+					end
+				end
+			end
+			v.id = data.id
+			v.infon_data = data
+			v.is_lock  = is_lock
+			v.str = str
+			table.insert(final_list,v)
+		end
+		local sort_func = SortTools.tableLowerSorter({"is_lock"})
+		table.sort(final_list,sort_func)
+		if final_list and next(final_list or {}) ~= nil then
+			for i,v in ipairs(final_list) do
+				local item = SourceItem.new()
+				self.item_list[i] = item
+				self.scrollView:addChild(item)
+				item:setCloseCallBack(function() hero_controller:openFormGoFightPanel(false) end)
+				item:setData(v)
+				item:setPosition(10,max_height-6-(SourceItem.HEIGHT+1)*(i-1))
+			end
+		end
+	end
+end
+
+
+function HeroSpTipsSource:checIsOpen(data)
+    if data then
+        local not_is_lock = TRUE --默认都锁
+        local str = ''
+        -- 时间紧，暂时这样蛋疼的处理，后续优化
+        local con_list = {}
+        if data[1] then
+        	con_list[1] = {data[1], data[2]}
+        end
+        if data[3] then
+        	con_list[2] = {data[3], data[4]}
+        end
+
+        for i,v in ipairs(con_list) do
+        	local con_name = v[1]
+        	local con_val = v[2]
+        	if not_is_lock == TRUE and con_name == 'dungeon' then --关卡的
+	            local drama_data = BattleDramaController:getInstance():getModel():getDramaData()
+	            if drama_data and con_val then
+					local dungeon_id = con_val
+					if drama_data.max_dun_id >= dungeon_id then
+						not_is_lock = FALSE
+					end
+	                local config = Config.DungeonData.data_drama_dungeon_info(dungeon_id)
+	                if config then
+	                    str = string.format(TI18N("语言_c_4693"),config.name)
+	                end
+	            end
+	        elseif not_is_lock == TRUE and con_name == 'lev' then -- 等级的
+	            local role_vo = RoleController:getInstance():getRoleVo()
+	            if role_vo and con_val then
+					local lev = con_val
+					if role_vo.lev >= lev then
+						not_is_lock = FALSE
+					end
+					str = string.format(TI18N("语言_c_2867"),lev)
+					if con_val == 999 then
+						str = TI18N("语言_c_1739")
+					end
+				end
+			elseif not_is_lock == TRUE and con_name == 'world_lev' then -- 世界等级
+				local world_lev = RoleController:getInstance():getModel():getWorldLev()
+				if world_lev and con_val then
+					if world_lev >= con_val then
+						not_is_lock = FALSE
+					end
+					str = string.format(TI18N("语言_c_4691"),con_val)
+				end
+			elseif not_is_lock == TRUE and con_name == 'guild' then --公会等级
+				local role_vo = RoleController:getInstance():getRoleVo()
+				if role_vo and role_vo.gid ~= 0 and role_vo.gsrv_id ~= "" then --表示有公会
+					local guild_info = GuildController:getInstance():getModel():getMyGuildInfo()
+					if guild_info then
+						local lev = con_val
+						if guild_info.lev >= lev then
+							not_is_lock = FALSE
+						else
+							not_is_lock = TRUE
+							str = string.format(TI18N("语言_c_4692"),lev)
+						end
+					end
+				else
+					not_is_lock = TRUE
+					str = TI18N("语言_c_1762")
+				end
+			elseif not_is_lock == TRUE and con_name == 'cystal_lev' then --神树等级
+				if con_val then
+					if HeroController:getInstance():getModel():checkEnoughResLev(con_val) then
+						not_is_lock = FALSE 
+					else
+						not_is_lock = TRUE 
+					end
+					str = string.format(TI18N("语言_c_6222"),con_val)
+				end
+			elseif con_name == 'partner_max_star' then
+				local max_value = HeroController:getInstance():getModel().max_star or 0
+				if max_value < con_val then 
+					not_is_lock = TRUE
+					str = TI18N("语言_c_6741")
+				else
+					not_is_lock = FALSE
+				end
+	        end
+        end
+        return not_is_lock, str
+    end
+end
+
+
+function HeroSpTipsSource:close_callback()
+	for k,v in pairs(self.item_list) do
+		if v and v["DeleteMe"] then
+			v:DeleteMe()
+		end
+	end
+	hero_controller:openHeroSpTipsSource(false)
+end

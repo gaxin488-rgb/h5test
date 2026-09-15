@@ -1,0 +1,183 @@
+--******** 文件说明 ********
+-- 
+-- @description: 限时属性商店
+-- @DateTime:    2019-04-25 10:51:42
+-- *******************************
+
+ActionTimeEleShopPanel = class("ActionTimeEleShopPanel", function()
+	return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = ActionController:getInstance():getModel()
+
+function ActionTimeEleShopPanel:ctor(bid,id,remain_sec)
+    self.holiday_bid = bid
+    self.remain_sec = remain_sec
+	self:configUI()
+    self:loadBannerImage()
+	self:register_event()
+    self:setItemPanel()
+end
+
+function ActionTimeEleShopPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_time_ele_shop_panel"))
+	self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setPosition(-40, -77)
+	self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg = self.main_container:getChildByName("bg")
+    self.hero_icon = self.main_container:getChildByName("hero_icon")
+    self.Image_1 = self.main_container:getChildByName("Image_1")
+    self.Image_2 = self.main_container:getChildByName("Image_2")
+    self.Image_3 = self.main_container:getChildByName("Image_3")
+    self.txt_scroll = self.main_container:getChildByName("txt_scroll")
+    self.txt_scroll:setScrollBarEnabled(false)
+    self.Text_2 = self.txt_scroll:getChildByName("Text_2")
+    self.Text_2:setChangeScaleOffWidth(-1000)
+	self.main_container:getChildByName("title"):setString(TI18N("语言_c_21"))
+    self.btn_buy = self.main_container:getChildByName("btn_buy")
+    self.btn_buy_text = self.btn_buy:getChildByName("Text_4")
+    self.btn_buy_text:setString(TI18N("语言_c_1567"))
+    local goods = self.main_container:getChildByName("goods")
+	local scroll_view_size = goods:getContentSize()
+    local setting = {
+        item_class = BackPackItem,
+        start_x = 0,
+        space_x = 2,
+        start_y = 2,
+        space_y = 0,
+        item_width = BackPackItem.Width,--*0.90,
+        item_height = BackPackItem.Height,--*0.90,
+        row = 1,
+        col = 0,
+        scale = 0.8
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(goods,cc.p(0,0),ScrollViewDir.horizontal,ScrollViewStartPos.top,scroll_view_size,setting)
+    self.item_scrollview:setSwallowTouches(false)
+    self.time_text = self.main_container:getChildByName("time_text")
+    self.time_lab = self.main_container:getChildByName("time_text_0")
+	self.time_lab:setString(TI18N("语言_c_13"))
+	self.main_container:getChildByName("desc"):setString(TI18N("语言_c_1566"))
+    self.cost_panel = self.main_container:getChildByName("cost_panel")
+    self.cost_Image = self.cost_panel:getChildByName("cost_Image")
+    self.cost_icon = self.cost_panel:getChildByName("cost_icon")
+    self.cost_txt = self.cost_panel:getChildByName("cost_txt")
+end
+--加载banner图片
+function ActionTimeEleShopPanel:loadBannerImage()
+    -- 横幅图片
+    local str_banner = ""
+    local str_banner_2 = ""
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    self.camp_id = tab_vo.camp_id
+    if tab_vo and tab_vo.aim_title ~= "" and tab_vo.aim_title then
+        str_banner = tab_vo.aim_title
+    end
+    local res = PathTool.checkRes(string.format("resource/bigbg/action/%s.png", str_banner))
+    if not self.item_load then
+        self.item_load = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(self.bg) then
+                loadSpriteTexture(self.bg, res, LOADTEXT_TYPE)
+            end
+        end,self.item_load)
+    end
+    if tab_vo and tab_vo.reward_title ~= "" and tab_vo.reward_title then
+        str_banner_2 = tab_vo.reward_title
+    end
+    local res = PathTool.checkRes(string.format("resource/bigbg/action/%s.png", str_banner_2))
+    if not self.item_load2 then
+        self.item_load2 = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(self.Image_1) then
+                loadSpriteTexture(self.Image_1, res, LOADTEXT_TYPE)
+
+            end
+        end,self.item_load2)
+    end
+end
+function ActionTimeEleShopPanel:setItemPanel()
+    local cfg = Config.HolidayTimeEleData.data_info[self.camp_id]
+    if not Config or not Config.ExchangeData then
+        require("config.exchange_data")
+    end
+    self.Text_2:setString(LangStringFormat(Config.ExchangeData.data_shop_exchage_cost.action_time_ele_rule.val,cfg[1].dis_num,100-cfg[1].dis_bili))
+    setTextMaxWidth(self.Text_2,380)
+    local _h = math.max(self.txt_scroll:getContentSize().height,self.Text_2:getContentSize().height)
+    self.txt_scroll:setInnerContainerSize(cc.size(380,_h))
+    self.Text_2:setPositionY(_h)
+    local list=cfg[1].show_items
+    self.item_scrollview:setData(list)
+    self.item_scrollview:addEndCallBack(function()
+        local list = self.item_scrollview:getItemList()
+        for k,v in pairs(list) do
+            v:setDefaultTip()
+        end
+    end)
+    commonCountDownTime(self.time_text, self.remain_sec)
+    local id = Config.ExchangeData.data_shop_exchage_cost.action_time_ele_item.val
+    local num = BackpackController:getInstance():getModel():getItemNumByBid(id)
+    self.cost_txt:setString(""..num)
+    local config = Config.ItemData.data_get_data(id)
+    if config then
+        local icon_res = PathTool.getItemRes(config.icon)
+        loadSpriteTexture(self.cost_icon, icon_res, LOADTEXT_TYPE)
+        self.cost_icon:setScale(0.4)
+    end
+    self.skin_cfg = Config.HolidayTimeEleData.data_info[self.camp_id][1].show_pics
+    if self.skin_cfg then
+        self:updateSkin()
+    end
+    addRedPointToNodeByStatus(self.btn_buy,model:getfirstTimeShop(),10,10)
+end
+
+function ActionTimeEleShopPanel:updateSkin( )
+    if not self.skin_index then
+        self.skin_index = math.random(#self.skin_cfg)
+    else
+        self.skin_index = self.skin_index + 1
+        if self.skin_index > #self.skin_cfg then
+            self.skin_index = 1
+        end
+    end
+    local skin_name = self.skin_cfg[self.skin_index][1]
+    if skin_name and skin_name ~= "" then
+        local res = PathTool.getPlistImgForDownLoad("herodraw/herodrawres",skin_name)
+        -- loadSpriteTexture(self.hero_icon,res,LOADTEXT_TYPE)
+        self.item_load1 = createResourcesLoad(res, ResourcesType.single, function()
+            if self.hero_icon and not tolua.isnull(self.hero_icon) then
+                self.hero_icon:setScale(self.skin_cfg[self.skin_index][2])
+                loadSpriteTexture(self.hero_icon, res, LOADTEXT_TYPE)
+                self.hero_icon:setVisible(true)
+                commonOpenActionRightMove(self.hero_icon,540 + self.skin_cfg[self.skin_index][3])
+            end
+        end, self.item_load1)
+    end
+    if self.board_move_timer then
+		GlobalTimeTicket:getInstance():remove(self.board_move_timer)
+	end
+	self.board_move_timer = GlobalTimeTicket:getInstance():add(function()
+		self:updateSkin()
+	end, 5)
+end
+function ActionTimeEleShopPanel:register_event()
+    registerButtonEventListener(self.btn_buy, function()
+        SeerpalaceController:getInstance():openSeerpalaceMainWindow(true, SeerpalaceConst.Tab_Index.Summon)
+        delayRun(self.main_container,0.3,function ()
+            SeerpalaceController:getInstance():openSeerpalaceTimeShopPanel(true)
+            ActionController:getInstance():openActionMainPanel(false)
+        end)
+        MonopolyController:getInstance():sender16811(ActionStorageBool2.TimeShop)
+    end ,true, 2)
+end
+function ActionTimeEleShopPanel:DeleteMe()
+    if self.board_move_timer then
+		GlobalTimeTicket:getInstance():remove(self.board_move_timer)
+	end
+	if self.item_load1 then
+        self.item_load1:DeleteMe()
+		self.item_load1 = nil
+    end
+	doStopAllActions(self.time_text)
+end

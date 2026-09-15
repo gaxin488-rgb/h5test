@@ -1,0 +1,342 @@
+--******** 文件说明 ********
+-- 
+-- @description: 特惠礼包主界面
+-- @DateTime:    2019-12-13 15:12:06
+-- *******************************
+NewReturnSpecialGiftPanel = NewReturnSpecialGiftPanel or BaseClass(BaseView)
+
+local controller = NewReturnActionController:getInstance()
+local model = controller:getModel()
+
+function NewReturnSpecialGiftPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "newreturnaction/newreturnaction_special_gift_window"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_show_4"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_bg_4"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_holiday_back_bg_4"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_bg_1"), type = ResourcesType.single },
+    }
+end
+
+function NewReturnSpecialGiftPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.top_bg = self.main_container:getChildByName("top_bg")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    setTextSpacing(self.title_txt,-10)
+    self.tip_img = self.main_container:getChildByName("tip_img")
+    self.surplus_bg = self.main_container:getChildByName("surplus_bg")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.surplus_time:setPositionX(self.surplus_txt:getPositionX() + self.surplus_txt:getContentSize().width + 10)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.bottom_bg = self.main_container:getChildByName("bottom_bg")
+    self.gift_panel = self.main_container:getChildByName("gift_panel")
+    self.bottom_tip = self.main_container:getChildByName("bottom_tip")
+end
+
+function NewReturnSpecialGiftPanel:register_event()
+    registerButtonEventListener(self.background, function()
+        controller:openNewReturnSpecialGiftPanel(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openNewReturnSpecialGiftPanel(false)
+    end,true, 2)
+    registerButtonEventListener(self.rule_btn, function(param,sender, event_type)
+        if self.period_cfg.desc and self.period_cfg.desc ~= "" then
+            TipsManager:getInstance():showCommonTips(self.period_cfg.desc, sender:getTouchBeganPosition())
+        end
+    end,true, 2)
+    self:addGlobalEvent(NewReturnActionEvent.Gift_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+    self:addGlobalEvent(NewReturnActionEvent.Base_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+end
+
+function NewReturnSpecialGiftPanel:openRootWnd()
+	controller:sender11502()
+end
+
+function NewReturnSpecialGiftPanel:setData()
+    self.cycle_index = model:getNowPeriod()
+    if self.cycle_index == 0 then
+        controller:sender11500()
+        return
+    end
+    local cfg = Config.HolidayBackData.data_get_camp[self.cycle_index]
+    if cfg then
+        for k, v in pairs(cfg) do
+            if v.camp_id == NewReturnActionConstants.ReturnActionType.specialGift then
+                self.camp_cfg = v
+            end
+        end
+    end
+    if not self.camp_cfg then return end
+    local bottom_res = PathTool.getPlistImgForDownLoad("holiday_back",self.camp_cfg.panel_res,false)
+    loadSpriteTexture(self.bottom_bg, bottom_res, LOADTEXT_TYPE)
+    self.other_res_list = self.camp_cfg.show_text
+    self.other_txt_list = self.camp_cfg.sys_text
+    local top_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[1],false)
+    loadSpriteTexture(self.top_bg, top_res, LOADTEXT_TYPE)
+    self.title_txt:setString(TI18N(self.other_txt_list[1]))
+    local _w = math.max(self.title_bg:getContentSize().width, self.title_txt:getContentSize().width + 50)
+    self.title_bg:setContentSize(cc.size(_w, self.title_bg:getContentSize().height))
+    local tip_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[2],false)
+    loadSpriteTexture(self.tip_img, tip_res, LOADTEXT_TYPE)
+    self.bag_effect = createEffectSpine("E29007",cc.p(self.tip_img:getContentSize().width*0.5,self.tip_img:getContentSize().height*0.5),cc.p(0.5,0.5),true,PlayerAction.action)
+    self.tip_img:addChild(self.bag_effect)
+    self.start_time = model:getStartTime()
+    local time = self.start_time - GameNet:getInstance():getTime() + self.camp_cfg.max_day*86400
+    commonCountDownTime(self.surplus_time,time,{callback=function(time)
+        if time > 0 then 
+            self.surplus_time:setString(string_format("%s", TimeTool.GetTimeForFunction(time) ))
+        else
+            doStopAllActions(self.surplus_time)
+            self.surplus_time:setString("00:00:00")
+        end
+        local _w = self.surplus_txt:getContentSize().width+self.surplus_time:getContentSize().width+50
+        self.surplus_bg:setContentSize(cc.size(_w,self.surplus_bg:getContentSize().height))
+    end})
+    self.gilf_cfg = deepCopy(Config.HolidayBackData.data_get_gift[self.cycle_index])
+    for k, v in pairs(self.gilf_cfg) do
+        local list = model:getChargeGiftForId(v.charge_id)
+        if list and list.buy_count then
+            v.buy_count = list.buy_count
+        else
+            v.buy_count = 0
+        end
+        if v.buy_count >= v.limit_buy_num then
+            v.status = 1 
+        else
+            v.status = 0
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"status", false}, {"sort", false}})
+    table.sort(self.gilf_cfg, sort_func)
+    if self.task_view == nil then
+        local scroll_view_size = self.gift_panel:getContentSize()
+        local setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 0,
+            space_y = 0,
+            item_width = 597,
+            item_height = 116,
+            row = 0,
+            col = 1
+        }
+        self.task_view = CommonScrollViewSingleLayout.new(self.gift_panel, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+        self.task_view:setSwallowTouches(true)
+        self.task_view:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.task_view:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.task_view:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    end
+    self.task_view:reloadData(nil,nil,true)
+end
+
+-- 奖励列表
+function NewReturnSpecialGiftPanel:createTaskCell()
+    local cell = NewReturnSpecialGiftItem.new()
+    return cell
+end
+
+function NewReturnSpecialGiftPanel:numberOfTaskCells()
+    if not self.gilf_cfg then
+        return 0
+    end
+    return #self.gilf_cfg
+end
+
+function NewReturnSpecialGiftPanel:updateTaskCellByIndex(cell, index)
+    if not self.gilf_cfg then
+        return
+    end
+    local cell_data = self.gilf_cfg[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,self.camp_cfg.max_day*86400)
+end
+function NewReturnSpecialGiftPanel:close_callback()
+    if self.task_view then 
+        self.task_view:DeleteMe()
+        self.task_view = nil
+    end
+    controller:openNewReturnSpecialGiftPanel(false)
+end
+
+
+------------------------------------------
+-- 
+NewReturnSpecialGiftItem = class("NewReturnSpecialGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function NewReturnSpecialGiftItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function NewReturnSpecialGiftItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("newreturnaction/newreturnaction_special_gift_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self:setContentSize(cc.size(597, 116))
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.btn_charge = self.main_container:getChildByName("btn_charge")
+    self.charge_txt = self.btn_charge:getChildByName("charge_txt")
+    self.old_txt = self.main_container:getChildByName("old_txt")
+    self.old_txt:setChangeScaleOffWidth(427)
+    self.line = self.main_container:getChildByName("line")
+    self.goods_con = self.main_container:getChildByName("good_cons")
+    -- self.good_cons:setScrollBarEnabled(false)
+    self.limit_txt = self.main_container:getChildByName("limit_txt")
+    self.limit_txt:setChangeScaleOffWidth(427)
+    self.has_get = self.main_container:getChildByName("has_get")
+end
+
+function NewReturnSpecialGiftItem:register_event()
+    registerButtonEventListener(self.btn_charge, function()
+        if model:getStartTime() - GameNet:getInstance():getTime() + self.action_time > 0 then
+            if self.data.charge_id == Config.HolidayBackData.data_const.gift_free.val then
+                controller:sender11506(self.data.charge_id)
+            else
+                ActionController:getInstance():sender21016(self.data.charge_id)
+            end
+        else
+            message(TI18N("语言_c_233"))
+        end
+    end,true, 1)
+    if not self.open_server_charge_data then
+        self.open_server_charge_data = GlobalEvent:getInstance():Bind(ActionEvent.Is_Charge_Event,function(data)
+            if data and data.status and data.charge_id and self.data then
+                local charge_config = Config.ChargeData.data_charge_data[data.charge_id]
+                if charge_config and data.status == 1 and data.charge_id == self.data.charge_id then
+                    sdkOnPay(charge_config.val, 1, charge_config.id, charge_config.name, charge_config.name)
+                end
+            end
+        end)
+    end
+end
+function NewReturnSpecialGiftItem:setData(data,action_time)
+    if not data or next(data) == nil then return end
+    self.action_time = action_time or 0
+    self.data = data
+    if self.good_scrollview == nil then
+        local scroll_view_size = self.goods_con:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 10,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = BackPackItem.Width*0.7,                -- 单元的尺寸width
+            item_height = BackPackItem.Height*0.7,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 0,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.good_scrollview = CommonScrollViewSingleLayout.new(self.goods_con, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.good_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.good_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.good_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.good_scrollview:setSwallowTouches(false)
+
+    self.good_scrollview:reloadData()
+    self.limit_buy_num = data.limit_buy_num
+    if data.buy_count >= self.limit_buy_num then
+        self.btn_charge:setVisible(false)
+        self.old_txt:setVisible(false)
+        self.line:setVisible(false)
+        self.limit_txt:setVisible(false)
+        self.has_get:setVisible(true)
+    else
+        self.btn_charge:setVisible(true)
+        self.old_txt:setVisible(true)
+        self.line:setVisible(true)
+        self.limit_txt:setVisible(true)
+        self.has_get:setVisible(false)
+        self.charge_id = data.charge_id
+        self.charge_cfg = Config.ChargeData.data_charge_data[self.charge_id]
+        self.charge_txt:setString(string.format(TI18N("语言_c_4440"),GetMoneyNum(self.charge_cfg,"val")))
+        addRedPointToNodeByStatus(self.btn_charge,self.data.charge_id == Config.HolidayBackData.data_const.gift_free.val,10,10)
+
+        self.old_txt:setString(string.format(TI18N("语言_c_4473"),GetMoneyNum(self.data,"val")))
+        local _w = self.old_txt:getContentSize().width + 10
+        if _w > 160 then
+            _w = 160
+        end
+        self.line:setContentSize(cc.size(_w,self.line:getContentSize().height))
+        local txt = ""
+        local num = self.limit_buy_num - data.buy_count 
+        if num < 0 then
+            num = 0
+        end
+        if self.data.limit_buy_type == 1 then
+            txt = TI18N("语言_c_1690")
+        else
+            txt = TI18N("语言_c_1693")
+        end
+        self.limit_txt:setString(string.format(txt,num))
+    end
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function NewReturnSpecialGiftItem:createNewCell(width, height)
+    local cell = BackPackItem.new()
+    cell:setDefaultTip()
+    cell:setSwallowTouches(false)
+    cell:setScale(0.7)
+	return cell
+end
+
+--获取数据数量
+function NewReturnSpecialGiftItem:numberOfCells()
+    if not self.data or not self.data.reward then return 0 end
+    return #self.data.reward
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function NewReturnSpecialGiftItem:updateCellByIndex(cell, index)
+    if not self.data or not self.data.reward then return end
+    cell.index = index
+    local cell_data = self.data.reward[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+    if cell_data and cell_data[1] == Config.HolidayBackData.data_const["double_id"].val then
+        cell:setDoubleIcon(true)
+    else
+        cell:setDoubleIcon(false)
+    end
+end
+function NewReturnSpecialGiftItem:DeleteMe()
+    if self.open_server_charge_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.open_server_charge_data)
+        self.open_server_charge_data = nil
+    end
+    if self.good_scrollview then
+        self.good_scrollview:DeleteMe()
+        self.good_scrollview = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

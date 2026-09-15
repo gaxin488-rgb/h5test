@@ -1,0 +1,120 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-06-24 15:18:54
+-- @description    : 
+		-- 拼图图鉴主页面item
+---------------------------------
+local _controller = HomeworldController:getInstance()
+local _model = _controller:getModel()
+
+PuzzleBookMainItem = class("PuzzleBookMainItem", function()
+    return ccui.Widget:create()
+end)
+
+function PuzzleBookMainItem:ctor()
+	self:configUI()
+	self:registerEvent()
+end
+
+function PuzzleBookMainItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("homeworld/puzzle_book_main_item"))
+	if not self.root_wnd then return end
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+	self:setCascadeOpacityEnabled(true)
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+	self._ui = getAllCsbExportChildren(self.root_wnd)
+	nativeBindClass(self._ui._puzzle_icon, PuzzleItem)
+	self._ui._main_container:setSwallowTouches(false)
+	self._ui._up_txt:setString(TI18N("语言_c_7620"))
+end
+
+function PuzzleBookMainItem:registerEvent(  )
+    if self.update_one_puzzle_book_data == nil then
+        self.update_one_puzzle_book_data = GlobalEvent:getInstance():Bind(HomeworldEvent.Update_One_Puzzle_Book_Data, function(book_id)
+			if book_id == self.book_id then
+				self:updateBarTxt()
+			end
+        end)
+    end
+	if self.update_puzzle_book_data == nil then
+        self.update_puzzle_book_data = GlobalEvent:getInstance():Bind(HomeworldEvent.Update_Puzzle_Book_Data, function()
+			self:updateBarTxt()
+        end)
+    end
+	if self.update_puzzle_red_event == nil then
+        self.update_puzzle_red_event = GlobalEvent:getInstance():Bind(HomeworldEvent.Update_Puzzle_Red_Event, function()
+			self:updateSelfRed()
+        end)
+    end
+	
+    registerButtonEventListener(self._ui._main_container,function()
+        if self.back_fun then
+			self:back_fun()
+		end
+    end,true,2,nil,nil,nil,true)
+end
+function PuzzleBookMainItem:addCallBack(back_fun)
+	self.back_fun = back_fun
+end
+
+function PuzzleBookMainItem:updateSelfRed()
+	addRedPointToNodeByStatus(self._ui._main_container,not _model:getPuzzleFirstRed(self.book_id))
+end
+
+function PuzzleBookMainItem:setData(book_id)
+	self.book_id = book_id
+	self.cfg = Config.PuzzleBookData.data_puzzle[book_id]
+	if not self.cfg then return end
+	local item_cfg = Config.ItemData.data_get_data(self.cfg.item_id)
+	if item_cfg then
+		local res = PathTool.getItemRes(item_cfg.icon)
+		loadSpriteTexture(self._ui._item_icon, res, LOADTEXT_TYPE)
+	end
+	local status = _model:getOnePuzzleIsInAct(book_id)
+	self._ui._up_img:setVisible(status)
+	self._ui._up_txt:setVisible(status)
+	if self.cfg.icon and self.cfg.icon ~= "" then
+		self._ui._sp_txt:setString(self.cfg.icon)
+		self._ui._sp_txt:setVisible(true)
+		self._ui._sp_img:setVisible(true)
+	else
+		self._ui._sp_txt:setVisible(false)
+		self._ui._sp_img:setVisible(false)
+	end
+	self._ui._puzzle_name:setString(self.cfg.name)
+	self:updateBarTxt()
+	self:updateSelfRed()
+end
+--刷新激活情况
+function PuzzleBookMainItem:updateBarTxt(  )
+	local data = _model:getOnePuzzleData(self.book_id)
+	local num = 0
+	if data and next(data) then
+		num = tableLen(data)
+	end
+	self._ui._puzzle_bar_txt:setString(string.format("%s/%s",num,self.cfg.total_num))
+	self._ui._puzzle_icon:setData(self.book_id,false)
+end
+
+function PuzzleBookMainItem:DeleteMe(  )
+    if self.update_one_puzzle_book_data then
+        GlobalEvent:getInstance():UnBind(self.update_one_puzzle_book_data)
+        self.update_one_puzzle_book_data = nil
+    end
+	if self.update_puzzle_book_data then
+        GlobalEvent:getInstance():UnBind(self.update_puzzle_book_data)
+        self.update_puzzle_book_data = nil
+    end
+	if self.update_puzzle_red_event then
+        GlobalEvent:getInstance():UnBind(self.update_puzzle_red_event)
+        self.update_puzzle_red_event = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

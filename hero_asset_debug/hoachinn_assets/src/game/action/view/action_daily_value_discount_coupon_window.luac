@@ -1,0 +1,169 @@
+--******** 文件说明 ********
+-- 
+-- @description: 新年扫荡每日超值礼包使用折扣券
+-- @DateTime:    2020-02-20
+-- *******************************
+ActionDailyValueDiscountCouponWindow = ActionDailyValueDiscountCouponWindow or BaseClass(BaseView)
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local config = Config.HolidayGetninjaData
+function ActionDailyValueDiscountCouponWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "action/action_daily_value_discount_coupon_window"
+    self.res_list = {
+        -- {path = PathTool.getPlistImgForDownLoad("neworderaction", "neworderaction_banner_1"), type = ResourcesType.single}
+    }
+    self.num = 0
+end
+
+function ActionDailyValueDiscountCouponWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+    self.Image_1 = self.main_container:getChildByName("Image_1")
+    self.title = self.main_container:getChildByName("title")
+    self.Image_4 = self.main_container:getChildByName("Image_4")
+    self.add_btn = self.main_container:getChildByName("add_btn")
+    self.reduce_btn = self.main_container:getChildByName("reduce_btn")
+    self.use_num = self.main_container:getChildByName("use_num")
+    self.btn_ok = self.main_container:getChildByName("btn_ok")
+    self.btn_ok_txt = self.btn_ok:getChildByName("Text_6")
+    self.btn_ok_txt:setString(TI18N("语言_c_796"))
+    self.btn_no = self.main_container:getChildByName("btn_no")
+    self.btn_no_txt = self.btn_no:getChildByName("Text_6")
+    self.btn_no_txt:setString(TI18N("语言_c_5846"))
+    self.tips = createRichLabel(24,cc.c4b(0x00,0x00,0x00,0xff),cc.p(0.5,0.5),cc.p(325,250),0,nil,560)
+    self.tips:setHorizontalLayoutType(2)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.main_container:addChild(self.tips)
+end
+
+function ActionDailyValueDiscountCouponWindow:setData(data)
+    self.num = 0
+    self.data = data
+    self.mopup_data = controller:getActionSubTabVo(ActionRankCommonType.NewYearMoppingUp)
+    if self.mopup_data then
+        self.camp_id = self.mopup_data.camp_id
+        self.const_cfg = Config.HolidayNewYearData.data_const[self.camp_id]
+    end
+    if not self.const_cfg then return end
+    self.title:setString(self.const_cfg.gold_title)
+    self.Image_1:setContentSize(cc.size(self.title:getContentSize().width + 100,62))
+    -- self.use_num:setString(self.num)
+    self:setUseNum(true)
+    local num = 0
+    for key, value in pairs(data.item_list) do
+        if value.bid == 3 then
+            num = value.num
+        end
+    end
+    local charge_id = self.data.aim_args[6] and self.data.aim_args[6].aim_args_val
+    local addnum = 0
+    if charge_id then
+        addnum = model:getNewYearMoppingUseNum(charge_id)
+    end
+    local str = self.const_cfg.gold_txt
+    local use_num = self.num + addnum
+    num = num * ((self.const_cfg.gold_num*use_num) / 100)
+    self.tips:setString(string.format(str,self.const_cfg.gold_num*use_num,num,addnum))
+    self:updatePage()
+end
+function ActionDailyValueDiscountCouponWindow:register_event()
+    registerButtonEventListener(self.btn_ok, function()
+        local use_num = self.num
+        if use_num == 0 then
+            controller:openActionDailyValueDiscountCouponWindow(false)
+            controller:openActionDailyValuePackTipWindow(true,self.data)
+        else
+            controller:sender21723(ActionRankCommonType.NewYearMoppingUp,use_num,self.data.aim_args[6].aim_args_val)
+        end
+    end,true, 1)
+    registerButtonEventListener(self.btn_no, function()
+        controller:openActionDailyValueDiscountCouponWindow(false)
+        controller:openActionDailyValuePackTipWindow(true,self.data)
+    end,true, 1)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openActionDailyValueDiscountCouponWindow(false)
+    end,true, 1)
+    registerButtonEventListener(self.add_btn, function()
+        self:setUseNum(true)
+    end,true, 1)
+    registerButtonEventListener(self.reduce_btn, function()
+        self:setUseNum(false)
+    end,true, 1)
+    self:addGlobalEvent(ActionEvent.NewYearMoppingUp_Discount, function ()
+        self:useComplete()
+    end)
+end
+function ActionDailyValueDiscountCouponWindow:useComplete()
+    controller:openActionDailyValueDiscountCouponWindow(false)
+    controller:openActionDailyValuePackTipWindow(true,self.data)
+end
+
+function ActionDailyValueDiscountCouponWindow:updatePage()
+    if self.tips:getContentSize().height > 200 then
+        self.main_container:setContentSize(cc.size(650,self.tips:getContentSize().height + 200))
+        self.Image_1:setPositionY(self.main_container:getContentSize().height)
+        self.title:setPositionY(self.Image_1:getPositionY())
+        self.tips:setPositionY(160 + self.tips:getContentSize().height/2)
+    end
+end
+function ActionDailyValueDiscountCouponWindow:setUseNum(status)
+    if self.const_cfg then
+        if status then
+            self.num = self.num + 1
+        else
+            self.num = self.num - 1
+        end
+        local charge_id = self.data.aim_args[6] and self.data.aim_args[6].aim_args_val
+        local addnum = 0
+        if charge_id then
+            addnum = model:getNewYearMoppingUseNum(charge_id)
+        end
+        local have_num = RoleController:getInstance():getRoleVo():getActionAssetsNumByBid(self.const_cfg.gold_id) 
+        if self.num >= self.const_cfg.gold_limit - addnum or self.num >= have_num then
+            setChildUnEnabled(true,self.add_btn)
+            self.add_btn:setTouchEnabled(false)
+        else
+            setChildUnEnabled(false,self.add_btn)
+            self.add_btn:setTouchEnabled(true)
+        end
+        if self.num <= 0 then
+            setChildUnEnabled(true,self.reduce_btn)
+            self.reduce_btn:setTouchEnabled(false)
+        else
+            setChildUnEnabled(false,self.reduce_btn)
+            self.reduce_btn:setTouchEnabled(true)
+        end
+        self.use_num:setString(self.num)
+        local num = 0
+        for key, value in pairs(self.data.item_list) do
+            if value.bid == 3 then
+                num = value.num
+            end
+        end
+        num = num * (self.const_cfg.gold_num*(self.num+addnum) / 100)
+        local str = self.const_cfg.gold_txt
+        local use_num = self.num + addnum
+        self.tips:setString(string.format(str,self.const_cfg.gold_num*use_num,num,addnum))
+        self:updatePage()
+    end
+end
+function ActionDailyValueDiscountCouponWindow:changeWarn()
+    local charge_list = Config.ChargeData.data_charge_data
+    local charge_id = self.data.aim_args[6].aim_args_val
+    if charge_id and charge_list[charge_id] then
+        local config = charge_list[charge_id]
+        sdkOnPay(config.val, nil, config.id, config.name)
+    end
+end
+function ActionDailyValueDiscountCouponWindow:openRootWnd(data)
+    self:setData(data)
+end
+function ActionDailyValueDiscountCouponWindow:close_callback()
+    controller:openActionDailyValueDiscountCouponWindow(false)
+
+end

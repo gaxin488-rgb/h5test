@@ -1,0 +1,855 @@
+-- --------------------------------------------------------------------
+-- 头像框
+-- 
+-- @author: cloud@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+RoleBodyPanel = class("RoleBodyPanel", function()
+    return ccui.Widget:create()
+end)
+
+string_format = string.format
+
+function RoleBodyPanel:ctor(setting)
+    self.ctrl = RoleController:getInstance()
+    if setting then
+        --配置的是物品id
+        self.show_item_id = setting.id
+    end
+    self:config()
+    self:layoutUI()
+    
+end
+function RoleBodyPanel:config()
+    
+    self.size = cc.size(567,510)
+    self:setContentSize(self.size)
+    self.item_list = {}
+    self.show_list = {}
+    self.terms_list = {}
+    self.status_list = {}
+    self.fashion_id = 0
+    self.role_vo = self.ctrl:getRoleVo()
+    
+end
+
+function RoleBodyPanel:layoutUI()
+    self.main_panel = ccui.Widget:create()
+    self.main_panel:setContentSize(self.size)
+    self.main_panel:setAnchorPoint(cc.p(0.5,0.5))
+    self.main_panel:setPosition(cc.p(self.size.width/2,self.size.height/2))
+    self:addChild(self.main_panel)
+    
+    local bg = createImage(self.main_panel, PathTool.getResFrame("common","common_90024"), -35, 
+                -50, cc.p(0,0), true, -1)
+    bg:setScale9Enabled(true)
+    bg:setContentSize(613,496)
+
+    self:createBaseMessage()
+    --模型
+    self:createMiddle()
+
+    self:registerEvents()
+    self.ctrl:requestRoleModelInfo()  
+end
+
+function RoleBodyPanel:setData(data)
+    if not data then return end
+    self.data = data
+end
+
+--事件
+function RoleBodyPanel:registerEvents()
+    self.use_btn:addTouchEventListener(function(sender, event_type)
+        -- customClickAction(sender, event_type, scale)
+        if event_type == ccui.TouchEventType.ended then
+            self:_onClickUseBtn()
+        end
+    end)
+
+    if not self.updateModelList then
+        self.updateModelList = GlobalEvent:getInstance():Bind(RoleEvent.GetModelList,function ( data )
+            if data ~= nil then
+                self.info = data
+                self.use_id = data.use_id
+                if data.list then
+                    for k,v in pairs(data.list) do
+                        self.show_list[v.id] = true
+                    end
+                end
+
+                self:createItemList()
+            end
+
+        end)
+    end
+    --更换
+    if not self.updateModelEvent then
+        self.updateModelEvent = GlobalEvent:getInstance():Bind(RoleEvent.UpdateModel,function ( id )
+            if not id then return end
+            if not self.dic_datas then return end
+            if self.dic_datas[id] == nil then return end
+            
+            self.dic_datas[self.use_id].used = 0
+            self.dic_datas[id].used = 1
+            local cell_list = self.list_view:getActiveCellList()
+            for i,cell in ipairs(cell_list) do
+                local vo = cell:getData()
+                if vo then
+                    if vo.id == self.use_id then
+                        self:updateCellByIndex(cell, cell.index)
+                    elseif vo.id == id then
+                        self:updateCellByIndex(cell, cell.index)
+                    end
+                end
+            end
+            self.use_id = id
+        end)
+    end
+    --激活
+    if not self.activeModelEvent then
+        self.activeModelEvent = GlobalEvent:getInstance():Bind(RoleEvent.ActiveModel,function ( id )
+            if not id or self.dic_datas[id] == nil then return end
+            self.show_list[id] = true
+            self.dic_datas[id].show = 2
+            local cell_list = self.list_view:getActiveCellList()
+            for i,cell in ipairs(cell_list) do
+                local vo = cell:getData()
+                if vo then
+                    if vo.id == id then
+                        self:updateCellByIndex(cell, cell.index)
+                    end
+                end
+            end
+            self.use_btn:setBtnLabel(TI18N("更 换"))
+        end)
+    end
+end
+
+function RoleBodyPanel:_onClickUseBtn()
+    if self.select_item then
+        local vo = self.select_item:getData()
+
+        if self.show_list[self.select_item.vo.id] or next(vo.attr) == nil  then
+            if vo and vo.id == self.use_id then
+                message(TI18N("该形象已在使用中"))
+                return 
+            end
+            self.ctrl:changeRoleModel( self.select_item:getData().id)
+        else
+            --未激活 
+            local hero_star = HeroController:getModel():getHadHeroStarBybid(vo.bid)
+            local role_vo = RoleController:getInstance():getRoleVo()
+            local lev = role_vo and role_vo.lev or 0
+            --玩家等级
+            if lev < vo.lev then
+                message(TI18N("等级不足"))
+                return
+            end
+
+            -- 星数
+            if hero_star < vo.star then
+                message(string_format(TI18N("%s未达到%s星"), vo.name, vo.star))
+                return
+            end
+            
+            if next(vo.expend) then
+                local item_data = Config.ItemData.data_get_data(vo.expend[1][1])
+                if item_data then
+                    local count = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_data.id)
+                    if count < vo.expend[1][2] then
+                        BackpackController:getInstance():openTipsSource(true, item_data)
+                        return
+                    end
+                else
+                    return
+                end
+            end
+            --可激活了
+            self.ctrl:activeRoleModel( self.select_item:getData().id)
+        end
+    end
+end
+
+--创建中间的模型部分
+function RoleBodyPanel:createMiddle( bid )
+    local size = cc.size(320,325)
+    self.middle_panel = ccui.Widget:create()
+    self.middle_panel:setContentSize(size)
+    self.main_panel:addChild(self.middle_panel)
+    self.middle_panel:setAnchorPoint(cc.p(0,0))
+    self.middle_panel:setPosition(-35,120)
+
+    local res = PathTool.getResFrame("face","face_model_bg")
+    local model_bg = createImage(self.middle_panel,res,size.width/2,size.height/2,cc.p(0.5,0.5),true,0,true)
+
+    self.tips = createLabel(20,Config.ColorData.data_color4[186],nil,305,-200,TI18N("该形象可在部分玩法中展示"),self.middle_panel,0, cc.p(0.5,0))
+end
+
+function RoleBodyPanel:createItemList()
+    local config = Config.LooksData.data_data
+    if not config then return end 
+
+    local table_insert = table.insert
+    local table_sort = table.sort
+
+    self.dic_datas = {}
+    local data_list = {}
+    for i,v in pairs(config) do 
+        local data = {}
+        data.vo = v
+        data.id = v.id
+        if self.use_id == v.id then
+            data.used = 1
+        else
+            data.used = 0
+        end
+        if self.show_list[v.id] then
+            data.show = 2 --已激活
+        else
+            local is_active = self:getIsActiveByConfig(v)
+            if is_active then
+                data.show = 1 --可激活(这个 1 下面有判断..要一起改)
+            else
+                data.show = 3 -- 未激活
+            end
+        end
+        
+        table_insert(data_list, data)
+        self.dic_datas[v.id] = data
+    end
+    local sort_func = SortTools.tableCommonSorter({{"used", true}, {"show", false}, {"id", false}})
+    table_sort(data_list, sort_func)
+
+    self.data_list = data_list
+    if self.list_view == nil then
+        local scroll_view_size = cc.size(250,490)
+        local list_setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 0,
+            space_y = 0,
+            item_width = 125,
+            item_height = 130,
+            row = 0,
+            col = 2,
+            need_dynamic = true
+        }
+        self.list_view = CommonScrollViewSingleLayout.new(self.main_panel, cc.p(310, -48), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0, 0)) 
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end
+    if self.show_item_id ~= nil then
+        local is_have = false
+        for i,data in ipairs(self.data_list) do
+            if next(data.vo.expend) and v.expend[1][1] == self.show_item_id then
+                is_have = true
+                self.list_view:reloadData(i)        
+            end
+        end
+        if not is_have then
+            self.list_view:reloadData(1)    
+        end
+    else
+        self.list_view:reloadData(1)
+    end
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function RoleBodyPanel:createNewCell(width, height)
+    local cell = RoleBodyItem.new()
+    cell:setTouchFunc(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function RoleBodyPanel:numberOfCells()
+    return #self.data_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function RoleBodyPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.data_list[index]
+    cell:setData(cell_data.vo, index)
+
+    --设置解锁
+    if self.show_list[cell_data.id] then
+        cell:showLock(false)
+    else
+        cell:showLock(true)
+    end
+
+    --是否能激活
+    if cell_data.show == 1 then
+        cell:showActiveIcon(true)
+    else
+        cell:showActiveIcon(false)
+    end
+
+    --使用中
+    if cell_data.used == 1 then
+        cell:showUseIcon(true)
+    else
+        cell:showUseIcon(false)
+    end
+
+    if self.select_id and self.select_id == cell_data.id then
+        cell:setSelected(true)
+    else
+        cell:setSelected(false)
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function RoleBodyPanel:onCellTouched(cell)
+    local index = cell.index
+    local cell_data = self.data_list[index]
+
+    if self.select_item ~= nil then
+        self.select_item:setSelected(false)
+    end
+    self.select_id = cell_data.id
+    self.select_item = cell
+    self.select_item:setSelected(true)
+    self:updateMessage(cell_data.vo)
+end
+
+function RoleBodyPanel:createBaseMessage()
+    local size = cc.size(275,455)
+    self.right_panel = ccui.Widget:create()
+    self.right_panel:setContentSize(size)
+    self.main_panel:addChild(self.right_panel)
+    self.right_panel:setAnchorPoint(cc.p(0.5,0))
+    self.right_panel:setPosition(cc.p(156,-50))
+
+    local arrow = createSprite(PathTool.getResFrame("common","common_30004"), 253, 271, self.right_panel, cc.p(0,0), LOADTEXT_TYPE_PLIST)
+    arrow:setRotation(90)
+
+    --已解锁
+    self.unlock = createRichLabel(20,178,cc.p(0.5,0.5),cc.p(112,50))
+    self.right_panel:addChild(self.unlock)
+    self.unlock:setString(TI18N("当前形象已解锁"))
+    self.unlock:setVisible(false)
+
+    --无属性提示
+    self.not_attr_tips = createRichLabel(20,186,cc.p(0.5,0.5),cc.p(112,150))
+    self.right_panel:addChild(self.not_attr_tips)
+    self.not_attr_tips:setString(TI18N("当前形象无属性加成"))
+    self.not_attr_tips:setVisible(false)
+
+    --背景
+    local bg = createImage(self.right_panel, PathTool.getResFrame("common","common_90003"), 48, 186, cc.p(0,0), true)
+    bg:setScale9Enabled(true)
+    bg:setContentSize(120,28)
+    --形象属性
+    local title_name = createRichLabel(20,106,cc.p(0.5,0.5),cc.p(109,199))
+    self.right_panel:addChild(title_name)
+    title_name:setString(TI18N("形象属性"))
+
+    bg = createImage(self.right_panel, PathTool.getResFrame("common","common_90003"), 48, 88, cc.p(0,0), true)
+    bg:setScale9Enabled(true)
+    bg:setContentSize(120,28)
+    --解锁条件
+    title_name = createRichLabel(20,106,cc.p(0.5,0.5),cc.p(109,101))
+    self.right_panel:addChild(title_name)
+    title_name:setString(TI18N("解锁条件"))
+
+    self.attr_label_list = {}
+    local pos = {
+        [1] = cc.p(-34, 151),
+        [2] = cc.p(153, 151),
+        [3] = cc.p(-34, 124),
+        [4] = cc.p(153, 124)
+    }
+    for i=1,4 do
+        self.attr_label_list[i] = createRichLabel(20, 178, cc.p(0,0), pos[i])
+        self.right_panel:addChild(self.attr_label_list[i])
+        self.attr_label_list[i]:setString(TI18N("气血: 5000"))
+        self.attr_label_list[i]:setVisible(false)
+    end
+
+    local pos_x = -34
+    local pos_y = 58
+    local pos_w = 265 --pos_x到最右边的位置
+    self.term_list = {}
+    self.term_status_list = {}
+    for i=1,3 do
+        local y =  pos_y - 24 * (i - 1)
+        self.term_list[i] = createRichLabel(20, 175, cc.p(0,0), cc.p(pos_x, y), nil, nil, 500)
+        self.term_status_list[i] = createRichLabel(20, 175, cc.p(1, 0), cc.p(pos_w, y))
+        self.right_panel:addChild(self.term_list[i])
+        self.right_panel:addChild(self.term_status_list[i])
+        -- self.term_list[i]:setString("测试数字测试数字10个"..i)
+        -- self.term_status_list[i]:setString("已解锁")
+    end
+
+    --解锁后需要个使用按钮
+    local res = PathTool.getResFrame("common","common_1017")
+    self.use_btn = createButton(self.right_panel, "", 249, -65, cc.size(161,62), res, 26, Config.ColorData.data_color4[1])
+    self.use_btn:enableOutline(Config.ColorData.data_color4[264], 2)
+    self.use_btn:setBtnLabel(TI18N("更 换")) 
+end
+
+--根据配置能否激活
+function RoleBodyPanel:getIsActiveByConfig(vo)
+    if vo.skin_id and vo.skin_id ~= 0 then
+        --皮肤没有激活的
+        return false
+    end
+    local is_star = true
+     --星数
+    if vo.star > 0 then
+        local hero_star = HeroController:getModel():getHadHeroStarBybid(vo.bid)
+        if hero_star < vo.star then
+            is_star = false
+        end
+    end
+
+    local is_lev = true
+    --玩家等级
+    if vo.lev > 0 then
+        local role_vo = RoleController:getInstance():getRoleVo()
+        local lev = role_vo and role_vo.lev or 0
+        if lev < vo.lev then
+            is_lev = false
+        end
+    end
+
+    local is_item = true
+    --需求物品
+    if next(vo.expend) then
+        local item_data = Config.ItemData.data_get_data(vo.expend[1][1])
+        if item_data then
+            local count = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_data.id)
+            if count < vo.expend[1][2] then
+               is_item = false 
+            end
+        end
+    end 
+    local is_active = is_item and is_lev and is_star
+
+    return is_active, is_star, is_lev, is_item
+end
+
+--@ vo 是 Config.LooksData.data_data[id]
+function RoleBodyPanel:updateMessage(vo)
+    if not vo and self.select_item then 
+        vo = self.select_item:getData()
+    end
+    if not vo then return end
+
+    local setAttr = function(attr_list)
+        self.not_attr_tips:setVisible(false)
+        if #attr_list <= 0 then
+            self.not_attr_tips:setVisible(true)
+        else
+            for i,v in ipairs(self.attr_label_list) do
+                -- local attr = vo.attr[i]
+                local attr = attr_list[i]
+                if attr ~= nil then
+                    v:setVisible(true)
+                    local name = Config.AttrData.data_key_to_name[attr[1]]
+                    local is_per = PartnerCalculate.isShowPerByStr(attr[1])
+                    if is_per then
+                        v:setString(string_format("%s: %s%%", name, attr[2]/10))
+                    else
+                        v:setString(string_format("%s: %s", name, attr[2]))
+                    end
+                else
+                    v:setVisible(false)
+                end
+            end
+        end
+    end
+
+    if vo.skin_id and vo.skin_id ~= 0 then --是皮肤
+        local skin_config = Config.PartnerSkinData.data_skin_info[vo.skin_id]
+        if skin_config then
+            setAttr(skin_config.skin_attr)
+        else
+            self.not_attr_tips:setVisible(true)
+        end  
+        self.use_btn:setBtnLabel(TI18N("更 换"))
+    elseif next(vo.expend) then -- 需要激活
+        if next(vo.attr) then
+           setAttr(vo.attr)
+        end
+        --更改按钮
+        if self.show_list[vo.id] then
+            self.use_btn:setBtnLabel(TI18N("更 换"))
+        else
+            self.use_btn:setBtnLabel(TI18N("激 活")) 
+        end
+    else
+        self.not_attr_tips:setVisible(true) 
+        for i,v in ipairs(self.attr_label_list) do
+            v:setVisible(false)
+        end
+        self.use_btn:setBtnLabel(TI18N("更 换")) 
+    end
+    local hero_star = HeroController:getModel():getHadHeroStarBybid(vo.partner_id)
+    --解锁条件
+    if vo.id ~= self.use_id then --不在使用中
+        if self.select_item:getIsLock() then
+            self.unlock:setVisible(false)
+            local str_list = {}
+            local str_status_list = {}
+            local index = 1
+
+            if vo.skin_id and vo.skin_id ~= 0 then --有皮肤
+                str_list[index] = string_format(TI18N("◆ 解锁皮肤%s"), vo.name)
+                local is_unlock = HeroController:getModel():isUnlockHeroSkin(vo.skin_id)
+                if is_unlock then
+                    str_status_list[index] = TI18N("<div fontcolor=#249003>已达成</div>")
+                else
+                    str_status_list[index] = TI18N("<div fontcolor=#d95014>未达成</div>")
+                end
+                index = index +1
+                local partner_config = Config.PartnerData.data_partner_base[vo.partner_id]
+                --星数
+                if vo.star > 0 then
+                    local name 
+                    if partner_config then
+                        name = partner_config.name
+                    else
+                        name = vo.name
+                    end
+                    str_list[index] = string_format(TI18N("◆ %s达到%s星"), name, vo.star)
+                    if hero_star >= vo.star then
+                        str_status_list[index] = TI18N("<div fontcolor=#249003>已达成</div>")
+                    else
+                        str_status_list[index] = TI18N("<div fontcolor=#d95014>未达成</div>")
+                    end
+                    index = index +1
+                end
+            else
+                --星数
+                if vo.star > 0 then
+                    str_list[index] = string_format(TI18N("◆ %s达到%s星"), vo.name, vo.star)
+
+                    if hero_star >= vo.star then
+                        str_status_list[index] = TI18N("<div fontcolor=#249003>已达成</div>")
+                    else
+                        str_status_list[index] = TI18N("<div fontcolor=#d95014>未达成</div>")
+                    end
+                    index = index +1
+                end
+                --玩家等级
+                if vo.lev > 0 then
+                    str_list[index] = string_format(TI18N("◆ 玩家等级达到%s"), vo.lev)
+
+                    local role_vo = RoleController:getInstance():getRoleVo()
+                    local lev = role_vo and role_vo.lev or 0
+                    if lev >= vo.lev then
+                        str_status_list[index] = TI18N("<div fontcolor=#249003>已达成</div>")
+                    else
+                        str_status_list[index] = TI18N("<div fontcolor=#d95014>未达成</div>")
+                    end
+                    index = index +1
+                end
+            end
+            --需求物品
+            if next(vo.expend) then
+                local item_data = Config.ItemData.data_get_data(vo.expend[1][1])
+                if item_data then
+                    local count = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_data.id)
+                    str_list[index] = string_format(TI18N("◆ 拥有%s个%s"), vo.expend[1][2], item_data.name)
+
+                    if count >= vo.expend[1][2] then
+                        str_status_list[index] = TI18N("<div fontcolor=#249003>已达成</div>")
+                    else
+                        str_status_list[index] = TI18N("<div fontcolor=#d95014>未达成</div>")
+                    end
+                    index = index +1
+                end
+            end
+
+
+            for i,v in ipairs(self.term_list) do
+                if str_list[i] then
+                    v:setVisible(true)
+                    self.term_status_list[i]:setVisible(true)
+                    v:setString(str_list[i])
+                    self.term_status_list[i]:setString(str_status_list[i])
+                else
+                    v:setVisible(false)
+                    self.term_status_list[i]:setVisible(false)
+                end
+            end
+        else
+            for i,v in ipairs(self.term_list) do
+                v:setVisible(false)
+            end
+            for i,v in ipairs(self.term_status_list) do
+                v:setVisible(false)
+            end
+            self.unlock:setVisible(true)
+        end
+    else --使用中
+        for i,v in ipairs(self.term_list) do
+            v:setVisible(false)
+        end
+        for i,v in ipairs(self.term_status_list) do
+            v:setVisible(false)
+        end
+        self.unlock:setVisible(true)
+    end
+    self:updateSpine(vo)
+end
+
+--改变模型
+function RoleBodyPanel:updateSpine( vo )
+    if self.record_id and self.record_id == vo.id then
+        return
+    end
+
+    self.record_id = vo.id
+    local fun = function()
+        if not self.spine then
+            self.spine = BaseRole.new(BaseRole.type.role, vo.id)
+            self.spine:setAnimation(0,PlayerAction.show,true) 
+            self.spine:setCascade(true)
+            --self.spine:setPosition(cc.p(150,200))
+            self.spine:setPosition(cc.p(150,200))
+            self.spine:setAnchorPoint(cc.p(0.5,0)) 
+            self.spine:setScale(0.8)
+            self.middle_panel:addChild(self.spine) 
+            self.spine:setCascade(true)
+            self.spine:setOpacity(0)
+            local action = cc.FadeIn:create(0.2)
+            self.spine:runAction(cc.Sequence:create(action))
+        end
+    end
+    if self.spine then
+        self.spine:setCascade(true)
+        
+        local action = cc.FadeOut:create(0.2)
+        self.spine:runAction(cc.Sequence:create(action, cc.CallFunc:create(function()
+                doStopAllActions(self.spine)
+                self.spine:removeFromParent()
+                self.spine = nil
+                fun()
+        end)))
+    else
+        fun()
+    end    
+
+end
+
+function RoleBodyPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+    if bool == true then 
+        self:updateMessage()
+    end
+end
+function RoleBodyPanel:DeleteMe()
+    if self.list_view then
+        self.list_view:DeleteMe()
+        self.list_view  = nil
+    end
+
+    if self.item_list then
+        for k,v in pairs(self.item_list) do
+            if v and v["DeleteMe"] then
+                v:DeleteMe()
+            end
+        end
+    end
+    self.item_list = nil
+
+    if self.updateModelList then
+        self.updateModelList = GlobalEvent:getInstance():UnBind(self.updateModelList)
+        self.updateModelList = nil
+    end
+
+    if self.updateModelEvent then
+        self.updateModelEvent = GlobalEvent:getInstance():UnBind(self.updateModelEvent)
+        self.updateModelEvent = nil
+    end
+    if self.activeModelEvent then
+        self.activeModelEvent = GlobalEvent:getInstance():UnBind(self.activeModelEvent)
+        self.activeModelEvent = nil
+    end
+end
+
+
+
+-- --------------------------------------------------------------------
+-- 头像框子项
+-- 
+-- @author: cloud@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+RoleBodyItem = class("RoleBodyItem", function()
+	return ccui.Widget:create()
+end)
+
+function RoleBodyItem:ctor(index)
+	self.width = 85
+	self.height = 85
+	self.index =index or 1
+    self.is_lock = false
+    self.is_use =false
+    self.is_can_active = false
+	self.ctrl = RoleController:getInstance()
+	self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(self.width,self.height))
+   	self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:configUI()
+end
+
+function RoleBodyItem:clickHandler()
+	if self.call_fun then
+   		self:call_fun(self.vo)
+   	end
+end
+function RoleBodyItem:setTouchFunc( value )
+	self.call_fun =  value
+end
+--[[
+@功能:创建视图
+@参数:
+@返回值:
+]]
+function RoleBodyItem:configUI()
+	--底内框 
+    self.back = ccui.Widget:create()
+    self.back:setCascadeOpacityEnabled(true)
+    self.back:setContentSize(cc.size(self.width, self.height))
+    self.back:setAnchorPoint(cc.p(0, 0))
+    self.back:setTouchEnabled(true)
+    self:addChild(self.back)
+
+    self.back:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+			self:clickHandler()
+        end
+    end)
+    
+    
+    self.player_head = PlayerHead.new(PlayerHead.type.circle)
+    self.player_head:setAnchorPoint(cc.p(0.5, 0.5))
+    self.player_head:setPosition(cc.p(self.width/2,self.height/2))
+    --self.player_head:setScale(0.8)
+    self.player_head:setTouchEnabled(false)
+    self:addChild(self.player_head)
+
+    --选择框
+    self.select = ccui.ImageView:create(PathTool.getResFrame("common","common_1060"), LOADTEXT_TYPE_PLIST)
+    --self.select:setScale9Enabled(true)
+    --self.select:setContentSize(cc.size(self.width+10, self.height+10))
+    self.select:setAnchorPoint(cc.p(0,0))
+    --self.select:setCapInsets(cc.rect(20,20,2,2))
+    self.select:setPosition(cc.p(-14,-14))
+    self.select:setVisible(false)
+    self:addChild(self.select)
+
+    self.name = createLabel(22,Config.ColorData.data_color4[175],nil,self.width/2,-35,"name",self,0, cc.p(0.5,0))
+
+    self:showLock(true)
+end
+
+--[[
+@功能:设置数据
+@参数:
+@返回值:
+]]
+function RoleBodyItem:setData( data,index )
+	if data == nil then return end
+	if next(data) == nil then 		
+		self:reset()
+		return 
+	end
+	self.index = index
+	self:reset()
+	self.vo = data
+
+    if data.skin_id and data.skin_id ~= 0 then
+        local skin_config = Config.PartnerSkinData.data_skin_info[data.skin_id]
+        if skin_config then
+            self.player_head:setHeadRes(skin_config.head_id)
+        end
+    else
+        self.player_head:setHeadRes(data.partner_id)
+    end
+    self.name:setString(data.name)
+end
+function RoleBodyItem:setSelected(bool)
+	self.select:setVisible(bool)
+	if bool == true then 
+		local fadein = cc.FadeIn:create(0.7)
+		local fadeout = cc.FadeOut:create(0.7)
+		self.select:runAction(cc.RepeatForever:create(cc.Sequence:create(fadein,fadeout)))
+	else
+        doStopAllActions(self.select)
+	end
+end
+--锁定 激活
+function RoleBodyItem:showLock(bool)
+    setChildUnEnabled(bool,self.player_head)
+    self.is_lock = bool 
+end
+
+--使用中
+function RoleBodyItem:showUseIcon(bool)
+    self.is_use = bool 
+    if not self.use_icon and bool == false then return end 
+    if not self.use_icon then 
+        local res = PathTool.getResFrame("face","txt_cn_face_use")
+        self.use_icon = createImage(self, res, 60, 5, cc.p(0.5,0.5), true, 1, false)
+    end
+    self.use_icon:setVisible(bool)
+end
+
+function RoleBodyItem:showActiveIcon(bool)
+    if bool and not self.active_icon then
+        local res = PathTool.getResFrame("common", "txt_cn_common_30017")
+        self.active_icon = createImage(self, res, 60, 5, cc.p(0.5,0.5), true, 1, false) 
+        self.active_icon:setScale(0.7)
+    end
+    if self.active_icon then
+        self.active_icon:setVisible(bool)
+    end
+end
+
+function RoleBodyItem:reset()
+	self.vo = nil
+end
+
+function RoleBodyItem:isHaveData()
+	if self.vo then
+		return true
+	end
+	return false
+end
+function RoleBodyItem:getData( )
+	return self.vo
+end
+function RoleBodyItem:getIsLock()
+    return self.is_lock
+end
+
+
+function RoleBodyItem:DeleteMe()
+    if self.player_head then
+        self.player_head:DeleteMe()
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+	self.vo =nil
+end
+
+
+

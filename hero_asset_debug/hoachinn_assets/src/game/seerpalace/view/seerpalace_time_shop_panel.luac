@@ -1,0 +1,643 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-21 10:32:10
+-- @description    : 
+		-- 先知商店
+---------------------------------
+SeerpalaceTimeShopPanel = SeerpalaceTimeShopPanel or BaseClass(BaseView)
+
+local controller = SeerpalaceController:getInstance()
+local model = controller:getModel()
+
+function SeerpalaceTimeShopPanel:__init()
+	self.win_type = WinType.Big
+	self.is_full_screen = false
+	self.layout_name = "seerpalace/seerpalace_time_shop_panel"
+	self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("mall", "mall"), type = ResourcesType.plist },
+    }
+	self.role_vo = RoleController:getInstance():getRoleVo()
+	self.panel_list = {}
+	self.act_data = {}
+	--记录道具信息
+    self.dic_item_config = {}
+	self.cur_index = 0
+	self.panel_pos_list = {
+		[2] = {
+			[1] = cc.p(219,309),
+			[2] = cc.p(425,309),
+		},
+		[3] = {
+			[1] = cc.p(115,309),
+			[2] = cc.p(322,309),
+			[3] = cc.p(528,309),
+		},
+	}
+end
+
+function SeerpalaceTimeShopPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("main_panel")
+	self.container = container
+    self:playEnterAnimatianByObj(container , 2)
+
+	local win_title = container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_6486"))
+
+	local image_2 = container:getChildByName("Image_2")
+	local image_2_width = math.max(win_title:getContentSize().width + 100 , 332)
+	local image_2_height = image_2:getContentSize().height
+	image_2:setContentSize(image_2_width,image_2_height)
+
+	self.close_btn = container:getChildByName("close_btn")
+
+	local res_icon = container:getChildByName("res_icon")
+	local item_config = Config.ItemData.data_get_data(SeerpalaceConst.Good_JieJing)
+	if item_config then
+		res_icon:loadTexture(PathTool.getItemRes(item_config.icon), LOADTEXT_TYPE)
+	end
+	self.res_label = container:getChildByName("res_label")
+	self.res_label:setString(self.role_vo.recruithigh_hero)
+	self.time_text = container:getChildByName("time_text")
+	self.time_text:setString(TI18N("语言_c_1242"))
+	self.time_value = container:getChildByName("time_value")
+
+	self.hero_container = container:getChildByName("hero_container")
+	self.hero_title_bg = self.hero_container:getChildByName("hero_title_bg")
+	self.hero_title_txt = self.hero_container:getChildByName("hero_title_txt")
+	self.hero_title_txt:setString(TI18N("语言_c_6473"))
+	self.hero_title_bg:setContentSize(cc.size(self.hero_title_txt:getContentSize().width + 50,self.hero_title_bg:getContentSize().height))
+	self.choose_img = self.hero_container:getChildByName("choose_img")
+	self.choose_img:setVisible(false)
+	self.hero_tip = self.hero_container:getChildByName("hero_tip")
+	self.hero_tip:setString(TI18N("语言_c_6474"))
+	self.btn_buy = self.hero_container:getChildByName("btn_buy")
+	self.btn_txt = self.btn_buy:getChildByName("Text_4")
+	self.btn_txt:setString(TI18N("语言_c_85"))
+	self.discount = self.hero_container:getChildByName("discount")
+	self.discount_num = self.discount:getChildByName("discount_num")
+	for i=1,3 do
+    	local item = self.hero_container:getChildByName("hero_panel_" .. i)
+    	if item then
+    		local camp_data = {}
+    		camp_data.item = item
+			camp_data.hero_icon = item:getChildByName("hero_icon")
+			camp_data.name = item:getChildByName("name")
+			camp_data.num = item:getChildByName("num")
+			camp_data.limit_txt = item:getChildByName("limit_txt")
+			camp_data.item_icon = item:getChildByName("item_icon")
+			camp_data.price_txt = item:getChildByName("price_txt")
+			camp_data.discount_txt = item:getChildByName("discount_txt")
+			camp_data.grey = item:getChildByName("grey")
+			camp_data.sold = item:getChildByName("sold")
+			camp_data.index = i
+    		self.panel_list[i] = camp_data
+    	end
+		item:setScale(0.9)
+    end
+	self.shop_container = container:getChildByName("shop_container")
+	self.shop_title_bg = self.shop_container:getChildByName("shop_title_bg")
+	self.shop_title_txt = self.shop_container:getChildByName("shop_title_txt")
+	self.shop_title_txt:setString(TI18N("语言_c_6475"))
+	self.shop_title_bg:setContentSize(cc.size(self.shop_title_txt:getContentSize().width + 50,self.shop_title_bg:getContentSize().height))
+	self.shop_panel = self.shop_container:getChildByName("shop_panel")
+	if self.common_scrollview == nil then
+        local scroll_view_size = self.shop_panel:getContentSize()
+        local setting = {
+            start_x = 4,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 306,                -- 单元的尺寸width
+            item_height = 147,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 2,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.common_scrollview = CommonScrollViewSingleLayout.new(self.shop_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.common_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.common_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.common_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+end
+
+function SeerpalaceTimeShopPanel:openRootWnd(  )
+	local act_ctr = ActionController:getInstance()
+	local tab_vo = act_ctr:getActionSubTabVo(ActionRankCommonType.timeShop)
+	if not tab_vo then return end
+	commonCountDownTime(self.time_value, tab_vo.remain_sec)
+	self.camp_id = tab_vo.camp_id
+	self.cfg = Config.HolidayTimeEleData.data_info[self.camp_id]
+	act_ctr:cs16603(ActionRankCommonType.timeShop)
+	MallController:getInstance():send16660()
+	if act_ctr:getModel():getTimeShopFirst() then
+		act_ctr:sender16612(ActionRankCommonType.timeShop)
+	end
+end
+
+function SeerpalaceTimeShopPanel:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), false, 2)
+	registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+	for i = 1, tableLen(self.panel_list) do
+		self.panel_list[i].item:addTouchEventListener(function(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+					doStopAllActions(self.panel_list[i].item)
+					self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+				elseif self.long_touch_type == LONG_TOUCH_END_TYPE then
+					--事件触发了就不处理点击事件了
+					return
+				end
+				
+				self.touch_end = sender:getTouchEndPosition()
+				local is_click = true
+				if self.touch_began ~= nil then
+					is_click =
+						math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+						math.abs(self.touch_end.y - self.touch_began.y) <= 20
+				end
+				if is_click == true then
+					playButtonSound2()
+					self:_onClickListPanel(i)
+				end
+			elseif event_type == ccui.TouchEventType.moved then
+				if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+					local touch_began = self.touch_began
+					local touch_move = sender:getTouchMovePosition()
+					if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 20 or math.abs(touch_move.y - touch_began.y) > 20) then 
+						--移动大于20了..表示取消长点击效果
+						doStopAllActions(self.panel_list[i].item)
+						self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+					end 
+				end
+			elseif event_type == ccui.TouchEventType.began then
+				self.touch_began = sender:getTouchBeganPosition()
+				--有长点击效果
+				doStopAllActions(self.panel_list[i].item)
+				self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+				delayRun(self.panel_list[i].item, 0.6, function ()
+					if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+						if self.cfg and self.cfg[i] and self.cfg[i].add_item and self.cfg[i].add_item[1] and self.cfg[i].add_item[1][1] then
+							TipsManager:getInstance():showBackPackCompTips(true,self.cfg[i].add_item[1][1],true)
+						end
+					end
+					self.long_touch_type = LONG_TOUCH_END_TYPE
+				end)
+			elseif event_type == ccui.TouchEventType.canceled then
+				if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+					doStopAllActions(self.panel_list[i].item)
+					self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+				end
+			end
+		end)
+	end
+	registerButtonEventListener(self.btn_buy, handler(self, self._onClickBtnBuy), true, 2)
+	self:addGlobalEvent(ActionEvent.UPDATE_HOLIDAY_SIGNLE, function(data)
+        if data.bid == ActionRankCommonType.timeShop then
+			self.cur_index = 0
+			self:_onClickListPanel(0)
+            self.act_data = data
+			self:setData()
+        end
+    end)
+	--获取所有活动数据
+	self:addGlobalEvent(MallEvent.Update_Action_event, function(data)		
+		if not Config or not Config.ExchangeData then
+			require("config.exchange_data")
+		end
+		for k, v in pairs(data.holiday_exchanges) do
+			if v.bid == ActionRankCommonType.timeShop then
+				self.shop_data = v
+				for k, v in pairs(self.shop_data.exchange_list) do
+					local sort_id = Config.ExchangeData.data_shop_exchange_limit[v.aim]
+					v.sort_id = sort_id
+				end
+				table.sort(self.shop_data.exchange_list,function(a,b)
+					return a.sort_id < b.sort_id
+				end)
+				self:updateShopPanel()
+			end
+		end
+	end)
+	--获取所有活动数据
+    self:addGlobalEvent(MallEvent.Buy_Action_Shop_Success_event, function(data)
+        if not self.shop_data then return end
+        if self.cur_index and self.shop_data then
+            if self.shop_data.bid == data.bid then
+                local exchange_list = self.shop_data.exchange_list
+                local list = self.common_scrollview:getActiveCellList()
+                for i,cell in ipairs(list) do
+                    if cell.index and exchange_list[cell.index].aim == data.aim then
+                        exchange_list[cell.index].buy_count = data.buy_count
+                        self.common_scrollview:resetItemByIndex(cell.index)
+                    end
+                end
+            end
+        end
+    end)
+	-- 积分资产更新
+    if self.role_vo ~= nil then
+        if self.role_assets_event == nil then
+            self.role_assets_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+                if key == "recruithigh_hero" then
+                    self.res_label:setString(value)
+                end
+            end)
+        end
+    end
+end
+
+function SeerpalaceTimeShopPanel:_onClickBtnBuy()
+	if self.cur_index == 0 then
+		message(TI18N("语言_c_6476"))
+		return
+	end
+	local cfg = self.cfg[self.cur_index]
+	if cfg then
+		local data = {}
+		data.id = self.cur_index
+		data.item_bid = cfg.add_item[1][1]
+		if self:getBuyNum() < cfg.dis_num then
+			data.discount = cfg.now_cost[1][2]
+			data.limit_num = 1
+			data.has_buy = 0
+			data.discount_num = cfg.dis_bili
+		else
+			data.discount = cfg.old_cost[1][2]
+			data.limit_num = cfg.limit
+			local list = self:getActDataForId(self.cur_index)
+			if next(list) then
+				data.has_buy = list.item_list[1].num
+			else
+				data.has_buy = 0
+			end
+		end
+		data.pay_type = cfg.now_cost[1][1]
+		data.shop_type = MallConst.MallType.TimeHeroShop
+		data.is_show_limit_label = true
+		MallController:getInstance():openMallBuyWindow(true, data)
+	end
+end
+
+function SeerpalaceTimeShopPanel:_onClickListPanel(i)
+	local act_data = self:getActDataForId(i)
+	local num = 0
+	if next(act_data) then
+		num = act_data.item_list and act_data.item_list[1] and act_data.item_list[1].num
+		if i > 0 and num >= self.cfg[i].limit then
+			return
+		end
+	end
+	self.choose_img:setVisible(false)
+	self.cur_index = i
+	for k, v in pairs(self.panel_list) do
+		if v.index == i then
+			v.item:setScale(1)
+			self.choose_img:setPosition(cc.p(v.item:getPositionX(),v.item:getPositionY()))
+			self.choose_img:setVisible(true)
+		else
+			v.item:setScale(0.9)
+		end
+	end
+	if i > 0 then
+		if self.cfg and self.cfg[i] and self.cfg[i].hero_id and Config.PartnerData.data_partner_base[self.cfg[i].hero_id] then
+			local hero_cfg = Config.PartnerData.data_partner_base[self.cfg[i].hero_id]
+			self.hero_tip:setString(hero_cfg.name)
+		end
+	else
+		self.hero_tip:setString(TI18N("语言_c_6474"))
+	end
+end
+
+function SeerpalaceTimeShopPanel:_onClickBtnClose(  )
+	controller:openSeerpalaceTimeShopPanel(false)
+end
+
+function SeerpalaceTimeShopPanel:setData()
+	local max_limit_num = self.cfg and self.cfg[1] and self.cfg[1].dis_num or 0
+	if self:getBuyNum() < max_limit_num then
+		self.discount:setVisible(true)
+		if isPFChange(CommonConst.fun_type.rebate) then
+			local num2 = -(100 - self.cfg[1].dis_bili)
+			self.discount_num:setString(string.format(TI18N("语言_c_4710"),num2))
+		else
+			self.discount_num:setString(string.format(TI18N("语言_c_4710"),self.cfg[1].dis_bili*0.1))
+		end
+	else
+		self.discount:setVisible(false)
+	end
+	self:setChoosePanel()
+end
+function SeerpalaceTimeShopPanel:getBuyNum()
+	local num = 0
+	for k, v in pairs(self.act_data.aim_list or {}) do
+		if v.item_list[1] and v.item_list[1].num then
+			num = num + v.item_list[1].num
+		end
+	end
+	return num
+end
+function SeerpalaceTimeShopPanel:getActDataForId(id)
+	for k, v in pairs(self.act_data.aim_list or {}) do
+		if v.aim == id then
+			return v
+		end
+	end
+	return {}
+end
+function SeerpalaceTimeShopPanel:setChoosePanel(  )
+	if not self.cfg then return end
+	local grey_num = 0
+	for i = 1, tableLen(self.panel_list) do
+		local cfg = self.cfg[i]
+		if cfg then
+			local item = self.panel_list[i]
+			local act_data = self:getActDataForId(i)
+			loadSpriteTexture(item.hero_icon,PathTool.getPartnerBustRes(cfg.show),LOADTEXT_TYPE)
+			item.hero_icon:setPositionX(item.item:getContentSize().width*0.5 + tonumber(cfg.move_x))
+			item.hero_icon:setPositionY(item.item:getContentSize().height*0.5 + tonumber(cfg.move_y))
+			item.hero_icon:setScale(cfg.show_bili/100)
+			local hero_cfg = Config.PartnerData.data_partner_base[cfg.hero_id]
+			setTextMaxWidth(item.name,140,-10)
+			local name_str = ""
+			if hero_cfg and hero_cfg.name then
+				name_str = hero_cfg.name
+			end
+			item.name:setString(name_str)
+			local num_str = ""
+			if cfg.add_item and cfg.add_item[1][2] then
+				num_str = "x"..cfg.add_item[1][2]
+			end
+			item.num:setString(num_str)
+			local num = 0
+			if next(act_data) then
+				num = act_data.item_list[1].num
+			end
+			item.limit_txt:setString(string.format(TI18N("语言_c_6477"), num,cfg.limit))
+			if num >= cfg.limit then
+				grey_num = grey_num + 1
+				item.sold:setVisible(true)
+				item.grey:setVisible(true)
+			else
+				item.sold:setVisible(false)
+				item.grey:setVisible(false)
+			end
+			loadSpriteTexture(item.item_icon,PathTool.getItemRes(cfg.old_cost[1][1]),LOADTEXT_TYPE)
+			local max_limit_num = cfg.dis_num
+			if self:getBuyNum() < max_limit_num then
+				item.discount_txt:setVisible(true)
+				item.discount_txt:setString(string.format("(-%s%%)",100-cfg.dis_bili))
+				item.price_txt:setString(cfg.now_cost[1][2])
+				item.item_icon:setPositionX(23.77)
+				item.price_txt:setPositionX(40)
+			else
+				item.discount_txt:setVisible(false)
+				item.price_txt:setString(cfg.old_cost[1][2])
+				item.item_icon:setPositionX(50)
+				item.price_txt:setPositionX(80)
+			end
+			self.panel_list[i].item:setVisible(true)
+			self.panel_list[i].item:setPosition(self.panel_pos_list[tableLen(self.cfg)][i])
+		else
+			self.panel_list[i].item:setVisible(false)
+		end
+	end
+	if grey_num >= tableLen(self.cfg) then
+		setChildUnEnabled(true,self.btn_buy)
+		self.btn_buy:setTouchEnabled(false)
+	else
+		setChildUnEnabled(false,self.btn_buy)
+		self.btn_buy:setTouchEnabled(true)
+	end
+end
+function SeerpalaceTimeShopPanel:updateShopPanel()
+	self.common_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function SeerpalaceTimeShopPanel:createNewCell(width, height)
+    local cell = ccui.Widget:create()
+    cell.root_wnd = createCSBNote(PathTool.getTargetCSB("mall/mall_item"))
+    cell:addChild(cell.root_wnd)
+    cell:setCascadeOpacityEnabled(true)
+    cell:setAnchorPoint(0,0)
+    cell:setContentSize(cc.size(width, height))
+    cell:setTouchEnabled(true)
+    cell.main_container = cell.root_wnd:getChildByName("main_container")
+    cell.main_container:setSwallowTouches(false)
+    local count_bg = cell.main_container:getChildByName("count_bg")
+    --名字
+    cell.name_panel = cell.main_container:getChildByName("name_panel")
+	cell.name = cell.name_panel:getChildByName("name")
+	cell.name:ignoreContentAdaptWithSize(true)
+	cell.name:setTextAreaSize(cc.size(165, 0))
+	setTextSpacing(cell.name, -6)
+
+    --消耗icon
+    cell.coin = count_bg:getChildByName("coin")
+    cell.price = count_bg:getChildByName("price")
+    
+    --超值或者折扣图片
+    cell.discount = cell.main_container:getChildByName("discount")
+    cell.discount:setLocalZOrder(20)
+    cell.discount_num = cell.discount:getChildByName("discount_num")
+    cell.discount_num:setString(TI18N("语言_c_1543"))
+    setTextSpacing(cell.discount_num, -10)
+    --售完图片
+    cell.sold = cell.main_container:getChildByName("sold")
+    cell.sold:setLocalZOrder(20)
+
+    --变灰
+    cell.grey = cell.main_container:getChildByName("grey")
+
+    --不要显示的
+    cell.main_container:getChildByName("need_icon"):setVisible(false)
+    cell.main_container:getChildByName("need_label"):setVisible(false)
+
+    --限购
+    cell.discount_label = createRichLabel(20,58,cc.p(0,1),cc.p(133,40),FONT_COMMON_LINE_SPACE,nil,174) createRichLabel(20,58,cc.p(0,1),cc.p(133,25))
+    cell.main_container:addChild(cell.discount_label)
+
+    -- 解锁条件
+    cell.lock_label = createRichLabel(26,1,cc.p(0.5,0.5),cc.p(211,71),-8,nil,174)
+    cell.main_container:addChild(cell.lock_label, 99)
+    cell.lock_label:setHorizontalLayoutType(2)
+
+    --道具item
+    cell.goods_item = BackPackItem.new(true,true)
+    cell.goods_item:setPosition(10+cell.goods_item:getContentSize().width/2,height/2)
+    cell.goods_item:setDefaultTip()
+    cell.main_container:addChild(cell.goods_item)
+    registerButtonEventListener(cell, function() self:setCellTouched(cell) end ,false, 0)
+
+    --回收用
+    cell.DeleteMe = function() 
+        if cell.goods_item ~= nil then
+            cell.goods_item:DeleteMe()
+            cell.goods_item = nil
+        end
+    end
+
+    return cell
+end
+--获取数据数量
+function SeerpalaceTimeShopPanel:numberOfCells()
+    if not self.shop_data then return 0 end
+    return #(self.shop_data.exchange_list)
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function SeerpalaceTimeShopPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    --结构参考 16660协议
+    local cell_data = self.shop_data.exchange_list[index]
+    if not cell_data then return end
+
+    if self.dic_item_config[cell_data.expend_id] == nil then
+        self.dic_item_config[cell_data.expend_id] = Config.ItemData.data_get_data(cell_data.expend_id)
+    end
+    --消耗配置
+    local cost_config = self.dic_item_config[cell_data.expend_id]
+    --名字
+    local cfg = Config.ItemData.data_get_data(cell_data.item_list[1].bid)
+    -- cell.name:setString(cell_data.aim_str)
+    cell.name:setString(cfg.name)
+    if cell.name:getContentSize().height > 100 then
+        cell.name:setString(transformTextToShort(cfg.name,14))
+        addEvt2showAllTextTips(cell.name,cfg.name,14)
+    end
+    --消耗icon
+    if cost_config then
+        local res = PathTool.getItemRes(cost_config.icon, false)
+        if cell.record_cost_res == nil or cell.record_cost_res ~= res then
+            loadSpriteTexture(cell.coin, res, LOADTEXT_TYPE) 
+        end
+    end
+    --出售价格
+    cell.price:setString(cell_data.expend_num)
+    
+    --超值或者折扣图片
+    if cell_data.lable == 1 then
+        cell.discount:setVisible(true)
+    else
+        cell.discount:setVisible(false)
+    end
+
+    -- 扩展参数
+    local monopoly_need_step_id
+    local limit_buy_type = 4
+    local newyearmoppingup_star = 0
+    local newyearmoppingup_day = 0
+    for k, args in pairs(cell_data.aim_args) do
+        if args.aim_args_key == 1 then  --特指 圣夜奇境 活动里面的解锁关卡
+            monopoly_need_step_id = args.aim_args_val
+        elseif args.aim_args_key == 2 then  --限购类型  日 周 月 限购等
+            limit_buy_type = args.aim_args_val
+        -- elseif args.aim_args_key == 3 then  --是否解锁 在上面判定了
+        elseif args.aim_args_key == 4 then  --新年扫荡解锁需要获取货币数量或者关闭天数
+            if args.aim_args_str == "close_day" then
+                newyearmoppingup_day = args.aim_args_val
+            elseif args.aim_args_str == "open" then
+                newyearmoppingup_star = args.aim_args_val
+            end
+        end
+    end
+
+    local gray_is_show = false
+    if cell_data.buy_count >= cell_data.limit_buy then
+        cell.sold:setVisible(true)
+        cell.grey:setVisible(true)
+        cell.discount_label:setString("")
+        gray_is_show = true
+    else
+        cell.sold:setVisible(false)
+        cell.grey:setVisible(false)
+        self:showLimitBuyInfo(cell, cell_data, limit_buy_type)
+    end
+	if not gray_is_show then
+		cell.grey:setVisible(false)
+	end
+	cell.lock_label:setString("")
+	cell.is_lock = false
+
+    --道具
+    if cell_data.item_list and #cell_data.item_list > 0 then
+        local bid = cell_data.item_list[1].bid
+        cell.bid = bid
+        local num = cell_data.item_list[1].num
+        cell.goods_item:setBaseData(bid, num, true)
+        if bid then
+            local cfg = Config.ItemData.data_get_data(bid)
+            if cfg.type == BackPackConst.item_type.HERO_HUN then
+                -- local starNum = cfg.eqm_jie
+                -- cell.goods_item:createStar(starNum,15)
+                if cfg.camp_type ~= 0 then
+                    cell.goods_item:initCamp(cfg.camp_type)
+                end
+            end
+        end
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function SeerpalaceTimeShopPanel:setCellTouched(cell)
+    if not cell.index then return end
+    local cell_data = self.shop_data.exchange_list[cell.index]
+    if not cell_data then return end
+    if cell.is_lock then return end
+    if cell_data.buy_count >= cell_data.limit_buy then
+        return
+    end
+    --按钮 
+    local shop_data = {}
+    shop_data.shop_type = MallConst.MallType.TimeItemShop
+    shop_data.item_id = cell.bid or 1
+    shop_data.name = cell_data.aim_str
+    shop_data.limit_num = cell_data.limit_buy
+    shop_data.has_buy = cell_data.buy_count
+    shop_data.price = cell_data.expend_num
+    shop_data.pay_type = cell_data.expend_id
+    shop_data.is_show_limit_label = true
+
+    shop_data.bid = self.shop_data.bid --子活动编号
+    shop_data.aim = cell_data.aim
+    if cell_data.item_list and cell_data.item_list[1] then
+        shop_data.item_num = cell_data.item_list[1].num or 1
+    end
+    MallController:getInstance():openMallBuyWindow(true,shop_data)
+end
+function SeerpalaceTimeShopPanel:showLimitBuyInfo(cell, cell_data, limit_buy_type)
+    if not cell then return end
+    if limit_buy_type == 1 then
+        cell.discount_label:setString(string_format(TI18N("语言_c_4027"), cell_data.buy_count, cell_data.limit_buy))
+    elseif limit_buy_type == 2 then
+        cell.discount_label:setString(string_format(TI18N("语言_c_4028"), cell_data.buy_count, cell_data.limit_buy))
+    elseif limit_buy_type == 3 then
+        cell.discount_label:setString(string_format(TI18N("语言_c_4029"), cell_data.buy_count, cell_data.limit_buy))
+    elseif limit_buy_type == 0 then
+        cell.discount_label:setString("")
+    else
+        cell.discount_label:setString(string_format(TI18N("语言_c_4030"), cell_data.buy_count, cell_data.limit_buy))
+    end
+end
+
+function SeerpalaceTimeShopPanel:close_callback(  )
+	doStopAllActions(self.time_value)
+	if self.role_vo ~= nil then
+        if self.role_assets_event ~= nil then
+            self.role_vo:UnBind(self.role_assets_event)
+            self.role_assets_event = nil
+        end
+    end
+	controller:openSeerpalaceTimeShopPanel(false)
+end

@@ -1,0 +1,551 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      英雄进阶弹窗
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+HeroSuperHeartActivityPanel = HeroSuperHeartActivityPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+function HeroSuperHeartActivityPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/hero_super_heart_activity_panel"
+
+    self.res_list = {
+    }
+end
+
+function HeroSuperHeartActivityPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_size = self.main_container:getContentSize()
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.titlebg = self.main_container:getChildByName("imgTitleBg")
+    self.title = self.main_container:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_5023"))
+    moveTextBg(self.title,self.titlebg,50,self.titlebg:getContentSize().width)
+    --消耗
+    self.cost_panel = self.main_container:getChildByName("cost_panel")
+    self.cost_panel.label = self.cost_panel:getChildByName("label")
+    self.cost_panel.label:setString(TI18N("语言_c_4803"))
+    local node = cc.Node:create()
+    self.cost_panel:addChild(node)
+    self.cost_panel.node_item = node
+
+    --属性
+    local attr_panel = self.main_container:getChildByName("attr_panel")
+    self.attr_panel = attr_panel
+    self.attr_panel.pos = cc.p(self.attr_panel:getPosition())
+    self.attr_panel_size = attr_panel:getContentSize()
+    local attr_title = attr_panel:getChildByName("attr_title")
+    attr_title:setString(TI18N("语言_c_5024"))
+    self.attr_icon_list = {}
+    self.attr_label_key_list = {}
+    self.attr_labe_left_list = {}
+    self.attr_labe_right_list = {}
+    self.attr_arrow_list = {}
+    self.attr_imagebox_list = {}
+    for i=1,3 do
+        self.attr_icon_list[i] = attr_panel:getChildByName("attr_icon"..i)
+        self.attr_label_key_list[i] = attr_panel:getChildByName("attr_label_key"..i)
+        self.attr_labe_left_list[i] = attr_panel:getChildByName("attr_label_left"..i)
+        self.attr_imagebox_list[i] = attr_panel:getChildByName("imgbox_"..i)
+    end
+
+    --技能
+    self.skill_panel = self.main_container:getChildByName("skill_panel")
+    self.skill_title = self.skill_panel:getChildByName("skill_title")
+    self.skill_title:setString(TI18N("语言_c_5025"))
+    self.skill_des = self.skill_panel:getChildByName("skill_des")
+    self.skill_des:ignoreContentAdaptWithSize(true)
+    self.skill_des:setTextAreaSize(cc.size(600, 0))
+    self.imgbox_1 = self.skill_panel:getChildByName("imgbox_1") --异能英雄显示
+    self.imgbox_1.label_name_1 = self.imgbox_1:getChildByName("label_name_1")
+    self.imgbox_1.label_des_1 = self.imgbox_1:getChildByName("label_des_1")
+    self.imgbox_1.label_name_1:ignoreContentAdaptWithSize(true)
+    self.imgbox_1.label_name_1:setTextAreaSize(cc.size(300, 0))
+    self.imgbox_1.label_des_1:ignoreContentAdaptWithSize(true)
+    self.imgbox_1.label_des_1:setTextAreaSize(cc.size(300, 0))
+
+    local imgbox = self.skill_panel:getChildByName("imgbox")
+    self.scrollview_skill = imgbox:getChildByName("scrollview_skill")
+    self.scrollview_skill.size = self.scrollview_skill:getContentSize()
+    self.scrollview_skill:setScrollBarEnabled(false)
+
+    self.streng_btn = self.main_container:getChildByName("streng_btn")
+    self.streng_btn:getChildByName("label"):setString(TI18N("语言_c_2904"))
+
+    self.img_rule = self.main_container:getChildByName("img_rule")
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    --head
+    local activation_top_panel = self.main_container:getChildByName("activation_top_panel")
+
+    self.node_activat_item = activation_top_panel:getChildByName("node_activat_item")
+    local item = ExclusiveItem.new()
+    self.node_activat_item:addChild(item)
+    self.node_activat_item.itemIcon = item
+
+    self.activat_name = activation_top_panel:getChildByName("activat_name")
+    self.activat_name:setChangeScaleOffWidth(activation_top_panel:getContentSize().width - 380)
+    self.activat_type = activation_top_panel:getChildByName("activat_type")
+    self.activat_type:setChangeScaleOffWidth(activation_top_panel:getContentSize().width - 380)
+    self.activat_score = activation_top_panel:getChildByName("activat_score")
+    self.activat_score:setString(TI18N("语言_c_1742"))
+    self.power_label = CommonNum.new(1, activation_top_panel, 1, - 2, cc.p(0, 0.5))
+    self.power_label:setPosition(cc.p(self.activat_score:getPositionX() + self.activat_score:getContentSize().width + 5 , 32))
+    self.power_label:setNum(0)
+    -- self.power_label:setScale(0.8)
+end
+
+--强化成功效果
+function HeroSuperHeartActivityPanel:showEffect()
+    -- local item_top_panel = self.main_container:getChildByName("item_top_panel")
+    -- if not self.up_effect then 
+    --     local effect = createSpineByName("E50119")
+    --     -- effect:setPosition(cc.p(self.size.width/2, self.size.height/2 + 10))
+    --     item_top_panel:addChild(effect, 100)
+    --     local size = item_top_panel:getContentSize()
+    --     effect:setPosition(cc.p(size.width/2, size.height/2))
+    --     self.up_effect = effect
+    -- end
+    -- self.up_effect:setAnimation(0, PlayerAction.action_1, false)
+end
+
+function HeroSuperHeartActivityPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.streng_btn, handler(self, self._onClickBtnBreak) ,true, 2)
+    registerButtonEventListener(self.img_rule, function(param, sender, event_type)
+        local config
+        if self.data.panel_type == HERO_SOUL_TYPE then
+            config = Config.PartnerSoulData.data_const["game_rule1"]
+        else
+            config = Config.PartnerHeartData.data_const["game_rule1"]
+        end
+        TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+    end ,true, 2)
+    -- --强化数据更新
+    -- self:addGlobalEvent(HeroEvent.Hero_SOUL_UPDATE_Event, function(vo) 
+    --     if not self.hero_vo then return end
+    --     local config = Config.PartnerSoulData.data_soul_level[vo.hid][vo.h_lev + 1]
+    --     if not config then
+    --         message(TI18N("语言_c_2104"))
+    --         controller:openHeroSuperHeartActivityPanel(false)
+    --         return
+    --     end
+    --     self:showEffect()
+    --     self.hero_vo = vo
+    --     self:updateData()
+    --     self:setData()
+    -- end)
+    -- self:addGlobalEvent(HeroEvent.Hero_HEART_UPDATE_Event, function(vo) 
+    --     if not self.hero_vo then return end
+    --     local config = Config.PartnerHeartData.data_soul_level[vo.aid][vo.a_lev + 1]
+    --     if not config then
+    --         message(TI18N("语言_c_2104"))
+    --         controller:openHeroSuperHeartActivityPanel(false)
+    --         return
+    --     end
+    --     self:showEffect()
+    --     self.hero_vo = vo
+    --     self:updateData()
+    --     self:setData()
+    -- end)
+
+    --添加英雄选择返回事件
+    self:addGlobalEvent(HeroEvent.Upgrade_Star_Select_Event, function(vo) 
+        self:updateHeroItemInfo()
+    end)
+end
+
+--关闭
+function HeroSuperHeartActivityPanel:_onClickBtnClose()
+    controller:openHeroSuperHeartActivityPanel(false)
+end
+
+--强化
+function HeroSuperHeartActivityPanel:_onClickBtnBreak()
+    if not self.hero_vo then return end
+    local data = self.base_data
+    local lev_cfg = self.lev_cfg
+    local cost = lev_cfg.cost
+    if cost and next(cost) and cost[1][1] then
+        for i, v in ipairs(cost) do
+            if v[1] and v[1] ~= 0 then
+                local config = Config.ItemData.data_get_data(v[1])
+                local num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(v[1])
+                if config.type == BackPackConst.item_type.NORMAL and config.sub_type == BackPackConst.item_tab_type.HERO then
+                    local bid = config.effect[1].val[1] 
+                    local hero_cfg = Config.PartnerData.data_partner_base[bid]
+                    num = #(controller:getModel():getHeroInfoByBidStar(hero_cfg.bid, config.eqm_jie))
+                end
+                if num < v[2] then
+                    BackpackController:getInstance():openTipsSource( true,config)
+                    return 
+                end
+            end
+        end
+    end
+
+    local hero_list = {}
+    if self.hero_item_data_list then
+        for k, v in pairs(self.hero_item_data_list[1].dic_select_list) do
+            hero_list[#hero_list + 1] = {partner_id = k}
+        end
+    end
+    local expend = self.lev_cfg_next.expend1[1]
+    if expend and expend[1] then
+        if expend[3] > #hero_list then
+            local hero_cfg = Config.PartnerData.data_partner_base[expend[1]]
+            local config = Config.ItemData.data_get_data(hero_cfg.item_id)
+            BackpackController:getInstance():openTipsSource( true,10412)
+            return
+        end
+    end
+    if self.data.panel_type == HERO_SOUL_TYPE then
+        if self.hero_vo.isResonateHero and self.hero_vo:isResonateHero() then
+            message(TI18N("语言_c_5489"))
+        else
+            controller:sender11023(self.hero_vo.partner_id, hero_list)
+        end
+    else
+        --这里需要判断魂器等级条件
+        local limit_h_lev = self.lev_cfg_next.limit_h_lev
+        if limit_h_lev > self.hero_vo.h_lev then
+            message(string.format("语言_c_5151", limit_h_lev))
+            return
+        end
+        controller:sender11027(self.hero_vo.partner_id, hero_list)
+    end
+    controller:openHeroSuperHeartActivityPanel(false)
+end
+
+function HeroSuperHeartActivityPanel:openRootWnd(data)
+    if not data then return end
+    self.data = data
+    self.hero_vo = data.hero_vo
+    self:updateData()
+    self:setData()
+end
+
+function HeroSuperHeartActivityPanel:updateData()
+    self.base_data = nil
+    local hero_vo = self.hero_vo
+    local h_cfg = Config.PartnerData.data_partner_base_fun(hero_vo.bid)
+    if self.data.panel_type == HERO_SOUL_TYPE then
+        self.base_data = {id = ( not (hero_vo.hid and hero_vo.hid ~= 0) and h_cfg.horcruxes or hero_vo.hid), lev = hero_vo.h_lev or 0, score_val = hero_vo.h_score or 1000}
+        if not Config.PartnerSoulData.data_soul_level[self.base_data.id] then
+            send_error_to_pf("error_data_soul_levelid_"..self.base_data.id)
+        end
+        self.base_cfg = Config.PartnerSoulData.data_base_info[self.base_data.id]
+        self.lev_cfg = Config.PartnerSoulData.data_soul_level[self.base_data.id][1]
+        self.lev_cfg_next = Config.PartnerSoulData.data_soul_level[self.base_data.id][self.base_data.lev + 1]
+        self.title:setString(TI18N("语言_c_5023"))
+        self.titlebg:setContentSize(cc.size(self.title:getContentSize().width + 93, self.titlebg:getContentSize().height))
+    elseif self.data.panel_type == HERO_HEART_TYPE then
+        self.base_data = {id = ( not (hero_vo.aid and hero_vo.aid ~= 0) and h_cfg.alterheart or hero_vo.aid), lev = hero_vo.a_lev or 0, score_val = hero_vo.a_score or 1000}
+        self.base_cfg = Config.PartnerHeartData.data_base_info[self.base_data.id]
+        self.lev_cfg = Config.PartnerHeartData.data_soul_level[self.base_data.id][1]
+        self.lev_cfg_next = Config.PartnerHeartData.data_soul_level[self.base_data.id][self.base_data.lev + 1]
+        self.title:setString(TI18N("语言_c_5023"))
+        self.titlebg:setContentSize(cc.size(self.title:getContentSize().width + 93, self.titlebg:getContentSize().height))
+    end
+end
+
+function HeroSuperHeartActivityPanel:createSkillDes()
+    local new_des = self.skill_des:clone()
+    new_des:setVisible(true)
+    return new_des
+end
+
+function HeroSuperHeartActivityPanel:createSkillItem()
+    local new_box = self.imgbox_1:clone()
+    new_box:setVisible(true)
+    new_box.image_skill_1 = new_box:getChildByName("image_skill_1")
+    new_box.label_name_1 = new_box:getChildByName("label_name_1")
+    new_box.label_des_1 = new_box:getChildByName("label_des_1")
+    return new_box
+end
+
+function HeroSuperHeartActivityPanel:setData(hero_vo, next_data)
+    local data = self.base_data
+    --top icon
+    local base_cfg = self.base_cfg
+    local quality = 0
+    if base_cfg.quality >= 0 and base_cfg.quality <= 5 then
+        quality = base_cfg.quality
+    end
+    local res_id = PathTool.getQualityBg(base_cfg.quality)
+
+    local item_data = {}
+    item_data.is_lock = false
+    item_data.is_nolockm = true
+    item_data.bg = res_id
+    item_data.icon = PathTool.getSoulHorcruxIcon(base_cfg.icon)
+    item_data.lev = data.lev
+    self.node_activat_item.itemIcon:setData(item_data)
+
+    local color = BackPackConst.getEquipTipsColor(quality)
+    self.activat_name:setTextColor(color) 
+    self.activat_name:setString(base_cfg.name)
+    self.activat_type:setString(base_cfg.partner_name or "")
+    self.power_label:setNum(base_cfg.score)
+
+    --属性
+    local lev_cfg = self.lev_cfg
+    local lev_cfg_next = self.lev_cfg_next
+    local attr_num = 0
+    for i,v in ipairs(self.attr_label_key_list) do
+        local value = lev_cfg.attr[i]
+        if value and value[1] and value[2] then
+            local attr_key = value[1]
+            local attr_val = value[2]
+            local attr_val_next = lev_cfg_next.attr[i][2]
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+    
+            local res_id = PathTool.getAttrIconByStr(attr_key)
+            local res = PathTool.getResFrame("common",res_id)
+            loadSpriteTexture(self.attr_icon_list[i], res, LOADTEXT_TYPE_PLIST)
+    
+            local attr_name = Config.AttrData.data_key_to_name[attr_key]
+            v:setString(attr_name..":")
+            
+            self.attr_labe_left_list[i]:setString(attr_val)
+
+            self.attr_icon_list[i]:setVisible(true)
+            self.attr_label_key_list[i]:setVisible(true)
+            self.attr_labe_left_list[i]:setVisible(true)
+            self.attr_imagebox_list[i]:setVisible(true)
+            attr_num = attr_num + 1
+        else
+            self.attr_icon_list[i]:setVisible(false)
+            self.attr_label_key_list[i]:setVisible(false)
+            self.attr_labe_left_list[i]:setVisible(false)
+            self.attr_imagebox_list[i]:setVisible(false)
+        end
+    end
+    local height = self.main_size
+    local off_height = (3 - attr_num)*50
+    self.attr_panel:setContentSize(cc.size(self.attr_panel_size.width, self.attr_panel_size.height - off_height))
+    self.main_container:setContentSize(cc.size(self.main_size.width, self.main_size.height - off_height))
+    ccui.Helper:doLayout(self.main_container)
+    self.attr_panel:setPositionY(self.attr_panel.pos.y - off_height)
+    
+    self.activat_score:setPositionY(math.floor(self.activat_type:getPositionY() - self.activat_type:getContentSize().height))
+    self.power_label:setPositionY(self.activat_score:getPositionY())
+    --技能
+    if self.data.panel_type == HERO_SOUL_TYPE then
+        local des_list = {}
+        local total_height = 0
+        local max_lev = controller:getModel():getHorcruxesMaxLev()
+        for i, v in ipairs(Config.PartnerSoulData.data_soul_level[data.id] or {}) do
+            if v.desc and v.desc ~= "" and v.lev > 1 and v.lev <= max_lev then
+                local node_des = self:createSkillDes()
+                node_des:setString(v.desc)
+                self.scrollview_skill:addChild(node_des)
+                total_height = total_height + node_des:getContentSize().height + 5
+                des_list[#des_list + 1] = node_des
+            end
+        end
+        if total_height < self.scrollview_skill.size.height then total_height = self.scrollview_skill.size.height
+        else self.scrollview_skill:setInnerContainerSize(cc.size(self.scrollview_skill.size.width, total_height)) end
+
+        for i, v in ipairs(des_list) do
+            v:setPosition(10 , total_height - 5)
+            total_height = total_height - 5 - v:getContentSize().height
+        end
+        local is_redpoint = HeroCalculate.checkSingleHeroHorcruxStringRedPoint(self.hero_vo)
+        addRedPointToNodeByStatus(self.streng_btn, is_redpoint, 5, 5)
+    else
+        --cur
+        local unlock_skill = {}
+        for i, v in ipairs(Config.PartnerHeartData.data_soul_level[data.id] or {}) do
+            if v.unlock and v.unlock ~= 0 then
+                local cur_config = Config.SkillData.data_get_skill(v.unlock)
+                if cur_config then
+                    local new_item = self:createSkillItem()
+                    self.scrollview_skill:addChild(new_item)
+                    local skillItem = SkillItem.new(true, true, true, 0.8, false)
+                    new_item.image_skill_1:addChild(skillItem)
+                    unlock_skill[#unlock_skill + 1] = new_item
+                    skillItem:setData(cur_config)
+                    new_item.label_name_1:setString(cur_config.name..string.format("("..TI18N("语言_c_656")..")", v.lev))
+                    new_item.label_des_1:setString(transformTextToShort(cur_config.des, 24))
+                end
+            end
+        end
+        local total_height = math.ceil(#unlock_skill / 1) * self.imgbox_1:getContentSize().height
+        if total_height < self.scrollview_skill.size.height then total_height = self.scrollview_skill.size.height
+        else self.scrollview_skill:setInnerContainerSize(cc.size(self.scrollview_skill.size.width, total_height)) end
+        for i, v in ipairs(unlock_skill) do
+            local x = 102--i%1 == 0 and self.imgbox_1:getContentSize().width or 0
+            local y = (math.ceil(i/1) - 1)* self.imgbox_1:getContentSize().height
+            v:setPosition(cc.p(x, total_height - y))
+        end
+        local is_redpoint = HeroCalculate.checkSingleHeroHeartStringRedPoint(self.hero_vo)
+        addRedPointToNodeByStatus(self.streng_btn, is_redpoint, 5, 5)
+    end
+
+    --cost
+    if lev_cfg_next and lev_cfg_next.cost and next(lev_cfg_next.cost) and lev_cfg_next.cost[1][1] then
+        local item_list = {}
+        self.cost_panel.node_item:removeAllChildren()
+        self.hero_item_list = {}
+        self.dic_other_selected = {}
+        local cost = lev_cfg_next.cost--{{10412,10},{24400,1}}
+        local total_w = 0
+        local item_width = 0
+        for i, v in ipairs(cost) do
+            local item = BackPackItem.new(false, true, false, 0.9, false, true, false)
+            -- item:setDefaultTip(true,false)
+            item:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    TipsManager:getInstance():showGoodsTips(v[1],true)
+                end
+            end)
+            self.cost_panel.node_item:addChild(item)
+            item:setData({bid = v[1], num = v[2]})
+            local num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(v[1])
+            local config = Config.ItemData.data_get_data(v[1])
+            if config.type == BackPackConst.item_type.NORMAL and config.sub_type == BackPackConst.item_tab_type.HERO then
+                local bid = config.effect[1].val[1] 
+                local hero_cfg = Config.PartnerData.data_partner_base[bid]
+                num = #(controller:getModel():getHeroInfoByBidStar(hero_cfg.bid, config.eqm_jie))
+            end
+            item:setNeedNum(v[2], num)
+            item_list[#item_list + 1]  = item
+            local item_size = item:getContentSize()
+            item_width = item_size.width
+            item:setPosition(item_size.width/2 + 10 + (i - 1)*item_size.width, self.cost_panel:getContentSize().height/2)
+            total_w = total_w + item_size.width + 10*(i - 1)
+        end
+        local expend = lev_cfg_next.expend1[1]
+        if expend then
+            --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+            self.hero_item_data_list = {}
+            self.hero_item_data_list[#self.hero_item_data_list + 1]  = self:getHeroData(expend[1], expend[2], expend[3]) 
+            local target_item = HeroExhibitionItem.new(0.9, true)
+            target_item:addCallBack(function()
+                self.dic_other_selected = {}--self.hero_item_list[1].dic_select_list
+                local setting = {}
+                setting.is_master = false
+                controller:openHeroUpgradeStarSelectPanel(true, self.hero_item_data_list[1], self.dic_other_selected, HeroConst.SelectHeroType.eStarFuse, setting)
+            end)
+            self.cost_panel.node_item:addChild(target_item)
+            target_item:setData(self.hero_item_data_list[#self.hero_item_data_list])
+            self.hero_item_list[#self.hero_item_list + 1] = target_item
+            item_list[#item_list + 1]  = target_item
+            local item_size = target_item:getContentSize()
+            item_width = item_size.width
+            target_item:setPosition(item_size.width/2 + 10 + (#item_list - 1)*item_size.width, self.cost_panel:getContentSize().height/2)
+            total_w = total_w + item_size.width + 10*(#item_list - 1)
+            self:initCostHero(expend)
+        end
+        for i, v in ipairs(item_list) do
+            v:setPositionX(- total_w/2 + item_width/2 + (i - 1)*(10 + item_width))
+        end
+        self.cost_panel.label:setPositionX(-total_w/2 - 5)
+        self.cost_panel:setVisible(true)
+    else
+        self.cost_panel:setVisible(false)
+    end
+end
+
+---初始化吃卡材料
+function HeroSuperHeartActivityPanel:initCostHero(expend)
+    local item = self.hero_item_list[1]
+    local data = self.hero_item_data_list[1]
+    local hero_list = model:getHeroList()
+
+    self.conditions_hero_list = {}
+    for k,hero in pairs(hero_list) do
+        --指定卡
+        if expend[1] == hero.bid and expend[2] == hero.star then
+            table.insert(self.conditions_hero_list, hero)
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"lev", true}, {"id", true}})
+    table.sort(self.conditions_hero_list, sort_func)
+    local count = 0
+    for _,hero_vo in ipairs(self.conditions_hero_list) do
+        if data.dic_select_list[hero_vo.id] == nil then
+            data.dic_select_list[hero_vo.id] = hero_vo
+            if not hero_vo:isInForm() and not hero_vo:isLock() then
+                count = count + 1
+            end
+            if count >= data.count then
+                break
+            end
+        end
+    end
+    self:updateHeroItemInfo()
+end
+
+function HeroSuperHeartActivityPanel:updateHeroItemInfo()
+    local item = self.hero_item_list[1]
+    local data = self.hero_item_data_list[1]
+    local count = #data.dic_select_list
+    for k, v in pairs(data.dic_select_list) do
+        count = count + 1
+    end
+    data.lev = string_format("%s/%s", count, data.count)
+    item.num_label:setString(data.lev)
+    if count >= data.count then
+        item:setHeadUnEnabled(false)
+    else
+        item:setHeadUnEnabled(true)
+    end  
+end
+
+function HeroSuperHeartActivityPanel:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+
+--无技能显示信息
+function HeroSuperHeartActivityPanel:ShowNoneSkillInfo( ... )
+    self.skill_title:setVisible(false)
+    self.skill_name:setString(TI18N("语言_c_2001"))
+    local size = self.skill_panel:getContentSize()
+    local bg = createImage(self.skill_panel, self.empty_res, size.width/2, size.height/2, cc.p(0.5,0.5), false)
+    bg:setScale(0.6)
+end
+
+function HeroSuperHeartActivityPanel:close_callback()
+    if self.skill_item then 
+        self.skill_item:DeleteMe()
+        self.skill_item = nil
+    end
+    controller:openHeroSuperHeartActivityPanel(false)
+end

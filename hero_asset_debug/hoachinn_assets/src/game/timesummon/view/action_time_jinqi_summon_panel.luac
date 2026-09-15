@@ -1,0 +1,877 @@
+
+--------------------------------------------
+-- @Date    : 2019-11-1 15:15:41
+-- @description    : 
+-- 限时禁器召唤（限时活动）
+---------------------------------
+
+local _controller = TimesummonController:getInstance()
+local _model = _controller:getModel()
+local jinqi_controller = JinqiController:getInstance()
+local jinqi_model = jinqi_controller:getModel()
+local _table_insert = table.insert
+local string_format = string.format
+
+ActionTimeJinqiSummonPanel = class("ActionTimeJinqiSummonPanel", function()
+    return ccui.Widget:create()
+end)
+
+function ActionTimeJinqiSummonPanel:ctor( bid )
+	self._summon_type_1 = 1 	  -- 单抽的抽取类型(1免费 3钻石 4道具)
+	self._summon_type_10 = 3 	  -- 十连抽抽取类型(3钻石 4道具)
+	self._summon_type = 1		  -- 抽取类型(1单抽 2十连抽)
+	self._init_flag = false
+	self._init_status = false -- 是否已初始化（up三个道具显示）
+	self.award_item_list = {}  -- 奖励item列表
+	self.arriveLuckly_label = {}
+	self.rewards_info = nil -- 抽奖结果数据
+	self.cur_ani_time = 0 -- 当前数字动画滚动了多少秒
+
+	local item_bid_cfg = Config.HolidayProhibitorData.data_const["common_s_1"]
+	if item_bid_cfg then
+		self.summon_item_bid = item_bid_cfg.val -- 召唤道具bid
+	end
+
+	self.res_list = {
+		{ path = PathTool.getPlistImgForDownLoad("timesummon","timesummon"), type = ResourcesType.plist },
+    } 
+    self.resources_load = ResourcesLoad.New() 
+    self.resources_load:addAllList(self.res_list, function (  )
+    	self:loadResListCompleted()
+    end)
+end
+
+-- 资源加载完成
+function ActionTimeJinqiSummonPanel:loadResListCompleted(  )
+	self:configUI()
+	self:register_event()
+	_controller:send30431()
+	self._init_flag = true
+end
+
+function ActionTimeJinqiSummonPanel:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_time_jinqi_summon_panel"))
+    self.root_wnd:setPosition(-40,-84)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+	
+	self.effect_panel = main_container:getChildByName("effect_panel")
+	self.image_bg = main_container:getChildByName("image_bg")
+	self.title_img = main_container:getChildByName("title_img")
+	self.title_img_1 = main_container:getChildByName("title_img_1")
+
+	self.item_bg = main_container:getChildByName("item_bg")
+	self.item_add = main_container:getChildByName("item_add")
+    self.item_num_txt = main_container:getChildByName("item_num_txt")
+    self.item_num_txt:setTextColor(Config.ColorData.data_color4[1])
+	self.item_num_txt:enableOutline(Config.ColorData.data_color4[2],2)
+	self.item_icon = main_container:getChildByName("item_icon")
+	loadSpriteTexture(self.item_icon, PathTool.getItemRes(Config.HolidayProhibitorData.data_const.common_s_1.val), LOADTEXT_TYPE)
+    self.baodi_bg = main_container:getChildByName("baodi_bg")
+
+    self.award_btn = main_container:getChildByName("award_btn")
+    local award_btn_txt = self.award_btn:getChildByName("label")
+	award_btn_txt:setChangeScaleOffWidth(-1000)
+	award_btn_txt:setString(TI18N("语言_c_728"))
+	setTextMaxWidth(award_btn_txt,100)
+    self.preview_btn = main_container:getChildByName("preview_btn")
+    local preview_btn_txt = self.preview_btn:getChildByName("label")
+	preview_btn_txt:setChangeScaleOffWidth(-1000)
+	preview_btn_txt:setString(TI18N("语言_c_7017"))
+	setTextMaxWidth(preview_btn_txt,100)
+
+    self.summon_btn_1 = main_container:getChildByName("summon_btn_1")
+    self.summon_btn_1:getChildByName("label"):setString(TI18N("语言_c_7018"))
+
+    self.summon_btn_10 = main_container:getChildByName("summon_btn_10")
+    self.summon_btn_10:getChildByName("label"):setString(TI18N("语言_c_7019"))
+
+	self.time_txt = main_container:getChildByName("time_txt")
+	local time_txt_0 = main_container:getChildByName("time_txt_0")
+	time_txt_0:setString(TI18N("语言_c_1113"))
+	self.time_txt:setPositionX(time_txt_0:getPositionX() + time_txt_0:getContentSize().width)
+
+	self.gold_max = createRichLabel(18, cc.c4b(0xff,0xff,0xff,0xff), cc.p(0.5,1), cc.p(534,60),-4,nil,300)
+	main_container:addChild(self.gold_max)
+	self.gold_max:setHorizontalLayoutType(2)
+
+	self.progress_panel = main_container:getChildByName("progress_panel")
+	self.progress = self.progress_panel:getChildByName("progress")
+	self.progress:setScale9Enabled(true)
+	self.show_bg = self.progress_panel:getChildByName("show_bg")
+
+	self.btnRule = main_container:getChildByName("btnRule")
+	
+	self.time = main_container:getChildByName("time")
+	--跳过抽卡动画
+	self.checkBox = main_container:getChildByName("checkbox")
+	local check_txt = self.checkBox:getChildByName("name")
+	check_txt:setString(TI18N("语言_c_7016"))
+	if check_txt:getContentSize().width > 140 then
+		self.checkBox:setPositionX(self.checkBox:getPositionX() - (check_txt:getContentSize().width - 140))
+	end
+	self:setAutoSacrificeStatus()
+end
+function ActionTimeJinqiSummonPanel:setAutoSacrificeStatus()
+    local status = NewPartnersummonController:getInstance():getModel():getignoreMp4()
+    if status ~= 0 then
+        self.checkBox:setSelected(true)
+    else
+        self.checkBox:setSelected(false)
+    end
+end
+-- 老虎机特效
+function ActionTimeJinqiSummonPanel:showEffect1( status, action_name, is_pool )
+	if status == true then
+		if self.config and self.config.call_bg then
+			local bg_res = PathTool.getPlistImgForDownLoad("bigbg/timesummon", string.format("txt_cn_prohibitor_bigbg_%d_1", self.config.call_bg), false)
+			self.title_load_1 = loadSpriteTextureFromCDN(self.title_img_1, bg_res, ResourcesType.single, self.title_load_1)
+			if self.config.show_params and next(self.config.show_params) then
+				local pso_info =  self.config.show_params[1]
+				local scale = pso_info[1]
+				local posx = pso_info[2]
+				local posy = pso_info[3]
+				self.title_img_1:setPositionX(posx)
+				self.title_img_1:setPositionY(posy)
+				self.title_img_1:setScale(scale)
+			end
+		end
+    else
+
+    end
+end
+
+-- 闪光特效2
+function ActionTimeJinqiSummonPanel:showEffect4( status )
+	if status == true then
+        if self.draw_effect_4 == nil then
+			local id = "E27204"
+			for key, value in pairs(self.rewards_info.rewards) do
+				if self.data.item_id == value.base_id then
+					id = "E24112"
+				end
+			end
+			self.draw_effect_4 = createEffectSpine(id, cc.p(360,500), cc.p(0.5, 0.5), false, PlayerAction.action, handler(self, self.onEffectCallBack2))
+			self.effect_panel:addChild(self.draw_effect_4,9999)
+		else
+			self:showEffect4(false)
+			self:showEffect4(true)
+        end
+    else
+        if self.draw_effect_4 then
+            self.draw_effect_4:clearTracks()
+            self.draw_effect_4:removeFromParent()
+            self.draw_effect_4 = nil
+        end
+    end
+end
+
+function ActionTimeJinqiSummonPanel:onEffectCallBack()
+    if self.cur_action_name == PlayerAction.action_1 then
+		self:openEndTimer(true)
+    end
+end
+
+function ActionTimeJinqiSummonPanel:onEffectCallBack2()
+	_controller:openActionTimeJinqiSummonGainWindow(true,self.rewards_info,TRUE)
+	-- self:showEffect4(false)
+	self.touch_summon = nil
+end
+
+
+-- 刷新保底次数显示
+function ActionTimeJinqiSummonPanel:updateBaodiCount(  )
+	if not self.baodi_bg or not self.data then return end
+
+	if not self.data.item_id or self.data.item_id == 0 then
+		self.baodi_bg:setVisible(false)
+		return
+	end
+	self.baodi_bg:setVisible(true)
+	if not self.baodi_item then
+		self.baodi_item = BackPackItem.new(true, true, false, 0.38)
+		self.baodi_item:setDefaultTip()
+		self.baodi_item:setAnchorPoint(cc.p(1, 0.5))
+		self.baodi_item:setPosition(cc.p(30, 22.5))
+		self.baodi_bg:addChild(self.baodi_item)
+	end
+	if not self.cur_show_bid or self.cur_show_bid ~= self.data.item_id then
+		self.baodi_item:setBaseData(self.data.item_id, self.data.item_num)
+		self.cur_show_bid = self.data.item_id
+	end
+
+	local count = self.data.must_count or 0
+	if not self.baodi_text then
+		self.baodi_text = createRichLabel(20, 1, cc.p(1, 0.5), cc.p(250, 22.5),-8,0,380)
+		self.baodi_bg:addChild(self.baodi_text)
+	end
+	self.baodi_text:setString(string.format(TI18N("语言_c_7015"), count))
+	self.baodi_bg:setContentSize(cc.size(self.baodi_text:getContentSize().width + self.baodi_item:getContentSize().width * 0.35 + 90,45))
+	self.baodi_text:setPositionX(self.baodi_bg:getContentSize().width - 75)
+	self.baodi_item:setPositionX(self.baodi_text:getPositionX() - self.baodi_text:getContentSize().width - 5)
+end
+
+-- 显示背景图
+function ActionTimeJinqiSummonPanel:updateImageBg(  )
+	if self.config and self.config.res_id and (not self.cur_res_id or self.cur_res_id ~= self.config.res_id) and self.config.call_bg then
+		local bg_res = PathTool.getPlistImgForDownLoad("bigbg/timesummon", string.format("txt_cn_prohibitor_bigbg_%d", self.config.call_bg), false)
+		self.bg_load = loadImageTextureFromCDN(self.image_bg, bg_res, ResourcesType.single, self.bg_load)
+
+		local bg_res_2 = PathTool.getPlistImgForDownLoad("bigbg/timesummon", string.format("txt_cn_prohibitor_%d", self.config.res_id), false)
+		self.title_load = loadSpriteTextureFromCDN(self.title_img, bg_res_2, ResourcesType.single, self.title_load)
+		
+		self.cur_res_id = self.config.res_id
+	end
+end
+
+-- 刷新按钮显示状态
+function ActionTimeJinqiSummonPanel:updateSummonBtnStatus(  )
+	if self.data and self.config and self.summon_item_bid then
+		local summon_have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.summon_item_bid)
+		local _times = self.data.gold_count
+		local all_times = Config.HolidayProhibitorData.data_const["prohibitor_lottery_daily_limit_1"].val
+		-- 单抽
+		if not self.summon_txt_1 then
+			self.summon_txt_1 = createRichLabel(18, nil, cc.p(0.5, 0.5), cc.p(120.5, 22))
+			self.summon_btn_1:addChild(self.summon_txt_1)
+		end
+		local cur_time = GameNet:getInstance():getTime()
+		local txt_str_1 = ""
+		if self.data.free_time and self.data.free_time <= cur_time then
+			txt_str_1 = TI18N("语言_c_1903")
+			self:openSummonFreeTimer(false)
+			self._summon_type_1 = 1
+		elseif summon_have_num >= 1 or _times + 1 > all_times then
+			local item_config = Config.ItemData.data_get_data(self.summon_item_bid)
+			if item_config then
+				local res = PathTool.getItemRes(item_config.icon)
+				txt_str_1 = string.format(TI18N("<img src='%s' scale=0.4 /><div fontcolor=#ffffff>%d</div>"), res, 1)
+			end
+			self:openSummonFreeTimer(false)
+			self._summon_type_1 = 4
+		elseif self.data.free_time then
+			self.left_time = self.data.free_time - cur_time
+			txt_str_1 = string.format(TI18N("语言_c_1904"), TimeTool.GetTimeFormat(self.left_time))
+			self:openSummonFreeTimer(true)
+			self._summon_type_1 = 3
+		end
+		self.summon_txt_1:setString(txt_str_1)
+
+		-- 十连抽
+		if not self.summon_txt_10 then
+			self.summon_txt_10 = createRichLabel(18, nil, cc.p(0.5, 0.5), cc.p(120.5, 22))
+			self.summon_btn_10:addChild(self.summon_txt_10)
+		end
+		local txt_str_10 = ""
+		if summon_have_num >= 10 or _times + 10 > all_times then
+			local item_config = Config.ItemData.data_get_data(self.summon_item_bid)
+			if item_config then
+				local res = PathTool.getItemRes(item_config.icon)
+				txt_str_10 = string.format(TI18N("<img src='%s' scale=0.4 /><div fontcolor=#ffffff>%d</div>"), res, 10)
+			end
+			self._summon_type_10 = 4
+		else
+			local bid = self.config.loss_gold_ten[1][1]
+			local num = self.config.loss_gold_ten[1][2]
+			txt_str_10 = string.format(TI18N("<img src='%s' scale=0.3 /><div fontcolor=#ffffff>%d</div>"), PathTool.getItemRes(bid), num)
+			self._summon_type_10 = 3
+		end
+		self.summon_txt_10:setString(txt_str_10)
+	end
+end
+
+-- 开启免费倒计时
+function ActionTimeJinqiSummonPanel:openSummonFreeTimer( status )
+	if status == true then
+		if self.left_time > 0 and self.summon_txt_1 then
+			if not self.summon_timer then
+                self.summon_timer = GlobalTimeTicket:getInstance():add(function()
+					if not self.summon_txt_1 then return end
+                    if self.data and (self.data.free_time - GameNet:getInstance():getTime()) > 0 then
+                        self.left_time = self.data.free_time - GameNet:getInstance():getTime()
+                        self.summon_txt_1:setString(string.format(TI18N("语言_c_1904"), TimeTool.GetTimeFormat(self.left_time)))
+                    	self._summon_type_1 = 3
+                    else
+                        self.summon_txt_1:setString(TI18N("语言_c_1903"))
+                        self._summon_type_1 = 1
+                        GlobalTimeTicket:getInstance():remove(self.summon_timer)
+                        self.summon_timer = nil
+                    end
+                end, 1)
+            end
+		else
+			if self.summon_timer ~= nil then
+	            GlobalTimeTicket:getInstance():remove(self.summon_timer)
+	            self.summon_timer = nil
+	        end
+		end
+	else
+		if self.summon_timer ~= nil then
+            GlobalTimeTicket:getInstance():remove(self.summon_timer)
+            self.summon_timer = nil
+        end
+	end
+end
+
+-- 刷新进度条显示
+function ActionTimeJinqiSummonPanel:updateProgress(  )
+	local award_config = deepCopy(Config.HolidayProhibitorData.data_award[self.data.camp_id])
+	local start_y = 80
+	local distance_y = 487
+	if award_config then
+		local offset_y = (distance_y - start_y + 0)/(#award_config-1)
+		for i,v in ipairs(award_config) do
+			local item = self.award_item_list[i]
+			local pos_y = start_y + (i-1)*offset_y
+			if item == nil then
+				-- item = RoundItem.new(true,0.55,0.6)
+				item = BackPackItem.new(true, true, false, 0.5)
+				self.progress_panel:addChild(item)
+				self.award_item_list[i] = item
+
+				item:setPosition(cc.p(16.5, pos_y))
+				item:setBaseData(v.reward[1][1], v.reward[1][2])
+				item:showNumLabel(true)
+				item:showRedPoint(false)
+				-- item:setVisibleRoundBG(false)
+				local function func()
+					_controller:send30433(v.id)
+				end
+				item:addCallBack(func)
+				item:setNumSacl(1.5)
+			end
+
+			if not self.arriveLuckly_label[i] and self.award_item_list[i] then
+				self.arriveLuckly_label[i] = createLabel(22,cc.c3b(0xf4,0xee,0xd3),cc.c3b(0x00,0x00,0x00),0,pos_y-40,"",self.progress_panel,2, cc.p(0,0.5))
+			end
+			if self.arriveLuckly_label[i] then
+				self.arriveLuckly_label[i]:setString(v.times)
+				self.arriveLuckly_label[i]:setScale(1)
+			end
+
+			if v.id == tableLen(award_config) then
+				if self.reward_show == nil then
+					local show_reward_id = v.reward_show
+					local nohideIds = deepCopy(RoleController:getInstance():getModel():getSeverShowIds("prohibitor_data"))
+
+					local item_cache = deepCopy(Config.ProhibitorData.data_get_prohibitor[v.reward_show])
+					self.item_cfg = item_cache
+					if item_cache and item_cache.isshow == 0 and not table.indexof(nohideIds,v.reward_show) then
+						-- 后台配置屏蔽的
+					else
+						if item_cache then
+							if item_cache and item_cache.resource and item_cache.resource ~= "" then
+								local pic_id = item_cache.resource
+								local res = PathTool.getJinqiIcon(pic_id,2)
+								if not self.reward_show then
+									self.reward_show = createSprite("", 103, 70, self.show_bg, cc.p(0.5, 0.5), LOADTEXT_TYPE) --createEffectSpine(effect_id, cc.p(95,30), cc.p(0, 0.5), true, PlayerAction.stand)
+								end
+								loadSpriteTexture(self.reward_show, res, LOADTEXT_TYPE)
+								-- self.show_bg:addChild(self.reward_show)
+								self.reward_show:setScale(0.35)
+							end
+						end
+					end
+				end
+			end
+		end
+
+		-- 计算进度条
+		local last_times = 0
+		local progress_width = 487
+		local first_off = start_y-0 -- 0到第一个的距离
+		local distance = 0
+		for i,v in ipairs(award_config) do
+			if i == 1 then
+				if self.data.times <= v.times then
+					distance = (self.data.times/v.times)*first_off
+					break
+				else
+					distance = first_off
+				end
+			else
+				if self.data.times <= v.times then
+					distance = distance + ((self.data.times-last_times)/(v.times-last_times))*offset_y
+					break
+				else
+					distance = distance + offset_y
+				end
+			end
+			last_times = v.times
+		end
+		self.progress:setPercent(distance/progress_width*100)
+
+		if not self.num_label then
+			self.num_label = createLabel(22,cc.c3b(0xf4,0xee,0xd3),cc.c3b(0x00,0x00,0x00),-20,-20,"",self.progress_panel,2, cc.p(0,0.5))
+		end
+		self.num_label:setString(string_format(TI18N("语言_c_1905"),self.data.times))
+	end
+
+	self:updateAwardStatus()
+end
+
+function ActionTimeJinqiSummonPanel:updateAwardStatus()
+	local award_config = Config.HolidayProhibitorData.data_award[self.data.camp_id]
+	if award_config then
+		for i,v in pairs(award_config) do
+			local _bool = false
+			local _un_enabled = false
+			for k,m in pairs(self.data.reward_list) do
+				if v.id == m.id then
+					_un_enabled = true
+					break
+				end
+			end
+
+			for j,n in ipairs(self.data.award_list) do
+				if v.id == n.id then
+					_bool = true
+					break
+				end
+			end
+			
+			setChildUnEnabled(false, self.award_item_list[i])
+			if self.award_item_list[i] then
+				self.award_item_list[i]:setDefaultTip(not _bool)
+				self.award_item_list[i]:showRedPoint(_bool)
+				self.award_item_list[i]:showRedPointScale(1.5)
+				-- self.award_item_list[i]:setVisibleRedPoint(_bool)
+	
+				if _un_enabled == true then
+					setChildUnEnabled(true, self.award_item_list[i])
+				end
+			end
+		end
+	end
+end
+
+-- 刷新道具数量
+function ActionTimeJinqiSummonPanel:updateItemNum( bag_code, data_list )
+	if self.summon_item_bid then
+		if bag_code and data_list then
+			if bag_code == BackPackConst.Bag_Code.BACKPACK then
+				for i,v in pairs(data_list) do
+					if v and v.base_id and self.summon_item_bid == v.base_id then
+						local summon_have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.summon_item_bid)
+						self.item_num_txt:setString(summon_have_num)
+						self:updateSummonBtnStatus()
+						break
+					end
+				end
+			end
+		else
+			local summon_have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.summon_item_bid)
+			self.item_num_txt:setString(summon_have_num)
+		end
+		self.item_num_txt:setPositionX(self.item_icon:getPositionX() + self.item_icon:getContentSize().width * 0.4 + 5)
+		self.item_add:setPositionX(self.item_num_txt:getPositionX() + self.item_num_txt:getContentSize().width + 10)
+		self.item_bg:setPositionX(self.item_icon:getPositionX() + self.item_icon:getContentSize().width * 0.4 - 20)
+		self.item_bg:setContentSize(cc.size(self.item_num_txt:getContentSize().width + self.item_add:getContentSize().width + 20,30))
+	end
+end
+
+function ActionTimeJinqiSummonPanel:register_event(  )
+	registerButtonEventListener(self.award_btn, function (  )
+		if self.config and self.data then
+			_controller:openTimeSummonAwardView(true, self.config.group_id, self.data,TimesummonConst.ActonInfoType.Jinqi_summon)
+		end
+	end, true)
+
+	registerButtonEventListener(self.preview_btn, function (  )
+		_controller:send23219(993259)
+	end, true)
+
+	registerButtonEventListener(self.item_add, function (  )
+		local item_id = Config.HolidayProhibitorData.data_const.common_s_1.val
+		local item_config = Config.ItemData.data_get_data(item_id)
+		BackpackController:getInstance():openTipsSource(true, item_config)
+	end, true)
+
+	registerButtonEventListener(self.btnRule, function(param,sender, event_type)
+		if self.data then
+			local config = Config.HolidayProhibitorData.data_action[self.data.camp_id]
+			if config then
+				TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition(),nil,nil,500)	
+			end
+		end
+    end ,true, 1)
+
+	-- 召唤1次
+	registerButtonEventListener(self.summon_btn_1, function (  )
+		if self.touch_summon then 
+			message(TI18N("语言_c_4414"))
+			return 
+		end
+		if self.touch_summon_ticket == nil then
+			self.touch_summon_ticket = GlobalTimeTicket:getInstance():add(function()
+				if self.touch_summon_ticket ~= nil then
+					GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+					self.touch_summon_ticket = nil
+				end
+			end,2)
+		end
+		self.touch_summon = true
+		local max, count = HeroController:getInstance():getModel():getHeroMaxCount()
+		if self._summon_type_1 == 3 and self.config then
+			local num = self.config.loss_gold_once[1][2]
+			local call_back = function ()
+				self._summon_type = 1
+                _controller:send30432( 1, self._summon_type_1 ,false)
+            end
+            local item_icon_2 = Config.ItemData.data_get_data(self.config.loss_gold_once[1][1]).icon
+            local val_str = Config.ItemData.data_get_data(self.config.gain_once[1][1]).name or ""
+            local val_num = self.config.gain_once[1][2]
+            local call_num = 1
+            self:showAlert(num,item_icon_2,val_str,val_num,call_num,call_back)
+		else
+			self._summon_type = 1
+			_controller:send30432( 1, self._summon_type_1 ,false)
+		end
+	end, true)
+
+	-- 召唤10次
+	registerButtonEventListener(self.summon_btn_10, function (  )
+		if self.touch_summon then 
+			message(TI18N("语言_c_4414"))
+			return 
+		end
+		if self.touch_summon_ticket == nil then
+			self.touch_summon_ticket = GlobalTimeTicket:getInstance():add(function()
+				if self.touch_summon_ticket ~= nil then
+					GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+					self.touch_summon_ticket = nil
+				end
+			end,2)
+		end
+		self.touch_summon = true
+		if self._summon_type_10 == 3 and self.config then
+			local num = self.config.loss_gold_ten[1][2]
+			local call_back = function ()
+				self._summon_type = 2
+                _controller:send30432(10, self._summon_type_10 ,false)
+            end
+            local item_icon_2 = Config.ItemData.data_get_data(self.config.loss_gold_ten[1][1]).icon
+            local val_str = Config.ItemData.data_get_data(self.config.gain_ten[1][1]).name or ""
+            local val_num = self.config.gain_ten[1][2]
+            local call_num = 10
+            self:showAlert(num,item_icon_2,val_str,val_num,call_num,call_back)
+		else
+			self._summon_type = 2
+			_controller:send30432( 10, self._summon_type_10 ,false)
+		end
+	end, true)
+
+	-- 召唤数据更新
+	if not self.update_summon_data_event then
+        self.update_summon_data_event = GlobalEvent:getInstance():Bind(TimesummonEvent.Update_Jinqi_Summon_Data_Event,function (data)
+            self:setData(data)
+        end)
+	end
+
+	-- 精灵抽奖结果更新
+	if not self.update_summon_rewards_data_event then
+		self.update_summon_rewards_data_event = GlobalEvent:getInstance():Bind(TimesummonEvent.Update_Jinqi_Summon_Rewards_Data_Event,function (data)
+			self.rewards_info = data
+            self:startEffectAwardShow()
+			-- self:checkElfin()
+        end)
+	end
+
+	-- 精灵抽奖结果item更新
+	if not self.update_elfin_item_event then
+		self.update_elfin_item_event = GlobalEvent:getInstance():Bind(TimesummonEvent.Update_Jinqi_Item_Event,function (data)
+			self.rewards_info = data
+            -- self:updateAwardItmes(false)
+			---- self:checkElfin()
+        end)
+	end
+
+    -- 道具数量更新
+    if not self.update_add_good_event then
+        self.update_add_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS,function(bag_code, data_list)
+            self:updateItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.update_delete_good_event then
+        self.update_delete_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS,function(bag_code, data_list)
+            self:updateItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.update_modify_good_event then
+        self.update_modify_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM,function(bag_code, data_list)
+            self:updateItemNum(bag_code,data_list)
+        end)
+    end
+	self:registerCheckBoxEvent(self.checkBox)
+
+	registerButtonEventListener(self.show_bg, function (  )
+		if self.item_cfg then
+			local open_status,tips = JinqiController:getInstance():getModel():checkJinqiFunctionOpenStatus()
+			if open_status then
+				JinqiController:getInstance():openJinqiInfoMainWindow(true,1,self.item_cfg.id)
+			else
+				message(tips)
+			end
+		end
+	end, true)
+
+	-- 召唤数据更新
+	if not self.Update_Elfin_IsCan_Event then
+        self.Update_Elfin_IsCan_Event = GlobalEvent:getInstance():Bind(TimesummonEvent.Update_Jinqi_IsCan_Event,function (data)
+            self.touch_summon = nil
+        end)
+	end
+end
+
+-- function ActionTimeJinqiSummonPanel:checkElfin()
+-- 	local list = {}
+-- 	for key, value in pairs(self.rewards_info.rewards) do
+-- 		if value.quality >= 4 then
+-- 			local data = {}
+-- 			data.id = value.base_id
+-- 			table.insert(list, data)
+-- 		end
+-- 	end
+-- 	if tableLen(list) == 0 then return end
+-- 	local time = 0.1
+--     if self.rewards_info.sprite_bids then
+--         time = #self.rewards_info.sprite_bids * time
+--     end
+-- 	local status = NewPartnersummonController:getInstance():getModel():getignoreMp4()
+-- 	if status == 0 then
+-- 		time = time + 2
+-- 	end
+--     delayOnce(function ()
+--         if ElfinController:getInstance().elfin_info_wnd and ElfinController:getInstance().elfin_info_wnd:isOpen() == true then
+-- 			return
+-- 		end
+-- 		if _controller.action_time_elfin_summon_gain_window and _controller.action_time_elfin_summon_gain_window:isOpen() then
+-- 			if list and next(list or {}) ~= nil then
+-- 				local awards = table.remove(list, 1)
+-- 				if awards then
+-- 					local item_cfg = Config.ItemData.data_get_data(awards.id)
+-- 					ElfinController:getInstance():openElfinInfoWindow(true, item_cfg)
+-- 				end
+-- 			end
+-- 		end
+--     end,time+0.7)
+-- end
+--注册选项框事件
+function ActionTimeJinqiSummonPanel:registerCheckBoxEvent(btn)
+    if not btn then return end
+	btn:addEventListener(function(sender,event_type)
+	    if event_type == ccui.CheckBoxEventType.selected then
+            playButtonSound2()
+            NewPartnersummonController:getInstance():getModel():setignoreMp4(1)
+	        btn:setSelected(true)
+	    elseif event_type == ccui.CheckBoxEventType.unselected then 
+            playButtonSound2()
+            NewPartnersummonController:getInstance():getModel():setignoreMp4(0)
+            btn:setSelected(false)
+	    end
+    end)
+end
+--开始奖励和特效显示
+function ActionTimeJinqiSummonPanel:startEffectAwardShow(  )
+    local status = NewPartnersummonController:getInstance():getModel():getignoreMp4()
+	if status ~= 0 then
+		self:onEffectCallBack2()
+	else
+		-- self:showEffect1(true, PlayerAction.action_1)
+		self:showEffect4(true)
+	end
+end
+
+--结束奖励和特效显示
+function ActionTimeJinqiSummonPanel:endEffectAwardShow(  )
+	if self.touchUi and not tolua.isnull(self.touchUi) then
+		self.touchUi:removeFromParent()
+	end
+	self.touchUi = nil
+	local num = 0
+	for i ,v in ipairs(self.rewards_info.sprite_bids) do
+		if v.quality >= 4 then
+			num = num+1
+		end
+	end
+	self:openEndTimer(false)
+end
+
+-- 定时器
+function ActionTimeJinqiSummonPanel:openEndTimer(status)
+    if status == true then
+        if self.roll_timer == nil then
+            self.roll_timer = GlobalTimeTicket:getInstance():add(function()
+                self.cur_ani_time = self.cur_ani_time + 1
+                if self.cur_ani_time >= 2 then
+                    GlobalTimeTicket:getInstance():remove(self.roll_timer)
+					self.roll_timer = nil
+					self.cur_ani_time = 0
+					self:endEffectAwardShow()
+                end
+            end, 1)
+        end
+    else
+        if self.roll_timer ~= nil then
+            GlobalTimeTicket:getInstance():remove(self.roll_timer)
+            self.roll_timer = nil
+        end
+    end
+end
+
+-- 钻石召唤时的提示
+function ActionTimeJinqiSummonPanel:showAlert(num,item_icon_2,val_str,val_num,call_num,call_back)
+    if self.alert then
+        self.alert:close()
+        self.alert = nil
+    end
+
+    local cancle_callback = function ()
+        if self.alert then
+            self.alert:close()
+            self.alert = nil
+        end
+    end
+    local have_sum = RoleController:getInstance():getRoleVo().gold + RoleController:getInstance():getRoleVo().red_gold
+    local str = string.format(TI18N("语言_c_1906"),PathTool.getItemRes(item_icon_2),num,have_sum)
+    local str_ = str..string.format(TI18N("语言_c_7020"),val_num,val_str,call_num)
+	local cancel_callback = function ()
+		self.touch_summon = nil
+	end
+    if not self.alert then
+        self.alert = CommonAlert.show(str_, TI18N("语言_c_63"), call_back, TI18N("语言_c_62"), cancel_callback, CommonAlert.type.rich)
+    end
+end
+
+function ActionTimeJinqiSummonPanel:setData( data )
+	if not data then return end
+	self.data = data
+	
+	local str_time = string.format("%s-%s",TimeTool.getMD4(data.start_time),TimeTool.getMD4(data.end_time))
+    self.time:setString(str_time)
+	
+	local action_cfg = Config.HolidayProhibitorData.data_action[self.data.camp_id]
+	if action_cfg and action_cfg.group_id then
+		self.config = Config.HolidayProhibitorData.data_summon[action_cfg.group_id]
+	end
+	if self._init_status == false then
+		self._init_status = true
+	end
+	local str = string.format(TI18N("语言_c_6916"),self.data.gold_count,Config.HolidayProhibitorData.data_const["prohibitor_lottery_daily_limit_1"].val)
+	self.gold_max:setString(str)
+	-- 活动时间
+	setCountDownTime(self.time_txt,self.data.end_time - GameNet:getInstance():getTime())
+	
+	self:updateImageBg()
+	self:showEffect1(true,PlayerAction.show)
+	self:updateSummonBtnStatus()
+	self:updateProgress()
+	self:updateItemNum()
+	self:updateBaodiCount()
+end
+
+function ActionTimeJinqiSummonPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool)
+    if bool == true and self._init_flag == true then
+    	_controller:send30431()
+	end
+	if bool == false then
+		if self.touchUi and not tolua.isnull(self.touchUi) then
+			self.touchUi:removeFromParent()
+		end
+		self.touchUi = nil
+	end
+end
+
+function ActionTimeJinqiSummonPanel:DeleteMe(  )
+	doStopAllActions(self.time_txt)
+	self:showEffect1(false)
+	self:showEffect4(false)
+	self:openEndTimer(false)
+	if self.touchUi and not tolua.isnull(self.touchUi) then
+		self.touchUi:removeFromParent()
+	end
+	self.touchUi = nil
+
+	if self.award_item_list and next(self.award_item_list or {}) ~= nil then
+        for i, v in ipairs(self.award_item_list) do
+            if v and v.DeleteMe then
+                v:DeleteMe()
+            end
+        end
+	end
+
+	if self.win_item_list and next(self.win_item_list or {}) ~= nil then
+        for i, v in ipairs(self.win_item_list) do
+            if v and v.DeleteMe then
+                v:DeleteMe()
+            end
+        end
+	end
+	
+	if self.bg_load then
+		self.bg_load:DeleteMe()
+		self.bg_load = nil
+	end
+	if self.title_load then
+		self.title_load:DeleteMe()
+		self.title_load = nil
+	end
+	if self.title_load_1 then
+		self.title_load_1:DeleteMe()
+		self.title_load_1 = nil
+	end
+	if self.baodi_item then
+		self.baodi_item:DeleteMe()
+		self.baodi_item = nil
+	end
+	if self.resources_load then
+		self.resources_load:DeleteMe()
+		self.resources_load = nil
+	end
+	if self.alert then
+        self.alert:close()
+        self.alert = nil
+    end
+	if self.update_summon_data_event then
+		GlobalEvent:getInstance():UnBind(self.update_summon_data_event)
+		self.update_summon_data_event = nil
+	end
+	if self.update_summon_rewards_data_event then
+		GlobalEvent:getInstance():UnBind(self.update_summon_rewards_data_event)
+		self.update_summon_rewards_data_event = nil
+	end
+	if self.update_elfin_item_event then
+		GlobalEvent:getInstance():UnBind(self.update_elfin_item_event)
+		self.update_elfin_item_event = nil
+	end
+	
+	
+	if self.update_add_good_event then
+		GlobalEvent:getInstance():UnBind(self.update_add_good_event)
+		self.update_add_good_event = nil
+	end
+	if self.update_delete_good_event then
+		GlobalEvent:getInstance():UnBind(self.update_delete_good_event)
+		self.update_delete_good_event = nil
+	end
+	if self.update_modify_good_event then
+		GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+		self.update_modify_good_event = nil
+	end
+
+	self:openSummonFreeTimer(false)
+	
+    if self.touch_summon_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+        self.touch_summon_ticket = nil
+    end
+	if self.Update_Elfin_IsCan_Event ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.Update_Elfin_IsCan_Event)
+        self.Update_Elfin_IsCan_Event = nil
+    end
+end

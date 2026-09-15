@@ -1,0 +1,472 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      献祭《英雄和碎片》 融合 置换  回退(重生)
+-- <br/>Create: 2018年11月9日
+--
+-- --------------------------------------------------------------------
+HeroSoulHomologyPanel = class("HeroSoulHomologyPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+local partner_config = Config.PartnerData.data_get_compound_info
+
+function HeroSoulHomologyPanel:ctor(hero_vo)
+    self.active_alien_hero_vo = hero_vo or nil
+    self.passive_alien_hero_vo = nil
+
+    self:loadResources()
+end
+
+function HeroSoulHomologyPanel:loadResources()
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("bigbg/hero","hero_reset_bg", true), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_3", false), type = ResourcesType.single },
+        
+    } 
+    self.resources_load = ResourcesLoad.New(true) 
+    self.resources_load:addAllList(self.res_list, function()
+        self:configUI()
+        self:register_event()
+        self:createRootWnd()
+    end)
+end
+
+function HeroSoulHomologyPanel:configUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_soul_homology_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:loadTexture(PathTool.getPlistImgForDownLoad("bigbg/hero", "hero_reset_bg", true), LOADTEXT_TYPE)
+    self.background:setScale(display.getMaxScale())
+
+    self.main_panel = self.root_wnd:getChildByName("main_container")
+
+    self.spine_node = self.main_panel:getChildByName("spine_node")
+
+    self.top_layout = self.main_panel:getChildByName("top_layout")
+    self.top_layout:setVisible(false)
+    self.soul_btn = self.top_layout:getChildByName("soul_btn")
+    self.soul_btn_label = self.soul_btn:getChildByName("label")
+    self.soul_btn_label:setString(TI18N("语言_c_4529"))
+    local size = self.soul_btn:getContentSize()
+    self.relieve_btn_label = createRichLabel(22, cc.c4b(0xff,0xff,0xff,0xff), cc.p(0.5,0.5), cc.p(size.width * 0.5 ,size.height * 0.5), nil, nil, 900)
+    self.soul_btn:addChild(self.relieve_btn_label)
+    self.relieve_btn_label:setVisible(false)
+    local name = TI18N("语言_c_4660")
+    local config = Config.PartnerData.data_partner_const.unlink_cost or {}
+    local num = config.val[1][2] or 100
+    local item_config = Config.ItemData.data_get_data(config.val[1][1])
+    local label_str = string.format("<img src=%s visible=true scale=0.3 /><div fontColor=#ffffff fontsize=26 outline=2,#6c2b00>%d %s</div>", PathTool.getItemRes(item_config.icon), num, name)
+    self.relieve_btn_label:setString(label_str)
+
+    self.active_head_node = self.top_layout:getChildByName("active_head_node")
+    self.active_effect_node = self.top_layout:getChildByName("active_effect_node")
+    self.passive_head_node = self.top_layout:getChildByName("passive_head_node")
+    self.passive_effect_node = self.top_layout:getChildByName("passive_effect_node")
+
+    self.soul_complete_img = self.top_layout:getChildByName("soul_complete_img")
+    self.soul_complete_img:setVisible(false)
+    local pos = cc.p(self.soul_complete_img:getPosition())
+	local effect = createSpineByName("E30001")
+	effect:setAnimation(0, PlayerAction.action, true)
+	effect:setPosition(pos)
+    self.top_layout:addChild(effect)
+    self.soul_complete_effect = effect
+    self.soul_complete_effect:setVisible(false)
+    
+    self.down_layout = self.main_panel:getChildByName("down_layout")
+    self.tip_btn = self.down_layout:getChildByName("tip_btn")
+    self.lab_des = self.down_layout:getChildByName("lab_des")
+    self.lab_des:setString(TI18N("语言_c_4661"))
+end
+
+function HeroSoulHomologyPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool)
+end
+
+function HeroSoulHomologyPanel:register_event()
+    registerButtonEventListener(self.tip_btn, function(param,sender, event_type) 
+        local config = Config.PartnerData.data_partner_const.sphero_desc
+        if config then
+            local pos = cc.p(sender:getPosition())
+            local point = cc.p(pos.x, pos.y - 240)
+            TipsManager:getInstance():showCommonTips(config.desc, point)
+        end
+    end ,true, 1)
+    registerButtonEventListener(self.soul_btn, function() self:senderHomology() end ,true, 2)
+
+    --添加英雄选择返回事件
+    if not self.upgrade_star_select_event then
+        self.upgrade_star_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function()
+            --刷新数据就星了
+            if self.select_data then
+                self:updatePassive()
+            end
+        end)
+    end
+    --英雄数据更新
+    if self.hero_data_update_event == nil then
+        self.hero_data_update_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Update, function(hero_vo)
+            if not hero_vo then return end
+            self:updateTopLayout()
+        end)
+    end
+end
+
+function HeroSoulHomologyPanel:senderHomology()
+    if not self.active_alien_hero_vo or not self.passive_alien_hero_vo then return end
+    local is_lock, lock_id = self.active_alien_hero_vo:isLockByLocktype(HeroConst.LockType.eHeroSoulLock)
+    if is_lock then --解除状态 直接发送协议
+        local call_back = function()
+            controller:sender11021(self.active_alien_hero_vo.partner_id, lock_id, 1)
+        end
+        local role_vo = RoleController:getInstance():getRoleVo()
+        local have_sum = role_vo.gold + role_vo.red_gold
+        local config = Config.PartnerData.data_partner_const.unlink_cost or {}
+        local num = config.val[1][2] or 100
+        local str = string.format("%s<img src=%s visible=true scale=0.3 /><div fontColor=#289b14 fontsize= 26>%s</div><div fontColor=#764519>(%s:</div><div fontColor=#289b14 fontsize= 26>%s</div><div fontColor=#764519>)\n</div>",TI18N("语言_c_1059"),PathTool.getItemRes(3),num,TI18N("语言_c_1060"),have_sum)
+        local str_ = str..string.format("<div fontColor=#764519>%s</div>",TI18N("语言_c_4941"))
+        CommonAlert.show(str_, TI18N("语言_c_63"), call_back, TI18N("语言_c_62"), nil, CommonAlert.type.rich)
+    else
+        controller:openHeroSoulHomologyPreviewPanel(true, self.active_alien_hero_vo, self.passive_alien_hero_vo, function(partner_id, partner_id2, state)
+            controller:sender11021(partner_id, partner_id2, state)
+        end)
+    end
+end
+
+function HeroSoulHomologyPanel:createRootWnd()
+    self:updateHeroList()
+end
+
+--创建英雄列表 
+-- @select_camp 选中阵营
+function HeroSoulHomologyPanel:updateHeroList()
+    local select_camp = select_camp or 7
+    self.select_index = 0
+    if not self.list_view then
+        local img_box_0 = self.down_layout:getChildByName("img_box_0")
+        local scroll_view_size = img_box_0:getContentSize()
+        scroll_view_size.height = scroll_view_size.height - 10
+        local list_setting = {
+            start_x = 20,
+            space_x = 0,
+            start_y = 0,
+            space_y = 0,
+            item_width = 120,
+            item_height = 120,
+            row = 1,
+            col = 5,
+            need_dynamic = true
+        }
+
+        local img_box_0 = self.down_layout:getChildByName("img_box_0")
+        local x, y = img_box_0:getPosition()
+        self.list_view = CommonScrollViewSingleLayout.new(self.down_layout, cc.p(x, y - 5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0.5,0.5))
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        -- self.list_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end  
+    self.show_list = self:getHeroListByCamp(select_camp)
+    
+    local count = #self.show_list
+    
+    if count == 0 then
+        self:showEmptyIcon(true)
+    else
+        self:showEmptyIcon(false)
+    end 
+    if self.active_alien_hero_vo then
+        for i,v in ipairs(self.show_list) do
+            if v.partner_id == self.active_alien_hero_vo.partner_id then
+                self.select_index = i
+                break
+            end
+        end
+    end
+    self:updateTopLayout()
+    self.list_view:reloadData()--(nil, {item_height = 122})
+end
+
+--获取英雄信息列表
+function HeroSoulHomologyPanel:getHeroListByCamp(select_camp)
+    local hero_list = model:getHeroList()
+    local show_list = {}
+    local lock_list = {}
+
+    for k, hero_vo in pairs(hero_list) do
+        if not hero_vo:isResonateHero() and (select_camp == 0 or (select_camp == hero_vo.camp_type)) then
+            -- 锁定 , 上阵, 7星以上都不能被分解
+            if hero_vo:isLock() or (hero_vo.isInForm and hero_vo:isInForm()) then --or hero_vo.star >= self.limit_star then
+                table_insert(lock_list, hero_vo)
+            else
+                table_insert(show_list, hero_vo)
+            end
+            hero_vo.is_ui_select = nil
+        end
+    end 
+    local sort_func = SortTools.tableLowerSorter({"star", "lev", "camp_type", "bid", "sort_order"})
+    table_sort(lock_list, sort_func) 
+    table_sort(show_list, sort_func) 
+    for i,hero_vo in ipairs(lock_list) do
+        table_insert(show_list, hero_vo)
+    end
+    return show_list
+end
+
+
+--显示空白
+function HeroSoulHomologyPanel:showEmptyIcon(bool)
+    if not self.empty_icon and bool == false then
+        return
+    end
+    
+    if not self.empty_icon then
+        local img_box_0 = self.down_layout:getChildByName("img_box_0")
+        local x, y = img_box_0:getPosition()
+
+        local size = cc.size(200, 200)
+        self.empty_icon = ccui.Widget:create()
+        self.empty_icon:setContentSize(size)
+        self.empty_icon:setAnchorPoint(cc.p(0.5, 0.5))
+        self.empty_icon:setPosition(x, y)
+
+        self.down_layout:addChild(self.empty_icon, 10)
+        local res = PathTool.getPlistImgForDownLoad('bigbg', 'bigbg_3')
+        local bg = createImage(self.empty_icon, res, size.width / 2, size.height / 2, cc.p(0.5, 0.5), false)
+        
+        local login_data = LoginController:getInstance():getModel():getLoginData()
+        self.empty_label = createLabel(26, Config.ColorData.data_color4[175], nil, size.width / 2, -10, '', self.empty_icon, 0, cc.p(0.5, 0)) 
+    end
+
+    self.empty_label:setString(TI18N("语言_c_172"))
+    self.empty_icon:setVisible(bool)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroSoulHomologyPanel:createNewCell(width, height)
+    local cell = HeroExhibitionItem.new(0.9, true)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function HeroSoulHomologyPanel:numberOfCells()
+    return #self.show_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroSoulHomologyPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.show_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+    if self.select_index == index then
+        cell:setSelected(true)
+    else
+        cell:setSelected(false)
+    end
+
+    -- if (cell_data.isLock and cell_data:isLock()) or (cell_data.isInForm and cell_data:isInForm()) then --or cell_data.star >= self.limit_star then
+    --     cell:showLockIcon(true)
+    -- else
+    --     cell:showLockIcon(false)
+    -- end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function HeroSoulHomologyPanel:onCellTouched(cell)
+    local index = cell.index
+    local hero_vo = self.show_list[index]
+    if hero_vo then
+        self:selectHero(cell, hero_vo)
+    end
+end
+
+
+--@hero_vo 
+function HeroSoulHomologyPanel:selectHero(cell, hero_vo)
+    if not hero_vo  then return end
+    if not cell then return end
+    
+    if self.select_index == cell.index then return end
+
+    -- if self.select_cell ~= nil then
+    --     self.select_cell:setSelected(false)
+    -- end
+    local old_cell = self.list_view:getCacheCellByIndex(self.select_index)
+    if old_cell then
+        old_cell:setSelected(false)
+    end
+    -- self.select_cell = cell
+    self.select_index = cell.index
+    if cell then
+        cell:setSelected(true) 
+    end
+    self.active_alien_hero_vo = hero_vo
+
+    self:updateTopLayout()
+end
+
+function HeroSoulHomologyPanel:updateTopLayout()
+    self:updateActive()
+    self:updatePassive()
+end
+
+function HeroSoulHomologyPanel:updateActive()
+    self.passive_alien_hero_vo = nil
+    self.select_data = nil
+    self.passive_effect_node.record_spine_bid = nil
+    self.passive_effect_node.record_spine_star = nil
+    if self.active_alien_hero_vo then
+        --同调者
+        if not self.active_head_node.active_head then
+            local item = HeroExhibitionItem.new(1, false)
+             self.active_head_node:addChild(item)
+             self.active_head_node.active_head = item
+        end
+        self.active_head_node.active_head:setData(self.active_alien_hero_vo)
+        --effect
+        self:updateSpine(self.active_effect_node, self.active_alien_hero_vo, true)
+        self.top_layout:setVisible(true)
+        --判断当前异界英雄是否存在绑定英雄
+        local is_lock, lock_id = self.active_alien_hero_vo:isLockByLocktype(HeroConst.LockType.eHeroSoulLock)
+        -- print("-----------------------------HeroSoulHomologyPanel updateActive ",is_lock, lock_id, self.active_alien_hero_vo.bid)
+        if is_lock then
+            self.passive_alien_hero_vo = model:getHeroById(lock_id)
+        end
+        -- self.soul_complete_img:setVisible(is_lock)
+        self.soul_complete_effect:setVisible(is_lock)
+        self.soul_btn_label:setVisible(not is_lock )
+        self.relieve_btn_label:setVisible(is_lock)
+    else
+        self.top_layout:setVisible(false)
+    end
+end
+
+function HeroSoulHomologyPanel:updatePassive()
+    if not self.active_alien_hero_vo then return end
+    local is_lock, lock_id = self.active_alien_hero_vo:isLockByLocktype(HeroConst.LockType.eHeroSoulLock)
+    if not is_lock and self.select_data then
+        for k,v in pairs(self.select_data.dic_select_list) do
+            self.passive_alien_hero_vo = v
+            break
+        end
+    end
+    --被同调者
+    if not self.passive_head_node.passive_head then
+        local item = HeroExhibitionItem.new(1, true)
+            self.passive_head_node:addChild(item)
+            item:addCallBack(function() self:onClickHeroItem() end)
+            self.passive_head_node.passive_head = item
+    end
+    self.passive_head_node.passive_head:setData(self.passive_alien_hero_vo)
+    self.passive_head_node.passive_head:showAddIcon(self.passive_alien_hero_vo == nil)
+    if self.passive_alien_hero_vo == nil then
+        self.passive_head_node:setPositionY(self.passive_effect_node:getPositionY())
+    else
+        self.passive_head_node:setPositionY(self.active_head_node:getPositionY())
+    end
+    --effect
+    self:updateSpine(self.passive_effect_node, self.passive_alien_hero_vo, true)
+end
+
+--更新模型,也是初始化模型
+--@is_refresh  是否需要刷新(其实是假刷新)
+function HeroSoulHomologyPanel:updateSpine(parent_panel, hero_vo, is_refresh)
+    if not hero_vo then
+        if parent_panel.spine then
+            doStopAllActions(parent_panel.spine)
+            parent_panel.spine:removeFromParent()
+            parent_panel.spine = nil   
+        end
+        return 
+    end
+    if parent_panel.record_spine_bid and parent_panel.record_spine_bid == hero_vo.bid and 
+        parent_panel.record_spine_star and parent_panel.record_spine_star == hero_vo.star then
+        if is_refresh then
+            if parent_panel.spine then
+                local action1 = cc.FadeOut:create(0.2)
+                local action2 = cc.FadeIn:create(0.2)
+                parent_panel.spine:runAction(cc.Sequence:create(action1,action2))
+            end    
+        end
+        return
+    end
+    parent_panel.record_spine_bid = hero_vo.bid
+    parent_panel.record_spine_star = hero_vo.star
+
+    local fun = function()    
+        if not parent_panel.spine then
+            parent_panel.spine = BaseRole.new(BaseRole.type.partner, hero_vo, nil, {scale = 1, skin_id = hero_vo.use_skin})
+            parent_panel.spine:setAnimation(0,PlayerAction.show,true) 
+            parent_panel.spine:setCascade(true)
+            -- parent_panel.spine:setPosition(cc.p(100,190))
+            parent_panel.spine:setAnchorPoint(cc.p(0.5,0.5)) 
+            parent_panel.spine:setScale(0.8)
+            parent_panel:addChild(parent_panel.spine) 
+            parent_panel.spine:setOpacity(0)
+            local action = cc.FadeIn:create(0.2)
+            parent_panel.spine:runAction(action)
+        end
+    end
+    if parent_panel.spine then
+        doStopAllActions(parent_panel.spine)
+        parent_panel.spine:removeFromParent()
+        parent_panel.spine = nil
+        fun()
+    else
+        fun()
+    end
+end
+
+
+function HeroSoulHomologyPanel:onClickHeroItem()
+    if not self.active_alien_hero_vo then 
+        return 
+    end
+    local is_lock, lock_id = self.active_alien_hero_vo:isLockByLocktype(HeroConst.LockType.eHeroSoulLock)
+    if is_lock and self.passive_alien_hero_vo then
+        message(TI18N("语言_c_4562"))
+        return
+    end
+    if self.select_data == nil then
+        local select_data = {}
+        select_data.bid = 0
+        select_data.dic_select_list = {} --记录已选的英雄 在openHeroUpgradeStarSelectPanel那边选择
+        self.select_data = select_data
+    end
+    self.select_data.star = 5 --表示五星以上英雄
+    self.select_data.camp_type = HeroConst.CampType.eAlien  --这里用作排序相同类型的英雄
+    self.select_data.count = 1--数量
+    controller:openHeroUpgradeStarSelectPanel(true, self.select_data, {}, HeroConst.SelectHeroType.eSoulHomology)
+end
+
+
+function HeroSoulHomologyPanel:DeleteMe()
+    doStopAllActions(self.look_btn)
+    doStopAllActions(self.disband_container)
+
+    if self.upgrade_star_select_event then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+
+    if self.hero_data_update_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_update_event)
+        self.hero_data_update_event = nil
+    end
+
+    controller:openHeroResetWindow(false)
+end

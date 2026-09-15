@@ -1,0 +1,563 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 升星计划页面
+-- @DateTime:    2019-05-10 09:49:04
+-- *******************************
+ActionUpstarGiftPanel = class("ActionUpstarGiftPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local max_lv = 0
+function ActionUpstarGiftPanel:ctor(bid)
+    self.holiday_bid = bid
+    self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("actionpetard", "actionpetard"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("crossground", "crossground"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("starplan", "starplan"), type = ResourcesType.plist}
+	}
+    self.resources_load = ResourcesLoad.New(true)
+	self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+	end)
+end
+function ActionUpstarGiftPanel:loadResListCompleted(  )
+    self:configUI()
+	self:register_event()
+end
+
+function ActionUpstarGiftPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_upstar_gift_panel"))
+    if not self.root_wnd then return end
+    self.root_wnd:setPosition(-40, -82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.name_bg = self.main_container:getChildByName("name_bg")
+    self.hero_name = self.name_bg:getChildByName("hero_name")
+
+    self.herohead = self.main_container:getChildByName("herohead")
+    self.head_icon = self.herohead:getChildByName("head_icon")
+    
+    self.btn_tips = self.main_container:getChildByName("btn_tips") -- 帮助说明
+    self.Image_7 = self.main_container:getChildByName("Image_7")
+    self.Image_7:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    local time_tips = self.main_container:getChildByName("time_txt")
+    time_tips:setString(TI18N("语言_c_748"))
+    self.act_time = self.main_container:getChildByName("act_time")--活动时间
+    local time_pos_x = time_tips:getPositionX() + time_tips:getContentSize().width + 5
+    self.act_time:setPositionX(time_pos_x)
+    self.time_bg = self.main_container:getChildByName("time_bg")
+
+    self.tipsbg = self.main_container:getChildByName("tipsbg")
+    self.tips = self.main_container:getChildByName("tips")
+    -- setTextMaxWidth(self.tips,650)
+    self.goods_item = self.main_container:getChildByName("goods_list")
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0,
+        space_x = 0,
+        start_y = 5,
+        space_y = 4,
+        item_width = 690,
+        item_height = 120,
+        row = 0,
+        col = 1
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    controller:sender28332(self.holiday_bid)
+end
+-- 奖励列表
+function ActionUpstarGiftPanel:createTaskCell()
+    local cell = ActionUpstarGiftItem.new(self.holiday_bid)
+    return cell
+end
+
+function ActionUpstarGiftPanel:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function ActionUpstarGiftPanel:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    local is_last = false
+    if index == tableLen(self.reward_list) then
+        is_last = true
+    end
+    cell:setData(cell_data,is_last)
+end
+
+function ActionUpstarGiftPanel:setHolidayBG()
+    local campId = self.activityData.camp_id
+    local baseConfig = Config.HolidayStarplanPackData.data_holiday_const[campId]
+    local str_bg = "txt_cn_starplan_banner_1"
+    if baseConfig.banner and baseConfig.banner ~= "" then
+        str_bg = baseConfig.banner
+    end
+    local res = PathTool.getPlistImgForDownLoad("starplan/banner", str_bg)
+    if not self.bg_load then
+        self.bg_load = loadSpriteTextureFromCDN(self.image_bg, res, ResourcesType.single, self.bg_load)
+    end
+    if baseConfig.world and baseConfig.world ~= "" then
+        local title_txt_img = baseConfig.world
+        loadSpriteTexture(self.title_txt, PathTool.getResFrame("starplan", title_txt_img), LOADTEXT_TYPE_PLIST)
+    end
+end
+
+function ActionUpstarGiftPanel:register_event()
+    if not self.skin_buy_event then
+        self.skin_buy_event = GlobalEvent:getInstance():Bind(ActionEvent.UpStarGift, function(data,bid)
+            if data and bid == self.holiday_bid then
+                self.activityData = data
+                self:setData(data)
+            end
+        end)
+    end
+    self.btn_tips:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type, 1)
+        if event_type == ccui.TouchEventType.ended then
+            if self.activityData then
+                local campId = self.activityData.camp_id
+                local baseConfig = Config.HolidayStarplanPackData.data_holiday_const[campId]
+                if baseConfig then
+                    local str = string.format(baseConfig.rule,baseConfig.partner_name,baseConfig.partner_name)
+                    TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition())
+                end
+            end
+        end
+    end)
+
+    self.head_icon:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type, 1)
+        if event_type == ccui.TouchEventType.ended then
+            if self and self.activityData then
+                local baseConfig = Config.HolidayStarplanPackData.data_holiday_const[self.activityData.camp_id]
+                local heroId = baseConfig.partner_id[1]
+                HeroController:getInstance():openHeroLibraryInfoWindow(true, heroId)
+            else
+                message(TI18N("语言_c_4972"))
+            end
+        end
+    end)
+
+end
+
+function ActionUpstarGiftPanel:setData(data)
+    local campId = data.camp_id
+    local baseConfig = Config.HolidayStarplanPackData.data_holiday_const[campId]
+    local hero_name = baseConfig and baseConfig.partner_name or ""
+    self.hero_name:setString(hero_name)
+    local config = deepCopy(Config.HolidayStarplanPackData.data_task_list[campId])
+    if not config or not baseConfig then
+        return
+    end
+    self.reward_list = {}
+    for i, v in ipairs(config) do
+        if not self.reward_list[v.id] then
+            local a = {
+                cfg = v
+            }
+            self.reward_list[v.id] = a
+        else
+            self.reward_list[v.id].cfg = v
+        end
+        local process = v.progress
+        -- if process[3] > max_lv then
+        --     max_lv = process[3]
+        -- end
+    end
+    max_lv = tableLen(self.reward_list)
+    for i, v in ipairs(data.award_list) do
+        if self.reward_list[v.id] then
+            self.reward_list[v.id].serverdata = v
+        end
+    end
+    local list = {}
+    for key, value in pairs(self.reward_list) do
+        if value.serverdata and value.serverdata.is_show and value.serverdata.is_show ~= 1 then
+            table.insert(list, key)
+        end
+    end
+    table.sort(list,function(a,b) return a>b end)
+    for key, value in pairs(list) do
+        if self.reward_list[value] then
+            table.remove(self.reward_list, value)
+        end
+    end
+    self.reward_goods_item:reloadData()
+    self:setTitleInfo()
+end
+function ActionUpstarGiftPanel:setTitleInfo()
+    local campId = self.activityData.camp_id
+    local baseConfig = Config.HolidayStarplanPackData.data_holiday_const[campId]
+    local heroId = baseConfig.partner_id[1]
+    local res = PathTool.getHeadIcon(heroId)
+    self.head_icon:loadTexture(res, LOADTEXT_TYPE)
+
+    doStopAllActions(self.act_time)
+    local actInfo = controller:getActionSubTabVo(self.holiday_bid)
+    controller:getModel():setCountDownTime(self.act_time,actInfo.remain_sec)
+    local w1 = self.main_container:getChildByName("time_txt"):getContentSize().width
+    local w2 = self.act_time:getContentSize().width
+    local twidth = w1 + w2 + 20
+    self.time_bg:setContentSize(cc.size(twidth,30))
+
+    self.tips:setString(baseConfig.title)
+    local tips_width = self.tips:getContentSize().width
+    local tips_height = self.tips:getContentSize().height
+    self.tipsbg:setContentSize(cc.size(tips_width + 20,tips_height))
+
+    local data = HeroController:getInstance():getModel():getTopStarHeroInfoByBid(heroId)
+    local star_num = 5
+    if data then
+        star_num = data.star
+    end
+    self.star_con = ccui.Widget:create()
+    self.star_con:setZOrder(3)
+    self.star_con:setPosition(cc.p(self.head_icon:getContentSize().width * 0.5,10))
+    self.head_icon:addChild(self.star_con)
+    self.star_setting = model:createStar(star_num,self.star_con,self.star_setting)
+    self:setHolidayBG()
+end
+
+function ActionUpstarGiftPanel:DeleteMe()
+    doStopAllActions(self.act_time)
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    if self.bg_load then
+        self.bg_load:DeleteMe()
+        self.bg_load = nil
+    end
+    if self.skin_buy_event then
+        GlobalEvent:getInstance():UnBind(self.skin_buy_event)
+        self.skin_buy_event = nil
+    end
+end
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      升星计划子界面
+-- Create: 2018-06-28
+-- --------------------------------------------------------------------
+ActionUpstarGiftItem = class("ActionUpstarGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionUpstarGiftItem:ctor(holiday_bid)
+    self.holiday_bid = holiday_bid
+    self:configUI()
+    self:register_event()
+end
+
+function ActionUpstarGiftItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_upstar_gift_item"))
+    self:addChild(self.root_wnd)
+    -- self:setCascadeOpacityEnabled(true)
+    -- self:setContentSize(cc.size(ActionUpstarGiftItem.Width,ActionUpstarGiftItem.Height))
+    self:setAnchorPoint(0, 0)
+    self:setContentSize(cc.size(690, 120))
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setTouchEnabled(true)
+    self.main_container:setSwallowTouches(false)
+
+    self.bg = self.main_container:getChildByName("bg")
+
+    self.hero_layer = self.main_container:getChildByName("hero_layer")
+    self.starbg = self.hero_layer:getChildByName("starbg")
+    self.background = self.hero_layer:getChildByName("background")
+    self.Panel_1 = self.starbg:getChildByName("Panel_1")
+    self.star_num = self.Panel_1:getChildByName("star_num")
+    setTextSpacing(self.star_num,-10)
+    self.tempbg = self.hero_layer:getChildByName("Sprite_8")
+    self.tempbg_b = self.hero_layer:getChildByName("Sprite_9")
+    self.free_layer = self.main_container:getChildByName("free_layer")
+    self.free_layer:setSwallowTouches(true)
+    self.pic_has = self.main_container:getChildByName("pic_has")
+    self.pic_has:setVisible(false)
+    -- self.limit_label = self.main_container:getChildByName("limit_label")
+    self.buy_img = self.main_container:getChildByName("buy_img")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.get_btn_label = self.btn_get:getChildByName("Text_5")
+
+    self.item_srcoller = self.main_container:getChildByName("goods_item")
+    self.item_srcoller:setVisible(false)
+    self.srcoll_con = self.main_container:getChildByName("goods_con")
+    self.srcoll_con:setVisible(true)
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.srcoll_con:getContentSize()
+        local setting = {
+            item_class = BackPackItem, -- 单元类
+            start_x = 10, -- 第一个单元的X起点
+            space_x = 6, -- x方向的间隔
+            start_y = 4, -- 第一个单元的Y起点
+            space_y = 0, -- y方向的间隔
+            item_width = BackPackItem.Width * 0.7, -- 单元的尺寸width
+            item_height = BackPackItem.Height * 0.7, -- 单元的尺寸height
+            row = 1, -- 行数，作用于水平滚动类型
+            col = 0, -- 列数，作用于垂直滚动类型
+            scale = 0.7,
+            is_backpack_item = true
+        }
+        self.item_scrollview = CommonScrollViewLayout.new(self.srcoll_con, cc.p(0, 0), ScrollViewDir.horizontal,
+                                   ScrollViewStartPos.top, scroll_view_size, setting)
+        self.item_scrollview:setSwallowTouches(false)
+    end
+    if not self.head_icon then
+        self.head_icon = createImage(self.hero_layer, nil, 42, 34, cc.p(0.5, 0.5), false, 1, false)
+    end
+end
+
+function ActionUpstarGiftItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local charge_list = Config.ChargeData.data_charge_data
+            local charge_id = self.data.cfg.charge_id or nil
+            if charge_id and charge_list[charge_id] then
+                local config = charge_list[charge_id]
+                sdkOnPay(config.val, nil, config.id, config.name)
+            end
+	end, true)
+
+    self.free_layer:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            local get_status = self.data.serverdata.status
+            if get_status == 1 then
+                controller:sender28333(self.holiday_bid)
+            end
+        end
+    end)
+    registerButtonEventListener(self.head_icon, function()
+        if type(self.data.cfg.progress[2]) == "table" then
+            HeroController:getInstance():openHeroLibraryInfoWindow(true, self.data.cfg.progress[2][1])
+        else
+            HeroController:getInstance():openHeroLibraryInfoWindow(true, self.data.cfg.progress[2])
+        end
+	end)
+end
+
+function ActionUpstarGiftItem:setData(data)
+    if tolua.isnull(self.head_icon) then return end
+    self.data = data
+    if self.holiday_bid == ActionRankCommonType.copyupstargift3 then
+        loadSpriteTexture(self.starbg, PathTool.getResFrame("starplan", "starplan_16"), LOADTEXT_TYPE_PLIST)
+        self.Panel_1:setPositionX(self.starbg:getContentSize().width*0.5)
+        self.Panel_1:setContentSize(cc.size(self.starbg:getContentSize().width,200))
+        self.star_num:setPositionX(self.starbg:getContentSize().width*0.5)
+        self.star_num:setChangeScaleOffWidth(30)
+    end
+    -- 条件部分
+    self.head_icon:setTouchEnabled(true)
+    self.star_con = ccui.Widget:create()
+    self.star_con:setZOrder(3)
+    self.star_con:setPosition(cc.p(55,10))
+    self.star_con:setSwallowTouches(false)
+    self.head_icon:addChild(self.star_con)
+    self.star_setting = model:createStar(data.cfg.progress[3],self.star_con,self.star_setting)
+    if not self.head_icon_bg then 
+		self.head_icon_bg = createImage(self.head_icon,PathTool.getResFrame("crossground","crossground_1002"), 0, 0, cc.p(0,0),true,9998,true)
+		self.head_icon_bg:setCapInsets(cc.rect(14,14,1,1))
+		self.head_icon_bg:setContentSize(cc.size(119,119))
+        self.head_icon_bg:setTouchEnabled(false)
+        self.head_icon_bg:setSwallowTouches(false)
+	end
+    -- self.star_num:setString(TI18N("语言_hol_sta_or_02_"..(data.cfg.progress[3] - 4)))
+    self.star_num:setString(data.cfg.title)
+    local hero_bid = 0
+    if type(data.cfg.progress[2]) == "table" then
+        hero_bid = data.cfg.progress[2][1]
+    else
+        hero_bid = data.cfg.progress[2]
+    end
+    self:setHeadImg(hero_bid)
+    local score = HeroController:getInstance():getModel():heroBidScore(hero_bid)
+    if score and type(score)=="number" and score >= 10 then
+        self:setQualityImg(16)
+    else
+        self:setQualityImg(data.cfg.progress[3])
+    end
+    -- 免费部分
+    addRedPointToNodeByStatus(self.free_layer, false, 8, 8)
+    local freeGiftData = data.serverdata.awards1
+    if not self.freeItem then
+        self.freeItem = BackPackItem.new(false, true, false, 0.7, false, true)
+        self.freeItem:setPositionY(50)
+        self.freeItem:setPositionX(50)
+        self.free_layer:addChild(self.freeItem,0)
+    end
+    self.freeItem:setBaseData(freeGiftData[1].item_id, freeGiftData[1].item_count)
+    local get_status = data.serverdata.status
+    self.pic_has:setVisible(false)
+    self.freeItem:setCommonStatus(false)
+    self.freeItem:showOrderWarLock(false)
+    -- self.freeItem:showOrderWarLockBg(false)
+    if not tolua.isnull(self.freeItem) then
+        if get_status == 2 then --已领取
+            self.freeItem:setTouchEnabled(true)
+            self.freeItem:setCommonStatus(true,nil, PathTool.getResFrame("actionpetard", "txt_cn_petard_get"))
+        elseif get_status == 1 then--可领取
+            addRedPointToNodeByStatus(self.free_layer, true, 8, 8)
+            self.freeItem:setTouchEnabled(false)
+            self.freeItem:setCommonStatus(true,0, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_available"))
+        else --不可领取
+            self.freeItem:setTouchEnabled(true)
+            self.freeItem:showOrderWarLock(true,nil,0.8)
+            -- self.freeItem:showOrderWarLockBg(true)
+        end
+	end
+
+    -- 付费购买部分
+    local chargeId = data.cfg.charge_id
+    local chargeCfg = Config.ChargeData.data_charge_data[chargeId]
+    local price = string.format(TI18N("语言_c_4440"), (GetMoneyNum(chargeCfg, "val")))
+    self.get_btn_label:setString(price)
+    -- 限购
+    local maxTimes = data.cfg.limit_buy
+    local nowTimes = data.serverdata.count
+    if not self.limit_label then
+        self.limit_label = createRichLabel(20,cc.c4b(0x68,0x45,0x2a,0xff),cc.p(0.5,0),cc.p(607,10),-10)
+        self.main_container:addChild(self.limit_label)
+    end
+    self.limit_label:setString(string.format(TI18N("语言_c_1468"), nowTimes, maxTimes))
+    if data and data.serverdata and data.serverdata.count2 and data.serverdata.count2 >= maxTimes then
+        self.limit_label:setVisible(false)
+        if not self.tip_label then
+            self.tip_label = createLabel(20,cc.c4b(0x68,0x45,0x2a,0xff),cc.c4b(0x68,0x45,0x2a,0xff),607,10,"",self.main_container,0,cc.p(0.5,0))
+            self.tip_label:setChangeScaleOffWidth(550)
+            self.tip_label:setLineSpacing(-10)
+        end
+        self.tip_label:setVisible(true)
+        self.tip_label:setString(TI18N("语言_c_5404"))
+    else
+        if self.tip_label then
+            self.tip_label:setVisible(false)
+        end
+        self.limit_label:setVisible(true)
+    end
+    local leftTimes = maxTimes - nowTimes
+    
+    if not tolua.isnull(self.btn_get) then
+        if get_status ~= 0 then
+            self.head_icon_bg:setVisible(false)
+            self.tempbg:setVisible(true)
+            self.tempbg_b:setVisible(false)
+            if leftTimes <= 0 then -- 判断限购 
+                self.btn_get:setTouchEnabled(false)
+                -- setChildUnEnabled(true, self.btn_get)
+                self.buy_img:setVisible(true)
+                self.btn_get:setVisible(false)
+            else
+                self.buy_img:setVisible(false)
+                self.btn_get:setVisible(true)
+                self.btn_get:setTouchEnabled(true)
+                setChildUnEnabled(false,self.btn_get)
+            end
+        else
+            self.head_icon_bg:setVisible(true)
+            self.tempbg:setVisible(false)
+            self.tempbg_b:setVisible(true)
+            self.buy_img:setVisible(false)
+            self.btn_get:setVisible(true)
+            self.btn_get:setTouchEnabled(false)
+            setChildUnEnabled(true, self.btn_get)
+        end
+    end
+    -- if data.cfg.progress[3] >= max_lv then
+    if data.cfg.id >= max_lv then
+        self.tempbg:setVisible(false)
+        self.tempbg_b:setVisible(false)
+    end
+    local list = {}
+    for k, v in pairs(data.serverdata.awards2 or {}) do
+        local vo = {}
+        vo.bid = v.item_id
+        vo.quantity = v.item_count
+        table.insert(list, vo)
+    end
+    self.item_scrollview:setData(list)
+    self.item_scrollview:addEndCallBack(function()
+        local item_list = self.item_scrollview:getItemList()
+        for k, v in pairs(item_list) do
+            v:setDefaultTip()
+            v:setSwallowTouches(false)
+            v:IsGetStatus(false,nil, PathTool.getResFrame("actionpetard", "txt_cn_petard_get"))
+            if get_status == 0 then
+                v:showOrderWarLock(true,nil,0.8)
+                -- v:showOrderWarLockBg(true)
+            else
+                v:showOrderWarLock(false)
+                -- v:showOrderWarLockBg(false)
+            end
+        end
+    end)
+    local item_list = self.item_scrollview:getItemList()
+    if item_list then
+        for k, v in pairs(item_list) do
+            v:setDefaultTip()
+            v:setSwallowTouches(false)
+            v:IsGetStatus(false,nil, PathTool.getResFrame("actionpetard", "txt_cn_petard_get"))
+            if get_status == 0 then
+                v:showOrderWarLock(true,nil,0.8)
+                -- v:showOrderWarLockBg(true)
+            else
+                v:showOrderWarLock(false)
+                -- v:showOrderWarLockBg(false)
+            end
+        end
+    end
+end
+
+function ActionUpstarGiftItem:setQualityImg(quality)
+    local cur_quailty = quality
+    if quality <= 5 then
+    elseif quality <= 14 then
+        cur_quailty = 5
+    elseif quality <= 15 then
+        cur_quailty = 6
+    else
+        cur_quailty = 7
+    end
+    local res_id = PathTool.getQualityBg(cur_quailty)
+    self.background:loadTexture(res_id, LOADTEXT_TYPE_PLIST)
+end
+function ActionUpstarGiftItem:setHeadImg(head_icon)
+    local res = PathTool.getHeadIcon(head_icon)
+    self.head_icon:loadTexture(res, LOADTEXT_TYPE)
+    self.head_icon:setScale(0.68)
+    self.head_icon_bg:setContentSize(self.head_icon:getContentSize())
+end
+
+function ActionUpstarGiftItem:DeleteMe()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.freeItem then
+        self.freeItem:DeleteMe()
+        self.freeItem = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

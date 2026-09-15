@@ -1,0 +1,242 @@
+-- --------------------------------------------------------------------
+-- 竖版神装装备穿戴
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-2-27
+-- --------------------------------------------------------------------
+HeroUrEnableSelectWindow = HeroUrEnableSelectWindow or BaseClass(BaseView)
+    
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local clickCell
+
+--@holy_data 神装方案数据 结构参考 协议25220
+function HeroUrEnableSelectWindow:__init()
+    self.cell_pos = 0
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.layout_name = "hero/hero_ur_enable_select_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("hero","ultra_hero_awaken_bg"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("dungeon_abyss_circle","dungeon_abyss_circle"), type = ResourcesType.plist },
+    }
+    self.select = 1
+end 
+
+function HeroUrEnableSelectWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 1)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.img_title_bg = self.main_container:getChildByName("img_title_bg")
+    self.image_bg_2 = self.main_container:getChildByName("image_bg_2")
+    self.scroll_container = self.main_container:getChildByName("scroll_container")
+    self.wnd_title = self.main_container:getChildByName("wnd_title")
+    self.wnd_title:setString(TI18N("语言_c_139"))
+    autoSizeTitleBg(self.wnd_title,self.img_title_bg,120,320)
+    self.tip = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(0.5,0.5),cc.p(346,739),-6,nil,632)
+    self.main_container:addChild(self.tip)
+    self.tip:setString(TI18N("语言_par_ult_12"))
+    self.left_btn = self.main_container:getChildByName("left_btn")
+    self.left_txt = self.left_btn:getChildByName("label")
+    self.left_txt:setString(TI18N("语言_c_367"))
+    self.camp_panel = self.main_container:getChildByName("camp_panel")
+    self.camp_panel_list = {}
+    for i=0,5 do
+        local item = self.camp_panel:getChildByName("camp_btn"..i)
+        item.index = i
+        self.camp_panel_list[i]=item
+    end
+    self.camp_select = self.camp_panel:getChildByName("camp_select")
+end
+
+function HeroUrEnableSelectWindow:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        controller:openHeroUrEnableSelectWindow(false)
+    end, true, 2)
+    registerButtonEventListener(self.background, function()
+        controller:openHeroUrEnableSelectWindow(false)
+    end, false, 2)
+    for i=0,5 do
+        registerButtonEventListener(self.camp_panel_list[i], function()
+            self:updateList(i)
+        end, false, 2)
+    end
+    registerButtonEventListener(self.left_btn, function()
+        if self.cur_item_id and self.cur_item_id ~= 0 then
+            GlobalEvent:getInstance():Fire(HeroEvent.Hero_UR_Score_Enable_Click_Event, self.hero_vo.partner_id,self.cur_item_id)
+        end
+        controller:openHeroUrEnableSelectWindow(false)
+    end, true, 2)
+    self.update_fun_form = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Sacrifice_bttom_Event,function()
+        local hero_vo = self.show_list[self.cell_pos]
+        if hero_vo.is_lock and hero_vo:isLock() then
+            -- message(TI18N("语言_c_3286"))
+        else
+            if clickCell then
+                clickCell:showUnLockIcon()
+            end
+        end
+    end)
+end
+
+function HeroUrEnableSelectWindow:openRootWnd(setting)
+    self.setting = setting or {}
+    self.hero_vo = setting.hero_vo or {}
+    self.cur_item_id = setting.use_bid or {}
+    self:updateData()
+end
+function HeroUrEnableSelectWindow:updateData()
+    self.show_list = {}
+    self.show_all_list = {
+        [0]={},[1]={},[2]={},[3]={},[4]={},[5]={},
+    }
+    local limit_list = Config.PartnerUltraData.data_const.empower_hero_limit.val
+    local limit_star = {}
+    local limit_score = {}
+    for k,v in pairs(limit_list) do
+        if v[1] == "score" then
+            limit_score = v[2]
+        elseif v[1] == "star" then
+            limit_star = v[2]
+        end
+    end
+    local hero_list = model:getHeroList()
+    for k,v in pairs(hero_list) do
+        if table.indexof(limit_star,v.star) and v.partner_id ~= self.hero_vo.partner_id then
+            local score = model:heroBidScore(v.bid)
+            if table.indexof(limit_score,score) then
+                if not v:isLockByLocktype(HeroConst.LockType.eHeroUrEnableLock) and (v.isTryoutHero and not v:isTryoutHero()) then
+                    local is_lock = v:isLock() or (v.isInForm and v:isInForm()) or v:isResonateHero()
+                    v.is_lock_sort = is_lock and 1 or 0
+                    table.insert(self.show_all_list[0],v)
+                    table.insert(self.show_all_list[v.camp_type],v)
+                end
+            end
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"is_lock_sort", false},{"star", true}, {"power", true}, {"lev", true}})
+    for i=0,5 do
+        table.sort(self.show_all_list[i], sort_func)
+    end
+    self:updateList(0)
+end
+function HeroUrEnableSelectWindow:updateList(select)
+    if self.select == select then return end
+    self.select = select
+    self.show_list = self.show_all_list[self.select]
+    self.camp_select:setPositionX(self.camp_panel_list[self.select]:getPositionX())
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.scroll_container:getContentSize()
+        local setting = {
+            start_x = 5,                     -- 第一个单元的X起点
+            space_x = 10,                     -- x方向的间隔
+            start_y = 10,                     -- 第一个单元的Y起点
+            space_y = 32,                     -- y方向的间隔
+            item_width = 119,                -- 单元的尺寸width
+            item_height = 119,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 5,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.scroll_container, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.item_scrollview:reloadData()
+    commonShowEmptyIcon(self.scroll_container,#self.show_list == 0)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroUrEnableSelectWindow:createNewCell(width, height)
+    local cell = HeroExhibitionItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+ end
+ --获取数据数量
+ function HeroUrEnableSelectWindow:numberOfCells()
+    if not self.show_list then return 0 end
+    return #self.show_list
+ end
+ --更新cell(拖动的时候.刷新数据时候会执行次方法)
+ --cell :createNewCell的返回的对象
+ --index :数据的索引
+ function HeroUrEnableSelectWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.show_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+    local is_lock = (cell_data.isInForm and cell_data:isInForm()) or cell_data:isResonateHero()
+    if not is_lock then
+        for k,v in pairs(cell_data.dic_locks) do
+            if v > 0 and k ~= HeroConst.LockType.eHeroBondLock and k ~= HeroConst.LockType.eHeroSpecialLock and k ~= HeroConst.LockType.eHeroUrEnableLock and k ~= HeroConst.LockType.eHeroUrEnableLock2 and k ~= HeroConst.LockType.eHeroUrEnableSkill and k ~= HeroConst.LockType.eHeroConvertLock then
+                is_lock = true
+                break
+            end
+        end
+        if not is_lock then
+            if cell_data:isInTeamAction() then
+                is_lock = true
+            end
+        end
+    end
+    cell:showLockIcon(is_lock)
+    local item_vo = self.show_list[cell.index].partner_id
+    if self.cur_item_id and self.cur_item_id == item_vo then
+        cell:setSelected(true)
+        self.select_cell = cell
+    else
+        cell:setSelected(false)
+    end
+ end
+ 
+ --点击cell .需要在 createNewCell 设置点击事件
+ function HeroUrEnableSelectWindow:onCellTouched(cell)
+    local item_vo = self.show_list[cell.index].partner_id
+    local hero_vo = self.show_list[cell.index]
+    clickCell = cell
+    self.cell_pos = cell.index
+    if tableLen(hero_vo.dic_in_form) ~= 0 or (hero_vo.isInTeamAction and hero_vo:isInTeamAction()) then
+        model:openherotips(cell,hero_vo)
+        return
+    end
+    if hero_vo:checkHeroLockTips(true) then
+        return 
+    end
+
+    if hero_vo:isResonateHero() == true then
+        message(TI18N("语言_c_7251"))
+        return
+    end
+    if self.cur_item_id and item_vo and item_vo == self.cur_item_id then
+        self.select_cell:setSelected(true)
+        return
+    end
+    if self.cur_item_id and self.select_cell then
+        self.select_cell:setSelected(false)
+        self.select_cell = nil
+        self.cur_item_id = nil
+    end
+    self.select_cell = cell
+    self.select_cell:setSelected(true)
+    self.cur_item_id = item_vo
+ end
+
+function HeroUrEnableSelectWindow:close_callback()
+    controller:openHeroUrEnableSelectWindow(false)
+    if self.update_fun_form then 
+        GlobalEvent:getInstance():UnBind(self.update_fun_form)
+        self.update_fun_form = nil
+    end
+    clickCell = nil
+    self.cell_pos = -100
+end

@@ -1,0 +1,446 @@
+--******** 文件说明 ********
+-- 
+-- @description: 编年觉醒
+-- @DateTime:    2019-04-22 16:56:26
+-- *******************************
+
+TreasureWekeChoWindow = TreasureWekeChoWindow or BaseClass(BaseView)
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+local back_controller = BackpackController:getInstance()
+local back_model = back_controller:getModel()
+
+function TreasureWekeChoWindow:__init()
+    self.win_type = WinType.Big      
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG    
+    self.layout_name = "treasure/treasure_weke_cho_window"
+	self.treasure_list = {}
+    self.choose_list = {}
+end
+
+function TreasureWekeChoWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.container = self.root_wnd:getChildByName("main_container")
+    self.title_bg = self.container:getChildByName("title_bg")
+    self.title_label = self.container:getChildByName("title_label")
+    self.title_label:setString(TI18N("语言_c_6103"))
+    self.close_btn = self.container:getChildByName("close_btn")
+    self.title_bg:setContentSize(cc.size(math.max(self.title_label:getContentSize().width+120,332), 63))
+    self.goods = self.container:getChildByName("goods")
+    self.auto_cho_btn = self.container:getChildByName("auto_cho_btn")
+    self.auto_cho_txt = self.auto_cho_btn:getChildByName("label")
+    self.auto_cho_txt:setString(TI18N("语言_c_6104"))
+    self.wake_up_btn = self.container:getChildByName("wake_up_btn")
+    self.wake_up_txt = self.wake_up_btn:getChildByName("label")
+    self.wake_up_txt:setString(TI18N("语言_c_6105"))
+    self.tip = self.container:getChildByName("tip")
+    self.num_txt = self.container:getChildByName("num_txt")
+end
+function TreasureWekeChoWindow:register_event()
+	registerButtonEventListener(self.background, function()
+        controller:openTreasureWekeChoWindow(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openTreasureWekeChoWindow(false)
+    end,false, 2)
+    registerButtonEventListener(self.auto_cho_btn, function()
+        self:autoCho()
+    end,true,2)
+    registerButtonEventListener(self.wake_up_btn, function()
+        local num = 0
+        local list = {}
+        for k, v in pairs(self.choose_list) do
+            local list1 = {}
+            list1.item_bid = k
+            list1.item_num = v
+            table.insert(list,list1)
+            num = num + v
+        end
+        if num >= self.num then
+            if self.type == TreasureConst.Cho_Item_Type.submit then
+                GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Submit_Cho_Event,{list = list,quality = self.data[1]})
+            else
+                GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Wake_Cho_Event,{list = list,quality = self.data[1]})
+            end
+            -- controller:sender22311(self.id,list)
+            controller:openTreasureWekeChoWindow(false)
+        else
+            message(TI18N("语言_c_6106"))
+        end
+    end,true, 2)
+    if not self.wake_add_data then
+        self.wake_add_data = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Wake_Click_Add_Event, function (data)
+            self.choose_list[data.id] = data.num
+            self:updateClick(true)
+        end)
+	end
+    if not self.wake_red_data then
+        self.wake_red_data = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Wake_Click_Red_Event, function (data)
+            self.choose_list[data.id] = data.num
+            self:updateClick(true)
+        end)
+	end
+end
+function TreasureWekeChoWindow:updateClick(status)
+    local num = 0
+    for key, value in pairs(self.choose_list) do
+        num = value + num
+        if num >= self.num then
+            if status then
+                message(TI18N("语言_c_6107"))
+            end
+            GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Wake_Click_Max_Event,{id = key,chooselist = self.choose_list})
+        end
+    end
+    self.num_txt:setString(string.format("%s/%s",num,self.num))
+end
+function TreasureWekeChoWindow:autoCho()
+    local max_num = self.num
+    local num = 0
+    for key, value in pairs(self.choose_list) do
+        num = num + value
+    end
+    for key, value in pairs(self.treasure_list) do
+        if num < max_num then 
+            if self.choose_list[value.id] then
+                if value.num - self.choose_list[value.id] >= max_num - num then
+                    self.choose_list[value.id] = self.choose_list[value.id] + max_num - num
+                    num = num + max_num - num
+                else
+                    self.choose_list[value.id] = value.num
+                    num = num + value.num - self.choose_list[value.id] 
+                end
+            else
+                if value.num >= max_num - num then
+                    table.insert(self.choose_list,value.id,max_num - num)
+                    num = max_num
+                else
+                    table.insert(self.choose_list,value.id,value.num)
+                    num = num + value.num
+                end
+            end
+        else
+            GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Wake_Click_Auto_Event,self.choose_list)
+            self:updateClick(false)
+            return
+        end
+    end
+    GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Wake_Click_Auto_Event,self.choose_list)
+    self:updateClick(false)
+    
+end
+function TreasureWekeChoWindow:openRootWnd(data,click_data,type)
+    self.data = data
+    if click_data and next(click_data) then
+        for k, v in pairs(click_data) do
+            self.choose_list[v.item_bid or v[1]] = v.item_num or v[2]
+        end
+    end
+    self.type = type
+    if next(data) then
+        self.id = data[1]
+        self.num = data[2]
+        if data[3] then
+            self.cost = data[3]
+        end
+    else
+        self.cfg = Config.NinjaTreasureData.data_awake_info[data]
+        self.id = self.cfg.cost[1][1]
+        self.num = self.cfg.cost[1][2]
+        if data[3] then
+            self.cost = data[3]
+        end
+    end
+    local scroll_view_size = self.goods:getContentSize()
+    local setting = {
+        item_class = TreasureWekeChoItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 5,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 5,                   -- y方向的间隔
+        item_width = 119,               -- 单元的尺寸width
+        item_height = 119,              -- 单元的尺寸height
+        row = 5,                        -- 行数，作用于水平滚动类型
+        col = 5,                         -- 列数，作用于垂直滚动类型
+        once_num = 5,
+        need_dynamic = true,
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.goods, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self:setData()
+end
+function TreasureWekeChoWindow:setData()
+    self.tip:setString(string.format(TI18N("语言_c_6108"),BackPackConst.quality_name[self.id]))
+    self.need_item = TreasureItem.new(false,1)
+    self.container:addChild(self.need_item)
+    -- local cfg = Config.NinjaTreasureData.data_base_info[self.id]
+    self.need_item:setData({self.id,0,"sp"})
+    self.need_item:setPosition(cc.p(330,710))
+    self.need_item:setRandImg()
+    self.num_txt:setString(string.format("%s/%s",0,self.num))
+    if self.type == TreasureConst.Cho_Item_Type.submit then
+        self.treasure_list = back_model:getNumForQuantity2(self.id,self.num)
+    else
+        self.treasure_list = back_model:getNumForQuantity(self.id,self.num)
+    end
+    if self.cost then
+        for i, j in pairs(self.treasure_list) do
+            for k, v in pairs(self.cost) do
+                if j.id == v[1] then
+                    if j.num - v[2] > 0 then
+                        j.num = j.num - v[2]
+                    else
+                        table.remove(self.treasure_list,i)
+                    end 
+                end
+            end
+        end
+    end
+    table.sort(self.treasure_list,function(a,b)
+        return a.id < b.id
+    end)
+    self.item_scrollview:setData(self.treasure_list)
+    delayOnce(function ()
+        self:updateClick(false)
+    end,0.1)
+end
+function TreasureWekeChoWindow:close_callback()
+	if self.wake_add_data then
+        GlobalEvent:getInstance():UnBind(self.wake_add_data)
+        self.wake_add_data = nil
+    end
+    if self.wake_red_data then
+        GlobalEvent:getInstance():UnBind(self.wake_red_data)
+        self.wake_red_data = nil
+    end
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    self.treasure_list = {}
+    self.choose_list = {}
+    controller:openTreasureWekeChoWindow(false)
+end
+
+
+
+
+--------------------------@ item
+TreasureWekeChoItem = class("TreasureWekeChoItem", function()
+    return ccui.Widget:create()
+end)
+
+function TreasureWekeChoItem:ctor()
+    self.cilck_num = 0
+    self.is_Can_Add = true
+	self:configUI()
+	self:registerEvent()
+end
+
+function TreasureWekeChoItem:configUI(  )
+	self.size = cc.size(119, 119)
+	self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+end
+
+function TreasureWekeChoItem:registerEvent(  )
+	self:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            self.is_click_btn = false --标志只点一次btn
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                self:startTimeTicket()
+            end))
+            self.sequence_action = self:runAction(sequence_action)
+            self.sequence_action:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+            if not self.is_click_btn then
+                playButtonSound2()
+                self:clickSelf(true)
+            end
+        end
+    end)
+    if not self.wake_max_data then
+        self.wake_max_data = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Wake_Click_Max_Event, function (data)
+            self.is_Can_Add = false
+            if data.id == self.data.id then
+                self.cilck_num = data.chooselist[data.id] or 0
+                self.num_txt:setString(self.cilck_num)
+                self:clearTimeTicket()
+            end
+        end)
+	end
+    if not self.wake_red_data then
+        self.wake_red_data = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Wake_Click_Red_Event, function (data)
+            for key, value in pairs(data) do
+                if key == self.data.id then
+                    if self.num_txt then
+                        self.num_txt:setString(value)
+                        self.cilck_num = value
+                    end
+                end
+            end
+            self.is_Can_Add = true
+        end)
+	end
+    if not self.wake_auto_data then
+        self.wake_auto_data = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Wake_Click_Auto_Event, function (data)
+            for key, value in pairs(data) do
+                if key == self.data.id then
+                    if self.num_txt then
+                        self.num_txt:setString(value)
+                        self.cilck_num = value
+                    end
+                end
+            end
+        end)
+	end
+end
+
+function TreasureWekeChoItem:clickSelf(status)
+    if status then
+        -- debug_Print("clickSelf_____self.cilck_num",self.cilck_num)
+        -- debug_Print("clickSelf_____self.max_num",self.max_num)
+        -- debug_Print("clickSelf_____self.data.num",self.data.num)
+        if self.cilck_num >= self.max_num or self.cilck_num >= self.data.num or not self.is_Can_Add then
+            self:clearTimeTicket()
+            message(TI18N("语言_c_6107"))
+            return
+        end
+        self.cilck_num = self.cilck_num + 1
+    else
+        -- debug_Print("clickSelf_____self.cilck_num",self.cilck_num)
+        if self.cilck_num <= 0 then
+            self:clearTimeTicket2()
+            message(TI18N("语言_c_6109"))
+            return
+        end
+        self.cilck_num = self.cilck_num - 1
+    end
+    if self.num_txt then
+        self.num_txt:setString(self.cilck_num)
+    end
+    local data = {}
+    data.id = self.data.id
+    data.num = self.cilck_num
+    if status then
+        GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Wake_Click_Add_Event,data)
+    else
+        GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Wake_Click_Red_Event,data)
+    end
+end
+
+function TreasureWekeChoItem:setData( data )
+    if not self.item then
+        self.item = TreasureItem.new(false)
+        self.item:setScale(0.85)
+    end
+    self.data = data
+    self.max_num = deepCopy(data.max_num)
+    self.item:setData(data)
+    self.item:setPosition(cc.p(self.size.width*0.5,self.size.height*0.5))
+    self:addChild(self.item)
+    if not self.num_bg then
+        self.num_bg = createImage(self,PathTool.getResFrame("common", "common_1032"),self.size.width,self.size.height,cc.p(1,1),true,nil,false)
+        self.num_bg:setScale(40/self.num_bg:getContentSize().width)
+        self.num_cil = createImage(self,PathTool.getResFrame("common", "common_1031"),self.size.width,self.size.height,cc.p(1,1),true,nil,false)
+        self.num_cil:setScale(40/self.num_cil:getContentSize().width)
+        self.num_txt = createLabel(18, cc.c3b(0xff,0xff,0xff), nil, self.size.width-22,self.size.height-19, self.cilck_num, self, 0, cc.p(0.5,0.5))
+    end
+    if not self.red_btn then
+        self.red_btn = createImage(self,PathTool.getResFrame("common", "common_1015_1"),15,15,cc.p(0.5,0.5),true)
+        self.red_btn:setScale(30/self.red_btn:getContentSize().width)
+        self.red_btn:setTouchEnabled(true)
+        self.red_btn:setSwallowTouches(true)
+    end
+    self.red_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type,30/self.red_btn:getContentSize().width)
+        if event_type == ccui.TouchEventType.began then
+            self.is_click_btn2 = false --标志只点一次btn
+            local sequence_action2 = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                self:startTimeTicket2()
+            end))
+            self.sequence_action2 = self.red_btn:runAction(sequence_action2)
+            self.sequence_action2:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket2()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket2()
+            if not self.is_click_btn2 then
+                playButtonSound2()
+                self:clickSelf(false)
+            end
+        end
+    end)
+end
+
+function TreasureWekeChoItem:startTimeTicket2()
+    if self.time_ticket2 == nil then
+        local _callback = function()
+            self.is_click_btn2 = true
+            self:clickSelf(false)
+        end
+
+        self.time_ticket2 = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+    end
+end
+
+function TreasureWekeChoItem:startTimeTicket()
+    if self.time_ticket == nil then
+        local _callback = function()
+            self.is_click_btn = true
+            self:clickSelf(true)
+        end
+
+        self.time_ticket = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+    end
+end
+function TreasureWekeChoItem:clearTimeTicket()
+    if self.sequence_action then
+        self:stopActionByTag(1)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end 
+
+function TreasureWekeChoItem:clearTimeTicket2()
+    if self.sequence_action2 then
+        self.red_btn:stopActionByTag(1)
+        self.sequence_action2 = nil
+    end
+    if self.time_ticket2 ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket2)
+        self.time_ticket2 = nil
+    end
+end 
+function TreasureWekeChoItem:DeleteMe(  )
+	if self.item then 
+		self.item:DeleteMe()
+	end
+	self.item = nil
+    if self.wake_max_data then
+        GlobalEvent:getInstance():UnBind(self.wake_max_data)
+        self.wake_max_data = nil
+    end
+    if self.wake_red_data then
+        GlobalEvent:getInstance():UnBind(self.wake_red_data)
+        self.wake_red_data = nil
+    end
+    if self.wake_auto_data then
+        GlobalEvent:getInstance():UnBind(self.wake_auto_data)
+        self.wake_auto_data = nil
+    end
+    self:clearTimeTicket()
+    self:clearTimeTicket2()
+end

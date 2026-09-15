@@ -1,0 +1,210 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-02-19 15:36:39
+-- @description    : 
+		-- 个人信息排行榜
+---------------------------------
+FriendCheckRankPanel = class("FriendCheckRankPanel",function()
+    return ccui.Layout:create()
+end)
+
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _table_sort = table.sort
+local _string_format = string.format
+
+function FriendCheckRankPanel:ctor(data)
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("friend/friend_check_rank_panel"))
+    self.data = data
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+
+    -- 资源加载
+    local res_list = {}
+    _table_insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function FriendCheckRankPanel:loadResListCompleted()
+	self:initView()
+    self:registerEvent()
+    if self.data and self.data.rid and self.data.srv_id then
+        RoleController:getInstance():send16816(self.data.rid,self.data.srv_id)
+    end
+end
+
+
+
+
+-- 初始化数据
+function FriendCheckRankPanel:initElfinData(  )
+end
+
+-- 初始化界面
+function FriendCheckRankPanel:initView(  )
+	self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.title_bg = self.main_panel:getChildByName("title_bg")
+    self.rank_txt = self.title_bg:getChildByName("rank_txt")
+    self.rank_txt:setString(TI18N("语言_mis_07_6"))
+    self.type_txt = self.title_bg:getChildByName("type_txt")
+    self.type_txt:setString(TI18N("语言_mis_07_7"))
+    self.num_txt = self.title_bg:getChildByName("num_txt")
+    self.num_txt:setString(TI18N("语言_mis_07_8"))
+    self.item_panel = self.main_panel:getChildByName("item_panel")
+end
+
+function FriendCheckRankPanel:registerEvent(  )
+    --接受数据
+	if self.updateEvent == nil then
+		self.updateEvent = GlobalEvent:getInstance():Bind(RoleEvent.DISPATCH_PLAYER_Rank_VO_EVENT,function ( data )
+            if data then
+                table.sort(data.ranks,function(a,b)
+                    return a.sort < b.sort
+                end)
+                self:updatePage(data.ranks)
+            end
+		end)
+	end
+end
+
+function FriendCheckRankPanel:updatePage(list)
+    if self.item_view == nil then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            item_class = FriendCheckRankItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 627,               -- 单元的尺寸width
+            item_height = 70,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.item_view = CommonScrollViewLayout.new(self.item_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    self.item_view:setData(list)
+end
+
+
+function FriendCheckRankPanel:DeleteMe(  )
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      他人信息排行榜
+-- Create: 2020-02-19
+-- --------------------------------------------------------------------
+FriendCheckRankItem = class("FriendCheckRankItem", function()
+    return ccui.Widget:create()
+end)
+
+function FriendCheckRankItem:ctor()
+	self.ctrl = ActionController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+end
+
+function FriendCheckRankItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("friend/friend_check_rank_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(627,70))
+    self:setAnchorPoint(0,0)
+
+    self.panel = self.root_wnd:getChildByName("panel")
+    self.rank_icon = self.panel:getChildByName("rank_icon")
+    self.rank_txt = self.panel:getChildByName("rank_txt")
+    self.name_bg = self.panel:getChildByName("name_bg")
+    self.name_txt = self.panel:getChildByName("name_txt")
+    self.num_txt = self.panel:getChildByName("num_txt")
+end
+
+function FriendCheckRankItem:register_event(  )
+	
+end
+
+function FriendCheckRankItem:setData(data)
+    self.name_txt:setChangeScaleOffWidth(self.panel:getContentSize().width-250)
+    self.num_txt:setChangeScaleOffWidth(self.panel:getContentSize().width-200)
+    self.name_txt:setString(data.name)
+    local _w = math.min(250,self.name_txt:getContentSize().width + 100)
+    self.name_bg:setContentSize(cc.size(_w,33))
+    if data.num ~= 0 then
+        if data.num >= 1 and data.num <= 3 then
+            self.rank_txt:setVisible(false)
+            self.rank_icon:setVisible(true)
+            self.rank_icon:loadTexture(PathTool.getResFrame("common","common_200"..data.num),LOADTEXT_TYPE_PLIST)
+            -- self.rank_icon:setScale(0.7)
+        else
+            self.rank_txt:setVisible(true)
+            self.rank_icon:setVisible(false)
+            self.rank_txt:setString(data.num)
+        end
+        self.num_txt:setVisible(true)
+        local list = {}
+        if data.type == RankConstant.RankType.tower or data.type == RankConstant.RankType.sealtower or data.type == RankConstant.RankType.sealtowerBoss then
+            data.args[2].val = TimeTool.GetMinSecTime(data.args[2].val)
+        end
+        for key, value in pairs(data.args) do
+            table.insert(list,value.id,value.val)
+        end
+        if data.type == RankConstant.RankType.drama then
+            local cfg = Config.DungeonData.data_drama_dungeon_info(data.args[1].val)
+            self.num_txt:setString(transformTextToShort(cfg.name,20))
+            self.num_txt:setTouchEnabled(true)
+            addEvt2showAllTextTips(self.num_txt,cfg.name,20)
+        elseif data.type == RankConstant.RankType.cross_team_arena then
+            local str = Config.MiscData.data_get_rank[data.type].show_desc..data.args[2].val
+            self.num_txt:setString(str)
+        else
+            local str = LangStringFormat(Config.MiscData.data_get_rank[data.type].show_desc,list)
+            self.num_txt:setString(str)
+        end
+    else
+        self.rank_txt:setVisible(true)
+        self.rank_icon:setVisible(false)
+        self.rank_txt:setString(TI18N("语言_c_285"))
+        if data.type == RankConstant.RankType.ladder then
+            local list = {}
+            for key, value in pairs(data.args) do
+                table.insert(list,value.id,value.val)
+            end
+            local str = LangStringFormat(TI18N("语言_mis_07_4"),list)
+            self.num_txt:setString(str)
+        else
+            self.num_txt:setString(TI18N("语言_c_273"))
+        end
+    end
+end
+
+
+function FriendCheckRankItem:DeleteMe()
+end

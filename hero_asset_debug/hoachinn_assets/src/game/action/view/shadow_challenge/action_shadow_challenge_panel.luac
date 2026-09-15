@@ -1,0 +1,418 @@
+-- --------------------------------------------------------------------
+-- 影之试炼
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: {DATE}s
+-- --------------------------------------------------------------------
+local controller = ActionController:getInstance()
+local config = Config.HolidayShadowChallengeData
+ActionShadowChallengePanel = class("ActionShadowChallengePanel", function()
+    return ccui.Widget:create()
+end)
+
+function ActionShadowChallengePanel:ctor(bid)
+    self.holiday_bid = bid
+	self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("shadow_challenge","shadow_challenge"),type = ResourcesType.plist}
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    -- self.resources_load:addAllList(self.res_list, function()
+    --     self:loadResListCompleted()
+    -- end)
+    self:loadResListCompleted()
+end
+
+function ActionShadowChallengePanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionShadowChallengePanel:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("shadowchallenge/action_shadow_challenge_panel"))
+	self.root_wnd:setPosition(-40,-70)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0,0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.banner_bg = self.main_container:getChildByName("image_top_bg")
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1113"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.surplus_time:setPositionX(self.surplus_txt:getPositionX() + self.surplus_txt:getContentSize().width)
+    self.text_top = self.main_container:getChildByName("text_top")
+    self.text_top:setVisible(false)
+    self.rich_top = createRichLabel(22, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0.5, 0.5), cc.p(self.text_top:getPosition()), -10, nil, 440)
+    self.main_container:addChild(self.rich_top)
+    self.rich_top:setHorizontalLayoutType(2)
+    self.rich_top:setString(TI18N("语言_c_6291"))
+
+    self.game_txt_bg = self.main_container:getChildByName("game_txt_bg")
+    self.game_txt = self.main_container:getChildByName("game_txt")
+
+    local rank_container = self.main_container:getChildByName("rank_container")
+    local rank_desc_label = rank_container:getChildByName("rank_desc_label")
+    rank_desc_label:setString(TI18N("语言_c_6335"))
+    self.show_rank_btn = rank_container:getChildByName("btn_buy_quick")
+    local detail_txt = self.show_rank_btn:getChildByName("Text_2")
+    detail_txt:setString(TI18N("语言_c_2676"))
+    self.rank_list = {}
+    for i = 1, 3 do
+        if not self.rank_list[i] then
+            local rank = {}
+            local rank_txt = createRichLabel(22, 1, cc.p(0,0.5), cc.p(63, 217))
+            rank_txt:setPositionY(217-(i-1)*62)
+            rank_container:addChild(rank_txt)
+            rank.rank_txt = rank_txt
+            self.rank_list[i] = rank
+        end
+    end
+
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.list_layer = self.main_container:getChildByName("list_layer")
+    self.btn_list = {}
+    for i=1,4 do 
+        local node = self.list_layer:getChildByName("pos_"..i)
+        local item = ActionShadowChallengeItem.new()
+        node:addChild(item)
+        self.btn_list[i] = node
+        node.item = item
+    end
+
+    self.image_top_bg = self.main_container:getChildByName("image_top_bg")
+    self.image_title_bg = self.main_container:getChildByName("image_title_bg")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    controller:sender18300(self.holiday_bid)
+    controller:sender18307()
+    -- controller:setHolidayStatus(self.holiday_bid, false)
+end
+
+function ActionShadowChallengePanel:setData(data)
+    self.activity_data = data
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    local camp_id = tab_vo.camp_id
+    local cfg = Config.HolidayShadowChallengeData.data_fb[camp_id]
+    local id_list = data.id_list
+    self.fb_list = {}
+    local function getFbPassInfo(fb_id)
+        local info = {}
+        for k, v in pairs(id_list) do
+            if fb_id == v.id then
+                info = v
+                break
+            end
+        end
+        return info
+    end
+
+    for k, v in pairs(cfg) do
+        local fb_cfg = v
+        local fb_info = getFbPassInfo(fb_cfg[1].id)
+        if not fb_info then return end
+        local pass = fb_info.pass
+        local next_cfg = fb_cfg[(pass + 1)]
+        local now_cfg = fb_cfg[pass]
+        if not next_cfg and not now_cfg then
+            local _id = self:getMaxFbCount(fb_cfg)
+            next_cfg = fb_cfg[_id]
+        end
+        local a = {}
+        a.fb_info = fb_info
+        a.now_cfg = now_cfg
+        a.next_cfg = next_cfg
+        a.id = fb_info.id
+        table.insert(self.fb_list,a)
+    end
+    local sort_func = SortTools.tableLowerSorter({"id"})
+    table.sort(self.fb_list, sort_func)
+    --print(vardump(self.fb_list))
+    for i=1,4 do
+        local info = self.fb_list[i]
+        local node = self.btn_list[i]
+        if info then
+            node.item:setData(info,i,self.holiday_bid)
+        end
+    end
+    local less_time = tab_vo.remain_sec
+    self:setLessTime(less_time)
+    local pass_num = 0 
+    for k, v in pairs(id_list) do
+        pass_num = pass_num + v.pass
+    end
+    self.game_txt:setString(TI18N("语言_c_6292")..pass_num)
+    local _w = math.max(self.game_txt_bg:getContentSize().width,self.game_txt:getContentSize().width+60)
+    self.game_txt_bg:setContentSize(cc.size(_w,self.game_txt_bg:getContentSize().height))
+end
+
+function ActionShadowChallengePanel:getMaxFbCount(cfg)
+    local id  = 1
+    for i, v in pairs(cfg) do
+        local data = v
+        if id<data.count then
+            id = data.count
+        end
+    end
+    return id 
+end
+
+function ActionShadowChallengePanel:setFbStatus()
+    for i=1,4 do
+        local node = self.btn_list[i]
+        node.item:setFbStatus()
+    end
+end
+
+function ActionShadowChallengePanel:register_event(  )
+    registerButtonEventListener(self.btn_rule, function(param,sender, event_type)
+        local desc = TI18N("语言_c_6331")
+        TipsManager:getInstance():showCommonTips(desc, sender:getTouchBeganPosition(),nil,nil,500)
+    end, true, 2)
+
+    registerButtonEventListener(self.show_rank_btn, function(param,sender, event_type)
+        local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+        local camp_id = tab_vo.camp_id
+        controller:openShadowChallengeRankView(true,1,camp_id)
+    end, true, 2)
+
+    if not self.update_action_even_event then
+        self.update_action_even_event = GlobalEvent:getInstance():Bind(ActionEvent.ShadowChallengeData,function (data)
+            if not data then return end
+            --print(vardump(data))
+            self:setData(data)
+            self:setFbStatus()
+        end)
+    end
+
+    if self.update_rank_event == nil then
+        self.update_rank_event = GlobalEvent:getInstance():Bind(ActionEvent.ShadowChallengeRankData, function(data) 
+            self:updateRankList(data)
+        end)
+    end
+end
+
+function ActionShadowChallengePanel:updateRankList(data)
+    local rank_data = deepCopy( data.shadow_challenge_role_rank)
+    local sort_func = SortTools.tableLowerSorter({"rank"})
+    table.sort(rank_data, sort_func)
+    for i = 1, 3 do
+        local str = TI18N("语言_c_4935")
+        local rank = self.rank_list[i]
+        local rank_info = rank_data[i]
+        if rank_info then
+            str = (rank_info.name)
+        end
+        rank.rank_txt:setString(str)
+    end
+end
+
+function ActionShadowChallengePanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool) 
+    if bool then
+        MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Shadow_challenge)
+    else
+        BattleController:getInstance():openBattleView(false)
+        -- 还原ui战斗类型
+        MainuiController:getInstance():resetUIFightType()
+    end
+end
+
+--设置倒计时
+function ActionShadowChallengePanel:setLessTime( less_time )
+    if tolua.isnull(self.surplus_time) then return end
+    self.surplus_time:stopAllActions()
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.surplus_time:runAction(cc.RepeatForever:create(cc.Sequence:create(
+            cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                self.surplus_time:stopAllActions()
+            else
+                self:setTimeFormatString(less_time)
+            end
+        end)
+        )))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+
+function ActionShadowChallengePanel:setTimeFormatString(time)
+    self.rest_time = time
+    if time > 0 then
+        self.surplus_time:setString(TimeTool.GetTimeFormatDayIIIIII(time))
+    else
+        self.surplus_time:setString("")
+    end
+    local t_width = self.surplus_txt:getContentSize().width + self.surplus_time:getContentSize().width + 10
+    if t_width > self.time_bg:getContentSize().width then
+        self.time_bg:setContentSize(cc.size(t_width, self.time_bg:getContentSize().height))
+    end
+end
+
+function ActionShadowChallengePanel:DeleteMe()
+    doStopAllActions(self.surplus_time)
+    if self.update_action_even_event then
+        GlobalEvent:getInstance():UnBind(self.update_action_even_event)
+        self.update_action_even_event = nil
+    end
+    if self.update_rank_event then
+        GlobalEvent:getInstance():UnBind(self.update_rank_event)
+        self.update_rank_event = nil
+    end
+end
+
+
+
+-- --------------------------------------------------------------------
+-- 忍界传说-子项
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: {DATE}
+-- --------------------------------------------------------------------
+ActionShadowChallengeItem = class("ActionShadowChallengeItem", function()
+    return ccui.Widget:create()
+end)
+
+
+function ActionShadowChallengeItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionShadowChallengeItem:configUI(  )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("shadowchallenge/action_shadow_challenge_item"))
+    self.root_wnd:setAnchorPoint(0.5,0)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.hero_node =self.main_container:getChildByName("hero_node")
+
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.star_img = self.title_bg:getChildByName("star_img")
+    self.lv_txt = self.title_bg:getChildByName("lv_txt")
+    self.reward_btn = self.main_container:getChildByName("reward_btn")
+end
+
+function ActionShadowChallengeItem:register_event()
+    registerButtonEventListener(self.main_container,function()
+        local tab_vo = controller:getActionSubTabVo(ActionRankCommonType.ShadowChallenge)
+        if not tab_vo or tab_vo.remain_sec <= 0 then
+            message(TI18N("语言_c_1472"))
+            return
+        end
+        local status = self:getFbPassStatus()
+        if status then
+            message(TI18N("语言_c_1065"))
+            return
+        end
+        local fb_id,count
+        if self.next_cfg and self.next_cfg.id then
+            fb_id = self.next_cfg.id
+            count = self.next_cfg.count
+        else
+            fb_id = self.now_cfg.id
+            count = self.now_cfg.count
+        end
+        local tab_vo = controller:getActionSubTabVo(self.bid)
+        local camp_id = tab_vo.camp_id
+        local is_able = controller:getModel():checkCanBattle(fb_id,camp_id)
+        if not is_able then
+            message(TI18N("语言_c_1491"))
+            return
+        end
+        local setting = {
+            holiday_bid = self.bid,
+            fb_id = fb_id,
+            count = count
+        }
+        HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.shadow_challenge, setting, HeroConst.FormShowType.eFormFight)
+    end,false,2)
+
+    registerButtonEventListener(self.reward_btn,function()
+        controller:openShadowChallengeOverView(true,self.data.id)
+    end,false,2)
+end
+
+function ActionShadowChallengeItem:updateSpine()
+    if self.hero_node.spine then
+        self.hero_node:removeAllChildren()
+        self.hero_node.spine = nil
+    end 
+    local show_id
+    if self.next_cfg and self.next_cfg.mode_id then
+        show_id = self.next_cfg.mode_id
+    else
+        show_id = self.now_cfg.mode_id
+    end
+    if not show_id then return end
+    self.hero_node.spine = BaseRole.new(BaseRole.type.partner, show_id, nil,{scale = 1})
+    self.hero_node.spine:setAnimation(0,PlayerAction.show,true) 
+    self.hero_node.spine:setCascade(true)
+    local x, y = self.hero_node:getPosition()
+    self.hero_node.spine:setAnchorPoint(cc.p(0.5,0.5)) 
+    self.hero_node:addChild(self.hero_node.spine)
+    self.hero_node.spine:setOpacity(0)
+    local action = cc.FadeIn:create(0.2)
+    self.hero_node.spine:runAction(action)
+    if self.index == 4 then
+        self.hero_node.spine:setScale(0.7)
+        self.hero_node:setPositionY(221)
+    elseif self.index == 3 or self.index == 2 then
+        self.hero_node.spine:setScale(0.55)
+        self.hero_node:setPositionY(185)
+    elseif self.index == 1 then
+        self.hero_node.spine:setScale(0.5)
+        self.hero_node:setPositionY(167)
+    end
+end
+
+function ActionShadowChallengeItem:setData(data, index, bid)
+    self.data = data
+    self.index = index
+    self.bid = bid
+    self.fb_info = data.fb_info
+    self.now_cfg = data.now_cfg
+    self.next_cfg = data.next_cfg
+    if self.next_cfg and self.next_cfg.power then
+        self.lv_txt:setString(MoneyTool.moneyFormat(self.next_cfg.power))
+    else
+        self.lv_txt:setString(MoneyTool.moneyFormat(self.now_cfg.power))
+    end
+    self:updateSpine()
+end
+
+function ActionShadowChallengeItem:setFbStatus()
+    local status = self:getFbPassStatus()
+    if status then
+        setChildUnEnabled(true, self.main_container)
+        self.main_container:setTouchEnabled(false)
+        self.hero_node.spine:setUnEnabled(true)
+    else
+        setChildUnEnabled(false, self.main_container)
+        self.main_container:setTouchEnabled(true)
+        self.hero_node.spine:setUnEnabled(false)
+    end
+end
+
+function ActionShadowChallengeItem:getFbPassStatus()
+    local status = false
+    local fb_info = self.fb_info
+    local pass = self.fb_info.pass
+    if self.index ~= 4 then
+        status = pass >= 1
+    else
+    end
+    return status
+end
+
+function ActionShadowChallengeItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

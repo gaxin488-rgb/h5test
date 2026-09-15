@@ -1,0 +1,283 @@
+﻿ServerCell = class("ServerCell", function()
+	return ccui.Widget:create()
+end)
+
+local var_0_0 = LoginController:getInstance()
+local var_0_1 = var_0_0:getModel()
+
+function ServerCell.ctor(arg_2_0)
+	arg_2_0.rolesNum = 0
+	arg_2_0.roles = {}
+	arg_2_0.scroll_h = 110
+	arg_2_0.isOpenRoles = false
+	arg_2_0.root_wnd = createCSBNote(PathTool.getTargetCSB("login/server_cell"))
+
+	arg_2_0:addChild(arg_2_0.root_wnd)
+
+	local var_2_0 = arg_2_0.root_wnd:getContentSize()
+
+	arg_2_0:retain()
+	arg_2_0:setContentSize(var_2_0)
+	arg_2_0:setAnchorPoint(0, 1)
+	arg_2_0:setCascadeOpacityEnabled(true)
+
+	arg_2_0.cell_w = var_2_0.width
+	arg_2_0.cell_h = var_2_0.height
+	arg_2_0.select_bg = arg_2_0.root_wnd:getChildByName("select_bg")
+	arg_2_0.state_icon = arg_2_0.root_wnd:getChildByName("state_icon")
+	arg_2_0.close_icon = arg_2_0.root_wnd:getChildByName("close_icon")
+	arg_2_0.icon_state = arg_2_0.root_wnd:getChildByName("icon_state")
+	arg_2_0.server_id = arg_2_0.root_wnd:getChildByName("server_id")
+	arg_2_0.server_name = arg_2_0.root_wnd:getChildByName("server_name")
+	arg_2_0.role_info = arg_2_0.root_wnd:getChildByName("role_info")
+	arg_2_0.role_lev = arg_2_0.role_info:getChildByName("role_sum")
+end
+
+function ServerCell.setBaseData(arg_3_0, arg_3_1, arg_3_2)
+	if arg_3_1 == nil or arg_3_1.v == nil then
+		return
+	end
+
+	arg_3_0.data = arg_3_1
+	arg_3_0.idx = arg_3_1.idx
+
+	local var_3_0 = 1
+
+	if arg_3_0.data.v.isClose and arg_3_0.data.v.isClose ~= 0 then
+		var_3_0 = 2
+
+		arg_3_0.close_icon:setVisible(true)
+		arg_3_0.state_icon:setVisible(false)
+	else
+		arg_3_0.close_icon:setVisible(false)
+
+		if arg_3_0.data.v.isRecommend and arg_3_0.data.v.isRecommend ~= 0 then
+			var_3_0 = 0
+
+			arg_3_0.state_icon:setVisible(true)
+		else
+			arg_3_0.state_icon:setVisible(false)
+		end
+	end
+
+	arg_3_0.icon_state:loadTexture(PathTool.getResFrame("login2", "login2_100" .. var_3_0), LOADTEXT_TYPE_PLIST)
+	arg_3_0.server_id:setString(arg_3_0.data.v.srv_name)
+	arg_3_0.server_name:setString("")
+
+	arg_3_0.role_first = {}
+	arg_3_0.role_first.isEmpty = true
+
+	if (arg_3_1.v.role_count or 0) > 0 then
+		arg_3_0.role_lev:setVisible(false)
+		arg_3_0.role_info:setVisible(false)
+	else
+		arg_3_0.role_lev:setVisible(false)
+		arg_3_0.role_info:setVisible(false)
+	end
+
+	arg_3_0:ShowRoleInfo(nil)
+	arg_3_0:updateRoleData(arg_3_1.v.roles, true)
+end
+
+function ServerCell.GetSrvID(arg_4_0)
+	if arg_4_0.data and arg_4_0.data.v and arg_4_0.data.v.srv_id then
+		return arg_4_0.data.v.srv_id
+	end
+
+	return 0
+end
+
+function ServerCell.updateRoleData(arg_5_0, arg_5_1, arg_5_2)
+	if arg_5_1 then
+		arg_5_0.roles = arg_5_1
+		arg_5_0.rolesNum = #arg_5_1
+
+		table.sort(arg_5_0.roles, function(arg_6_0, arg_6_1)
+			return arg_6_1.lev < arg_6_0.lev
+		end)
+		arg_5_0:update(arg_5_2)
+	end
+end
+
+function ServerCell.click_callback(arg_7_0, arg_7_1)
+	local var_7_0 = SysEnv:getInstance():getBool(SysEnv.keys.user_proto_agree, false)
+
+	if checkUserProto and checkUserProto() and not var_7_0 then
+		message(TI18N("语言_c_1429"))
+
+		return
+	end
+
+	if arg_7_0.data == nil or arg_7_0.data.v == nil then
+		return
+	end
+
+	if NEED_CHECK_CLOSE == true and IsServerCloseFun(arg_7_0.data.v.isClose) then
+		return
+	end
+
+	if not GameNet:getInstance():IsServerConnect() then
+		local var_7_1 = var_0_1:getLoginData()
+
+		var_7_1.host = arg_7_0.data.v.host
+		var_7_1.open_time = arg_7_0.data.v.open_time
+
+		if var_7_1 and var_7_1.usrName and var_7_1.usrName ~= "" and not arg_7_0.connecting then
+			arg_7_0.connecting = true
+
+			var_0_0:requestLoginGame(var_7_1.usrName, arg_7_0.data.v.ip, arg_7_0.data.v.port or arg_7_0.data.v.erl_port, false)
+			delayOnce(function()
+				arg_7_0.connecting = false
+			end, 0.5)
+		end
+	else
+		sdkSubmitUserData(1)
+
+		if arg_7_1.isEmpty then
+			-- block empty
+		else
+			var_0_0:request10102Login(arg_7_1.rid, arg_7_1.srv_id)
+		end
+	end
+
+	var_0_1:setCurSrv(arg_7_0.data.v, true)
+end
+
+function ServerCell.update(arg_9_0, arg_9_1)
+	if #arg_9_0.roles > 0 then
+		for iter_9_0, iter_9_1 in ipairs(arg_9_0.roles) do
+			if arg_9_1 then
+				arg_9_0:ShowRoleInfo(iter_9_1)
+
+				break
+			end
+
+			arg_9_0:click_callback(iter_9_1)
+
+			break
+		end
+	else
+		local var_9_0 = {}
+
+		var_9_0.isEmpty = true
+
+		if arg_9_1 then
+			arg_9_0:ShowRoleInfo(nil)
+		else
+			arg_9_0:click_callback(var_9_0)
+		end
+	end
+end
+
+function ServerCell.ShowRoleInfo(arg_10_0, arg_10_1)
+	if arg_10_1 then
+		if arg_10_0.roleBg == nil then
+			arg_10_0.roleBg = PlayerHead.new(PlayerHead.type.square, 0)
+
+			arg_10_0.roleBg:setPosition(355, 48)
+			arg_10_0.roleBg:setAnchorPoint(cc.p(0.5, 0.5))
+			arg_10_0.roleBg:setHeadRes(50403)
+			arg_10_0.root_wnd:addChild(arg_10_0.roleBg)
+		end
+
+		arg_10_0.roleBg:setHeadRes(arg_10_1.face_id)
+		arg_10_0.roleBg:setHeadResScale(0.75)
+
+		local var_10_0 = PathTool.getResFrame("common", "common_7")
+
+		arg_10_0.roleBg:showBg(var_10_0, cc.size(86, 86))
+		arg_10_0.roleBg:setHeadBgOffy(3)
+
+		arg_10_0.nameBg = createSprite(PathTool.getResFrame("common", "common_6"), 355, 20, arg_10_0.root_wnd, cc.p(0.5, 0.5))
+		arg_10_0.lvBg = createSprite(PathTool.getResFrame("common", "common_5"), 397, 88, arg_10_0.root_wnd, cc.p(0.5, 0.5))
+
+		if arg_10_0.txt_name == nil then
+			arg_10_0.txt_name = createLabel(19, cc.c4b(255, 255, 255, 255), nil, 355, 22, "", arg_10_0, 0, cc.p(0.5, 0.5))
+		end
+
+		if arg_10_0.txt_lv == nil then
+			arg_10_0.txt_lv = createLabel(19, cc.c4b(255, 255, 255, 255), cc.c4b(0, 0, 0, 255), 397, 88, "", arg_10_0, 2, cc.p(0.5, 0.5))
+		end
+
+		local var_10_1 = arg_10_1.name or TI18N("语言_c_4357")
+		local var_10_2 = arg_10_1.lev or "1"
+		local var_10_3 = string.format("%s", var_10_1)
+
+		arg_10_0.txt_name:setString(var_10_3)
+		arg_10_0.txt_name:setWidth(110)
+		arg_10_0.txt_name:setHeight(21)
+		arg_10_0.txt_name:setHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+		arg_10_0.txt_lv:setString(string.format("%s", var_10_2))
+		arg_10_0.roleBg:setVisible(true)
+		arg_10_0.txt_name:setVisible(true)
+		arg_10_0.txt_lv:setVisible(true)
+	else
+		if arg_10_0.roleBg then
+			arg_10_0.roleBg:setVisible(false)
+		end
+
+		if arg_10_0.txt_name then
+			arg_10_0.txt_name:setVisible(false)
+		end
+
+		if arg_10_0.nameBg then
+			arg_10_0.nameBg:setVisible(false)
+		end
+
+		if arg_10_0.lvBg then
+			arg_10_0.lvBg:setVisible(false)
+		end
+
+		if arg_10_0.txt_lv then
+			arg_10_0.txt_lv:setVisible(false)
+		end
+	end
+end
+
+function ServerCell.addCallBack(arg_11_0, arg_11_1)
+	arg_11_0.callBack = arg_11_1
+
+	arg_11_0:setTouchEnabled(true)
+	arg_11_0:addTouchEventListener(function(arg_12_0, arg_12_1)
+		if arg_12_1 == ccui.TouchEventType.ended then
+			if arg_11_0.data == nil or arg_11_0.data.v == nil then
+				return
+			end
+
+			if NEED_CHECK_CLOSE == true and IsServerCloseFun(arg_11_0.data.v.isClose) then
+				var_0_1:checkReloadServerData(arg_11_0.data.v)
+			elseif arg_11_0.callBack ~= nil then
+				arg_11_0.callBack(arg_11_0)
+			end
+		end
+	end)
+end
+
+function ServerCell.setSelected(arg_13_0, arg_13_1)
+	if arg_13_0.select_bg then
+		arg_13_0.select_bg:setVisible(arg_13_1)
+	end
+
+	if arg_13_1 == true then
+		arg_13_0.server_id:setTextColor(cc.c4b(162, 62, 1, 255))
+		arg_13_0.server_name:setTextColor(cc.c4b(162, 62, 1, 255))
+	else
+		arg_13_0.server_id:setTextColor(cc.c4b(104, 69, 42, 255))
+		arg_13_0.server_name:setTextColor(cc.c4b(104, 69, 42, 255))
+	end
+end
+
+function ServerCell.clearLayout(arg_14_0)
+	arg_14_0:setSelected(false)
+	arg_14_0:removeFromParent()
+end
+
+function ServerCell.DeleteMe(arg_15_0)
+	arg_15_0:removeAllChildren()
+	arg_15_0:removeFromParent()
+	arg_15_0:release()
+end
+
+function ServerCell.getData(arg_16_0)
+	return arg_16_0.data
+end

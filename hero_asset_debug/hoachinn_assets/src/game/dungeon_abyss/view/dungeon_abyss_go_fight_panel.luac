@@ -1,0 +1,1659 @@
+
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-05-13 14:58:14
+-- @description    : 
+		-- 封印塔Boss战布阵总览
+---------------------------------
+local _hero_controller = HeroController:getInstance()
+local _table_insert = table.insert
+local controller = DungeonAbyssController:getInstance()
+local model = controller:getModel()
+
+DungeonAbyssGoFightPanel = DungeonAbyssGoFightPanel or BaseClass(BaseView)
+
+function DungeonAbyssGoFightPanel:__init(parent, super_panel, form_show_type, fun_form_type)
+    self.view_tag = ViewMgrTag.WIN_TAG
+    self.is_full_screen = false
+    self.win_type = WinType.Big
+    self.is_init = true
+    self.parent = parent
+    self.super_panel = super_panel
+    self.form_show_type = form_show_type
+    self.fun_form_type = fun_form_type or 1
+    self.halo_load = nil
+    self.is_move_hero = false -- move_item 正在跟随手指移动中
+    self.is_show_act = false  -- move_item 是否在移动动作中
+
+    --英雄对象 left
+    self.hero_item_list_left = {}
+    self.plan_id = 0 --精灵方案
+    self.hallows_id = 0  --神器id
+    self.formation_type = 1 --默认阵法
+    --英雄对象 right
+    self.hero_item_list_right = {}
+
+    --四个空白图片
+    self.four_blank_img_left = {}
+    self.four_blank_img_right = {}
+
+    self.item_rect_list = {} --记录格子的区域
+
+    self.halo_form_id_list = {}
+
+    self.team_data_list = {}
+
+    self.elfin_item_list = {} --精灵
+    self.jinqi_item_list = {} --禁器
+    self.show_elfin_jinqi = 1 --界面显示禁器还是精灵
+
+    self.cell_width = 134
+
+    self.team_index = 1
+
+    self.btn_list = {}
+
+    --是几人阵容
+    self.lineUpNum = 6
+    if table.indexof(PartnerConst.Fun_six_Type, self.fun_form_type) then
+        self.lineUpNum = 6
+    else
+        self.lineUpNum = 5
+    end
+
+    self.nine_position = {
+        [1] = cc.p(self.cell_width, -self.cell_width),
+        [2] = cc.p(self.cell_width, 0),
+        [3] = cc.p(self.cell_width, self.cell_width),
+        [4] = cc.p(0, -self.cell_width),
+        [5] = cc.p(0, 0),
+        [6] = cc.p(0, self.cell_width),
+        [7] = cc.p(-self.cell_width, -self.cell_width),
+        [8] = cc.p(-self.cell_width, 0),
+        [9] = cc.p(-self.cell_width, self.cell_width),
+    }
+
+    self.nine_position_right = {
+        [7] = cc.p(self.cell_width, -self.cell_width),
+        [8] = cc.p(self.cell_width, 0),
+        [9] = cc.p(self.cell_width, self.cell_width),
+        [4] = cc.p(0, -self.cell_width),
+        [5] = cc.p(0, 0),
+        [6] = cc.p(0, self.cell_width),
+        [1] = cc.p(-self.cell_width, -self.cell_width),
+        [2] = cc.p(-self.cell_width, 0),
+        [3] = cc.p(-self.cell_width, self.cell_width),
+    }
+    self.sp_skill_id = 0
+    self:createRoorWnd()
+    self:registerEvent()
+    self:updateBtnList()
+end
+
+function DungeonAbyssGoFightPanel:createRoorWnd(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("dungeon_abyss/dungeon_abyss_go_fight_panel"))
+    if not tolua.isnull(self.parent) then
+        self.root_wnd:setPosition(cc.p(-5, 350))
+        self.parent:addChild(self.root_wnd)
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    local form_panel = self.main_container:getChildByName("form_panel")
+    self.form_panel = form_panel
+    local analyzeFormUI = function(node, hero_item_list, four_blank_img, station)
+        local pos = {2,4,6,7,9,3}--一开始默认 第一个阵法位置
+        local nine_position = self.nine_position --默认是左边
+        if station == "right" then
+            nine_position = self.nine_position_right
+        end
+        for index=1,6 do
+            if station == "right" then
+                hero_item_list[index] = HeroExhibitionItem.new(1, true)
+                hero_item_list[index]:setExtendData({from_type = HeroConst.ExhibitionItemType.eLegendTrial})
+                hero_item_list[index]:addCallBack(function(_,data)
+                    self:onClickItem(data, "right")
+                end)
+            else
+                hero_item_list[index] = HeroExhibitionItem.new(1, false)
+            end
+            hero_item_list[index]:setPosition(nine_position[pos[index]])
+            node:addChild(hero_item_list[index])
+            local world_pos = hero_item_list[index]:convertToWorldSpace(cc.p(0, 0))
+            local node_pos = self.main_container:convertToNodeSpace(world_pos)
+            _table_insert(self.item_rect_list, cc.rect( node_pos.x, node_pos.y, HeroExhibitionItem.Width*0.7, HeroExhibitionItem.Height*0.7))
+        end
+        for i=1,4 do
+            four_blank_img[i] = node:getChildByName("hero_info_21_"..i) 
+        end
+    end
+    local fight_hero_node_left = form_panel:getChildByName("fight_hero_node_left")
+    analyzeFormUI(fight_hero_node_left, self.hero_item_list_left, self.four_blank_img_left, "left")
+    self.fight_hero_node_left = fight_hero_node_left
+    local fight_hero_node_right = form_panel:getChildByName("fight_hero_node_right")
+    analyzeFormUI(fight_hero_node_right, self.hero_item_list_right, self.four_blank_img_right, "right")
+    self.fight_hero_node_right = fight_hero_node_right
+    self.dunlist={}
+    self.top_panel = form_panel:getChildByName("top_panel")
+    self.top_panel:setScrollBarEnabled(false)
+    self.line=self.top_panel:getChildByName("bottom_bg")
+    self.linWid=self.line:getContentSize().width 
+    self.orginx=self.top_panel:getPositionX()
+    self.btn_scroll = form_panel:getChildByName("btn_scroll")
+    self.btn_scroll:setScrollBarEnabled(false)
+    --阵法
+    self.form_change_btn = self.btn_scroll:getChildByName("form_change_btn")
+    self.form_label = self.form_change_btn:getChildByName("label")
+    self.form_label:setChangeScaleOffWidth(0)
+    self.form_label:setString(TI18N("语言_c_1966"))
+    --阵法icon
+    self.form_icon = self.form_change_btn:getChildByName("form_icon")
+    --光环icon
+    self.halo_btn = self.btn_scroll:getChildByName("halo_btn")
+    self.halo_label = self.halo_btn:getChildByName("label")
+    self.halo_label:setChangeScaleOffWidth(0)
+    --sp光环icon
+    self.sp_btn = self.btn_scroll:getChildByName("sp_btn")
+    self.sp_skill = self.sp_btn:getChildByName("sp_skill")
+    self.sp_label = self.sp_btn:getChildByName("label")
+    self.sp_label:setChangeScaleOffWidth(0)
+    self.sp_label:setString(TI18N("语言_c_6756"))
+    --宝石buff
+    self.gem_buff_btn = self.btn_scroll:getChildByName("gem_buff_btn")
+    self.gem_buff_txt = self.gem_buff_btn:getChildByName("label")
+    setTextSpacing(self.gem_buff_txt,-10)
+    self.gem_buff_txt:setString(TI18N("语言_c_7152"))
+    local _scale = 82/self.gem_buff_txt:getContentSize().width
+    if _scale > 1 then
+        _scale = 1
+    end
+    self.gem_buff_txt:setScale(_scale)
+    --穿戴
+    self.equip_btn = form_panel:getChildByName("equip_btn")
+
+    local size = self.equip_btn:getContentSize()
+    self.hallow_item = BackPackItem.new(false, false, false, 0.8)
+    self.hallow_item:showAddIcon(true)
+    self.hallow_item:setPosition(cc.p(size.width * 0.5, size.height * 0.5))
+    self.equip_btn:addChild(self.hallow_item)
+    self.equip_btn_label = self.equip_btn:getChildByName("label")
+    self.equip_btn_label:setString(TI18N("语言_c_3148"))
+    setTextMaxWidth(self.equip_btn_label,100) 
+    setTextSpacing(self.equip_btn_label,-10)
+    self.Panel_1 = form_panel:getChildByName("Panel_1")
+    self.change_btn = form_panel:getChildByName("change_btn")
+    self.change_btn:setVisible(false)
+    -- 精灵
+    self.elfin_btn = self.Panel_1:getChildByName("elfin_btn")
+    if self.elfin_btn then
+        local elfin_label=self.elfin_btn:getChildByName("label")
+        self.elfin_btn_label = elfin_label
+        self.elfin_btn_label:setVisible(false)
+        elfin_label:setString(TI18N("语言_c_3149"))
+        setTextMaxWidth(elfin_label,100)
+        setTextSpacing(elfin_label,-10)
+    end
+    --禁器
+    self.jinqi_btn = self.Panel_1:getChildByName("jinqi_btn")
+
+    self.label_power_left = form_panel:getChildByName("label_power_left")
+    self.label_power_left:setString(TI18N("语言_c_5812"))
+    self.go_fight_btn = form_panel:getChildByName("go_fight_btn")
+    self.go_fight_btn:getChildByName("label"):setString(TI18N("语言_c_444"))
+    self.go_fight_btn:setPositionY(-450)
+    self.save_btn = form_panel:getChildByName("save_btn")
+    self.save_txt = self.save_btn:getChildByName("label")
+    setTextSpacing(self.save_txt,-8)
+    self.save_txt:setString(TI18N("语言_c_7001"))
+    local _scale = (self.save_btn:getContentSize().width-10)/self.save_txt:getContentSize().width
+    if _scale > 1 then
+        _scale = 1
+    end
+    self.save_txt:setScale(_scale)
+    self.save_btn:setPositionY(-450)
+    self.power_click = form_panel:getChildByName("power_click")
+    self.fight_label = CommonNum.new(20, self.power_click, 99999, - 2, cc.p(0.5, 0.5),4)
+    self.fight_label:setPosition(103, 35)
+    self.fight_label:setScale(1.4)
+end
+
+function DungeonAbyssGoFightPanel:onClickItem(item_data, state)
+    if not item_data then
+        return 
+    end
+end
+function DungeonAbyssGoFightPanel:updateBtnList()
+    local num = 1
+    self.btn_list[1] = self.halo_btn
+    self.halo_btn:setVisible(true)
+    num = num + 1
+    self.btn_list[2] = self.form_change_btn
+    self.form_change_btn:setVisible(true)
+    --sp光环技能
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+    local featuresId = MainuiConst.FeaturesShield.SpSkill
+    if not table.indexof(nohideIds,featuresId) then
+        self.sp_btn:setVisible(false)
+    else
+        self.sp_btn:setVisible(true)
+        num = num + 1
+        self.btn_list[num] = self.sp_btn
+    end
+    --羁绊宝石
+    if not GemstoneController:getInstance():getModel():GemstoneIsHide() or not GemstoneController:getInstance():getModel():GemstoneIsOpen() then
+        self.gem_buff_btn:setVisible(false)
+    else
+        self.gem_buff_btn:setVisible(true)
+        num = num + 1
+        self.btn_list[num] = self.gem_buff_btn
+    end
+    local _w = math.max(self.btn_scroll:getContentSize().width,num*100+20)
+    self.btn_scroll:setInnerContainerSize(cc.size(_w,self.btn_scroll:getContentSize().height))
+    for i = 1, num do
+        self.btn_list[i]:setPositionX(10 + i*100 - 50)
+    end
+end
+function DungeonAbyssGoFightPanel:registerEvent(  )
+    registerButtonEventListener(self.form_change_btn, handler(self, self.onClickFormChangeBtn) ,true, 1)
+    registerButtonEventListener(self.halo_btn, handler(self, self.onClickHaloBtn) ,true, 1)
+    registerButtonEventListener(self.equip_btn, handler(self, self.onClickEquipBtn) ,true, 1)
+    registerButtonEventListener(self.elfin_btn, handler(self, self.onClickElfinBtn), true, 1)
+    registerButtonEventListener(self.go_fight_btn, handler(self, self.onClickGoFightBtn), true, 2)
+    registerButtonEventListener(self.save_btn, handler(self, self.onClickSaveBtn), true, 2)
+    registerButtonEventListener(self.sp_btn, handler(self, self.onClickSPBtn) ,true, 1)
+    registerButtonEventListener(self.gem_buff_btn, handler(self, self.onClickGemBuffBtn) ,true, 1)
+    registerButtonEventListener(self.change_btn, handler(self, self.onClickChangeBtn), true)
+    registerButtonEventListener(self.jinqi_btn, handler(self, self.onClickJinqiBtn), true)
+
+    
+    self:addGlobalEvent(ElfinEvent.Elfin_Plan_From_Info_Event, function (data)
+        if data.type == PartnerConst.Fun_Form.DungeonAbyss then
+            self.elfin_data = data
+            self:updateElfinList()
+        end
+    end)
+    self:addGlobalEvent(JinqiEvent.JinqiFormInfoEvent, function (data)
+        if data.type == PartnerConst.Fun_Form.DungeonAbyss then
+            self.jinqi_data = data
+            self:updateJinqiList()
+        end
+    end)
+    --sp光环获取
+    self:addGlobalEvent(HeroEvent.Hero_Sp_Skill_Send_Event, function (data)
+        if not data then return end
+        local _data = deepCopy(data)
+        if self.sp_data.type == _data.type then
+            local status = false
+            for k,v in pairs(self.sp_data.formations) do
+                if v.order == self.team_index then
+                    self.sp_data.formations[k].skill_bid = _data.skill_bid
+                    status = true
+                    break
+                end
+            end
+            if not status then
+                local _list = {}
+                _list.order = self.team_index
+                _list.skill_bid = _data.skill_bid
+                table.insert(self.sp_data.formations,_list)
+            end
+        end
+        self:initSpSkillInfoList(self.team_index)
+    end)
+    self:addGlobalEvent(HeroEvent.Hero_Sp_Skill_Get_Event, function (data)
+        if not data then return end
+        local _data = deepCopy(data)
+        if _data.type == self.fun_form_type then
+            self.sp_data = _data
+            self:initSpSkillInfoList(self.team_index)
+        end
+    end)
+    self.long_touch_type = LONG_TOUCH_INIT_TYPE
+    for i,item in ipairs(self.hero_item_list_left) do
+        item:addTouchEventListener(function(sender, event_type)
+            --播放动作中 和 数据为空
+            if self.is_show_act == true then return end
+            local hero_vo = sender:getData()
+            if not hero_vo and not self.is_move_hero then return end
+            if event_type == ccui.TouchEventType.began then
+                self.touch_move = false
+                self.is_move_hero = false
+                self.touch_began = sender:getTouchBeganPosition()
+                doStopAllActions(self.form_panel)
+                self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+                delayRun(self.form_panel, 0.6, function ()
+                    if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                        if hero_vo then
+                            if hero_vo then--长按
+                                HeroController:getInstance():openHeroTipsPanel(true, hero_vo)
+                            end
+                        end
+                    end
+                    self.long_touch_type = LONG_TOUCH_END_TYPE
+                end)           
+            elseif event_type == ccui.TouchEventType.moved then
+                if self.long_touch_type == LONG_TOUCH_END_TYPE then
+                    --事件触发了就不处理移动事件了
+                    return 
+                elseif self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                    local touch_began = self.touch_began
+                    local touch_end = sender:getTouchMovePosition()
+                    if touch_began and touch_end and (math.abs(touch_end.x - touch_began.x) > 20 or math.abs(touch_end.y - touch_began.y) > 20) then 
+                        --移动大于20了..表示取消长点击效果
+                        doStopAllActions(self.form_panel)
+                        self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+                    end 
+                end
+                self.touch_move = true
+                self.is_move_hero = true
+                self:onClickHeroItemMove(sender, hero_vo)
+            elseif event_type == ccui.TouchEventType.canceled then
+                if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                    doStopAllActions(self.form_panel)
+                    self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+                elseif self.long_touch_type == LONG_TOUCH_END_TYPE then
+                    --事件触发了就不处理点击事件了
+                    if self.move_hero_item then
+                        self.move_hero_item:setPosition(-10000, 0)
+                    end
+                    if self.move_hero_vo then
+                        sender:setData(self.move_hero_vo)
+                        self.move_hero_vo = nil
+                    end
+                    return
+                end
+                self.is_move_hero = false
+                self:onClickHeroItemCanceled(sender)
+            elseif event_type == ccui.TouchEventType.ended then
+                if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                    doStopAllActions(self.form_panel)
+                    self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+                elseif self.long_touch_type == LONG_TOUCH_END_TYPE then
+                    --事件触发了就不处理点击事件了
+                    if self.move_hero_item then
+                        self.move_hero_item:setPosition(-10000, 0)
+                    end
+                    if self.move_hero_vo then
+                        sender:setData(self.move_hero_vo)
+                        self.move_hero_vo = nil
+                    end
+                    return
+                end
+                self.is_move_hero = false
+                self.touch_end = sender:getTouchEndPosition()
+                local is_click = true
+                if self.touch_began ~= nil then
+                    is_click = math.abs(self.touch_end.x - self.touch_began.x) <= 20 and math.abs(self.touch_end.y - self.touch_began.y) <= 20
+                end
+                if self.touch_move then
+                    if is_click then -- 一定小范围内的移动算作点击
+                        self.move_hero_item:setData()
+                        self.move_hero_item:setPosition(cc.p(-1000, -1000))
+                        local temp_hero_vo = self.move_hero_vo
+                        if self.move_hero_vo then
+                            sender:setData(self.move_hero_vo)
+                            self.move_hero_vo = nil
+                        end
+                        self:onClickHeroItem(i)
+                    else
+                        self:onClickHeroItemEnd(sender)
+                    end
+                else
+                    self:onClickHeroItem(i)
+                end
+            end
+        end)
+    end
+end
+function DungeonAbyssGoFightPanel:onClickChangeBtn()
+    if self.show_elfin_jinqi == 1 then
+        self.show_elfin_jinqi = 2
+    else
+        self.show_elfin_jinqi = 1
+    end
+    if self.show_elfin_jinqi == 1 then
+        local action1 = cc.MoveTo:create(0.1, cc.p(191, 77))
+        local action2 = cc.MoveTo:create(0.1, cc.p(61, 77))
+        self.elfin_btn:runAction(cc.Sequence:create(action2))
+        self.jinqi_btn:runAction(cc.Sequence:create(action1))
+        self.change_btn:loadTexture(PathTool.getResFrame("prohibitor", "prohibitor_arraying_1"), LOADTEXT_TYPE_PLIST)
+    elseif self.show_elfin_jinqi == 2 then
+        local action1 = cc.MoveTo:create(0.1, cc.p(-71, 77))
+        local action2 = cc.MoveTo:create(0.1, cc.p(61, 77))
+        self.elfin_btn:runAction(cc.Sequence:create(action1))
+        self.jinqi_btn:runAction(cc.Sequence:create(action2))
+        self.change_btn:loadTexture(PathTool.getResFrame("prohibitor", "prohibitor_arraying_2"), LOADTEXT_TYPE_PLIST)
+    end
+end
+--宝石buff
+function DungeonAbyssGoFightPanel:onClickGemBuffBtn()
+    GemstoneController:getInstance():openGemstoneBuffView(true,2,{cur_type = self.info.type,form_data=self.team_data_list[self.team_index]})
+end
+--sp光环
+function DungeonAbyssGoFightPanel:onClickSPBtn()
+    if self.sp_data then
+        local setting = {}
+        setting.select_skill = self.sp_data.formations
+        setting.order = self.sp_order
+        local hero_list = {}
+        for k, v in pairs(self.team_data_list[self.team_index].pos_info) do
+            local hero_vo = HeroController:getInstance():getModel():getHeroById(v.id)
+            table.insert(hero_list, v.pos, hero_vo)
+        end
+        setting.form_data = hero_list
+        _hero_controller:openFormSpMoreSelectPanel(true,self.fun_form_type,setting)
+    end
+end
+--更新sp光环
+function DungeonAbyssGoFightPanel:initSpSkillInfoList(index)
+    self.sp_order = index
+    self.sp_skill_id = 0
+    local team_object = self.hero_item_list_left
+    local status = false
+    for k,item in pairs(team_object) do
+        local hero_vo = item:getData()
+        if hero_vo then
+            local config = Config.PartnerData.data_partner_base[hero_vo.bid] 
+            if config and config.score >= 9 then
+                status = true
+            end
+        end
+    end
+    if self.sp_data and next(self.sp_data) then
+        for key,value in pairs(self.sp_data.formations) do
+            if value.order == index then
+                for k,v in pairs(value.sp_skills) do
+                    local sp_status = false
+                    for k,item in pairs(team_object) do
+                        local hero_vo = item:getData()
+                        if hero_vo and hero_vo.id == v.id then
+                            sp_status = true
+                        end
+                    end
+                    if not sp_status then
+                        v.show_bid = 0
+                        v.skill_bid = 0
+                    end
+                end
+            end
+        end
+        if not status then
+            for k,v in pairs(self.sp_data.formations) do
+                if v.order == index then
+                    self.sp_data.formations[k].sp_skills = {}
+                end
+            end
+        else
+            for k,v in pairs(self.sp_data.formations) do
+                if v.order == index then
+                    if v.sp_skills and next(v.sp_skills) then
+                        if tableLen(v.sp_skills) > 1 then
+                            table.sort(v.sp_skills,function(a,b) return a.pos < b.pos end)
+                        end
+                        for key, value in pairs(v.sp_skills) do
+                            if self.sp_skill_id == 0 and value.show_bid ~= 0 and value.skill_bid ~= 0 then
+                                self.sp_skill_id = value.show_bid
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if not self.mask then
+        self.mask = createSprite(PathTool.getResFrame("form", "form_1002"), 40, 40, nil, cc.p(0.5, 0.5))--模板
+        self.mask:setScale(self.mask_scale or 1)
+    end
+    if not self.clipNode then
+        self.clipNode = cc.ClippingNode:create(self.mask)
+        self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+        self.clipNode:setContentSize(cc.size(80,80))
+        self.clipNode:setCascadeOpacityEnabled(true)
+        self.clipNode:setPosition(0,0)
+        self.clipNode:setAlphaThreshold(0)
+        self.sp_skill:addChild(self.clipNode,1)
+    end
+    if not self.sp_icon then
+        self.sp_icon = ccui.ImageView:create()
+        self.sp_icon:setCascadeOpacityEnabled(true)
+        self.sp_icon:setAnchorPoint(0.5,0.5)
+        self.sp_icon:setPosition(40,40)--底板
+        self.clipNode:addChild(self.sp_icon,1)
+        self.sp_icon:setScale(0.75)
+    end
+    local skill_config = Config.SkillData.data_get_skill(self.sp_skill_id)
+    if skill_config then
+        local skill_icon = PathTool.getSkillRes(skill_config.icon, false)
+        self.sp_icon:loadTexture(skill_icon, LOADTEXT_TYPE)
+        self.sp_icon:setVisible(true)
+    else
+        self.sp_icon:setVisible(false)
+    end
+end
+
+function DungeonAbyssGoFightPanel:onClickFormChangeBtn()
+    if not self.formation_type then return end
+    HeroController:getInstance():openFormationSelectPanel(true, self.formation_type, function(formation_type, team_index)
+        if formation_type and not tolua.isnull(self.root_wnd) then
+            self.formation_type = formation_type or 1
+            self.team_data_list[self.team_index].formation_type=formation_type
+            self:updateFormationData()
+        end
+    end, 1, self.lineUpNum)
+end
+function DungeonAbyssGoFightPanel:onClickDunBtn(index)
+    for i=1,#self.dunlist do
+        self.dunlist[i]:setStatus(i==index)
+    end
+    self.team_index = index
+    local pointinfo=self.team_data_list[index]
+    if pointinfo then
+        local info = {
+            index = self.team_index,
+            lev = self.info.lev,
+            type = self.info.type,
+        }
+        local data = {
+            formations = self.team_data_list
+        }
+        self:setData(data, info)
+        self.super_panel:undateDungeonAbyssFormInfo(info)
+    end
+    self:initSpSkillInfoList(index)
+    self:updateJinqiList()
+end
+
+function DungeonAbyssGoFightPanel:CreateDunBtn()
+    if #self.dunlist>0 then return end
+    self.dunlist={}
+    local info = self:getConfig()
+    local cfg= info.unit_id
+    local len=#cfg
+    local startX=80
+    local wid= self.linWid-(5-len)*100    --self.linWid*((len-1)/4)
+    local offx = 0
+    if wid < self.linWid then
+        offx = (self.linWid - wid)/2
+    end
+    for i=1,len do
+        local btn=DungeonAbyssFightTeamTab.new()
+        btn:setAnchorPoint(cc.p(0.5,0.5))
+        self.top_panel:addChild(btn)
+        btn:setPosition(offx + startX+(i-1)*100,30)
+        registerButtonEventListener(btn.container, function()
+            self:onClickDunBtn(i)
+        end ,true, 2, nil, nil, nil, true)
+        btn.container:setSwallowTouches(false)
+        local list=self.team_data_list[i].pos_info
+        local num=0
+        for k,v in pairs(list) do
+            num=num+1
+        end
+        btn:setData(i,num)
+        self.dunlist[i]=btn
+    end
+    self.line:setContentSize(cc.size(wid,self.line:getContentSize().height))
+    self.line:setPositionX(offx)
+    -- self.top_panel:setPositionX(self.orginx+(5-len)*50)
+    if wid < self.linWid then
+        wid = self.linWid
+    end
+    self.top_panel:setInnerContainerSize(cc.size(wid,self.top_panel:getContentSize().height))
+end
+
+function DungeonAbyssGoFightPanel:onClickHaloBtn()
+    BattleController:getInstance():openBattleCampView(true, self.halo_form_id_list, PartnerConst.Fun_FormToBattle_Type[self.fun_form_type])
+end
+function DungeonAbyssGoFightPanel:onClickEquipBtn()
+    local dic_equips = {}
+    local setting = {
+        fun_form_type = self.fun_form_type,
+    }
+    for i=1,#self.dunlist do
+        local pointinfo = {}
+        for k, v in pairs(self.team_data_list) do
+            if v.order == i then
+                pointinfo = v
+            end
+        end
+        if pointinfo and pointinfo.order~=self.team_index and pointinfo.hallows_id and pointinfo.hallows_id ~= 0  then
+           dic_equips[pointinfo.hallows_id] = i
+        end
+    end
+    _hero_controller:openFormHallowsSelectPanel(true, self.hallows_id, function(hallows_id, team_index)
+        local team_object = self.hero_item_list_left
+        local pointData = {} 
+        for k, v in pairs(self.team_data_list) do
+            if v.order == self.team_index then
+                pointData = v
+            end
+        end
+        if hallows_id and team_object then
+            if self.hallows_id == hallows_id then
+                self.hallows_id = 0
+                self.hallow_item:setData()
+                self.hallow_item:showAddIcon(true)
+            end
+            if hallows_id == 0 then
+                self.hallows_id = 0
+                self.hallow_item:setData()
+                self.hallow_item:showAddIcon(true)
+            else
+                -- 更新选中的神器显示
+                local hallows_config = Config.HallowsData.data_base[hallows_id]
+                if not hallows_config  then return end
+                self.hallows_id = hallows_id
+                pointData.hallows_id=hallows_id
+                self.hallow_item:showAddIcon(false)
+                local hallows_vo = HallowsController:getInstance():getModel():getHallowsById(hallows_id)
+                if hallows_vo then
+                    local magic_cfg = Config.HallowsData.data_magic[hallows_vo.look_id]
+                    if magic_cfg then
+                        self.hallow_item:setBaseData(magic_cfg.item_id)
+                        self.hallow_item:setMagicIcon(true)
+                    else
+                        self.hallow_item:setBaseData(hallows_config.item_id)
+                        self.hallow_item:setMagicIcon(false)
+                    end
+                else
+                    self.hallow_item:setBaseData(hallows_config.item_id)
+                    self.hallow_item:setMagicIcon(false)
+                end
+                for i=1,#self.dunlist do
+                    local pointinfo = {}
+                    for k, v in pairs(self.team_data_list) do
+                        if v.order == i then
+                            pointinfo = v
+                        end
+                    end
+                    if pointinfo and pointinfo.order~=pointData.order and pointinfo.hallows_id==hallows_id then
+                        for k, v in pairs(self.team_data_list) do
+                            if v.order == pointinfo.order then
+                                v.hallows_id = 0
+                            end
+                        end
+                    end
+                end
+            end
+            for k, v in pairs(self.team_data_list) do
+                if v.order == pointData.order then
+                    v.hallows_id = self.hallows_id
+                end
+            end
+        end
+    end, dic_equips, 1, {}, setting)
+end
+
+-- 调整精灵
+function DungeonAbyssGoFightPanel:onClickElfinBtn(  )
+    local elfin_tree_data = ElfinController:getInstance():getModel():getElfinTreeData()
+    --古树信息没有回来不给点
+    if next(elfin_tree_data) == nil then return end
+    local setting = {}
+    setting.fun_form_type= PartnerConst.Fun_Form.DungeonAbyss   --self.pointData.formation_type
+    setting.team_index=self.team_index
+    self.super_panel:setPlanSettingInfo(setting)
+    if setting.cur_plan_data then
+        for k, v in pairs(self.elfin_data.team_list) do
+            if v.team == self.team_index then
+                setting.cur_plan_data.sprites = v.sprites
+            end
+        end
+    end
+    ElfinController:getInstance():openElfinFightPlanPanel(true, setting)
+end
+
+function DungeonAbyssGoFightPanel:onClickJinqiBtn()
+    local setting = {}
+    setting.fun_form_type = PartnerConst.Fun_Form.DungeonAbyss   --self.pointData.formation_type
+    setting.team_index = self.team_index
+    self.super_panel:setJinqiPlanSettingInfo(setting)
+    if setting.cur_plan_data then
+        for k, v in pairs(self.jinqi_data.team_list) do
+            if v.team == self.team_index then
+                setting.cur_plan_data.team_prohibitors = v.team_prohibitors
+            end
+        end
+    end
+    -- print("onClickJinqiBtn+++++++++++++++++++++++",vardump(setting))
+    JinqiController:getInstance():openJinqiPlanWindow(true, setting)
+end
+--设置战斗类型
+function DungeonAbyssGoFightPanel:setFunFormType(fun_form_type)
+    self.fun_form_type = fun_form_type
+end
+function DungeonAbyssGoFightPanel:onClickSaveBtn(  )
+    self.super_panel:undateDungeonAbyssFormDelete()
+end
+-- 出战
+function DungeonAbyssGoFightPanel:onClickGoFightBtn(  )
+    if not self.info or not self.info.type or not self.info.lev then return end
+    local data = self.team_data_list
+    local count=0
+    for i, v in pairs(data) do
+        if #v.pos_info>0 then
+            count=count+1
+        end
+    end
+    if count<#self.dunlist then
+       message(TI18N("语言_c_5813"))
+       return
+    end
+    MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.DungeonAbyss)
+    HeroController:getInstance():openFormGoFightPanel(false)
+    DungeonAbyssController:getInstance():openDungeonAbyssGoFightPanel(false)
+    DungeonAbyssController:getInstance():openDungeonAbyssFightInfoPanel(false)
+    DungeonAbyssController:getInstance():sender22502(self.info.type, self.info.lev)
+end
+
+function DungeonAbyssGoFightPanel:setData(data, info)
+    if not data then return end
+    if not data.formations then return end
+    if not info then return end
+    self.team_data_list = data.formations
+    if #self.team_data_list > 1 then
+        table.sort(self.team_data_list,function(a,b) return a.order < b.order end)
+    end
+    self.info = info
+    self.team_index = self.info.index
+    local pointData = {}
+    for k, v in pairs(data.formations) do
+        if v.order == self.team_index then
+            pointData = v
+        end
+    end
+    -- -- 神器id
+    self.hallows_id = pointData.hallows_id
+    -- -- 阵法类型
+    self.formation_type = pointData.formation_type
+    self:updateLeftTeamInfo()
+    self:updateTeamInfo()
+    self:updateFormationData(true)
+    self:updateRightTeamInfo()
+    self:CreateDunBtn()
+    self:setBtnStatus()
+    self:updateJinqiBtnStatus()
+    self:updateElfinList()
+    self:updateJinqiList()
+end
+function DungeonAbyssGoFightPanel:updateJinqiBtnStatus()
+    local is_jinqi_open = JinqiController:getInstance():getModel():checkJinqiFunctionOpenStatus()
+    if is_jinqi_open and JinqiConst.GetBattleType[self.fun_form_type] then
+        self.change_btn:setVisible(true)
+        self.elfin_btn_label:setVisible(false)
+    else
+        self.elfin_btn_label:setVisible(true)
+        self.change_btn:setVisible(false)
+    end
+end
+
+function DungeonAbyssGoFightPanel:updateJinqiList()
+    if not self.jinqi_btn then return end
+    local elfin_bid_list = {}
+    if self.jinqi_data and self.jinqi_data.team_list then
+        for key, value in pairs(self.jinqi_data.team_list) do
+            if value.team == self.team_index then
+                elfin_bid_list = value.team_prohibitors
+            end
+        end
+    end
+
+    local function getJinqiBidByPos( pos )
+        local elfin_bid
+        for k,v in pairs(elfin_bid_list) do
+            if v.pos == pos then
+                elfin_bid = v.item_bid
+                break
+            end
+        end
+        return elfin_bid
+    end
+    for i=1,4 do
+        local jinqi_bid = getJinqiBidByPos(i)
+        local jinqi_item = self.jinqi_item_list[i]
+        if jinqi_item == nil then
+            jinqi_item = SkillItem.new(true, false, true, 0.4)
+            local pos_x = 20
+            local pos_y = 66
+            if i == 3 or i == 4 then
+                pos_y = 18
+            end
+            if i == 2 or i == 4 then
+                pos_x = 68
+            end
+            jinqi_item:setPosition(cc.p(pos_x, pos_y))
+            self.jinqi_btn:addChild(jinqi_item)
+            self.jinqi_item_list[i] = jinqi_item
+        end
+        local item_bid = JinqiController:getInstance():getModel():getPosInfo(i)
+        if item_bid then
+            local bid = jinqi_bid or 0
+            jinqi_item:showLockIcon(false)
+            local jinqi_cfg = Config.ProhibitorData.data_get_proh_star[bid]
+            if bid == 0 or not jinqi_cfg then -- 已解锁，但未放置精灵
+                jinqi_item:setData()
+            else
+                local jinqi_skill_id = jinqi_cfg[0].active_skill[1]
+                local skill_cfg = Config.SkillData.data_get_skill(jinqi_skill_id)
+                if skill_cfg then
+                    jinqi_item:setData(skill_cfg)
+                end
+            end
+        else
+            jinqi_item:setData()
+            jinqi_item:showLockIcon(true)
+        end
+    end
+end
+
+
+function DungeonAbyssGoFightPanel:getConfig()
+    local _config = nil
+    if self.info.type == 2 then
+        local group_id = DungeonAbyssController:getInstance():getModel():getAdvanceGroupId()
+        local diff_id = DungeonAbyssController:getInstance():getModel():getAdvanceDiff()
+        _config = Config.DungeonAbyssCircleData.data_dif_challenge_data[group_id][diff_id]
+    else
+        _config = Config.DungeonAbyssCircleData.data_nor_challenge_data
+    end
+    return _config[self.info.lev]
+end
+
+function DungeonAbyssGoFightPanel:setBtnStatus()
+    for i=1,#self.dunlist do
+        self.dunlist[i]:setStatus(i==self.team_index)
+    end
+    local cfg = self:getConfig()
+    if cfg then
+        local power_num = cfg.desc_power[1][self.team_index]
+        self.label_power_left:setString(TI18N("语言_c_5812")..power_num)
+    end
+end
+
+function DungeonAbyssGoFightPanel:updateLeftTeamInfo()
+    -- 给每个item设置站位数据(站位数据是固定的)
+    for i,item in ipairs(self.hero_item_list_left) do
+        local pos = self:getFormPosByIndex(self.formation_type, i)
+        item:setExtendData({scale = 1, can_click = true, pos_id = pos})
+    end
+    local pointData = self.team_data_list[self.team_index]
+    -- 英雄数据
+    if self.hero_item_list_left and pointData then
+        local function _getHeroInfoByPos(pos)
+            for _,info in pairs(pointData.pos_info) do
+                if info.pos == pos then
+                    return info
+                end
+            end
+        end
+        for index,hero_item in ipairs(self.hero_item_list_left) do
+            if pointData.pos_info then
+                local hero_info = _getHeroInfoByPos(index)
+                if hero_info then
+                    local hero_vo = HeroController:getInstance():getModel():getHeroById(hero_info.id)
+                    if hero_vo then
+                        hero_item:setData(hero_vo)
+                        hero_item:setChosenImg(0)
+                    end
+                else
+                    hero_item:setData()
+                    hero_item:setChosenImg(0)
+                end
+            else
+                hero_item:setData()
+                hero_item:setChosenImg(0)
+            end
+        end
+    end
+end
+
+-- 根据阵法类型和index，获取对应的位置
+function DungeonAbyssGoFightPanel:getFormPosByIndex( form_type, index )
+    local pos = 1
+    local formation_config = Config.FormationData.data_form_data[form_type]
+    if self.lineUpNum == 6 then
+        formation_config = Config.FormationData.data_six_form_data[form_type]
+    end
+    if formation_config then
+        for k,v in pairs(formation_config.pos) do
+            if v[1] == index then
+                pos = v[2]
+                break
+            end
+        end
+    end
+    return pos
+end
+
+function DungeonAbyssGoFightPanel:getData()
+    local team_data = model:GetTeamData()
+    return team_data
+end
+
+-- 英雄列表选择了一位英雄
+function DungeonAbyssGoFightPanel:onSelectHero( item, hero_vo )
+    if self.is_show_act == true or self.is_move_hero == true then return end
+    local sub_id = self.team_index
+    if hero_vo.is_ui_select == true then
+        if hero_vo.point_id==sub_id then
+            hero_vo.is_ui_select = false
+            hero_vo.teamNum=nil
+            hero_vo.point_id = nil
+            for key, value in pairs(self.team_data_list) do
+                if value.order == sub_id then
+                    for k, v in pairs(value.pos_info) do
+                        if v.id == hero_vo.partner_id then
+                            table.remove(value.pos_info,k)
+                            -- v = nil
+                            break
+                        end
+                    end
+                end
+            end
+            item:setChosenImg(0)
+            self:cancelSelectHeroItem(hero_vo.partner_id, item)
+        else
+            local change_index = self:setEmptyHeroItem(hero_vo, item)
+            if change_index then
+                for key, value in pairs(self.team_data_list) do
+                    if value.order == hero_vo.teamNum then
+                        for k, v in pairs(value.pos_info) do
+                            if v.id == hero_vo.partner_id then
+                                table.remove(value.pos_info,k)
+                                break
+                            end
+                        end
+                    end
+                end
+                for k, v in pairs(self.team_data_list) do
+                    if v.order == sub_id then
+                        local temp={id=hero_vo.id,pos=change_index}
+                        table.insert(v.pos_info,temp)
+                        break
+                    end
+                end
+                hero_vo.teamNum=sub_id
+                hero_vo.point_id = sub_id
+                item:setChosenImg(sub_id)
+            end
+        end
+    else
+        local change_index = self:setEmptyHeroItem(hero_vo, item)
+        if change_index then
+            for k, v in pairs(self.team_data_list) do
+                if v.order == sub_id then
+                    local temp={id=hero_vo.id,pos=change_index}
+                    table.insert(v.pos_info,temp)
+                    break
+                end
+            end
+            hero_vo.is_ui_select = true
+            hero_vo.point_id = sub_id
+            item:setSelected(true)
+            hero_vo.teamNum=sub_id
+            item:setChosenImg(sub_id)
+        end
+    end
+    self:ChangeDunCount()
+end
+
+function DungeonAbyssGoFightPanel:ChangeDunCount()
+    for i = 1, tableLen(self.team_data_list) do
+        local list={}
+        local data = self.team_data_list[i]
+        list = data.pos_info
+        local count=0
+        if list and next(list) ~= nil then
+            for _,v in pairs(list) do
+                count=count+1
+            end
+        end
+        if self.dunlist[i] then
+            self.dunlist[i]:setData(i,count)
+        end
+    end
+end
+
+function DungeonAbyssGoFightPanel:cancelSelectHeroItem( partner_id, super_hero_item )
+    if self.hero_item_list_left then
+        for _,item in ipairs(self.hero_item_list_left) do
+            local hero_vo = item:getData()
+            if hero_vo and hero_vo.partner_id == partner_id then
+                hero_vo.is_ui_select = false
+                item:setData()
+                if not self.move_hero_item then
+                    self.move_hero_item = HeroExhibitionItem.new(0.7, false)
+                    self.main_container:addChild(self.move_hero_item)
+                end
+                self.move_hero_item:setData(hero_vo)
+                local world_pos = item:convertToWorldSpace(cc.p(0, 0))
+                local target_pos = self.main_container:convertToNodeSpace(world_pos)
+                local super_world_pos = super_hero_item:convertToWorldSpace(cc.p(0, 0))
+                local item_pos = self.main_container:convertToNodeSpace(super_world_pos)
+                self.is_show_act = true
+                self.move_hero_item:setPosition(cc.p(target_pos.x+HeroExhibitionItem.Width*0.7/2, target_pos.y+HeroExhibitionItem.Height*0.7/2))
+                local act_1 = cc.MoveTo:create(CrossarenaConst.Form_Act_Time, cc.p(item_pos.x+HeroExhibitionItem.Width/2, item_pos.y+HeroExhibitionItem.Height/2))
+                local call_back = function ()
+                    self.move_hero_item:setData()
+                    self.move_hero_item:setPosition(cc.p(-1000, -1000))
+                    if super_hero_item then
+                        super_hero_item:setSelected(false)
+                    end
+                    self:updateTeamInfo()
+                    self.is_show_act = false
+                end
+                self.move_hero_item:runAction(cc.Sequence:create(act_1, cc.CallFunc:create(call_back)))
+                return
+            end
+        end
+    end
+end
+
+-- 判读全部队伍中是否有超过指定数量的同类英雄
+function DungeonAbyssGoFightPanel:checkIsHaveTwoSameHeroInAllTeam( hero_vo, no_tips,limit_num )
+    limit_num = limit_num or 2
+    local is_have = false
+    local have_num = 0
+    for _,team_object in pairs(self.team_data_list or {}) do
+        for k,v in pairs(team_object.pos_info or {}) do
+            local data = HeroController:getInstance():getModel():getHeroById(v.id)
+            if data and data.bid == hero_vo.bid then
+                have_num = have_num + 1
+                if have_num >= limit_num then
+                    is_have = true
+                    break
+                end
+            end
+        end
+        if is_have then
+            break
+        end
+    end
+    local str = ""
+    if is_have and not no_tips then
+        str = TI18N("语言_c_448")
+        if limit_num == 1 then
+            str = TI18N("语言_c_447")
+        end
+        message(str)
+    end
+    return is_have
+end
+-- 取出第一个空位置
+function DungeonAbyssGoFightPanel:setEmptyHeroItem( data, super_hero_item )
+    if self.hero_item_list_left and not self:checkIsHaveSameHeroInOneTeam(data, true) then
+        if self:checkIsHaveTwoSameHeroInAllTeam(data) then return end
+        for i,item in ipairs(self.hero_item_list_left or {}) do
+            local hero_vo = item:getData()
+            if not hero_vo then
+                if not self.move_hero_item then
+                    self.move_hero_item = HeroExhibitionItem.new(0.7, false)
+                    self.main_container:addChild(self.move_hero_item)
+                end
+                self.move_hero_item:setData(data)
+                local world_pos = item:convertToWorldSpace(cc.p(0, 0))
+                local target_pos = self.main_container:convertToNodeSpace(world_pos)
+                local super_world_pos = super_hero_item:convertToWorldSpace(cc.p(0, 0))
+                local item_pos = self.main_container:convertToNodeSpace(super_world_pos)
+                self.is_show_act = true
+                self.move_hero_item:setPosition(cc.p(item_pos.x+HeroExhibitionItem.Width/2, item_pos.y+HeroExhibitionItem.Height/2))
+                local act_1 = cc.MoveTo:create(CrossarenaConst.Form_Act_Time, cc.p(target_pos.x+HeroExhibitionItem.Width*0.7/2, target_pos.y+HeroExhibitionItem.Height*0.7/2))
+                local call_back = function (  )
+                    self.move_hero_item:setData()
+                    self.move_hero_item:setPosition(cc.p(-1000, -1000))
+                    if item then
+                        item:setData(data)
+                        item:setChosenImg(0)
+                    end
+                    self:updateTeamInfo()
+                    self.is_show_act = false
+                end
+                self.move_hero_item:runAction(cc.Sequence:create(act_1, cc.CallFunc:create(call_back)))
+                return i
+            end
+        end
+        return 
+    end
+    -- 能走到这里，就一定是同队伍有同类英雄
+    message(TI18N("语言_c_447"))
+end
+
+-- 判断某一队伍中是否有同类英雄
+function DungeonAbyssGoFightPanel:checkIsHaveSameHeroInOneTeam(hero_vo, no_tips )
+    local is_have = false
+    local team_object = self.hero_item_list_left
+    if team_object then
+        for k,item in pairs(team_object) do
+            local data = item:getData()
+            if data and data.bid == hero_vo.bid then
+                is_have = true
+                break
+            end
+        end
+    end
+    if is_have and not no_tips then
+        message(TI18N("语言_c_447"))
+    end
+    return is_have
+end
+
+-- 点击英雄
+function DungeonAbyssGoFightPanel:onClickHeroItem(hero_index)
+    local hero_item_list = self.hero_item_list_left or {}
+    local hero_item = hero_item_list[hero_index]
+    if hero_item then
+        local hero_vo = hero_item:getData()
+        if hero_vo then
+            hero_vo.is_ui_select = false
+            hero_item:setData()
+            for key, value in pairs(self.team_data_list) do
+                if value.order == hero_vo.teamNum then
+                    for k, v in pairs(value.pos_info) do
+                        if v.id == hero_vo.partner_id then
+                            table.remove(value.pos_info,k)
+                            break
+                        end
+                    end
+                end
+            end
+            hero_vo.teamNum=nil
+            hero_vo.point_id=nil
+            self:updateTeamInfo()
+            self:ChangeDunCount()
+            if self.super_panel then
+                local super_hero_item = self.super_panel:getCellHeroItemByPartnerId(hero_vo.partner_id)
+                self.super_panel:updateShowlist(hero_vo.partner_id)
+                if super_hero_item then
+                    self.is_show_act = true
+                    if not self.move_hero_item then
+                        self.move_hero_item = HeroExhibitionItem.new(0.7, false)
+                        self.main_container:addChild(self.move_hero_item)
+                    end
+                    self.move_hero_item:setData(hero_vo)
+                    local world_pos = hero_item:convertToWorldSpace(cc.p(0, 0))
+                    local item_pos = self.main_container:convertToNodeSpace(world_pos)
+                    self.move_hero_item:setPosition(cc.p(item_pos.x+HeroExhibitionItem.Width*0.7/2, item_pos.y+HeroExhibitionItem.Height*0.7/2))
+                    local super_world_pos = super_hero_item:convertToWorldSpace(cc.p(0, 0))
+                    local target_pos = self.main_container:convertToNodeSpace(super_world_pos)
+                    local act_1 = cc.MoveTo:create(CrossarenaConst.Form_Act_Time, cc.p(target_pos.x+HeroExhibitionItem.Width/2, target_pos.y+HeroExhibitionItem.Height/2))
+                    local call_back = function ()
+                        self.move_hero_item:setData()
+                        self.move_hero_item:setPosition(cc.p(-1000, -1000))
+                        super_hero_item:setSelected(false)
+                        super_hero_item:setChosenImg(0)
+                        self.is_show_act = false
+                    end
+                    self.move_hero_item:runAction(cc.Sequence:create(act_1, cc.CallFunc:create(call_back)))                    
+                end
+            end
+        end
+    end
+end
+---- 更新right战力、阵营信息
+function DungeonAbyssGoFightPanel:updateRightTeamInfo( )
+    local cfg = self:getConfig()
+    local unit_list = cfg.unit_id
+    -- table.sort(unit_list,function(a,b) return a[1] < b[1] end)
+    local unit_cfg = Config.UnitData.data_unit(unit_list[self.team_index])
+    local team_object = self.hero_item_list_right
+    if not team_object then return end
+    -- 战力
+    local power_num = cfg.desc_power[1][self.team_index]
+    self.label_power_left:setString(TI18N("语言_c_5812")..power_num)
+    for i = 1, 6 do
+        local item = team_object[i]
+        local id = unit_cfg["monster"..i]
+        local pos = self:getFormPosByIndex(unit_cfg.formation[1],i)
+        if id then
+            item:setVisible(true)
+            local cfg = Config.UnitData.data_unit(id)
+            if cfg then
+                local unit_data = {
+                    bid = cfg.bid,
+                    lev = cfg.lev,
+                    star = cfg.star}
+                item:setMonsterData(unit_data)
+                item:setPosition(self.nine_position_right[pos])
+            else
+                item:setVisible(false)
+            end
+        else
+            item:setVisible(false)
+        end
+    end
+    --更新位置
+    local formation_config = Config.FormationData.data_form_data[unit_cfg.formation[1]]
+    if self.lineUpNum == 6 then
+        formation_config = Config.FormationData.data_six_form_data[unit_cfg.formation[1]]
+    end
+    local dic_pos_index = {}
+    self.pos_name_list = {}
+    self.pos_rect_list = {}
+    for i,v in ipairs(formation_config.pos) do
+        local index = v[1] 
+        local pos = v[2] 
+        dic_pos_index[pos] = index
+        --更新位置
+        if team_object[index] then
+            team_object[index]:setPosition(self.nine_position_right[pos])
+        end
+    end
+
+    --没使用的要变灰变暗
+    local index = 1
+    for pos=1,9 do
+        if dic_pos_index[pos] == nil then
+            self.four_blank_img_right[index]:setPosition(self.nine_position_right[pos])
+            index = index + 1
+            if index > 4 then
+                break
+            end
+        end
+    end
+end
+
+-- 更新left战力、阵营信息
+function DungeonAbyssGoFightPanel:updateAllTeamInfo(  )
+    self:updateTeamInfo()
+end
+
+-- 更新队伍的信息
+function DungeonAbyssGoFightPanel:updateTeamInfo( )
+    local team_object = self.hero_item_list_left
+    if not team_object then return end
+
+    -- 战力
+    local power_num = 0
+    local dic_camp = {}
+    for k,item in pairs(team_object) do
+        local hero_vo = item:getData()
+        if hero_vo then
+            power_num = power_num + (hero_vo.power or 0)
+            local config = Config.PartnerData.data_partner_base[hero_vo.bid] 
+            if config and config.camp_type then
+                if dic_camp[config.camp_type] == nil then
+                    dic_camp[config.camp_type] = 1
+                else
+                    dic_camp[config.camp_type] = dic_camp[config.camp_type] + 1
+                end
+            end
+        end
+    end
+    self.fight_label:setNum(power_num)
+    local form_id_list = BattleController:getInstance():getModel():getFormIdListByCamp(dic_camp,PartnerConst.Fun_FormToBattle_Type[self.fun_form_type])
+    self.halo_form_id_list = form_id_list
+    local halo_icon_config, alien_effect = BattleController:getInstance():getModel():getCampIconConfigByIds(form_id_list)
+    if halo_icon_config then
+        local halo_res = PathTool.getCampGroupIcon(halo_icon_config.icon)
+        self.halo_load = loadImageTextureFromCDN(self.halo_btn, halo_res, ResourcesType.single, self.halo_load)
+        addCountForCampIcon(self.halo_btn, halo_icon_config.nums)
+        if self.halo_btn and self.halo_btn.top_num_txt and self.halo_btn.top_sp then
+            self.halo_btn.top_num_txt:setVisible(false)
+            self.halo_btn.top_sp:setVisible(false)
+        end
+        if self.halo_btn and self.halo_btn.bottom_num_txt and self.halo_btn.bottom_sp then
+            self.halo_btn.bottom_num_txt:setVisible(false)
+            self.halo_btn.bottom_sp:setVisible(false)
+        end
+        if self.halo_btn and self.halo_btn.bottom_num_txt2 and self.halo_btn.bottom_sp2 then
+            self.halo_btn.bottom_num_txt2:setVisible(false)
+            self.halo_btn.bottom_sp2:setVisible(false)
+        end
+        self.halo_label:setString("")
+        self:updateEffect(true, halo_res, alien_effect)
+    else
+        local halo_res = PathTool.getCampGroupIcon(1000)
+        self.halo_load = loadImageTextureFromCDN(self.halo_btn, halo_res, ResourcesType.single, self.halo_load)
+        addCountForCampIcon(self.halo_btn)
+        self.halo_label:setString(TI18N("语言_c_3170"))
+        self:updateEffect(false, halo_res)
+    end
+
+    --神器
+    local hallows_config = Config.HallowsData.data_base[self.hallows_id]
+    if hallows_config then
+        self.hallow_item:showAddIcon(false)
+        local hallows_vo = HallowsController:getInstance():getModel():getHallowsById(self.hallows_id)
+        if hallows_vo and hallows_vo.look_id ~= 0 then
+            local magic_cfg = Config.HallowsData.data_magic[hallows_vo.look_id]
+            if magic_cfg then
+                self.hallow_item:setBaseData(magic_cfg.item_id)
+                self.hallow_item:setMagicIcon(true)
+            else
+                self.hallow_item:setBaseData(hallows_config.item_id)
+                self.hallow_item:setMagicIcon(false)
+            end
+        else
+            self.hallow_item:setBaseData(hallows_config.item_id)
+            self.hallow_item:setMagicIcon(false)
+        end
+    else
+        self.hallow_item:setData()
+        self.hallow_item:showAddIcon(true)
+    end
+    self:initSpSkillInfoList(self.team_index)
+end
+
+--播放特效
+function DungeonAbyssGoFightPanel:updateEffect(status, halo_res, alien_effect)
+    if status then
+        if self.select == nil then
+            local x, y = self.halo_btn:getPosition()
+            self.select = createImage(self.btn_scroll, PathTool.getResFrame("common", "common_1101"), x, y, cc.p(0.5, 0.5), true)
+            self.select:setCascadeOpacityEnabled(true)
+            self.select:setScale(0.8)
+        else
+            self.select:setVisible(true)
+        end
+        if not self.select.alien then
+            local size = self.select:getContentSize()
+            local alien_res = PathTool.getCampGroupIcon("2001")
+            self.select.alien = createImage(self.select, "", size.width/2, size.height/2, cc.p(0.5, 0.5), false)
+            loadImageTextureFromCDN(self.select.alien, alien_res, ResourcesType.single)
+            self.select.alien:setVisible(false)
+        end
+        self.select.alien:setVisible(alien_effect and alien_effect ~= "")
+
+        local fadein = cc.FadeIn:create(0.6)
+        local fadeout = cc.FadeOut:create(0.6)
+        self.select:runAction(cc.RepeatForever:create(cc.Sequence:create(fadein, fadeout)))
+    else
+        if self.select then
+            doStopAllActions(self.select)
+            self.select:setVisible(false)
+        end
+    end
+end
+
+function DungeonAbyssGoFightPanel:updateFormationData(is_fixed)
+    local formation_config = Config.FormationData.data_form_data[self.formation_type]
+    if self.lineUpNum == 6 then
+        formation_config = Config.FormationData.data_six_form_data[self.formation_type]
+    end
+    local dic_pos_index = {}
+    self.pos_name_list = {}
+    self.pos_rect_list = {}
+    local width = self.cell_width - 10
+    --改变锁定忍者的位置
+    local target_item = nil
+    local new_pos = 4
+    
+    if self.team_data_list[self.team_index] then
+        for i,hero_item in ipairs(self.hero_item_list_left) do
+            local hero_vo = hero_item:getData()
+            local extend = hero_item:getExtendData()
+            if hero_vo and hero_vo.is_init_lock then
+                target_item = hero_item
+                break
+            end
+        end
+    end
+    if is_fixed then
+        target_item = nil
+    end
+    for i,v in ipairs(formation_config.pos) do
+        local index = v[1] 
+        local pos = v[2] 
+        dic_pos_index[pos] = index
+        --更新位置
+        if self.hero_item_list_left[index] then
+            self.hero_item_list_left[index]:setPosition(self.nine_position[pos])
+            self.hero_item_list_left[index]:setExtendData({scale = 1, can_click = true, pos_id = pos})
+
+            if target_item and pos == new_pos then
+                local item = self.hero_item_list_left[index]
+                local change_hero_vo = item:getData()
+                item:setData(target_item:getData())
+                target_item:setData(change_hero_vo)
+            end
+        end
+        local world_pos = self.hero_item_list_left[index]:convertToWorldSpace(cc.p(0, 0))
+        local node_pos = self.main_container:convertToNodeSpace(world_pos)
+        local rect = cc.rect( node_pos.x, node_pos.y, HeroExhibitionItem.Width*0.7, HeroExhibitionItem.Height*0.7)
+        self.item_rect_list[i] = rect
+    end
+
+    --没使用的要变灰变暗
+    local index = 1
+    for pos=1,9 do
+        if dic_pos_index[pos] == nil then
+            self.four_blank_img_left[index]:setPosition(self.nine_position[pos])
+            index = index + 1
+            if index > 4 then
+                break
+            end
+        end
+    end
+    self:updateFormationIcon()
+end
+
+--更新阵法item
+function DungeonAbyssGoFightPanel:updateFormationIcon()
+    if not self.formation_type  then return end
+    local _type = self.formation_type
+    if self.lineUpNum == 6 then
+        _type = self.formation_type + 7
+    end
+    local res = PathTool.getResFrame("form", "form_icon_".._type)
+    loadSpriteTexture(self.form_icon, res, LOADTEXT_TYPE_PLIST)
+end
+
+-- 更新精灵
+function DungeonAbyssGoFightPanel:updateElfinList()
+    if not self.elfin_btn then return end
+    local elfin_bid_list = {}
+    if self.elfin_data and self.elfin_data.team_list then
+        for key, value in pairs(self.elfin_data.team_list) do
+            if value.team == self.team_index then
+                elfin_bid_list = value.sprites
+            end
+        end
+    end
+
+    local function getElfinBidByPos( pos )
+        local elfin_bid
+        for k,v in pairs(elfin_bid_list) do
+            if v.pos == pos then
+                elfin_bid = v.item_bid
+                break
+            end
+        end
+        return elfin_bid
+    end
+    for i=1,4 do
+        local elfin_bid = getElfinBidByPos(i)
+        local elfin_item = self.elfin_item_list[i]
+        if elfin_item == nil then
+            elfin_item = SkillItem.new(true, false, true, 0.4)
+            local pos_x = 20
+            local pos_y = 66
+            if i == 3 or i == 4 then
+                pos_y = 18
+            end
+            if i == 2 or i == 4 then
+                pos_x = 68
+            end
+            elfin_item:setPosition(cc.p(pos_x, pos_y))
+            self.elfin_btn:addChild(elfin_item)
+            self.elfin_item_list[i] = elfin_item
+        end
+        local item_bid = ElfinController:getInstance():getModel():getElfinItemByPos(i)
+        if item_bid then
+            local bid = elfin_bid or 0
+            elfin_item:showLockIcon(false)
+            local elfin_cfg = Config.SpriteData.data_elfin_data(bid)
+            if bid == 0 or not elfin_cfg then -- 已解锁，但未放置精灵
+                elfin_item:setData()
+            else
+                local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+                if skill_cfg then
+                    elfin_item:setData(skill_cfg)
+                end
+            end
+        else
+            elfin_item:setData()
+            elfin_item:showLockIcon(true)
+        end
+    end
+end
+
+-- 移动英雄item
+function DungeonAbyssGoFightPanel:onClickHeroItemMove( sender, hero_vo )
+    if not self.move_hero_item then
+        self.move_hero_item = HeroExhibitionItem.new(0.7, false)
+        self.main_container:addChild(self.move_hero_item)
+    end
+    if not self.move_hero_vo and hero_vo then
+        self.move_hero_vo = hero_vo
+        sender:setData()
+        self.move_hero_item:setData(hero_vo)
+        self.move_hero_item:setChosenImg(0)
+    end
+    local touch_pos = sender:getTouchMovePosition()
+    local target_pos = self.main_container:convertToNodeSpace(touch_pos)
+    self.move_hero_item:setPosition(target_pos)
+end
+
+function DungeonAbyssGoFightPanel:onClickHeroItemCanceled( sender )
+    if self.move_hero_item and self.move_hero_vo then
+        local touch_pos = sender:getTouchMovePosition()
+        local target_pos = self.main_container:convertToNodeSpace(touch_pos) 
+        local is_have = false
+        for index,rect in ipairs(self.item_rect_list) do
+            if cc.rectContainsPoint( rect, target_pos ) then
+                local hero_item = self.hero_item_list_left[index]
+                if hero_item and not self:checkIsHaveSameHeroInOneTeam(self.move_hero_vo) then
+                    is_have = true
+                    self.is_show_act = true
+                    local world_pos = hero_item:convertToWorldSpace(cc.p(0, 0))
+                    local item_pos = self.main_container:convertToNodeSpace(world_pos) 
+                    local act_1 = cc.MoveTo:create(CrossarenaConst.Form_Act_Time, cc.p(item_pos.x+41.5, item_pos.y+41.5))
+                    local call_back = function (  )
+                        self.move_hero_item:setData()
+                        self.move_hero_item:setPosition(cc.p(-1000, -1000))
+                        local hero_vo = hero_item:getData()
+                        sender:setData(hero_vo)
+                        sender:setChosenImg(0)
+                        hero_item:setData(self.move_hero_vo)
+                        hero_item:setChosenImg(0)
+                        self:changeHeroPOS(hero_vo,self.move_hero_vo,index)
+                        self.move_hero_vo = nil
+                        self:updateAllTeamInfo()
+                        self.is_show_act = false
+                    end
+                    self.move_hero_item:runAction(cc.Sequence:create(act_1, cc.CallFunc:create(call_back)))
+                end
+                break
+            end
+        end
+        if not is_have then
+            self:onClickHeroItemEnd(sender)
+        end
+    end
+end
+function DungeonAbyssGoFightPanel:changeHeroPOS(hero_vo, move_hero_vo,index)
+    local sub_id = hero_vo and hero_vo.point_id or move_hero_vo.point_id
+    local id = hero_vo and hero_vo.partner_id
+    local move_id = move_hero_vo and move_hero_vo.partner_id
+    local pos = 0
+    local move_pos = 0
+    for key, value in pairs(self.team_data_list) do
+        if value.order == sub_id then
+            if id then
+                for k, v in pairs(value.pos_info) do
+                    if v.id == id then
+                        pos = v.pos
+                    end
+                    if v.id == move_id then
+                        move_pos = v.pos
+                    end
+                end
+                for k, v in pairs(value.pos_info) do
+                    if v.pos == pos then
+                        v.id = move_id
+                    end
+                    if v.pos == move_pos then
+                        v.id = id
+                    end
+                end
+            else
+                for k, v in pairs(value.pos_info) do
+                    if v.id == move_id then
+                        v.pos = index
+                    end
+                end
+            end
+        end
+    end
+end
+function DungeonAbyssGoFightPanel:onClickHeroItemEnd( sender )
+    if self.move_hero_item then
+        self.is_show_act = true
+        local world_pos = sender:convertToWorldSpace(cc.p(0, 0))
+        local target_pos = self.main_container:convertToNodeSpace(world_pos) 
+        local act_1 = cc.MoveTo:create(CrossarenaConst.Form_Act_Time, cc.p(target_pos.x+41.5, target_pos.y+41.5))
+        local call_back = function (  )
+            self.move_hero_item:setData()
+            self.move_hero_item:setPosition(cc.p(-1000, -1000))
+            if self.move_hero_vo then
+                sender:setData(self.move_hero_vo)
+                sender:setChosenImg(0)
+                self.move_hero_vo = nil
+            end
+            self.is_show_act = false
+        end
+        self.move_hero_item:runAction(cc.Sequence:create(act_1, cc.CallFunc:create(call_back)))
+    end
+end
+
+function DungeonAbyssGoFightPanel:__delete(  )
+    HeroController:getInstance():getModel():setBossFormPoint()
+    local data = self.team_data_list
+    local count=0
+    if data then
+        for i, v in pairs(data) do
+            if #v.pos_info>0 then
+                count=count+1
+            end
+        end
+    end
+    if count<#self.dunlist then
+       message(TI18N("语言_c_5813"))
+       return
+    end
+    RoleController:getInstance():sender16822(self.fun_form_type,self.team_data_list, {})
+    if self.sp_data then
+        _hero_controller:sender11216(self.fun_form_type,self.sp_data.formations)
+    end
+    if self.hero_item_list_left then
+        for _,item in pairs(self.hero_item_list_left) do
+            item:setData()
+            item:DeleteMe()
+            item = nil
+        end
+        self.hero_item_list_left = {}
+    end
+    if self.fight_label then
+        self.fight_label:DeleteMe()
+    end
+    self.fight_label = nil
+    if self.hallow_item then
+        self.hallow_item:DeleteMe()
+        self.hallow_item = nil
+    end
+    if self.dunlist then
+        for _,item in pairs(self.dunlist) do
+            item:DeleteMe()
+            item = nil
+        end
+        self.dunlist = {}
+    end
+    if self.halo_load then
+        self.halo_load:DeleteMe()
+        self.halo_load = nil
+    end
+    if self.move_hero_item then
+        self.move_hero_item:DeleteMe()
+        self.move_hero_item = nil
+    end
+end

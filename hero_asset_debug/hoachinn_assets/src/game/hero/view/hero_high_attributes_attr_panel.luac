@@ -1,0 +1,282 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      英雄属性tips
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+HeroHighAttributesAttrPanel = HeroHighAttributesAttrPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+
+function HeroHighAttributesAttrPanel:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/hero_details_attr_panel"
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+    }
+    self.addition_attr_list = {}
+    self.rand_list = {}
+    self.addition_cfg = Config.AttrData.data_attr_add_high
+end
+
+function HeroHighAttributesAttrPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.container = self.root_wnd:getChildByName("main_panel")
+    self.container:setTouchEnabled(true)
+    self.panel_bg = self.container:getChildByName("panel_bg")
+    self.panel_bg_0 = self.container:getChildByName("panel_bg_0")
+    self.ScrollView = self.container:getChildByName("ScrollView")
+    self.ScrollView:setScrollBarEnabled(false)
+    self.tip = self.root_wnd:getChildByName("tip")
+    self.tip:setVisible(false)
+end
+
+function HeroHighAttributesAttrPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn) ,false, 1)
+    -- 打开高阶属性详情 特殊属性
+    self.hero_vo_high_detailed_info = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Vo_High_Detailed_info,function(hero_vo)
+        if hero_vo.partner_id == self.hero_vo.partner_id then
+            self.hero_vo = hero_vo
+            self:setData()
+        end
+    end)
+    -- 打开详情 特殊属性
+    self.details_attr_open = GlobalEvent:getInstance():Bind(HeroEvent.Select_Details_Attr_Open_Event,function(index)
+        if self.rand_list[index] and not self.rand_list[index].is_open then
+            self:ClickRandAttr(index,true,self.rand_list[index])
+        end
+    end)
+    -- 关闭详情 特殊属性
+    self.details_attr_close = GlobalEvent:getInstance():Bind(HeroEvent.Select_Details_Attr_Close_Event,function(index)
+        if self.rand_list[index] and self.rand_list[index].is_open then
+            self:ClickRandAttr(index,false,self.rand_list[index])
+        end
+    end)
+end
+
+--关闭
+function HeroHighAttributesAttrPanel:onClickCloseBtn()
+    controller:openHeroHighAttributesAttrPanel(false)
+end
+
+function HeroHighAttributesAttrPanel:openRootWnd(hero_vo)
+    self.hero_vo = hero_vo
+    controller:sender11064(hero_vo.partner_id)
+end
+
+
+function HeroHighAttributesAttrPanel:setData()
+    self:setAttrList()
+    self:setAttrPanel()
+    self:setPos()
+end
+
+function HeroHighAttributesAttrPanel:setPos()
+    self.rand_size = self.rand_panel:getContentSize()
+    local _h = math.max(self.rand_size.height,400)
+    local view_h = math.min(_h,self.ScrollView:getContentSize().height)
+    self.ScrollView:setContentSize(cc.size(self.ScrollView:getContentSize().width,view_h))
+    self.panel_bg_0:setContentSize(cc.size(self.ScrollView:getContentSize().width,view_h))
+    self.panel_bg:setContentSize(cc.size(self.panel_bg:getContentSize().width,view_h+50))
+    self.container:setContentSize(cc.size(self.container:getContentSize().width,view_h+50))
+    self.ScrollView:setInnerContainerSize(cc.size(self.ScrollView:getContentSize().width,_h))
+    self.rand_panel:setPositionY(_h)
+end
+
+--高阶属性
+function HeroHighAttributesAttrPanel:setAttrList()
+    for k, v in pairs(self.addition_cfg) do
+        for key, value in pairs(self.hero_vo.high_ext_data) do
+            if value.id == v.attr_id then
+                self.addition_attr_list[v.attr_id] = value
+            end
+        end
+    end
+end
+function HeroHighAttributesAttrPanel:setAttrPanel()
+    self.rand_panel = ccui.Widget:create()
+    self.rand_panel:setContentSize(cc.size(447, tableLen(self.addition_cfg)*50 + 60))
+    self.rand_panel:setAnchorPoint(cc.p(0.5,1))
+    self.rand_panel:setPositionX(self.ScrollView:getContentSize().width/2)
+    self.rand_title = createImage(self.rand_panel,PathTool.getResFrame("common","common_1_304","false","common_1"),447/2,self.rand_panel:getContentSize().height - 30,cc.p(0.5,0.5),true,3,true)
+    self.rand_txt = createLabel(22, cc.c3b(0xff,0xff,0xff), cc.c3b(0x00,0x00,0x00), self.rand_panel:getContentSize().width/2, self.rand_panel:getContentSize().height - 30, TI18N("语言_att_05_3011"), self.rand_panel, 2, cc.p(0.5,0.5))
+    self.rand_txt:setZOrder(4)
+    local _w = math.max(self.rand_txt:getContentSize().width + 100,self.rand_title:getContentSize().width)
+    self.rand_title:setContentSize(cc.size(_w,self.rand_title:getContentSize().height))
+    self.ScrollView:addChild(self.rand_panel)
+    for i = 1, tableLen(self.addition_cfg) do
+        if self.addition_attr_list[self.addition_cfg[2000+i].attr_id] then
+            local item = self:setAttrItem(self.addition_cfg[2000+i],self.addition_attr_list[self.addition_cfg[2000+i].attr_id].val,i)
+            self.rand_panel:addChild(item)
+            item:setAnchorPoint(cc.p(0,0))
+            item:setPosition(cc.p(0,(tableLen(self.addition_cfg) - i)*50))
+            table.insert(self.rand_list,i,item)
+        end
+    end
+end
+function HeroHighAttributesAttrPanel:setAttrItem(cfg,num,index)
+    local panel = ccui.Widget:create()
+    panel:setContentSize(cc.size(447, 50))
+    panel:setAnchorPoint(cc.p(0.5,1))
+    local panel_bg = createImage(panel,PathTool.getResFrame("common","common_1_301","false","common_1"),223,5,cc.p(0.5,0), true, nil, true)
+    panel_bg:setVisible(false)
+    local res = PathTool.getResFrame("common",cfg.attr_icon)
+    local icon = createSprite(res, 0, 5, panel, cc.p(0,0))
+    --缩写
+    local shorthand = createLabel(22,cc.c3b(0x29,0x92,0x08),nil,40,5,cfg.attr_name,panel,nil,cc.p(0,0))
+    --数值
+    local txt = ""
+    if PartnerCalculate.isShowPer(cfg.attr_id) == true then
+        txt = string.format(TI18N("语言_c_4739"),num*0.1)
+    else
+        txt = num
+    end
+    local num_txt = createLabel(22,cc.c3b(0xd9,0x54,0x19),nil,447 - 50,5,txt,panel,nil,cc.p(1,0))
+    local open_img = createImage(panel,PathTool.getResFrame("common", "common_1093"),447,25,cc.p(1,0.5), true, nil, true)
+    open_img:setTouchEnabled(true)
+    open_img:setVisible(true)
+    open_img:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            GlobalEvent:getInstance():Fire(HeroEvent.Select_Details_Attr_Open_Event, index)
+        end
+    end)
+    local close_img = createImage(panel,PathTool.getResFrame("common", "common_90034"),430,20,cc.p(0.5,0.5), true, nil, true)
+    close_img:setTouchEnabled(true)
+    close_img:setVisible(false)
+    close_img:setRotation(90)
+    close_img:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            GlobalEvent:getInstance():Fire(HeroEvent.Select_Details_Attr_Close_Event, index)
+        end
+    end)
+    local desc_panel = ccui.Widget:create()
+    desc_panel:setAnchorPoint(cc.p(0,0))
+    panel:addChild(desc_panel)
+    desc_panel:setVisible(false)
+    local desc_bg = createImage(desc_panel,PathTool.getResFrame("common","common_1_302","false","common_1"),223,0,cc.p(0.5,0), true, nil, true)
+    local txt_scr = createScrollView(447,40,0,3,desc_panel,ccui.ScrollViewDir.vertical)
+    --描述
+    local desc_txt = createRichLabel(18,cc.c3b(0x7c,0x55,0x36),cc.p(0,1),cc.p(23,5),0,nil,400)
+    txt_scr:addChild(desc_txt)
+    desc_txt:setString(cfg.attr_desc)
+    desc_txt:setVisible(true)
+    local txt_h = desc_txt:getContentSize().height    
+    if txt_h > 70 then
+        txt_scr:setContentSize(cc.size(447,70))
+        txt_scr:setTouchEnabled(true)
+    else
+        txt_scr:setContentSize(cc.size(447,math.max(txt_h,40)))
+        txt_scr:setTouchEnabled(false)
+    end
+    txt_scr:setInnerContainerSize(cc.size(447,math.max(txt_h,40)))
+    desc_txt:setPositionY(txt_scr:getInnerContainerSize().height)
+    local _h = math.max(txt_scr:getContentSize().height,47)
+    desc_panel:setContentSize(cc.size(447, _h))
+    desc_panel:setPositionY(10)
+    desc_bg:setContentSize(cc.size(447, _h + 7))
+    local line = createSprite(PathTool.getResFrame("common","common_1_303","false","common_1"), 447/2, 0, panel, cc.p(0.5,0))
+    panel.index = index
+    panel.panel = panel
+    panel.panel_bg = panel_bg
+    panel.icon = icon
+    panel.shorthand = shorthand
+    panel.num_txt = num_txt
+    panel.open_img = open_img
+    panel.close_img = close_img
+    panel.desc_panel = desc_panel
+    panel.desc_bg = desc_bg
+    panel.txt_scr = txt_scr
+    panel.txt_scr.desc_txt = desc_txt
+    panel.desc_bg = desc_bg
+    panel.desc_bg = desc_bg
+    panel.line = line
+    panel.is_open = false
+    return panel
+end
+function HeroHighAttributesAttrPanel:ClickRandAttr(index,status,item)
+    if not item then return end
+    local _h = 0
+    if status then
+        item.is_open = true
+        item.desc_panel:setVisible(true)
+        item.panel_bg:setVisible(true)
+        item.open_img:setVisible(false)
+        item.close_img:setVisible(true)
+
+        local desc_h = item.desc_panel:getContentSize().height + 10
+        _h = desc_h
+        item.panel:setContentSize(cc.size(447,item.panel:getContentSize().height + desc_h))
+        item.panel_bg:setContentSize(cc.size(460,item.panel:getContentSize().height - 5))
+        item.icon:setPositionY(item.icon:getPositionY() + desc_h + 5)
+        item.shorthand:setPositionY(item.shorthand:getPositionY() + desc_h + 5)
+        item.num_txt:setPositionY(item.num_txt:getPositionY() + desc_h + 5)
+        item.open_img:setPositionY(item.open_img:getPositionY() + desc_h + 5)
+        item.close_img:setPositionY(item.close_img:getPositionY() + desc_h + 5)        
+        self.rand_panel:setContentSize(cc.size(self.rand_panel:getContentSize().width,self.rand_panel:getContentSize().height + desc_h))
+        for key, value in pairs(self.rand_list) do
+            if value.index < index then
+                value:setPositionY(value:getPositionY() + _h)
+            end
+        end
+    else
+        item.is_open = false
+        item.desc_panel:setVisible(false)
+        item.panel_bg:setVisible(false)
+        item.open_img:setVisible(true)
+        item.close_img:setVisible(false)
+        
+        local desc_h = item.desc_panel:getContentSize().height + 10
+        _h = -desc_h
+        item.panel:setContentSize(cc.size(447,item.panel:getContentSize().height - desc_h))
+        item.panel_bg:setContentSize(cc.size(460,item.panel:getContentSize().height))
+        item.icon:setPositionY(item.icon:getPositionY() - desc_h - 5)
+        item.shorthand:setPositionY(item.shorthand:getPositionY() - desc_h - 5)
+        item.num_txt:setPositionY(item.num_txt:getPositionY() - desc_h - 5)        
+        item.open_img:setPositionY(item.open_img:getPositionY() - desc_h - 5)
+        item.close_img:setPositionY(item.close_img:getPositionY() - desc_h - 5)  
+        self.rand_panel:setContentSize(cc.size(self.rand_panel:getContentSize().width,self.rand_panel:getContentSize().height - desc_h))
+        for key, value in pairs(self.rand_list) do
+            if value.index < index then
+                value:setPositionY(value:getPositionY() + _h)
+            end
+        end
+    end
+    self.rand_title:setPositionY(self.rand_panel:getContentSize().height - 30)
+    self.rand_txt:setPositionY(self.rand_panel:getContentSize().height - 30)
+    local scr_y = self.ScrollView:getInnerContainer():getPositionY()
+    self:setPos()
+    local temp_percent = 100 - math.floor((math.abs(scr_y) + _h) / (self.ScrollView:getInnerContainerSize().height - self.ScrollView:getContentSize().height) * 100)
+    if temp_percent < 0 or self.ScrollView:getInnerContainerSize().height == self.ScrollView:getContentSize().height then
+        temp_percent = 0
+    elseif temp_percent > 100 then
+        temp_percent = 100
+    end
+    self.ScrollView:jumpToPercentVertical(temp_percent)
+end
+function HeroHighAttributesAttrPanel:close_callback()
+    controller:openHeroHighAttributesAttrPanel(false)
+    self.rand_list = {}
+    self.addition_attr_list = {}
+    
+    if self.details_attr_open then
+        GlobalEvent:getInstance():UnBind(self.details_attr_open)
+        self.details_attr_open = nil
+    end
+    if self.details_attr_close then
+        GlobalEvent:getInstance():UnBind(self.details_attr_close)
+        self.details_attr_close = nil
+    end
+    if self.hero_vo_high_detailed_info then
+        GlobalEvent:getInstance():UnBind(self.hero_vo_high_detailed_info)
+        self.hero_vo_high_detailed_info = nil
+    end    
+end

@@ -1,0 +1,337 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-13 15:36:39
+-- @description    : 
+		-- 时空争霸赛   争霸赛  赛程主页面
+---------------------------------
+OverlordMatchWindow = class("OverlordMatchWindow",function()
+    return ccui.Layout:create()
+end)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+
+function OverlordMatchWindow:ctor()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/overlord_match_window"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+
+    -- 资源加载
+    local res_list = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("vedio", "vedio"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+    self.guess_list = {}
+end
+
+function OverlordMatchWindow:loadResListCompleted( )
+	self:initView()
+    self:registerEvent()
+    controller:sender14524()
+end
+
+
+-- 初始化数据
+function OverlordMatchWindow:initElfinData(  )
+
+end
+
+-- 初始化界面
+function OverlordMatchWindow:initView(  )
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.group_img = self.main_container:getChildByName("group_img")
+    self.group_txt = self.main_container:getChildByName("group_txt")
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.time_icon = self.main_container:getChildByName("time_icon")
+    self.time_txt = self.main_container:getChildByName("time_txt")
+    self.round_bg = self.main_container:getChildByName("round_bg")
+    self.round_txt = self.main_container:getChildByName("round_txt")
+    self.match_panel = self.main_container:getChildByName("match_panel")
+    local size = self.match_panel:getContentSize()
+    local setting = {
+        start_x = 0,
+        space_x = 0,
+        start_y = 0,
+        space_y = 2,
+        item_width = 692,
+        item_height = 110,
+        row = 0,
+        col = 1,
+        need_dynamic = true
+    }
+    self.scroll_view = CommonScrollViewSingleLayout.new(self.match_panel,  cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, setting)
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    
+    self.outs_btn = self.main_container:getChildByName("outs_btn")
+    self.outs_txt = self.outs_btn:getChildByName("label")
+    self.outs_txt:setString(TI18N("语言_c_6644"))
+    self.eliminate_tip = self.main_container:getChildByName("eliminate_tip")
+    self.eliminate_tip:setString(TI18N("语言_c_6637"))
+end
+
+
+--创建cell
+--@width 是setting.item_width
+--@height 是setting.item_height
+function OverlordMatchWindow:createNewCell()
+    local cell = OverlordMatchItem.new()
+    return cell
+end
+
+--获取数据数量
+function OverlordMatchWindow:numberOfCells()
+    if not self.pk_list then
+        return 0
+    end
+    return #self.pk_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function OverlordMatchWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.pk_list[index]
+    if not cell_data then
+        return
+    end
+    local time_desc = cell:setData(cell_data,index)
+end
+
+function OverlordMatchWindow:registerEvent(  )
+
+    registerButtonEventListener(self.outs_btn, function (  )
+        self:onClickOutsBtn()
+    end, true)
+    
+    if self.update_over_pk_list == nil then
+        self.update_over_pk_list = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverPKList, function()
+            self:setData()
+        end)
+    end
+end
+
+function OverlordMatchWindow:onClickOutsBtn(  )
+    controller:openOverlordOutsWindow(true)
+end
+
+function OverlordMatchWindow:setData(  )
+    self.group_data = Config.ArenaTimeWarpData.data_group[model:getOverGroupId(model:getLookZone())]
+    if not self.group_data then return end
+    self.group_txt:setString(self.group_data.name)
+    self.group_img:setContentSize(cc.size(self.group_txt:getContentSize().width+60,self.group_img:getContentSize().height))
+    doStopAllActions(self.time_txt)
+    commonCountDownTime(self.time_txt,model:getSignUpEndTime() - GameNet:getInstance():getTime())
+    -- commonCountDownTime(self.time_txt,model:getSignUpEndTime() - GameNet:getInstance():getTime(),{callback = function(time) 
+        self.time_bg:setContentSize(cc.size(self.time_txt:getContentSize().width+60,36))
+        self.time_icon:setPositionX(self.time_bg:getPositionX() - self.time_bg:getContentSize().width*0.5 + 30)
+        self.time_txt:setPositionX(self.time_icon:getPositionX() + 20)
+    -- end})
+    self.time_txt:setVisible(true)
+    self.time_bg:setVisible(true)
+    self.time_icon:setVisible(true)
+    if model:getStatus() == ArenaworldbullyConst.stage.match or model:getStatus() == ArenaworldbullyConst.stage.battle or model:getStatus() == ArenaworldbullyConst.stage.battle_settlement then
+        if model:getOverGroundStatusId(model:getLookZone()) == 1 then
+            self.round_txt:setString(string.format(TI18N("语言_c_6641"),model:getOverGroundId(model:getLookZone())))
+        else
+            if model:getStatus() == ArenaworldbullyConst.stage.match then
+                self.round_txt:setString(string.format(TI18N("语言_c_6639"),model:getOverGroundId(model:getLookZone())))
+            elseif model:getStatus() == ArenaworldbullyConst.stage.battle then
+                self.round_txt:setString(string.format(TI18N("语言_c_6640"),model:getOverGroundId(model:getLookZone())))
+            elseif model:getStatus() == ArenaworldbullyConst.stage.battle_settlement then
+                self.round_txt:setString(string.format(TI18N("语言_c_6641"),model:getOverGroundId(model:getLookZone())))
+            end
+        end
+    else
+        if model:getStatus() == ArenaworldbullyConst.stage.guess then
+            self.round_txt:setString(TI18N("语言_c_6638"))
+        else
+            self.round_txt:setString(TI18N("语言_c_1739"))
+            self.time_txt:setVisible(false)
+            self.time_bg:setVisible(false)
+            self.time_icon:setVisible(false)
+        end
+    end
+    self.pk_list = model:getOverPkList(model:getLookZone())
+    table.sort(self.pk_list,function(a,b) return a.game < b.game end)
+    self.scroll_view:reloadData()
+end
+
+function OverlordMatchWindow:DeleteMe()
+    if self.scroll_view then
+        self.scroll_view:DeleteMe()
+        self.scroll_view = nil
+    end
+    
+    if self.update_over_pk_list ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_over_pk_list)
+        self.update_over_pk_list = nil
+    end
+end
+
+
+
+--子项
+OverlordMatchItem = class("OverlordMatchItem", function()
+    return ccui.Widget:create()
+end)
+
+function OverlordMatchItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function OverlordMatchItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/overlord_match_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(692,110))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.rank_txt = self.main_container:getChildByName("rank_txt")
+	self.left_node = self.main_container:getChildByName("left_head")
+    self.left_rise = self.main_container:getChildByName("left_rise")
+    self.left_rise:setVisible(false)
+    self.left_down = self.main_container:getChildByName("left_down")
+    self.left_down:setVisible(false)
+	self.left_region = self.main_container:getChildByName("left_region")
+	self.left_name = self.main_container:getChildByName("left_name")
+	self.left_outs = self.main_container:getChildByName("left_outs")
+    setTextMaxWidth(self.left_outs,150,-10)
+	self.right_node = self.main_container:getChildByName("right_head")
+    self.right_rise = self.main_container:getChildByName("right_rise")
+    self.right_rise:setVisible(false)
+    self.right_down = self.main_container:getChildByName("right_down")
+    self.right_down:setVisible(false)
+	self.right_region = self.main_container:getChildByName("right_region")
+    self.right_name = self.main_container:getChildByName("right_name")
+    self.right_outs = self.main_container:getChildByName("right_outs")
+    setTextMaxWidth(self.right_outs,150,-10)
+    self.vs_icon = self.main_container:getChildByName("vs_icon")
+    self.video_btn = self.main_container:getChildByName("video_btn")
+end
+
+function OverlordMatchItem:register_event( )
+    registerButtonEventListener(self.video_btn, function (  )
+        -- controller:openOverlordRaceScheduleWindow(true,self.data)
+        controller:openOverlordFightVedioPanel(true,self.data)
+    end, true)
+end
+
+function OverlordMatchItem:setData(data,index)
+    self.data = data
+    self.rank_txt:setString(index)
+    if not self.left_head then
+        self.left_head = PlayerHead.new(PlayerHead.type.circle)
+        self.left_node:addChild(self.left_head)
+        self.left_head:setPosition(17, 0)
+        self.left_head:setScale(0.8)
+    end
+    self.left_head:setHeadRes(data.a_face, false, LOADTEXT_TYPE, data.a_face_file, data.a_face_update_time)
+    --头像框
+    local vo = Config.AvatarData.data_avatar[data.a_avatar_id or 0]
+    if vo then
+        local res_id = vo.res_id or 1 
+        local res = PathTool.getTargetRes("headcircle","txt_cn_headcircle_"..res_id,false,false)
+        self.left_head:showBg(res,nil,false,vo.offy)
+    end
+    self.left_head:setLev(data.a_lev)
+    self.left_head:showWarldBullyRegion(data.a_nation,0.7,cc.p(114,20))
+    self.left_name:setString(transformNameByServ(data.a_name,data.a_srv_id))
+    self.left_outs:setString(string.format(TI18N("语言_c_6642"),data.a_win_champion,data.a_lose_champion))
+    if data.ret == 1 then
+        self.left_head:showBattleResultIcon2(1)
+        self.video_btn:setVisible(true)
+        self.vs_icon:setVisible(false)
+    elseif data.ret == 2 then
+        self.left_head:showBattleResultIcon2(0)
+        self.video_btn:setVisible(true)
+        self.vs_icon:setVisible(false)
+    else
+        self.left_head:showBattleResultIcon2Vis(false)
+        self.video_btn:setVisible(false)
+        self.vs_icon:setVisible(true)
+    end
+    if data.ret ~= 0 then
+        if data.a_lose_champion >= 2 then
+            self.left_rise:setVisible(false)
+            self.left_down:setVisible(true)
+        else
+            self.left_rise:setVisible(true)
+            self.left_down:setVisible(false)
+        end
+    end
+    if data.b_rid == 0 then
+        if self.right_head then 
+            self.right_head:setVisible(false)
+        end
+        self.right_name:setVisible(false)
+        self.right_rise:setVisible(false)
+        self.right_down:setVisible(false)
+        self.right_outs:setString(TI18N("语言_c_6643"))
+        self.right_outs:setPositionY(39)
+    else
+        if not self.right_head then
+            self.right_head = PlayerHead.new(PlayerHead.type.circle)
+            self.right_node:addChild(self.right_head)
+            self.right_head:setPosition(17, 0)
+            self.right_head:setScale(0.8)
+        end
+        self.right_head:setVisible(true)
+        self.right_head:setHeadRes(data.b_face, false, LOADTEXT_TYPE, data.b_face_file, data.b_face_update_time)
+        --头像框
+        local vo = Config.AvatarData.data_avatar[data.b_avatar_id or 0]
+        if vo then
+            local res_id = vo.res_id or 1 
+            local res = PathTool.getTargetRes("headcircle","txt_cn_headcircle_"..res_id,false,false)
+            self.right_head:showBg(res,nil,false,vo.offy)
+        end
+        self.right_head:setLev(data.b_lev)
+        self.right_head:showWarldBullyRegion(data.b_nation,0.7,cc.p(114,20))
+        if data.ret == 1 then
+            self.right_head:showBattleResultIcon2(0)
+        elseif data.ret == 2 then
+            self.right_head:showBattleResultIcon2(1)
+        else
+            self.right_head:showBattleResultIcon2Vis(false)
+        end
+        self.right_name:setVisible(true)
+        self.right_name:setString(transformNameByServ(data.b_name,data.b_srv_id))
+        self.right_outs:setString(string.format(TI18N("语言_c_6642"),data.b_win_champion,data.b_lose_champion))
+        self.right_outs:setPositionY(42)
+        if data.ret ~= 0 then
+            if data.b_lose_champion >= 2 then
+                self.right_rise:setVisible(false)
+                self.right_down:setVisible(true)
+            else
+                self.right_rise:setVisible(true)
+                self.right_down:setVisible(false)
+            end
+        end
+    end
+end
+
+function OverlordMatchItem:DeleteMe()
+
+end

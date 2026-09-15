@@ -1,0 +1,379 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 21:52:40
+-- @description    : 
+		-- 失落之塔出战
+---------------------------------
+ActionLostTowerGoWarPanel = ActionLostTowerGoWarPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionLostTowerGoWarPanel:__init()
+	self.win_type = WinType.Big
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "action/action_lost_tower_go_war_panel"
+    self.left_item_list = {}
+    self.right_item_list = {}
+end
+
+function ActionLostTowerGoWarPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container , 1) 
+	local image_title = main_container:getChildByName("image_title")
+	local win_title = main_container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_5832"))
+	image_title:setContentSize(cc.size(win_title:getContentSize().width + 120,image_title:getContentSize().height))
+	self.close_btn = main_container:getChildByName("close_btn")
+	self.image_info_1 = self.main_container:getChildByName("image_info_1")
+	self.image_info_2 = self.main_container:getChildByName("image_info_2")
+	self.left_bg_1 = self.main_container:getChildByName("left_bg_1")
+	self.right_bg_1 = self.main_container:getChildByName("right_bg_1")
+	self.btn_embattle = self.main_container:getChildByName("btn_embattle")
+	self.btn_embattle_txt = self.btn_embattle:getChildByName("label")
+	self.btn_embattle_txt:setString(TI18N("语言_c_1389"))
+	self.btn_fight = self.main_container:getChildByName("btn_fight")
+	self.btn_fight_txt = self.btn_fight:getChildByName("label")
+	self.btn_fight_txt:setString(TI18N("语言_c_444"))
+	self.panel_role_right = self.main_container:getChildByName("panel_role_right")
+	self.panel_role_left = self.main_container:getChildByName("panel_role_left")
+    self.left_elfin_item_list = {} --自己的通灵兽
+    self.right_elfin_item_list = {}--对方通灵兽
+    --9位置
+    self.left_position_list = {}
+    for i=1,9 do
+        local item_bg = self.panel_role_left:getChildByName("pos_bg_" .. i)
+        local pos_x = item_bg:getPositionX()
+        local pos_y = item_bg:getPositionY() - 5
+        table.insert(self.left_position_list, cc.p(pos_x, pos_y))
+    end
+    self.right_position_list = {}
+    for i=1,9 do
+        local item_bg = self.panel_role_right:getChildByName("pos_bg_" .. i)
+        local pos_x = item_bg:getPositionX()
+        local pos_y = item_bg:getPositionY() - 5
+        table.insert(self.right_position_list, cc.p(pos_x, pos_y))
+    end
+	self.atk_sp_1 = self.main_container:getChildByName("atk_sp_1")
+	self.right_elfin_panel = self.main_container:getChildByName("right_elfin_panel")
+	self.left_elfin_panel = self.main_container:getChildByName("left_elfin_panel")
+	self.left_name_txt = self.main_container:getChildByName("name_txt_1")
+	self.left_atk_txt = self.main_container:getChildByName("atk_txt_1")
+	self.name_txt_2 = self.main_container:getChildByName("name_txt_2")
+    setTextMaxWidth(self.name_txt_2,180,-10)
+    -- self.name_txt_2:setChangeScaleOffWidth(500)
+    self.right_atk_txt = self.main_container:getChildByName("atk_txt_2")
+
+	self.left_role_head = PlayerHead.new(PlayerHead.type.circle)
+    self.left_role_head:setPosition(92, 770)
+    self.left_role_head:setScale(0.9)
+    self.main_container:addChild(self.left_role_head)
+
+    self.right_role_head = PlayerHead.new(PlayerHead.type.circle)
+    self.right_role_head:setPosition(392, 770)
+    self.right_role_head:setScale(0.9)
+    self.main_container:addChild(self.right_role_head)
+
+    self.bottom_bg = self.main_container:getChildByName("bottom_bg")
+    self.bo_ti_bg = self.main_container:getChildByName("bo_ti_bg")
+    self.bo_ti_txt = self.main_container:getChildByName("bo_ti_txt")
+    self.bo_ti_txt:setString(TI18N("语言_c_532"))
+    self.bo_ti_bg:setContentSize(cc.size(self.bo_ti_txt:getContentSize().width + 50,28 * 1.5))
+    self.item_panel = self.main_container:getChildByName("item_panel")
+	self.item_panel:setSwallowTouches(false)
+end
+
+function ActionLostTowerGoWarPanel:openRootWnd(index,list)
+	HeroController:getInstance():sender11211(PartnerConst.Fun_Form.LostTowerGoWar)
+    ElfinController:getInstance():send26555(PartnerConst.Fun_Form.LostTowerGoWar)
+    if list and list.rid and list.srv_id then
+        controller:sender21908(list.rid,list.srv_id)
+    end
+    self:updateEnemyEflinSkill({})
+	self:setData()
+end
+
+function ActionLostTowerGoWarPanel:setData(  )
+	if not self.good_scrollview then
+		local bgSize = self.item_panel:getContentSize()
+		local scroll_view_size = cc.size(bgSize.width, bgSize.height)
+		local scale = 0.8
+		local setting = {
+			item_class = BackPackItem,      -- 单元类
+			start_x = 0,                  -- 第一个单元的X起点
+			space_x = 10,                    -- x方向的间隔
+			start_y = 0,                    -- 第一个单元的Y起点
+			space_y = 0,                   -- y方向的间隔
+			item_width = BackPackItem.Width*scale,               -- 单元的尺寸width
+			item_height = BackPackItem.Height*scale,              -- 单元的尺寸height
+			row = 1,                        -- 行数，作用于水平滚动类型
+			col = 0,                         -- 列数，作用于垂直滚动类型
+			scale = scale
+		}
+		self.good_scrollview = CommonScrollViewLayout.new(self.item_panel, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+		self.good_scrollview:setSwallowTouches(false)
+	end
+    local list = {}
+    local action_data = controller:getActionSubTabVo(ActionRankCommonType.LostTower)
+	self.camp_id = action_data.camp_id
+	local cfg = Config.HolidayLostTowerData.data_lv_info[self.camp_id]
+    local stage = model:getLostTowerData().stage
+    for key, value in pairs(cfg) do
+        if value.lv == stage then
+            list = value.challenge_reward
+        end
+    end
+    self.good_scrollview:setData(list)
+    self.good_scrollview:addEndCallBack(function ()
+        local list = self.good_scrollview:getItemList()
+        for k,v in pairs(list) do
+            v:setDefaultTip()
+        end
+    end)
+
+end
+
+function ActionLostTowerGoWarPanel:_onClickBtnFight()
+    if self.form_data and self.form_data.pos_info then
+        if #self.form_data.pos_info == 0 then
+            message(TI18N("语言_c_5833"))
+        elseif #self.form_data.pos_info < 6 then
+            local str = TI18N("语言_c_5834")
+            CommonAlert.show(str,TI18N("语言_c_63"),function() self:comfirmFight() end,TI18N("语言_c_62"),function() self:_onClickBtnEmbattle() end,CommonAlert.type.rich,nil,nil,24)            
+        else
+            self:comfirmFight()
+        end
+    end
+end
+
+function ActionLostTowerGoWarPanel:comfirmFight(  )
+    if self.enemy_data then
+        controller:sender21901(ActionRankCommonType.LostTower,self.enemy_data.rid,self.enemy_data.srv_id)
+    end
+end
+function ActionLostTowerGoWarPanel:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), true, 2)
+	registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+    registerButtonEventListener(self.btn_fight, handler(self, self._onClickBtnFight), false, 2)
+	registerButtonEventListener(self.btn_embattle, handler(self, self._onClickBtnEmbattle), true, 2)
+	-- 我方阵容数据
+    self:addGlobalEvent(HeroEvent.Update_Fun_Form, function ( data )
+        if data and data.type  == PartnerConst.Fun_Form.LostTowerGoWar then
+            self.form_data = data
+            self:setMyFormData()
+        end
+    end)    
+    -- 我方精灵数据更新
+    self:addGlobalEvent(ElfinEvent.Get_Elfin_Tree_Data_Event, function (  )
+        ElfinController:getInstance():send26555(PartnerConst.Fun_Form.LostTowerGoWar)
+    end)
+    -- 我方精灵数据更新
+    self:addGlobalEvent(ElfinEvent.Elfin_Plan_From_Info_Event, function (data)
+        if data.type == PartnerConst.Fun_Form.LostTowerGoWar then
+            self:updateMyEflinSkill(data)
+        end
+    end)
+    self:addGlobalEvent(ActionEvent.LostTowerEnemyData, function (data)
+        self:setEnemyFormData(data)
+    end)
+end
+-- 根据位置获取敌方英雄数据
+function ActionLostTowerGoWarPanel:getRoleDataByIndex( index, role_list )
+    for k,v in pairs(role_list) do
+        if v.pos == index then
+            return v
+        end
+    end
+end
+function ActionLostTowerGoWarPanel:setEnemyFormData(data)
+    table.sort(data.p_list,function(a,b)
+        return a.pos < b.pos
+    end)
+    local list = {}
+    for k, v in pairs(data.p_list) do
+        list[v.pos] = v
+    end
+    data.p_list = list
+    self.enemy_data = data
+    self.name_txt_2:setString(string.format("[%s]%s", getServerName(data.srv_id),data.name))
+    self.right_atk_txt:setString(MoneyTool.moneyFormat(data.power))
+    self.right_role_head:setHeadRes(data.face, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+    local formation_config = Config.FormationData.data_six_form_data[data.formation_type]
+    for i=1,6 do
+        local role_data = data.p_list[i]
+        local hero_item = self.right_item_list[i]
+        if hero_item == nil then
+            hero_item = self:createHeroItemByIndex(i, self.panel_role_right,true)
+            hero_item:setTouchEnabled(false)
+            self.right_item_list[i] = hero_item
+        else
+            hero_item:setVisible(true)
+        end
+        if role_data then
+            hero_item:setData(role_data)
+        else
+            hero_item:setData()
+        end
+        -- 位置
+        local pos_cfg = formation_config.pos[i]
+        if pos_cfg then
+            local pos = self.right_position_list[pos_cfg[2]]
+            if pos then
+                hero_item:setPosition(pos)
+            end
+        end
+    end
+end
+function ActionLostTowerGoWarPanel:setMyFormData()
+	local role_vo = RoleController:getInstance():getRoleVo()
+    if not self.form_data or not role_vo then return end
+    -- 名称
+    self.left_name_txt:setString(role_vo.name)
+    -- 头像
+    self.left_role_head:setHeadRes(role_vo.face_id, false, LOADTEXT_TYPE, role_vo.face_file, role_vo.face_update_time)
+    -- 英雄头像
+    self.hero_base_atk_val = 0
+    local formation_config = Config.FormationData.data_six_form_data[self.form_data.formation_type]
+    for i=1,6 do
+        local role_info = self:getRoleDataByIndex(i, self.form_data.pos_info)
+        local role_data
+        if role_info then
+            role_data = HeroController:getInstance():getModel():getHeroById(role_info.id)
+        end
+        local hero_item = self.left_item_list[i]
+        -- if role_data then
+            if hero_item == nil then
+                hero_item = self:createHeroItemByIndex(i, self.panel_role_left,true)
+                self.left_item_list[i] = hero_item
+            else
+                hero_item:setVisible(true)
+            end
+            hero_item:setData(role_data)
+            -- 位置
+            local pos_cfg = formation_config.pos[i]
+            if pos_cfg then
+                local pos = self.left_position_list[pos_cfg[2]]
+                if pos then
+                    hero_item:setPosition(pos)
+                end
+            end
+            -- 总战力
+            self.hero_base_atk_val = self.hero_base_atk_val + (role_data and role_data.power or 0)
+        -- else
+        --     if hero_item then
+        --         hero_item:setVisible(false)
+        --     end
+        -- end
+    end
+
+    self.left_atk_txt:setString(MoneyTool.moneyFormat(self.hero_base_atk_val))
+end
+--根据位置索引创建一个新的item
+function ActionLostTowerGoWarPanel:createHeroItemByIndex(index, parent,isCanTouch)
+    local hero_item = HeroExhibitionItem.new(0.65, isCanTouch, nil, nil ,true)
+    hero_item:addCallBack(handler(self, self.onClickHeroItem))
+    parent:addChild(hero_item)
+    hero_item:setVisible(true)
+    return hero_item
+end
+function ActionLostTowerGoWarPanel:onClickHeroItem( item, hero_data )
+    if not hero_data then return end
+
+    if hero_data.is_master then -- 怪物
+        if hero_data.srv_id ~= "" and hero_data.rid and hero_data.partner_id then
+            LookController:getInstance():sender11061(hero_data.rid, hero_data.srv_id, hero_data.partner_id)
+        else
+            message(TI18N("语言_c_2321"))
+        end
+    -- elseif hero_data.flag == 1 and hero_data.partner_id then -- 我方雇佣英雄
+    --     PlanesController:getInstance():sender23116(hero_data.partner_id)
+    else -- 我自己的英雄
+        HeroController:getInstance():openHeroTipsPanel(true, hero_data)
+    end
+end
+function ActionLostTowerGoWarPanel:updateEnemyEflinSkill(data)
+    if not data then return end
+    local sprites = {}
+    if data.team_list and data.team_list[1] then
+        sprites = data.team_list[1].sprites or {}
+    end
+    -- 精灵
+    for i=1,4 do
+        local right_elfin_item = self.right_elfin_item_list[i]
+        if not right_elfin_item then
+            right_elfin_item = SkillItem.new(true, true, true, 0.5, true)
+            local pos_x = 28 + (i-1)*68
+            right_elfin_item:setPosition(cc.p(pos_x, 24))
+            self.right_elfin_panel:addChild(right_elfin_item)
+            self.right_elfin_item_list[i] = right_elfin_item
+        end
+        self:setElfinSkillItemData(right_elfin_item, sprites, i)
+    end
+end
+function ActionLostTowerGoWarPanel:updateMyEflinSkill(data)
+    if not data then return end
+    local sprites = {}
+    if data.team_list and data.team_list[1] then
+        sprites = data.team_list[1].sprites or {}
+    end
+    -- 精灵
+    for i=1,4 do
+        local left_elfin_item = self.left_elfin_item_list[i]
+        if not left_elfin_item then
+            left_elfin_item = SkillItem.new(true, true, true, 0.5, true)
+            local pos_x = 28 + (i-1)*68
+            left_elfin_item:setPosition(cc.p(pos_x, 24))
+            self.left_elfin_panel:addChild(left_elfin_item)
+            self.left_elfin_item_list[i] = left_elfin_item
+        end
+        self:setElfinSkillItemData(left_elfin_item, sprites, i)
+    end
+end
+-- 根据位置获取精灵的bid
+function ActionLostTowerGoWarPanel:getElfinBidByPos( sprite_data, pos )
+    if not sprite_data or next(sprite_data) == nil then return end
+    for k,v in pairs(sprite_data) do
+        if v.pos == pos then
+            return v.item_bid
+        end
+    end
+end
+function ActionLostTowerGoWarPanel:setElfinSkillItemData( skill_item, sprite_data, pos )
+    local elfin_bid = self:getElfinBidByPos(sprite_data, pos)
+    if elfin_bid then
+        skill_item:showLockIcon(false)
+        local elfin_cfg = Config.SpriteData.data_elfin_data(elfin_bid)
+        if elfin_bid == 0 or not elfin_cfg then -- 已解锁，但未放置精灵
+            skill_item:setData()
+            skill_item:showLevel(false)
+        else
+            local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+            if skill_cfg then
+                skill_item:showLevel(true)
+                skill_item:setData(skill_cfg)
+            end
+        end
+    else
+        skill_item:setData()
+        skill_item:showLevel(false)
+        skill_item:showLockIcon(true)
+    end
+end
+function ActionLostTowerGoWarPanel:_onClickBtnEmbattle()
+	HeroController:getInstance():openFormGoFightPanel(true,PartnerConst.Fun_Form.LostTowerGoWar,{},HeroConst.FormShowType.eFormSave)
+end
+function ActionLostTowerGoWarPanel:_onClickBtnClose(  )
+	controller:openActionLostTowerGoWarPanel(false)
+end
+
+function ActionLostTowerGoWarPanel:close_callback(  )
+	controller:openActionLostTowerGoWarPanel(false)
+end

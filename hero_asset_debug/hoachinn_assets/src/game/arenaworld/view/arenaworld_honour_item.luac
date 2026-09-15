@@ -1,0 +1,187 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-05-05 14:16:55
+-- @description    : 
+		-- 跨服竞技场 英雄 item
+---------------------------------
+local _controller = ArenaWorldController:getInstance()
+local _model = _controller:getModel()
+local _string_format = string.format
+
+-- AreanWorldHonourItem = AreanWorldHonourItem or BaseClass()
+AreanWorldHonourItem = class("AreanWorldHonourItem", function()
+    return ccui.Widget:create()
+end)
+
+AreanWorldHonourItem.Width = 200
+AreanWorldHonourItem.Height = 300
+
+function AreanWorldHonourItem:ctor()
+    self:createRoorWnd()
+    self:registerEvent()
+end
+
+function AreanWorldHonourItem:createRoorWnd(  )
+	self.size = cc.size(200, 300)
+    local csbPath = PathTool.getTargetCSB("arenaworld/arenaworld_honour_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.container = self.root_wnd:getChildByName("container")
+    self.thumb_btn = self.container:getChildByName("thumb_btn")
+    self.touch = ccui.Layout:create()
+    self.touch:setAnchorPoint(cc.p(0.5,0.5))
+    self.touch:setContentSize(cc.size(100,100))
+    self.container:addChild(self.touch)
+    self.touch:setPosition(52,35)
+    self.touch:setTouchEnabled(true)
+    self.title_img = self.container:getChildByName("title_img")
+    self.touch_layer=self.container:getChildByName("touch_layer")
+    self.rank_label = self.container:getChildByName("rank_label")
+    self.name_label = self.container:getChildByName("name_label")
+    self.attk_label = self.container:getChildByName("attk_label")
+end
+
+function AreanWorldHonourItem:registerEvent(  )
+    registerButtonEventListener(self.touch_layer, handler(self, self.onClickRoleItem), false)
+    registerButtonEventListener(self.touch, handler(self, self.onClickThumbBtn), true)
+    -- registerButtonEventListener(self.thumb_btn, handler(self, self.onClickThumbBtn), true)
+
+    if not self.update_single_role_event then
+        self.update_single_role_event = GlobalEvent:getInstance():Bind(CrossarenaEvent.Update_Single_Challenge_Role_Event, function ( data )
+            if data and data.idx and self.data and self.data.idx == data.idx then
+                self:setData(data)
+            end
+        end)
+    end
+end
+
+function AreanWorldHonourItem:onClickRoleItem(  )
+    if self.data  then 
+        local roleVo = RoleController:getInstance():getRoleVo()
+        local rid = self.data.rid
+        local srv_id  = self.data.srv_id
+        if self.data.srv_id and self.data.srv_id == "robot" then 
+            message(TI18N("语言_c_476"))
+            return
+        end
+        if rid and srv_id and roleVo.rid== rid and roleVo.srv_id == srv_id then 
+            message(TI18N("语言_c_349"))
+            return 
+        end
+        -- if self.data then 
+        --     local vo = {rid = rid, srv_id = srv_id}
+        --     ChatController:getInstance():openFriendInfo(vo,cc.p(0,0))
+        -- end
+        -- if self.data.rid == 0 then
+        --     message(TI18N("语言_c_459"))
+        --     return
+        -- end
+        -- RoleController:getInstance():requestRoleInfo(self.data.rid,self.data.srv_id)
+    end
+end
+
+--膜拜
+function AreanWorldHonourItem:onClickThumbBtn(  )
+    if self.data then--and _model:getArenaIsOpen()
+        if self.data.rid == 0 then
+            message(TI18N("语言_c_459"))
+            return
+        end
+        RoleController:getInstance():requestWorshipRole(self.data.rid, self.data.srv_id, self.index, WorshipType.arenaworld)
+    end
+end
+
+function AreanWorldHonourItem:setData( data, index )
+	if not data then return end
+    self.index=index
+    
+	self.data = data
+    -- 名称
+    self.name_label:setString(transformNameByServ(data.name or "", data.srv_id))
+    -- 点赞数
+    self.rank_label:setString(data.worship or 0)
+    -- 战力
+    self.attk_label:setString(MoneyTool.moneyFormat(data.power or 0))
+    if  self.data.worship_status==0 then
+        self.thumb_btn:setTouchEnabled(true)
+        self.rank_label:enableOutline(Config.ColorData.data_color4[2], 2)
+        setChildUnEnabled(false, self.thumb_btn, Config.ColorData.data_color4[1])
+        addRedPointToNodeByStatus(self.thumb_btn, true, 23,12)
+    else
+        self.thumb_btn:setTouchEnabled(false)
+        self.rank_label:enableOutline(Config.ColorData.data_color4[2], 2)
+        setChildUnEnabled(true, self.thumb_btn, Config.ColorData.data_color4[1])
+        addRedPointToNodeByStatus(self.thumb_btn, false, 23,12)
+    end
+    --称号
+    if not Config or not Config.HonorData then
+        require("config.honor_data")
+    end
+    if self.title_eff then
+        self.title_eff:clearTracks()
+        self.title_eff:removeFromParent()
+        self.title_eff = nil
+    end
+    local honor_data = Config.HonorData.data_title[self.data.honor] 
+    if honor_data then
+        if honor_data.effect and honor_data.effect ~= "" then
+            if self.title_img then
+                self.title_img:setVisible(false)
+            end
+            if not self.title_eff then
+                self.title_eff = createEffectSpine(honor_data.effect,cc.p(self.title_img:getPositionX(),self.title_img:getPositionY()),cc.p(0.5,0.5),true,PlayerAction.action)
+                self.container:addChild(self.title_eff)
+            end
+        else
+            local res = PathTool.getPlistImgForDownLoad("honor","txt_cn_honor_"..honor_data.res_id,false,false)
+            self.item_load = loadSpriteTextureFromCDN(self.title_img, res, ResourcesType.single,self.item_load)
+            self.title_img:setVisible(true)
+        end
+    end   
+    
+    -- 模型
+    if self.role_spine then
+        self.role_spine:DeleteMe()
+        self.role_spine = nil
+    end
+    if data.lookid then
+        self.role_spine = BaseRole.new(BaseRole.type.role, data.lookid)
+        self.role_spine:setCascade(true)
+        self.role_spine:setAnchorPoint(cc.p(0.5,0.5))
+        self.role_spine:setScale(0.8)
+        self.role_spine:setAnimation(0,PlayerAction.show,true)
+        self.touch_layer:addChild(self.role_spine, 1)
+        self.role_spine:setPosition(cc.p(100,110))
+        -- local pos_x = self.size.width/2
+      
+        -- if index and index == 2 then
+        --     self.role_spine:setPositionY(775)
+        --     self.role_spine:setLocalZOrder(2)
+        --     self.image_atk_bg:setPositionY(90)
+        --     self.txt_atk:setPositionY(90)
+        -- end
+    end
+end
+
+
+function AreanWorldHonourItem:DeleteMe()
+    if self.role_spine then
+        self.role_spine:DeleteMe()
+        self.role_spine = nil
+    end
+    if self.update_single_role_event then
+        GlobalEvent:getInstance():UnBind(self.update_single_role_event)
+        self.update_single_role_event = nil
+    end
+    if self.item_load then
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    
+    if self.title_eff then
+        self.title_eff:clearTracks()
+        self.title_eff:removeFromParent()
+        self.title_eff = nil
+    end
+end

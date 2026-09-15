@@ -1,0 +1,537 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 20:37:25
+-- @description    : 
+		-- 天梯战报
+---------------------------------
+ShinobiLogWindow = ShinobiLogWindow or BaseClass(BaseView)
+
+local controller = ShinobiController:getInstance()
+local model = controller:getModel()
+
+function ShinobiLogWindow:__init()
+	self.win_type = WinType.Big
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "shinobi/shinobi_log_window"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("bigbg", "bigbg_3"), type = ResourcesType.single },
+	}
+
+	self.tab_list = {}
+end
+
+function ShinobiLogWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(container , 1) 
+
+	local win_title = container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_4123"))
+
+	self.title_bg = container:getChildByName("title_bg")
+	local enemy_title = self.title_bg:getChildByName("enemy_title")
+	enemy_title:setString(TI18N("语言_c_4124"))
+	local more_title = self.title_bg:getChildByName("more_title")
+	more_title:setString(TI18N("语言_c_4125"))
+
+
+	local tab_container = container:getChildByName("tab_container")
+    for i=1,2 do
+		local object = {}
+        local tab_btn = tab_container:getChildByName("tab_btn_"..i)
+        if tab_btn then
+            local title = tab_btn:getChildByName("title")
+            if i == 1 then
+                title:setString(TI18N("语言_c_4126"))
+            elseif i == 2 then
+                title:setString(TI18N("语言_c_4127"))
+            end
+            title:setTextColor(cc.c4b(0xf5, 0xe0, 0xb9, 0xff))
+			local tips = tab_btn:getChildByName("tips")
+
+            object.tab_btn = tab_btn
+			object.label = title
+			object.index = i
+			object.tips = tips
+            self.tab_list[i] = object
+        end
+    end
+
+    self.close_btn = container:getChildByName("close_btn")
+    self.confirm_btn = container:getChildByName("confirm_btn")
+    self.no_log_label = container:getChildByName("no_log_label")
+    self.no_log_image = container:getChildByName("no_log_image")
+    self.my_log_panel = container:getChildByName("my_log_panel")
+    self.god_log_panel = container:getChildByName("god_log_panel")
+    self.no_log_label:setString(TI18N("语言_c_4128"))
+
+    local myLogBgSize = self.my_log_panel:getContentSize()
+	local scroll_view_size = cc.size(myLogBgSize.width, myLogBgSize.height-8)
+    local setting = {
+        item_class = ShinobiMyLogItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = -5,                    -- 第一个单元的Y起点
+        space_y = -5,                   -- y方向的间隔
+        item_width = 612,               -- 单元的尺寸width
+        item_height = 135,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+
+    self.my_log_scrollview = CommonScrollViewLayout.new(self.my_log_panel, cc.p(0,5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.my_log_scrollview:setSwallowTouches(false)
+
+    local godLogBgSize = self.god_log_panel:getContentSize()
+	local scroll_view_size = cc.size(godLogBgSize.width, godLogBgSize.height-8)
+    local setting = {
+        item_class = ShinobiGodLogItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 612,               -- 单元的尺寸width
+        item_height = 153,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+
+    self.god_log_scrollview = CommonScrollViewLayout.new(self.god_log_panel, cc.p(0,5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.god_log_scrollview:setSwallowTouches(false)
+end
+
+function ShinobiLogWindow:openRootWnd( index )
+	index = index or 1
+	self:changeSelectedTab(index)
+end
+
+function ShinobiLogWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), false, 2)
+	registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+	for k, object in pairs(self.tab_list) do
+		if object.tab_btn then
+			object.tab_btn:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					playTabButtonSound()
+					self:changeSelectedTab(object.index)
+				end
+			end)
+		end
+    end
+
+    if self.shinobi_mylog_event == nil then
+        self.shinobi_mylog_event = GlobalEvent:getInstance():Bind(ShinobiEvent.Update_MyLogData_Event, function ( data )
+			if data then
+				self.my_log_replay_srv_id = data.replay_srv_id
+				if data.log_list then
+					self:setMyLogData(data.log_list)
+				end
+			end
+        end)
+    end
+
+    if self.shinobi_godlog_event == nil then
+        self.shinobi_godlog_event = GlobalEvent:getInstance():Bind(ShinobiEvent.Update_GodLogData_Event, function ( data )
+			if data then
+				self.god_log_replay_srv_id = data.replay_srv_id
+				if data.log_list then
+					self:setGodLogData(data.log_list)
+				end
+			end
+        end)
+    end
+end
+
+function ShinobiLogWindow:changeSelectedTab( index )
+	if self.tab_object ~= nil and self.tab_object.index == index then return end
+	if self.tab_object then
+		self.tab_object.tab_btn:loadTextures(PathTool.getResFrame("common","common_2023"), "", "", LOADTEXT_TYPE_PLIST)
+		self.tab_object.tab_btn:setCapInsets(cc.rect(3,19,1,1))
+		self.tab_object.label:setTextColor(cc.c4b(245, 224, 185, 255)) 
+		self.tab_object = nil
+	end
+	self.tab_object = self.tab_list[index]
+	if self.tab_object then
+		self.tab_object.tab_btn:loadTextures(PathTool.getResFrame("common","common_2021"), "", "", LOADTEXT_TYPE_PLIST)
+		self.tab_object.tab_btn:setCapInsets(cc.rect(3,19,1,1))
+		self.tab_object.label:setTextColor(cc.c4b(105, 55, 5, 255)) 
+	end
+	self.title_bg:setVisible(index == 1)
+	self.my_log_scrollview:setVisible(index == 1)
+	self.god_log_scrollview:setVisible(index == 2)
+
+	if (index == 1 and self.myLogData and next(self.myLogData) ~= nil) or (index == 2 and self.godLogData and next(self.godLogData) ~= nil) then
+		self.no_log_image:setVisible(false)
+		self.no_log_label:setVisible(false)
+	else
+		self.no_log_image:setVisible(true)
+		self.no_log_label:setVisible(true)
+	end
+
+	if index == 1 and not self.init_my_log then
+		controller:sender14410()
+		self.init_my_log = true
+	elseif index == 2 and not self.init_god_log then
+		controller:sender14411()
+		self.init_god_log = true
+	end
+end
+
+function ShinobiLogWindow:setMyLogData( myLogData )
+	if self.tab_object == nil or self.tab_object.index ~= 1 then return end
+	self.myLogData = myLogData
+	table.sort(myLogData, function(a, b) return a.time > b.time end)
+	if myLogData and next(myLogData) ~= nil then
+		self.my_log_scrollview:setVisible(true)
+		self.no_log_image:setVisible(false)
+		self.no_log_label:setVisible(false)
+
+		local extend = {}
+		extend.replay_srv_id = self.my_log_replay_srv_id
+		self.my_log_scrollview:setData(myLogData,nil,nil,extend)
+	else
+		self.my_log_scrollview:setVisible(false)
+		self.no_log_image:setVisible(true)
+		self.no_log_label:setVisible(true)
+	end
+end
+
+function ShinobiLogWindow:setGodLogData( godLogData )
+	if self.tab_object == nil or self.tab_object.index ~= 2 then return end
+	self.godLogData = godLogData
+	table.sort(godLogData, function(a, b) return a.time > b.time end)
+	if godLogData and next(godLogData) ~= nil then
+		self.god_log_scrollview:setVisible(true)
+		self.no_log_image:setVisible(false)
+		self.no_log_label:setVisible(false)
+
+		self.god_log_scrollview:setData(godLogData,nil,nil,self.god_log_replay_srv_id)
+	else
+		self.god_log_scrollview:setVisible(false)
+		self.no_log_image:setVisible(true)
+		self.no_log_label:setVisible(true)
+	end
+end
+
+function ShinobiLogWindow:_onClickBtnClose(  )
+	controller:openShinobiLogWindow(false)
+end
+
+function ShinobiLogWindow:close_callback(  )
+	-- model:updateArenaRedStatus(ArenaWorldConst.RedType.BattleLog, false)
+	controller:openShinobiLogWindow(false)
+
+	if self.shinobi_mylog_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.shinobi_mylog_event)
+        self.shinobi_mylog_event = nil
+    end
+
+    if self.shinobi_godlog_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.shinobi_godlog_event)
+        self.shinobi_godlog_event = nil
+    end
+
+	if self.my_log_scrollview then
+		self.my_log_scrollview:DeleteMe()
+	end
+	self.my_log_scrollview = nil
+
+	if self.god_log_scrollview then
+		self.god_log_scrollview:DeleteMe()
+	end
+	self.god_log_scrollview = nil
+end
+
+------------------------------@ 我的记录item
+ShinobiMyLogItem = class("ShinobiMyLogItem", function()
+    return ccui.Widget:create()
+end)
+
+function ShinobiMyLogItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function ShinobiMyLogItem:configUI(  )
+	self.size = cc.size(612,135)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("shinobi/shinobi_my_log_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    self.container = container
+    local btn_label=container:getChildByName("btn_label")
+	btn_label:setString(TI18N("语言_c_295"))
+    self.attk_label = container:getChildByName("attk_label")
+    self.name_label = container:getChildByName("name_label")
+    self.defend_label = container:getChildByName("defend_label")
+    self.time_label = container:getChildByName("time_label")
+    self.btn_watch = container:getChildByName("btn_watch")
+	local score_label = container:getChildByName("score_label")
+    score_label:setString(TI18N("语言_c_6009"))
+	self.score_val = container:getChildByName("score_val")
+	setItemXOneByOne({score_label,self.score_val})
+    self.rank_label = createRichLabel(22, cc.c3b(169,95,15), cc.p(0, 0.5), cc.p(275, 30),-10,nil,250)
+    container:addChild(self.rank_label)
+    self.my_head = PlayerHead.new(PlayerHead.type.circle)
+    self.my_head:setHeadLayerScale(0.7)
+    self.my_head:setPosition(60, 85)
+    container:addChild(self.my_head)
+
+    local function onClickHeadCallBack(  )
+    	if self.data then
+    		if self.data.srv_id == "robot" then
+    			message(TI18N("语言_c_476"))
+    		else
+    			local f_data = {rid = self.data.rid, srv_id = self.data.srv_id}
+				ChatController:getInstance():openFriendInfo(f_data,cc.p(0,0))
+    		end
+    	end
+    end
+    self.my_head:addCallBack(onClickHeadCallBack)
+end
+
+function ShinobiMyLogItem:register_event(  )
+	-- registerButtonEventListener(self.btn_share, handler(self, self._onClickBtnShare))
+	registerButtonEventListener(self.btn_watch, handler(self, self._onClickBtnWatch))
+end
+
+-- function ShinobiMyLogItem:_onClickBtnShare( param, sender, event_type )
+-- 	local world_pos = sender:convertToWorldSpace(cc.p(0, 0))
+-- 	if self._onShareCallBack and self.data then
+-- 		local srv_id = self.data.srv_id
+-- 		if self.data.type == 1 then -- 如果是进攻，则取自身的srv_id
+-- 			local role_vo = RoleController:getInstance():getRoleVo()
+-- 			srv_id = role_vo.srv_id
+-- 		end
+-- 		self._onShareCallBack(world_pos, self.data.replay_id, self.data.name, srv_id)
+-- 	end
+-- end
+
+function ShinobiMyLogItem:_onClickBtnWatch(  )
+	if self.data and self.replay_srv_id then
+		local srv_id = self.replay_srv_id
+		if self.data.type == 2 then
+			srv_id = self.data.srv_id
+		end
+		BattleController:getInstance():csRecordBattle(self.data.replay_id, srv_id)
+	end
+end
+
+function ShinobiMyLogItem:setExtendData( extend )
+	self._onShareCallBack = extend.callback
+	self.replay_srv_id = extend.replay_srv_id
+end
+
+function ShinobiMyLogItem:setData( data )
+	data = data or {}
+	self.data = data
+	self.my_head:setHeadRes(data.face, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+	self.attk_label:setString(MoneyTool.moneyFormat(data.power or 0))
+	self.name_label:setString(transformNameByServ(data.name, data.srv_id))
+	self.score_val:setString("+"..data.add_exp)
+	local nowtime = data.time
+    local timezone = InviteCodeController:getInstance():getModel():getServerTimeZone()--服务器时区
+    local H = TimeTool.xsdate("%H",nowtime,timezone)
+    local M = TimeTool.xsdate("%M",nowtime,timezone)
+	local S = TimeTool.xsdate("%S",nowtime,timezone)
+    local y = TimeTool.xsdate("%Y",nowtime,timezone)
+    local m = TimeTool.xsdate("%m",nowtime,timezone)
+    local d = TimeTool.xsdate("%d",nowtime,timezone)
+    local str = "%s-%s-%s %s:%s:%s"
+    str = string.format(str,y,m,d,H,M,S)
+	self.time_label:setString(str)
+ 
+	if data.type == 1 and data.ret == 1 then
+		self.defend_label:setTextColor(cc.c3b(36, 144, 3))
+		self.defend_label:setString(TI18N("语言_c_455"))
+	elseif data.type == 1 and data.ret == 2 then
+		self.defend_label:setTextColor(cc.c3b(217, 80, 20))
+		self.defend_label:setString(TI18N("语言_c_456"))
+	elseif data.type == 2 and data.ret == 1 then
+		self.defend_label:setTextColor(cc.c3b(36, 144, 3))
+		self.defend_label:setString(TI18N("语言_c_115"))
+	elseif data.type == 2 and data.ret == 2 then
+		self.defend_label:setTextColor(cc.c3b(217, 80, 20))
+		self.defend_label:setString(TI18N("语言_c_116"))
+	end
+
+	if data.rank_type == 0 then
+		self.rank_label:setString(TI18N("语言_c_4129"))
+	elseif data.rank_type == 1 then
+		self.rank_label:setString(string.format(TI18N("语言_c_4130"), data.rank or 0))
+	elseif data.rank_type == 2 then
+		if not data.rank or data.rank <= 0 then
+			self.rank_label:setString(TI18N("语言_c_4131"))
+		else
+			self.rank_label:setString(string.format(TI18N("语言_c_4132"), data.rank or 0))
+		end
+	end
+end
+
+function ShinobiMyLogItem:DeleteMe(  )
+	if self.my_head then
+		self.my_head:DeleteMe()
+		self.my_head = nil
+	end
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+--------------------------------------@ 大神风采 item
+ShinobiGodLogItem = class("ShinobiGodLogItem", function()
+    return ccui.Widget:create()
+end)
+
+function ShinobiGodLogItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function ShinobiGodLogItem:configUI(  )
+	self.size = cc.size(612,153)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("shinobi/shinobi_god_log_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    self.container = container
+
+    self.time_label = container:getChildByName("time_label")
+    self.rank_label_1 = container:getChildByName("rank_label_1")
+    self.name_label_1 = container:getChildByName("name_label_1")
+    self.rank_label_2 = container:getChildByName("rank_label_2")
+    self.name_label_2 = container:getChildByName("name_label_2")
+    self.btn_watch = container:getChildByName("btn_watch")
+	local btn_label=container:getChildByName("btn_label")
+	setTextMaxWidth(btn_label,80)
+	setTextSpacing(btn_label,-10)
+	btn_label:setString(TI18N("语言_c_295"))
+    self.role_head_1 = PlayerHead.new(PlayerHead.type.circle)
+    self.role_head_1:setHeadLayerScale(0.8)
+    self.role_head_1:setPosition(60, 88)
+    container:addChild(self.role_head_1)
+
+    self.role_head_2 = PlayerHead.new(PlayerHead.type.circle)
+    self.role_head_2:setHeadLayerScale(0.8)
+    self.role_head_2:setPosition(480, 88)
+    container:addChild(self.role_head_2)
+
+    local function onClickHeadCallBack(  )
+    	self:_onClickRoleHead(1)
+    end
+    self.role_head_1:addCallBack(onClickHeadCallBack)
+
+    local function onClickHeadCallBack(  )
+    	self:_onClickRoleHead(2)
+    end
+    self.role_head_2:addCallBack(onClickHeadCallBack)
+end
+
+function ShinobiGodLogItem:_onClickRoleHead( index )
+	local roleVo = RoleController:getInstance():getRoleVo()
+	if self.data then
+		local rid
+		local srv_id
+		if index == 1 then
+			rid = self.data.atk_rid
+			srv_id = self.data.atk_srv_id
+		elseif index == 2 then
+			rid = self.data.def_rid
+			srv_id = self.data.def_srv_id
+		end
+		if rid and srv_id then
+			if srv_id == "robot" then
+				message(TI18N("语言_c_476"))
+			elseif roleVo.rid == rid and roleVo.srv_id == srv_id then
+				message(TI18N("语言_c_349"))
+			else
+				local f_data = {rid = rid, srv_id = srv_id}
+				ChatController:getInstance():openFriendInfo(f_data,cc.p(0,0))
+			end
+		end
+	end
+end
+
+function ShinobiGodLogItem:register_event(  )
+	registerButtonEventListener(self.btn_watch, handler(self, self._onClickBtnWatch))
+end
+
+function ShinobiGodLogItem:_onClickBtnWatch(  )
+	if self.data then   --self.data.replay_id and self.data.atk_srv_id 
+		BattleController:getInstance():csRecordBattle(self.data.replay_id, self.data.atk_srv_id)
+	end
+end
+
+function ShinobiGodLogItem:setExtendData( replay_srv_id )
+	self.replay_srv_id = replay_srv_id
+end
+
+function ShinobiGodLogItem:setData( data )
+	data = data or {}
+	self.data = data
+	self.data.type=2
+	if data.time then
+		local nowtime = data.time
+		local timezone = InviteCodeController:getInstance():getModel():getServerTimeZone()--服务器时区
+		local H = TimeTool.xsdate("%H",nowtime,timezone)
+		local M = TimeTool.xsdate("%M",nowtime,timezone)
+		local S = TimeTool.xsdate("%S",nowtime,timezone)
+		local y = TimeTool.xsdate("%Y",nowtime,timezone)
+		local m = TimeTool.xsdate("%m",nowtime,timezone)
+		local d = TimeTool.xsdate("%d",nowtime,timezone)
+		local str = "%s-%s-%s %s:%s:%s"
+		str = string.format(str,y,m,d,H,M,S)
+		self.time_label:setString(str)
+	else
+		self.time_label:setString(0)
+	end
+
+	-- 进攻方
+	self.role_head_1:setHeadRes(data.atk_face, false, LOADTEXT_TYPE, data.atk_face_file, data.atk_face_update_time)
+	self.rank_label_1:setString(string.format(TI18N("语言_c_4133"), data.atk_rank or 0))
+	self.name_label_1:setString(transformNameByServ(data.atk_name, data.atk_srv_id))
+
+	-- 防守方
+	self.role_head_2:setHeadRes(data.def_face, false, LOADTEXT_TYPE, data.def_face_file ,data.def_face_update_time)
+	self.rank_label_2:setString(string.format(TI18N("语言_c_4133"), data.def_rank or 0))
+	self.name_label_2:setString(transformNameByServ(data.def_name, data.def_srv_id))
+
+	if data.ret == 1 then
+		self.role_head_1:showBattleResultIcon(1)
+		self.role_head_2:showBattleResultIcon(0)
+	else
+		self.role_head_1:showBattleResultIcon(0)
+		self.role_head_2:showBattleResultIcon(1)
+	end
+end
+
+function ShinobiGodLogItem:DeleteMe(  )
+	if self.role_head_1 then
+		self.role_head_1:DeleteMe()
+		self.role_head_1 = nil
+	end
+
+	if self.role_head_2 then
+		self.role_head_2:DeleteMe()
+		self.role_head_2 = nil
+	end
+
+	self:removeAllChildren()
+	self:removeFromParent()
+end

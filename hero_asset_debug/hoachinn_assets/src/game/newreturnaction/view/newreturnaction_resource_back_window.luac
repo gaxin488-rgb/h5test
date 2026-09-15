@@ -1,0 +1,303 @@
+--******** 文件说明 ********
+-- 
+-- @description: 资源回溯主界面
+-- @DateTime:    2019-12-13 15:12:06
+-- *******************************
+NewReturnResourceBackPanel = NewReturnResourceBackPanel or BaseClass(BaseView)
+
+local controller = NewReturnActionController:getInstance()
+local model = controller:getModel()
+
+function NewReturnResourceBackPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "newreturnaction/newreturnaction_resource_back_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_bg_2"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","holiday_back_show_2"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_back","txt_cn_holiday_back_bg_1"), type = ResourcesType.single },
+    }
+    self.is_can_click = false
+end
+
+function NewReturnResourceBackPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.top_bg = self.main_container:getChildByName("top_bg")
+    self.title_img = self.main_container:getChildByName("title_img")    
+    self.bottom_bg = self.main_container:getChildByName("bottom_bg")
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.rule_btn = self.main_container:getChildByName("rule_btn")
+    self.time_img = self.main_container:getChildByName("time_img")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    setTextSpacing(self.title_txt)
+    self.title_txt:setChangeScaleOffWidth(370)
+    self.reward_panel = self.main_container:getChildByName("reward_panel")
+    self.receive_btn = self.main_container:getChildByName("receive_btn")
+    self.receive_txt = self.receive_btn:getChildByName("receive_txt")
+    self.receive_txt:setString(TI18N("语言_c_109"))
+    self.surplus_bg = self.main_container:getChildByName("surplus_bg")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+end
+
+function NewReturnResourceBackPanel:register_event()
+    registerButtonEventListener(self.background, function()
+        controller:openNewReturnResourceBackPanel(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openNewReturnResourceBackPanel(false)
+    end,true, 2)
+    registerButtonEventListener(self.rule_btn, function(param,sender, event_type)
+        if self.camp_cfg and self.camp_cfg.desc and self.camp_cfg.desc ~= "" then
+            TipsManager:getInstance():showCommonTips(self.camp_cfg.desc, sender:getTouchBeganPosition())
+        end
+    end,true, 2)
+    registerButtonEventListener(self.receive_btn, function()
+        if self.data and self.data.status == 1 then
+            if self.is_can_click then
+                controller:sender11504()
+            else
+                message(TI18N("语言_c_233"))
+            end
+        end
+    end,true, 2)
+    self:addGlobalEvent(NewReturnActionEvent.ResBack_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+    self:addGlobalEvent(NewReturnActionEvent.Base_Data_Event, function(data)
+        if not data then return end
+        self:setData()
+    end)
+end
+
+function NewReturnResourceBackPanel:openRootWnd()
+    if model:getReturnResBackFirst() then
+        ActionController:getInstance():sender16809(ActionStorageBool.returnResBack,1,"")
+    end
+    controller:sender11501()
+end
+
+function NewReturnResourceBackPanel:setData()
+    self.cycle_index = model:getNowPeriod()
+    if self.cycle_index == 0 then
+        controller:sender11500()
+        return
+    end
+    self.data = model:getResBackInfo()
+    if not self.data then return end
+    local cfg = Config.HolidayBackData.data_get_camp[self.cycle_index]
+    if cfg then
+        for k, v in pairs(cfg) do
+            if v.camp_id == NewReturnActionConstants.ReturnActionType.resourceBack then
+                self.camp_cfg = v
+            end
+        end
+    end
+    if not self.camp_cfg then return end
+    self.start_time = model:getStartTime()
+    local time = self.start_time - GameNet:getInstance():getTime() + self.camp_cfg.max_day*86400
+    commonCountDownTime(self.surplus_time,time,{callback=function(time)
+        if time > 0 then 
+            self.is_can_click = true
+            self.surplus_time:setString(string_format("%s", TimeTool.GetTimeForFunction(time) ))
+        else
+            self.is_can_click = false
+            doStopAllActions(self.surplus_time)
+            self.surplus_time:setString("00:00:00")
+        end
+        local _w = math.max(300,self.surplus_txt:getContentSize().width+self.surplus_time:getContentSize().width+50)
+        self.surplus_bg:setContentSize(cc.size(_w,self.surplus_bg:getContentSize().height))
+        local _x = self.surplus_bg:getPositionX() - self.surplus_bg:getContentSize().width/2 + (_w - self.surplus_txt:getContentSize().width-self.surplus_time:getContentSize().width)/2 + self.surplus_txt:getContentSize().width
+        self.surplus_txt:setPositionX(_x)
+        self.surplus_time:setPositionX(_x)
+    end})
+    self.res_cfg = Config.HolidayBackData.data_get_res_return[self.cycle_index]
+    local bottom_bg_res = PathTool.getPlistImgForDownLoad("holiday_back",self.camp_cfg.panel_res,false)
+    loadSpriteTexture(self.bottom_bg, bottom_bg_res, LOADTEXT_TYPE)
+    self.other_res_list = self.camp_cfg.show_text
+    self.other_txt_list = self.camp_cfg.sys_text
+    local top_bg_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[1],false)
+    loadSpriteTexture(self.top_bg, top_bg_res, LOADTEXT_TYPE)
+    local time_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[2],false)
+    loadSpriteTexture(self.time_img, time_res, LOADTEXT_TYPE)
+    self.bag_effect = createEffectSpine("E29008",cc.p(self.time_img:getContentSize().width*0.5,self.time_img:getContentSize().height*0.5),cc.p(0.5,0.5),true,PlayerAction.action)
+    self.time_img:addChild(self.bag_effect)
+    local title_res = PathTool.getPlistImgForDownLoad("holiday_back",self.other_res_list[3],false)
+    loadSpriteTexture(self.title_img, title_res, LOADTEXT_TYPE)
+    
+    self.title_txt:setString(TI18N(self.other_txt_list[1]))
+    if self.camp_cfg.desc and self.camp_cfg.desc ~= "" then
+        self.rule_btn:setVisible(true)
+    else
+        self.rule_btn:setVisible(false)
+    end
+
+    self.max_id = self.data.dun_id
+    if not self.res_cfg[self.max_id] then
+        return
+    end
+    if not self.item_list then
+        self.item_list = {}
+    end
+    self.all_num = 0
+    if self.res_cfg[self.max_id] and self.res_cfg[self.max_id].reward then
+        self.all_num = #self.res_cfg[self.max_id].reward
+    end
+    if self.all_num <= 6 then
+        local get_x = function(index,all_num)
+            if all_num > 3 then
+                if index > 3 then
+                    all_num = all_num - 3
+                    index = index - 3
+                else
+                    all_num = 3
+                end
+            end
+            if all_num == 1 then
+                return 298
+            elseif all_num == 2 then
+                if index == 1 then
+                    return 215
+                else
+                    return 381
+                end
+            elseif all_num == 3 then
+                if index == 1 then
+                    return 133
+                elseif index == 2 then
+                    return 298
+                else
+                    return 463
+                end
+            end
+        end
+        for k, v in pairs(self.res_cfg[self.max_id].reward) do
+            local item = NewReturnResourceBackItem.new()
+            self.reward_panel:addChild(item)
+            item:setData(v)
+            if k <= 3 then
+                item:setPosition(cc.p(get_x(k,self.all_num), 227))
+            else
+                item:setPosition(cc.p(get_x(k,self.all_num), 78))
+            end
+        end
+    else
+        if not self.item_scrollview then
+            --进度条相关
+            local scroll_view_size = self.reward_panel:getContentSize()
+            local setting = {
+                start_x = 60, -- 第一个单元的X起点
+                space_x = 20, -- x方向的间隔
+                start_y = 5, -- 第一个单元的Y起点
+                space_y = 4, -- y方向的间隔
+                item_width = 145, -- 单元的尺寸width
+                item_height = 145, -- 单元的尺寸height
+                row = 0, -- 行数，作用于水平滚动类型
+                col = 3, -- 列数，作用于垂直滚动类型
+                need_dynamic = true
+            }
+            self.item_scrollview = CommonScrollViewSingleLayout.new(self.reward_panel, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+            self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+            self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+            self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+        end
+        if self.all_num > 8 then
+            self.item_scrollview:setClickEnabled(true)
+        else
+            self.item_scrollview:setClickEnabled(false)
+        end
+        self.item_scrollview:reloadData()
+    end
+    
+    
+    setChildUnEnabled(self.data.status ~= 1,self.receive_btn)
+    addRedPointToNodeByStatus(self.receive_btn,self.data.status == 1,10,10)
+    if self.data.status == 2 then
+        self.receive_txt:setString(TI18N("语言_c_15"))
+    else
+        self.receive_txt:setString(TI18N("语言_c_109"))
+    end
+end
+
+-- 进度条
+-- 功勋数数列表
+function NewReturnResourceBackPanel:createTaskCell()
+    local cell = NewReturnResourceBackItem.new()
+    return cell
+end
+
+function NewReturnResourceBackPanel:numberOfTaskCells()
+    return self.all_num
+end
+
+function NewReturnResourceBackPanel:updateTaskCellByIndex(cell, index)
+    if not self.res_cfg[self.max_id] then
+        return
+    end
+    local cell_data = self.res_cfg[self.max_id].reward[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+function NewReturnResourceBackPanel:close_callback()
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+	end
+	self.item_scrollview = nil
+    controller:openNewReturnResourceBackPanel(false)
+end
+
+
+------------------------------------------
+-- 功勋子项
+NewReturnResourceBackItem = class("NewReturnResourceBackItem", function()
+    return ccui.Widget:create()
+end)
+
+function NewReturnResourceBackItem:ctor()
+    self.size = cc.size(145, 145)
+    self:configUI()
+    self:register_event()
+end
+
+function NewReturnResourceBackItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    local res = PathTool.getResFrame("holiday_back", "holiday_back_1_2")
+    self.bg_img = createImage(self.root_wnd,res,self.size.width*0.5,self.size.height*0.5,cc.p(0.5,0.5),true)
+
+    self.item = BackPackItem.new(true,true,false,0.85)
+    self.item:setAnchorPoint(0.5, 0.5)
+    self.item:setPosition(cc.p(self.size.width*0.5,self.size.height*0.5))
+    self.root_wnd:addChild(self.item)
+    self.item:setDefaultTip()
+    self.item:setSwallowTouches(false)
+
+    self.num = createLabel(22,cc.c3b(0xff,0xff,0xff),cc.c3b(0x00,0x00,0x00),self.size.width*0.5,20,"",self.root_wnd,2,cc.p(0.5,0.5))
+end
+
+function NewReturnResourceBackItem:register_event()
+end
+
+function NewReturnResourceBackItem:setData(data,index)
+    if not data then
+        return
+    end
+    self.data = data
+    self.item:setData({data[1],1})
+    self.num:setString(MoneyTool.GetMoneyString(data[2]))
+end
+
+function NewReturnResourceBackItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

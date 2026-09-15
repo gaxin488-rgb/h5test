@@ -1,0 +1,321 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      楼层选择面板
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+local _controller = HomeworldController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _string_format = string.format
+
+HomeworldStoryWindow = HomeworldStoryWindow or BaseClass(BaseView)
+
+function HomeworldStoryWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "homeworld/homeworld_story_window"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("homeworld", "homeworld"), type = ResourcesType.plist},
+	}
+	self.story_list = {}
+end
+
+function HomeworldStoryWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    local main_panel = main_container:getChildByName("main_panel")
+	main_panel:getChildByName("win_title"):setString(TI18N("语言_c_5167"))
+    self.notice_label = main_panel:getChildByName("notice_label")
+    self.close_btn = main_panel:getChildByName("close_btn")
+    self.list_view = main_panel:getChildByName("list_view")
+    local size = self.list_view:getContentSize()
+    local setting = {
+        start_x = 0,
+        space_x = 0,
+        start_y = 5,
+        space_y = 5,
+        item_width = 623,
+        item_height = 152,
+        row = 1,
+        col = 1,
+        need_dynamic = true
+    }
+
+	self.scroll_view = CommonScrollViewSingleLayout.new(self.list_view, cc.p(0, 0) , ScrollViewDir.vertical, ScrollViewStartPos.top, size, setting)
+	self.scroll_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+	self.scroll_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+	self.scroll_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+
+end
+
+function HomeworldStoryWindow:register_event()
+	self.background:addTouchEventListener(function(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			_controller:openHomeworldStoryWindow(false)
+		end
+	end)
+	self.close_btn:addTouchEventListener(function(sender, event_type)
+		if event_type == ccui.TouchEventType.ended then
+			_controller:openHomeworldStoryWindow(false)
+		end
+	end)
+
+	-- 楼层数据
+	self:addGlobalEvent(HomeworldEvent.Update_Storey_Info_Event, function ( data )
+		self.story_data = data or {}
+		if not data then return end
+		if self.story_data.atK~=nil then
+			self.notice_label:setVisible(true)
+			self.notice_label:setString(string.format(TI18N("语言_c_5168"), self.story_data.atK,self.story_data.hp_max))
+		else
+			self.notice_label:setVisible(false)
+		end
+		self.story_list={}
+		self:UpdateList()
+	end)
+	-- -- 红点
+    -- self:addGlobalEvent(HomeworldEvent.Update_Red_Status_Data, function ( bid, status )
+    --     if bid == HomeworldConst.Red_Index.Visit then
+    --     	self:updateVisitRedStatus()
+    --     end
+    -- end)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HomeworldStoryWindow:createNewCell()
+    local cell = HomeworldStoryItem.new()
+    return cell
+end
+
+--获取数据数量
+function HomeworldStoryWindow:numberOfCells()
+    if not self.story_list then return 0 end
+    return #self.story_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function HomeworldStoryWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.story_list[index]
+    if not data then return end
+    cell:setData(data)
+end
+
+function HomeworldStoryWindow:openRootWnd()
+	local storydata= _model:getHomeStory()
+	if storydata.home_type == HomeworldConst.Type.Myself then
+		local rolvo=RoleController:getInstance():getRoleVo()
+		local rid =rolvo:getRoleRid()
+		local srv_id =rolvo.srv_id
+		_controller:sender26022(rid,srv_id) -- 请求家园数据
+	else
+		_controller:sender26022(storydata.other_rid,storydata.other_srv_id) -- 请求家园数据
+	end
+end
+
+function HomeworldStoryWindow:UpdateList()
+	-- 楼层
+	local storey_cfg = Config.HomeData.data_home_storey
+	local soft_list=self.story_data.soft_list
+	for i=1,#storey_cfg do
+		local temp={}
+		temp.cfg=storey_cfg[i]
+		for k,v in pairs(soft_list) do
+			if v.floor==temp.cfg.id then
+			    temp.info=v
+	        end
+		end
+        _table_insert(self.story_list,temp)
+	end
+    self.scroll_view:reloadData()
+end
+
+function HomeworldStoryWindow:close_callback()
+    if self.scroll_view then
+        self.scroll_view:DeleteMe()
+        self.scroll_view = nil
+    end
+	_controller:openHomeworldStoryWindow(false)
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      楼层item
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+HomeworldStoryItem = class("HomeworldStoryItem", function()
+	return ccui.Layout:create()
+end)
+
+function HomeworldStoryItem:ctor()
+	self.cost_list = {}
+	self:configUI()
+	self:registerEvent()
+end
+
+function HomeworldStoryItem:configUI()
+	self.size = cc.size(602, 123)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("homeworld/homeworld_story_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.container = self.root_wnd:getChildByName("container")
+	self.lock_panel= self.root_wnd:getChildByName("lock_panel")  
+    self.index_txt = self.container:getChildByName("index_txt")
+	self.soft_txt = self.container:getChildByName("soft_txt")
+	self.soft_add = self.container:getChildByName("soft_add")
+	self.soft_attr_add = createRichLabel(22,cc.c3b(0x0e,0xa8,0x0e),cc.p(0,1),cc.p(370,65))
+	self.container:addChild(self.soft_attr_add)
+	self.soft_attr_add:setVisible(false)
+	self.desc_1 = self.container:getChildByName("desc_1")
+	self.desc_1:setString(TI18N("语言_c_5169"))
+	self.desc_2 = self.container:getChildByName("desc_2")
+	self.desc_2:setString(TI18N("语言_c_310"))
+    self.change_btn = self.container:getChildByName("change_btn")
+    self.change_btn:getChildByName("label"):setString(TI18N("语言_c_7"))
+	self.open_btn = self.lock_panel:getChildByName("open_btn")
+    self.open_btn:getChildByName("label"):setString(TI18N("语言_c_850"))
+	self.open_btn:setVisible(false)
+	self.lock_desc=self.lock_panel:getChildByName("lock_desc")
+end
+
+function HomeworldStoryItem:registerEvent()
+	registerButtonEventListener(self.open_btn, function ( )
+		for k, v in ipairs(self.cfg.cost) do
+			local have_num = BackpackController:getInstance():getModel():getItemNumByBid(v[1])
+			if have_num < v[2] then
+				BackpackController:getInstance():openTipsSource(true, v[1])
+				return
+			end
+		end
+		_controller:sender26023(self.cfg.id)
+	end, true)
+	registerButtonEventListener(self.change_btn, function ( )
+		self.cur_storey_index, self.max_soft_storey = _model:getMyHomeCurStoreyIndex()
+		local storydata= _model:getHomeStory()
+		if storydata.home_type == HomeworldConst.Type.Myself then
+		    if self.cfg.id~=self.cur_storey_index then 
+				_controller:sender26001(self.cfg.id)
+			end
+		else
+			 _controller:sender26003(storydata.other_rid,storydata.other_srv_id, self.cfg.id)
+		end
+		_controller:openHomeworldStoryWindow(false)
+	end, true)
+end
+
+function HomeworldStoryItem:setData(data)
+    if data ~= nil then
+        local cfg = data.cfg
+        local info = data.info
+		self.cfg=cfg
+        self.index_txt:setString(string.format(TI18N("语言_c_5166"),cfg.id))
+        if info then
+            self.soft_txt:setString(info.soft.."")
+			if cfg.type == 0 then
+				self.soft_add:setString((info.per/10).."%")
+				self.soft_attr_add:setVisible(false)
+				self.soft_add:setVisible(true)
+			else
+				self.soft_attr_add:setVisible(true)
+				self.soft_add:setVisible(false)
+				local txt = "<img src=%s />%s"
+				local str = ""
+				for k,v in ipairs(info.attr_list or {}) do
+					local key = Config.AttrData.data_id_to_key[v.attr_id]
+					local res = ""
+					if key == "atk" then
+						res = PathTool.getResFrame("common", "common_90001")
+					else
+						res = PathTool.getResFrame("homeworld", "homeworld_1075")
+					end
+					if str == "" then
+						str = string.format(txt,res,v.attr_num)
+					else
+						str = str .."\n".. string.format(txt,res,v.attr_num)
+					end
+				end
+				self.soft_attr_add:setString(str)
+			end
+            self.lock_panel:setVisible(false)
+        else
+            self.soft_txt:setString(0)
+            self.soft_add:setString(0)
+			-- local status = false
+			local status = MainuiController:getInstance():checkIsOpenByActivate(cfg.limit)
+			if status and cfg.cost and next(cfg.cost) then
+				for k, v in pairs(self.cost_list) do
+					v:setVisible(false)
+				end
+				local red_status = true
+				if self.cfg.id > _model:getFloorData() + 1 then
+					red_status = false
+				end
+				for k, v in ipairs(cfg.cost) do
+					if not self.cost_list[k] then
+						local item = BackPackItem.new(true, true,true,0.8)
+						item:setAnchorPoint(0.5, 0.5)
+						item:setSwallowTouches(false)
+						self.lock_panel:addChild(item)
+						item:setPosition(225+(k-0.5)*(BackPackItem.Width+10), 90)
+						item:setDefaultTip()
+						item.label_txt = createLabel(22,cc.c3b(0xff,0xff,0xff),cc.c3b(0x00, 0x00, 0x00),BackPackItem.Width*0.5,-20,"",item,2,cc.p(0.5,0.5))
+						self.cost_list[k] = item
+					end
+					self.cost_list[k]:setVisible(true)
+					self.cost_list[k]:setBaseData(v[1], v[2], true)
+					local have_num = BackpackController:getInstance():getModel():getItemNumByBid(v[1])
+					self.cost_list[k].label_txt:setString(string.format("%s/%s",have_num,v[2]))
+					if have_num >= v[2] then
+						self.cost_list[k].label_txt:setColor(cc.c3b(0x1b,0xca,0x0d))
+					else
+						red_status = false
+						self.cost_list[k].label_txt:setColor(cc.c3b(0xff,0x15,0x15))
+					end
+				end
+				addRedPointToNodeByStatus(self.open_btn,red_status,10,10)
+				self.lock_desc:setVisible(false)
+				self.open_btn:setVisible(true)
+			else
+				self.lock_desc:setString(string.format(TI18N("语言_c_5170"),cfg.limit[1][2]))
+				self.lock_desc:setVisible(true)
+				for k, v in pairs(self.cost_list) do
+					v:setVisible(false)
+				end
+				self.open_btn:setVisible(false)
+			end
+			self.lock_panel:setVisible(true)
+        end
+		setItemXOneByOne({self.desc_1,self.soft_txt})
+		setItemXOneByOne({self.desc_2,self.soft_add})
+		setItemXOneByOne({self.desc_2,self.soft_attr_add})
+		-- self.soft_txt:setPositionX(self.desc_1:getPositionX()+self.desc_1:getContentSize().width+10)
+		-- self.soft_add:setPositionX(self.desc_2:getPositionX()+self.desc_2:getContentSize().width+10)
+    end
+end
+
+
+function HomeworldStoryItem:DeleteMe()
+	for i, v in ipairs(self.cost_list) do
+		v:DeleteMe()
+	end
+	self.item_list = nil
+	self:removeAllChildren()
+	self:removeFromParent()
+end 

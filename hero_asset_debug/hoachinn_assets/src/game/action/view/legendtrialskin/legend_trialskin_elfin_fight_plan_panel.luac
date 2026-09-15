@@ -1,0 +1,348 @@
+-------------------------------
+-- 
+-- @Date:   2021年7月15日
+-- @Description:   精灵出战管理方案
+-------------------------------
+LegendTrialSkinElfinFightPlanPanel = LegendTrialSkinElfinFightPlanPanel or BaseClass(BaseView)
+
+local _controller = ActionController:getInstance()
+local _model = _controller:getModel()
+local _string_format = string.format
+local _table_insert = table.insert
+local _table_sort = table.sort
+
+function LegendTrialSkinElfinFightPlanPanel:__init() 
+    self.is_full_screen = false
+    self.layout_name = "legendtrial/legend_trial_elfin_fight_plan_panel"
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist},
+    }
+
+    self.plan_data = nil  -- 所有套装数据
+    self.cur_elfin_item_list = {} -- 当前英雄的神装item
+    self.role_vo = RoleController:getInstance():getRoleVo() 
+end
+
+function LegendTrialSkinElfinFightPlanPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.main_container_size = self.main_container:getContentSize()
+    self.main_container:getChildByName("wnd_title"):setString(TI18N("语言_c_1924"))
+    self.txt_cur_name = self.main_container:getChildByName("txt_cur_name")
+    self.txt_cur_name:setString(TI18N("语言_c_1926"))
+
+    self.close_btn = self.main_container:getChildByName("close_btn")
+
+    local max_width = 580
+    local item_width = max_width / 4
+    local start_x = (self.main_container_size.width - max_width) * 0.5 + item_width * 0.5
+    for i=1,4 do
+        local skill_item = SkillItem.new(true, true, true, 0.8, true)
+        -- local item = BackPackItem.new(false,true,nil,0.8, false)
+        -- skill_item:addCallBack(function() self:onClikElfinItemIndex(i) end)
+        skill_item:setPosition(start_x + (i-1)*item_width, 795)
+        skill_item:showLevel(false)
+        self.main_container:addChild(skill_item)
+        self.cur_elfin_item_list[i] = skill_item
+    end
+end
+
+function LegendTrialSkinElfinFightPlanPanel:updatePlanList( )
+    if self.plan_scrollview == nil then
+        local plan_list = self.main_container:getChildByName("plan_list")
+        local scroll_view_size = plan_list:getContentSize()
+        local setting = {
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            item_width = 606,               -- 单元的尺寸width
+            item_height = 170,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true
+        }
+        self.plan_scrollview = CommonScrollViewSingleLayout.new(plan_list, cc.p(0, 0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.plan_scrollview:setSwallowTouches(false)
+
+        self.plan_scrollview:registerScriptHandlerSingle(handler(self,self._createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.plan_scrollview:registerScriptHandlerSingle(handler(self,self._numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.plan_scrollview:registerScriptHandlerSingle(handler(self,self._updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+
+    self.plan_scrollview:reloadData(nil, nil, true) --保持当前列表位置
+end
+
+function LegendTrialSkinElfinFightPlanPanel:_createNewCell(width, height)
+    local cell = LegendTrialElfinFightPlanItem.new(width, height, self)
+    -- cell:setExtendData(self.hero_vo)
+    return cell
+end
+
+function LegendTrialSkinElfinFightPlanPanel:_numberOfCells()
+    if not self.plan_data then return 0 end
+    return #self.plan_data
+end
+
+function LegendTrialSkinElfinFightPlanPanel:_updateCellByIndex(cell, index)
+    if not self.plan_data then return end
+    cell.index = index
+    local cell_data = self.plan_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function LegendTrialSkinElfinFightPlanPanel:register_event()
+    registerButtonEventListener(self.background, function() self:onClickClosePanle() end, false, 2)
+    registerButtonEventListener(self.close_btn, function()  self:onClickClosePanle() end, true, 2)
+end
+
+function LegendTrialSkinElfinFightPlanPanel:onClickClosePanle()
+    if self.setting.callback then
+        self.setting.callback(self.plan_id)
+    end
+    _controller:openLegendTrialSkinElfinFightPlanPanel(false)
+end
+
+function LegendTrialSkinElfinFightPlanPanel:selectElfinPlanItem(index)
+    if self.plan_id == index then
+        self.cur_plan_data = nil
+        self.plan_id = 0
+        self.plan_scrollview:updateCellAtIndex(index)
+    else
+        local team_plan_id =  self.plan_id
+        self.plan_id = index
+        self.cur_plan_data = self.plan_list[index]
+        if self.plan_id and self.plan_id ~= 0 then
+            self.plan_scrollview:updateCellAtIndex(team_plan_id)
+        end
+        self.plan_scrollview:updateCellAtIndex(index)
+    end
+    self:updateCurElfinItemList()
+end
+
+--seting.cur_plan_data 当前在上方的布阵信息 结构参考 26555 单个结构
+function LegendTrialSkinElfinFightPlanPanel:openRootWnd(setting)
+    self.setting = setting or {}
+    self.cur_plan_data = setting.plan_list[setting.plan_id]
+    self.plan_id = setting.plan_id
+    self.plan_list = setting.plan_list
+    self.dic_filter_item_id =  self.setting.dic_filter_item_id or {}
+
+    self:updateElfinPlanData()
+end
+
+
+
+function LegendTrialSkinElfinFightPlanPanel:updateElfinPlanData()
+    self:initElfinData()
+    self:updateCurElfinItemList()
+    self:updatePlanList()
+end
+
+function LegendTrialSkinElfinFightPlanPanel:initElfinData()
+    self.plan_data = self.plan_list or {} --所有套装数据
+    -- for id, v in pairs(data) do
+    --     _table_insert(self.plan_data, v)
+    -- end
+    -- _table_sort(self.plan_data, SortTools.KeyLowerSorter("id"))
+    -- local cell_num = #self.plan_data
+    -- local config = Config.SpriteData.data_elfin_plan[cell_num + 1]
+    -- if config then
+    --     local lock_data = {}
+    --     lock_data.is_open = 0
+    --     lock_data.config = config
+    --     _table_insert(self.plan_data, lock_data)
+    -- end
+end
+
+--初始化英雄当前装配的方案名
+function LegendTrialSkinElfinFightPlanPanel:initCurElfinName()
+    local name_str = TI18N("语言_c_1926")
+    if self.cur_plan_data then
+        name_str = _string_format(TI18N("语言_c_1930"), self.cur_plan_data.name)
+    end
+    self.txt_cur_name:setString(name_str)
+end
+
+--更新神装item显示
+function LegendTrialSkinElfinFightPlanPanel:updateCurElfinItemList()
+    self:initCurElfinName()
+    local dic_item_pos = {}
+    local cur_plan_data = self.cur_plan_data or {}
+    local is_not_have = true
+    for i,v in ipairs(cur_plan_data.plan_sprites or {}) do
+        dic_item_pos[v.pos] = v.item_bid
+        if v.item_bid ~= 0 then
+            is_not_have = false
+        end
+    end
+    for pos,skill_item in ipairs(self.cur_elfin_item_list) do
+        local bid = dic_item_pos[pos] or 0
+        local elfin_cfg = Config.SpriteData.data_elfin_data(bid)
+        if bid == 0 or not elfin_cfg then
+            skill_item:setData()
+            skill_item:showLevel(false)
+            skill_item:showName(false)
+        else
+            local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+            if skill_cfg then
+                skill_item:showLevel(true)
+                skill_item:setData(skill_cfg)
+                -- skill_item:showName(true,skill_cfg.name, nil,nil,true)
+                -- skill_item:showName(true,skill_cfg.name,nil,20,true,cc.c4b(0xff,0xf0,0xd2,0xff),PathTool.getResFrame("elfin","elfin_1022"),cc.size(110,26))
+            end
+        end
+    end
+
+    -- if is_not_have then
+    --     if self.show_tips_label == nil then
+    --         self.show_tips_label = createRichLabel(22, cc.c3b(0x95,0x53,0x22), cc.p(0.5, 0.5), cc.p(self.main_container_size.width * 0.5, 730))
+    --         self.show_tips_label:setString(TI18N("语言_c_1931"))
+    --         self.main_container:addChild(self.show_tips_label)
+    --     else
+    --         self.show_tips_label:setVisible(true)
+    --     end
+    -- else
+    --     if self.show_tips_label then
+    --         self.show_tips_label:setVisible(false)
+    --     end
+    -- end
+end
+
+function LegendTrialSkinElfinFightPlanPanel:close_callback()
+
+    if self.plan_scrollview then
+        self.plan_scrollview:DeleteMe()
+        self.plan_scrollview = nil
+    end
+    for k,v in pairs(self.cur_elfin_item_list) do
+        v:DeleteMe()
+        v = nil
+    end
+    _controller:openLegendTrialSkinElfinFightPlanPanel(false)
+end
+
+-------------------------------
+-- 
+-- @Date:   2020年3月17日
+-- @Description:   精灵方案item
+-------------------------------
+LegendTrialElfinFightPlanItem = class("LegendTrialElfinFightPlanItem", function()
+    return ccui.Widget:create()
+end)
+
+function LegendTrialElfinFightPlanItem:ctor(width, height, parent)
+    self.parent = parent
+    self:config(width, height)
+    self:layoutUI()
+    self:registerEvents()
+end
+
+function LegendTrialElfinFightPlanItem:config(width, height)
+    self.size = cc.size(width, height)
+    self:setContentSize(self.size)
+    
+    self.equip_item_list = {} --装备item列表
+end
+
+function LegendTrialElfinFightPlanItem:layoutUI()
+    local csbPath = PathTool.getTargetCSB("legendtrial/legend_trial_elfin_fight_plan_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.txt_title = self.main_container:getChildByName("txt_title")
+    self.btn_load = self.main_container:getChildByName("btn_load")
+    self.btn_load:setVisible(false)
+    self.btn_load_lable = self.btn_load:getChildByName("label")
+    self.btn_load_lable:setString(TI18N("语言_c_1932"))
+
+    self.elfin_item_list = {}
+    local item_width = 112
+    local start_x = 75
+    for i=1,4 do
+        local skill_item = SkillItem.new(true, true, true, 0.8, true)
+        skill_item:setPosition(start_x + (i-1)*item_width, 66)
+        -- skill_item:setClickInfo({clickScroll = false})
+        -- skill_item:addCallBack(function() self:onClickSkillItem()  end)
+        self.main_container:addChild(skill_item)
+        self.elfin_item_list[i] = skill_item
+    end
+end
+
+function LegendTrialElfinFightPlanItem:registerEvents()
+    registerButtonEventListener(self.btn_load, handler(self, self.onLoadSuitsPlan), true, 2)
+end
+
+--给当前英雄装配当前方案
+function LegendTrialElfinFightPlanItem:onLoadSuitsPlan()
+    if not self.parent then return end
+    self.parent:selectElfinPlanItem(self.index)
+end
+
+function LegendTrialElfinFightPlanItem:updateName(name)
+    if name then
+        self.txt_title:setString(_string_format("【%s】", name)) -- 名称
+    else
+        if self.data and self.data.config then
+            self.txt_title:setString(_string_format("【%s】", self.data.config.name)) -- 名称
+        end
+    end
+end
+
+function LegendTrialElfinFightPlanItem:setData(data)
+    if not data then return end
+    self.data = data
+    self:updateName(data.name)
+    self.btn_load:setVisible(true)
+
+    --调整按钮位置
+    local name_size = self.txt_title:getContentSize()
+    self.dic_item_pos = {}
+    for i,v in ipairs(data.plan_sprites) do
+        self.dic_item_pos[v.pos] = v.item_bid
+    end
+
+    if self.parent and self.parent.plan_id == self.index then
+        --使用中
+        -- setChildUnEnabled(true, self.btn_load)
+        -- self.btn_load_lable:enableOutline(Config.ColorData.data_color4[2], 2)
+        self.btn_load_lable:setString(TI18N("语言_c_5210"))
+        -- self.btn_load:setTouchEnabled(false)
+    else
+        self.btn_load_lable:setString(TI18N("语言_c_1932"))
+        -- self.btn_load:setTouchEnabled(true)
+    end
+    
+
+    for pos,skill_item in ipairs(self.elfin_item_list) do
+        skill_item:setVisible(true)
+        local elfin_cfg = Config.SpriteData.data_elfin_data(self.dic_item_pos[pos])
+        if self.dic_item_pos[pos] == nil or self.dic_item_pos[pos] == 0 or not elfin_cfg then
+            skill_item:setData()
+            skill_item:showLevel(false)
+        else
+            local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+            if skill_cfg then
+                skill_item:setData(skill_cfg)
+            end
+        end
+    end
+end
+
+
+
+function LegendTrialElfinFightPlanItem:DeleteMe()
+    for k,v in pairs(self.elfin_item_list) do
+        v:DeleteMe()
+        v = nil
+    end
+end

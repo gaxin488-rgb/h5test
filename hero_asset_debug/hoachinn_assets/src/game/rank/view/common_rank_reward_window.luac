@@ -1,0 +1,181 @@
+CommonRankRewardWindow = CommonRankRewardWindow or BaseClass(BaseView)
+
+local controller = RankController:getInstance()
+
+function CommonRankRewardWindow:__init()
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "rank/common_rank_reward_window"
+    self.three_rank_item = {}
+end
+
+function CommonRankRewardWindow:open_callback(  )
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.item = self.root_wnd:getChildByName("item")
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_21"))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+
+    self.container = self.main_container:getChildByName("container")
+    self.Text_1 = self.container:getChildByName("Text_1")
+    self.Text_1:setString(TI18N("语言_c_2553"))
+    self.Text_2 = self.container:getChildByName("Text_2")
+    self.Text_2:setString(TI18N("语言_c_11"))
+    
+    self.scroll_container = self.container:getChildByName("scroll_container")
+    local size = self.scroll_container:getContentSize()
+    local setting = {
+        item_class = CommonRankRewardItem,
+        start_x = 3,
+        space_x = 0,
+        start_y = 3,
+        space_y = 0,
+        item_width = 616,
+        item_height = 134,
+        row = 0,
+        col = 1,
+        need_dynamic = true
+    }
+    self.scroll_view = CommonScrollViewLayout.new(self.scroll_container, nil, nil, nil, size, setting)
+    
+    self.tips = self.main_container:getChildByName("tips")
+    -- self.tips:setString(TI18N("语言_c_265"))
+end
+
+function CommonRankRewardWindow:register_event(  )
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickCloseBtn), true, 2)
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn), false, 2)
+end
+
+-- 关闭
+function CommonRankRewardWindow:onClickCloseBtn(  )
+    controller:openCommonRankRewardWindow(false)
+end
+
+function CommonRankRewardWindow:openRootWnd(_type)
+    self.rank_type = _type or RankConstant.RankType.drama
+    self.tips:setString(RankConstant.RankRewardTips[self.rank_type])
+    local config = {}
+    if self.rank_type == RankConstant.RankType.diving_cross then
+        config = Config.DivingData.data_rank_info
+    elseif self.rank_type == RankConstant.RankType.ninja_village_combat then
+        local model = NinjaVillageCombatController:getInstance():getModel()
+        local season_cfg = Config.NinjaVillageCombatData.data_season_round[model:getNowSeasonId()][1]
+        if season_cfg then
+            local round_cfg = season_cfg[model:getNowSeasonRoundId()]
+            if round_cfg then
+                local rank_group = round_cfg.rank_group
+                config = Config.NinjaVillageCombatData.data_rank_info[rank_group]
+            end
+        end
+    end
+    local tmp_list = {}
+    --数据重组
+    for k, v in pairs(config) do
+        local temp = {}
+        temp.min = v.min
+        temp.max = v.max
+        temp.items = v.rewards
+        table.insert(tmp_list,temp)
+    end
+    table.sort(tmp_list, SortTools.KeyLowerSorter("min"))
+    for i,v in ipairs(tmp_list) do
+        v.index = i
+    end
+    self.scroll_view:setData(tmp_list)
+end
+
+function CommonRankRewardWindow:close_callback(  )
+    if self.scroll_view then
+        self.scroll_view:DeleteMe()
+        self.scroll_view = nil
+    end
+    controller:openCommonRankRewardWindow(false)
+end
+
+
+CommonRankRewardItem = class("CommonRankRewardItem",function()
+    return ccui.Layout:create()
+end)
+
+function CommonRankRewardItem:ctor()
+    self.item_list = {}
+
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("endlesstrail/endlesstrail_awards_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    self.rank_img = self.root_wnd:getChildByName("rank_img")
+    self.rank_label = self.root_wnd:getChildByName("rank_label")
+    self.item_container = self.root_wnd:getChildByName("item_container")
+
+    self.total_width = self.item_container:getContentSize().width
+
+    self:registerEvent()
+end
+
+function CommonRankRewardItem:registerEvent()
+end
+
+function CommonRankRewardItem:setData(data)
+    if data ~= nil then
+        if data.min == data.max and data.min <= 3 then
+            local res_id = PathTool.getResFrame("common", string.format("common_200%s", data.min))
+            loadSpriteTexture(self.rank_img, res_id, LOADTEXT_TYPE_PLIST)
+            self.rank_img:setVisible(true)
+            self.rank_label:setVisible(false)
+        else
+            self.rank_img:setVisible(false)
+            self.rank_label:setVisible(true)
+            self.rank_label:setString(string.format("%s~%s", data.min, data.max))
+        end
+        if self.item_list and next(self.item_list) ~= nil then
+            for k, v in pairs(self.item_list) do
+                v:setVisible(false)
+            end
+        end
+        local item_config = nil
+        local index = 1
+        local item = nil
+        local scale = 0.8
+        local off = 10
+        local _x, _y = 0, 55
+        local sum = #data.items
+        for i=sum,1,-1 do
+            local v = data.items[i]
+            item_config = Config.ItemData.data_get_data(v[1])
+            if item_config then
+                if self.item_list[index] == nil then
+                    item = BackPackItem.new(false, true, false, scale, false, true) 
+                    _x = self.total_width - ( (index-1)*(BackPackItem.Width*scale+off) + BackPackItem.Width*0.5*scale )
+                    item:setPosition(_x, _y)
+                    self.item_container:addChild(item)
+                    self.item_list[index] = item
+                end
+                self.item_list[index]:setVisible(true)
+                item = self.item_list[index]
+                item:setBaseData(v[1],v[2])
+                index = index + 1
+            end
+        end
+    end
+end
+
+function CommonRankRewardItem:DeleteMe()
+    for i,v in ipairs(self.item_list) do
+        v:DeleteMe()
+    end
+    self.item_list = nil
+    self:removeAllChildren()
+    self:removeFromParent()
+end

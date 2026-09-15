@@ -1,0 +1,261 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      sp光环选择界面
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+FormSpSkillSelectPanel = FormSpSkillSelectPanel or BaseClass(BaseView)
+
+local hallowsController = HallowsController:getInstance()
+local heroController = HeroController:getInstance()
+local hero_model = heroController:getModel()
+local model = hallowsController:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+
+
+function FormSpSkillSelectPanel:__init(fun_form_type)
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/form_sp_skill_select_panel"
+
+    self.res_list = {
+     -- { path = PathTool.getPlistImgForDownLoad("form","form"), type = ResourcesType.plist },
+    }
+    self.fun_form_type = fun_form_type or 0
+end
+
+function FormSpSkillSelectPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+    local imgTitleBg = self.main_container:getChildByName("imgTitleBg")
+    self.title = self.main_container:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_6756"))
+    imgTitleBg:setContentSize(cc.size(self.title:getContentSize().width + 100,63))
+    self.no_img = self.main_container:getChildByName("no_img")
+    self.no_txt = self.main_container:getChildByName("no_txt")
+    self.no_txt:setString(TI18N("语言_c_273"))
+    self.no_img:setVisible(false)
+    self.no_txt:setVisible(false)
+    self.tip = self.main_container:getChildByName("tip")
+    self.tip:setString(TI18N("语言_c_6861"))
+    setTextMaxWidth(self.tip,650)
+    -- self.tip:setString(transformTextToShort(TI18N("语言_c_6861"),60))
+    -- addEvt2showAllTextTips(self.tip,TI18N("语言_c_6861"),60)
+end
+
+function FormSpSkillSelectPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 1)
+    
+    --sp光环更改
+    self:addGlobalEvent(HeroEvent.Hero_Sp_Skill_Update_Event, function (data)
+        if not data then return end
+        if self.select_skill == data.skill_bid then
+            self.select_skill = 0
+        else
+            self.select_skill = data.skill_bid or 0
+        end
+        self:setSpSkillList()
+        
+        GlobalEvent:getInstance():Fire(HeroEvent.Hero_Sp_Skill_Send_Event, {type=self.fun_form_type,skill_bid=self.select_skill})
+        -- local formations = {}
+        -- local list = {}
+        -- list.order = self.order
+        -- list.skill_bid = self.select_skill
+        -- table.insert(formations,list)
+        -- heroController:sender11216(self.fun_form_type,formations)
+    end)
+end
+
+--关闭
+function FormSpSkillSelectPanel:onClickBtnClose()
+    heroController:openFormSpSkillSelectPanel(false)
+end
+
+--@ dic_equips 已装备列表
+--@ dic_equips[神器id] = 队伍编号
+--@ team_index = 队伍索引
+--@ mine_hallows_id 矿脉专用的...如果还有.请改成setting模式
+function FormSpSkillSelectPanel:openRootWnd(setting)
+    self.select_skill = setting.select_skill or 0
+    self.form_data = setting.form_data or {}
+    self.order = setting.order or 1
+    self:setSpSkillList()
+end
+
+function FormSpSkillSelectPanel:setSpSkillList()
+    self.sp_skill_list = {}
+    for key, value in pairs(self.form_data) do
+        for k, v in pairs(value.skills or {}) do
+            local cfg = Config.SkillData.data_get_skill(v.skill_bid)
+            local bid = value.bid
+            local id = hero_model:getNewConvertStaBid(bid)
+            if id then
+                bid = id
+            end
+            local hero_cfg = Config.SkillExtensionData.data_get_sp_halo_skill_group[bid]
+            if cfg and hero_cfg and cfg.group == hero_cfg.sp_halo_skill_group then
+                local list = {}
+                list.bid = value.bid
+                list.partner_id = value.partner_id
+                list.skill_bid = v.skill_bid
+                list.is_equip = v.skill_bid == self.select_skill
+                table.insert(self.sp_skill_list,list)
+            end
+        end
+    end
+    self:updateHallowList()
+end
+
+--创建神器列表 
+function FormSpSkillSelectPanel:updateHallowList()
+    if not self.list_view then
+        local scroll_view_size = cc.size(630,640)
+        local setting = {
+            item_class = FormSpSkillSelectItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 4,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            item_width = 630,               -- 单元的尺寸width
+            item_height = 148,              -- 单元的尺寸height
+            -- row = 1,                        -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            -- need_dynamic = true
+        }
+
+        local box_2014 = self.main_container:getChildByName("box_2014")
+        local x , y = box_2014:getPosition()
+        self.list_view = CommonScrollViewLayout.new(self.main_container, cc.p(x, y) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0.5,0.5))
+    end
+
+
+    self.list_view:setData(self.sp_skill_list, function(item, data) self:selectItem(item ,data) end )
+
+    if not self.sp_skill_list or not next(self.sp_skill_list) then
+        self.no_img:setVisible(true)
+        self.no_txt:setVisible(true)
+    else
+        self.no_img:setVisible(false)
+        self.no_txt:setVisible(false)
+    end
+end
+
+--@ data 是 self.sp_skill_list[i]
+function FormSpSkillSelectPanel:selectItem(item, data)
+    if not item then return end
+    if not data then return end
+    
+end
+
+
+function FormSpSkillSelectPanel:close_callback()
+
+    if self.list_view then 
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+    heroController:openFormSpSkillSelectPanel(false)
+end
+
+-------------------------------------------------------------------------------------------------------
+--item 类
+FormSpSkillSelectItem = class("FormSpSkillSelectItem", function()
+    return ccui.Widget:create()
+end)
+
+function FormSpSkillSelectItem:ctor()
+    self:config()
+    self:layoutUI()
+    self:registerEvent()
+end
+
+function FormSpSkillSelectItem:config()
+
+end
+
+function FormSpSkillSelectItem:layoutUI()
+    self.size = cc.size(630, 148)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+    -- self:setTouchEnabled(true)
+    -- self:setCascadeOpacityEnabled(true)
+    local csbPath = PathTool.getTargetCSB("hero/form_sp_skill_select_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.item_icon = SkillItem.new(true, false, false, 1, false)
+    self.item_icon:setPosition(cc.p(80, 80))
+    self.main_container:addChild(self.item_icon)
+
+    self.name_label =  createLabel(24, Config.ColorData.data_color4[184], nil, 154, 117, "", self.main_container, 2, cc.p(0,0.5))
+
+    local word_width = 330
+    self.dec_label = createRichLabel(21, cc.c3b(0x68,0x45,0x2a), cc.p(0,1), cc.p(152,90), 0, 0, word_width)
+    self.main_container:addChild(self.dec_label)
+
+    self.comfirm_btn = self.main_container:getChildByName("comfirm_btn")
+    self.comfirm_label = self.comfirm_btn:getChildByName("label")
+    self.comfirm_label:setColor(cc.c3b(0xff,0xff,0xff))
+end
+
+
+function FormSpSkillSelectItem:registerEvent()
+    registerButtonEventListener(self.comfirm_btn, handler(self, self.onClickComfirmBtn) ,true, 2)
+end
+
+function FormSpSkillSelectItem:addCallBack(callback)
+    self.callback = callback
+end
+
+function FormSpSkillSelectItem:onClickComfirmBtn()
+    GlobalEvent:getInstance():Fire(HeroEvent.Hero_Sp_Skill_Update_Event, self.data)
+end
+
+function FormSpSkillSelectItem:setData(data)
+    if not data then return end
+    self.data = data
+    self.cfg = Config.SkillData.data_get_skill(self.data.skill_bid)
+    local name_str = string_format("%s (%s)", self.cfg.name, string.format(TI18N("语言_c_540"),self.cfg.level))
+    self.name_label:setString(transformTextToShort(name_str, 35))
+    addEvt2showAllTextTips(self.name_label,name_str,35)
+    self.dec_label:setString(transformTextToShort(self.cfg.des, 45))
+    addEvt2showAllTextTips(self.dec_label,self.cfg.des,45,nil,nil,nil,true,true)
+    self.item_icon:setData(self.cfg)
+    self:setBtnStatus(self.data.is_equip)
+end
+
+--是否装备
+function FormSpSkillSelectItem:setBtnStatus(is_equip)
+    if is_equip  then
+        local btn_res_id = PathTool.getResFrame("common", "common_1018")
+        self.comfirm_btn:loadTexture(btn_res_id, LOADTEXT_TYPE_PLIST)
+        self.comfirm_label:setString(TI18N("语言_c_3187"))
+        self.comfirm_label:enableOutline(Config.ColorData.data_color4[263], 2)
+    else
+        local btn_res_id = PathTool.getResFrame("common", "common_1017")
+        self.comfirm_btn:loadTexture(btn_res_id, LOADTEXT_TYPE_PLIST)
+        self.comfirm_label:setString(TI18N("语言_c_3188"))
+        self.comfirm_label:enableOutline(Config.ColorData.data_color4[264], 2) 
+    end
+end
+
+
+
+function FormSpSkillSelectItem:DeleteMe()
+    if self.item_icon then
+        self.item_icon:DeleteMe()
+        self.item_icon = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

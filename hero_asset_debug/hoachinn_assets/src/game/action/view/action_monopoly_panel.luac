@@ -1,0 +1,1141 @@
+-- ******** 文件说明 ********
+-- @description: 大富翁活动
+-- @DateTime:    2021-5-6
+-- *******************************
+ActionMonopolyPanel = class("ActionMonopolyPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local table_insert = table.insert
+local table_sort = table.sort
+function ActionMonopolyPanel:ctor(bid)
+    self.holiday_bid = bid
+    self.res_list = {{
+        path = PathTool.getPlistImgForDownLoad("wonderland", "wonderland"),
+        type = ResourcesType.plist
+    }, {
+        path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"),
+        type = ResourcesType.plist
+    }}
+    self.build_list = {}
+    self.build_lv_list = {}
+    self.reward_status_list = {}
+    self.old_pos = 1
+    self.is_role_moving = false -- 是否在移动
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function ActionMonopolyPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionMonopolyPanel:register_event()
+    if not self.update_dram_data_event then
+        self.update_dram_data_event = GlobalEvent:getInstance():Bind(ActionEvent.UpdateMonopolyData, function(data)
+            if not data then
+                return
+            end
+            self.activity_data = data
+            self.old_pos = data.curpos
+            self:handleBuildLvData(data.poslev)
+            self:handleRewardStatusData(data.rewardst)
+            self:updateTimeInfo()
+            self:setTopRewardinfo()
+            self:setBuildingInfo()
+            self:setInitialPos()
+            self:updateItemNum()
+            self:setRedPointStatus()
+        end)
+    end
+    -- 扔骰子返回
+    if not self.get_monopoly_num_event then
+        self.get_monopoly_num_event = GlobalEvent:getInstance():Bind(ActionEvent.ReturnDiceData, function(data)
+            if not data then
+                return
+            end
+            if not self.activity_data then
+                self.activity_data = {}
+            end
+            self.activity_data.point = data.point
+            self.new_pos = data.curpos
+            self.dice_type = data.dice_type
+            -- --刷新指定格子数据和格子等级列表
+            self.temp_build_info = deepCopy(data)
+            -- for index, value in ipairs(data.poslev) do
+            --     local pos = value.pos
+            --     self.build_lv_list[pos] = value
+            --     local build = self.build_list[pos]
+            --     build:setBuildIngLv(value.lev, self.activity_data.isinit)
+            -- end
+            -- -- 判断起点状态
+            -- if self.activity_data.isinit~= data.isinit then
+            --     self.activity_data.isinit = data.isinit
+            --     local first_build = self.build_list[1]
+            --     local lv = 1
+            --     if self.build_lv_list[1] and self.build_lv_list[1].lev then
+            --         lv = self.build_lv_list[1].lev
+            --     end
+            --     first_build:setBuildIngLv(lv, self.activity_data.isinit)
+            -- end 
+            local spine_status = controller:getMonopolyShowSpine()
+            if spine_status == 1 then -- 跳过动画
+                self.old_pos = self.new_pos
+                self:updateBuildInfoById()
+                self:setInitialPos()
+                self:openGetReardWindow()
+                self:setTopRewardinfo()
+            else
+                self.is_role_moving = true
+                self:createPointMv()
+            end
+            self:updateItemNum()
+            self:setRedPointStatus()
+        end)
+    end
+    -- 领奖返回
+    if not self.get_monopoly_reward_back_event then
+        self.get_monopoly_reward_back_event = GlobalEvent:getInstance():Bind(ActionEvent.MonopolyRewardBack,
+            function(data)
+                if not data then
+                    return
+                end
+                if not self.activity_data then
+                    self.activity_data = {}
+                end
+                self.activity_data.maxpoint = data.maxpoint
+                self.activity_data.round = data.round
+                self.activity_data.rewardst = data.rewardst
+                self.activity_data.award_list = data.award_list
+                self.activity_data.chooselist = data.chooselist
+                self:handleRewardStatusData(data.rewardst)
+                self:setTopRewardinfo()
+            end)
+    end
+    -- 设置奖励返回
+    if not self.set_monopoly_reward_back_event then
+        self.set_monopoly_reward_back_event = GlobalEvent:getInstance():Bind(ActionEvent.MonopolySetRewardBack,
+            function(data)
+                if not data then
+                    return
+                end
+                if not self.activity_data then
+                    self.activity_data = {}
+                end
+                self.activity_data.award_list = data.award_list
+                self:setTopRewardinfo()
+                self:setRedPointStatus()
+            end)
+    end
+    --购买骰子返回
+    if not self.monopoly_buy_item_back_event then
+        self.monopoly_buy_item_back_event = GlobalEvent:getInstance():Bind(ActionEvent.MonopolyBuyItemBack,
+            function(data)
+                if not data then
+                    return
+                end
+                if not self.activity_data then
+                    self.activity_data = {}
+                end
+                self.activity_data.buycnt = data.buycnt
+                self:updateItemNum()
+            end)
+    end
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+            self:updateItemNum()
+            self:setRedPointStatus()
+        end)
+    end
+    if not self.update_delete_good_event then
+        self.update_delete_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS,function(bag_code, data_list)
+            self:updateItemNum()
+            self:setRedPointStatus()
+        end)
+    end
+    if not self.update_modify_good_event then
+        self.update_modify_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM,function(bag_code, data_list)
+            self:updateItemNum()
+            self:setRedPointStatus()
+        end)
+    end
+    -- 扔普通骰子
+    registerButtonEventListener(self.normal_btn, function()
+        if self.is_role_moving then
+            message(TI18N("语言_c_2425"))
+            return
+        end
+        
+        if self.touch_summon then 
+            message(TI18N("语言_c_4414"))
+            return 
+        end
+        
+        if self.touch_summon_ticket == nil then
+            self.touch_summon_ticket = GlobalTimeTicket:getInstance():add(function()
+                self.touch_summon = nil
+                if self.touch_summon_ticket ~= nil then
+                    GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+                    self.touch_summon_ticket = nil
+                end
+            end,0.1)
+        end
+        self.touch_summon = true
+        local iselectReward = self:isSelectGreatReward()
+        local is_final = self:isFinalTurn()--判断是否是最后一轮
+        if not iselectReward then
+            message(TI18N("语言_c_5131"))
+            return 
+        end
+        if not is_final then
+            if self.activity_data then
+                if self.activity_data.point >= self.activity_data.maxpoint  then
+                    if (not self.reward_status_list or not self.reward_status_list[5]) then
+                        message(TI18N("语言_c_5132"))
+                        return
+                    end
+                end
+            end
+        end
+        local base_cfg = Config.WonderlandData.data_wonderland_const
+        local normal_item_id = base_cfg.general_dice.val[1]
+        local own_num = BackpackController:getInstance():getModel():getItemNumByBid(normal_item_id)
+        if own_num and own_num > 0 then
+            controller:sender29302(1, 1)
+        else
+            message(TI18N("语言_s_64"))
+        end
+    end, true, 1)
+
+    -- 特殊骰子界面
+    registerButtonEventListener(self.special_btn, function()
+        if self.is_role_moving then
+            message(TI18N("语言_c_2425"))
+            return
+        end
+        local iselectReward = self:isSelectGreatReward()
+        local is_final = self:isFinalTurn()--判断是否是最后一轮
+        if not iselectReward then
+            message(TI18N("语言_c_5131"))
+            return
+        end
+        if not is_final then
+            if self.activity_data then
+                if self.activity_data.point >= self.activity_data.maxpoint  then
+                    if (not self.reward_status_list or not self.reward_status_list[5]) then
+                        message(TI18N("语言_c_5132"))
+                        return
+                    end
+                end
+            end
+        end
+        local base_cfg = Config.WonderlandData.data_wonderland_const
+        local normal_item_id = base_cfg.lucky_dice.val[1]
+        local own_num = BackpackController:getInstance():getModel():getItemNumByBid(normal_item_id)
+        if own_num > 0 then
+            controller:openMonopolyChooseStep(true)
+        else
+            message(TI18N("语言_s_64"))
+        end
+    end, true, 1)
+
+    -- 帮助说明
+    registerButtonEventListener(self.help_btn, function(param, sender, event_type)
+        local config = Config.WonderlandData.data_wonderland_act_list
+        local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+        local campid = tabvo.camp_id -- 活动的唯一Id
+        local rule_txt = config[campid].desc
+        TipsManager:getInstance():showCommonTips(rule_txt, sender:getTouchBeganPosition(), nil, nil, 500)
+    end, true, 1)
+
+    registerButtonEventListener(self.add_btn, function(param, sender, event_type)
+        self:buyItem()
+    end, true, 1)
+
+    -- 打开选奖励界面
+    registerButtonEventListener(self.select_btn, function(param, sender, event_type)
+        if not self.activity_data then
+            return
+        end
+        controller:openMonopolySelectRewardPanel(true, self.holiday_bid,self.activity_data.chooselist,self.activity_data.award_list)
+    end, true, 1)
+
+    -- 打开选奖励界面
+    registerButtonEventListener(self.change_btn, function(param, sender, event_type)
+        if self.activity_data then
+            controller:openMonopolySelectRewardPanel(true, self.holiday_bid,self.activity_data.chooselist,self.activity_data.award_list)
+        end
+    end, true, 1)
+    --领取大奖
+    registerButtonEventListener(self.get_big_reward_btn, function(param, sender, event_type)
+        if self.activity_data and self.activity_data.point >= self.activity_data.maxpoint then
+            if not self.reward_status_list or not self.reward_status_list[5] then
+                self:getScoreReward(5)
+            end
+        end
+    end, true, 1)
+
+    self:registerCheckBoxEvent(self.checkbox)
+end
+--注册选项框事件
+function ActionMonopolyPanel:registerCheckBoxEvent(btn)
+    if not btn then return end
+	btn:addEventListener(function(sender,event_type)
+	    if event_type == ccui.CheckBoxEventType.selected then
+            playButtonSound2()
+	        controller:setMonopolyShowSpine(1)
+	        btn:setSelected(true)
+	    elseif event_type == ccui.CheckBoxEventType.unselected then
+            playButtonSound2()
+            controller:setMonopolyShowSpine(2)
+            btn:setSelected(false)
+	    end
+    end)
+end
+
+-- 处理一下格子等级数据
+function ActionMonopolyPanel:handleBuildLvData(arr)
+    for index, value in ipairs(arr) do
+        local pos = value.pos
+        self.build_lv_list[pos] = value
+    end
+end
+-- 处理一下档位奖励数据
+function ActionMonopolyPanel:handleRewardStatusData(arr)
+    for index, value in ipairs(arr) do
+        local pos = value.index
+        self.reward_status_list[pos] = value
+    end
+end
+-- 设置格子相关数据
+function ActionMonopolyPanel:setBuildingInfo()
+    if not self.activity_data then
+        return
+    end
+    for index, value in ipairs(self.build_list) do
+        local build_id = value:getBuildId()
+        local lv = 0
+        if build_id then
+            if self.build_lv_list[build_id] and self.build_lv_list[build_id].lev then
+                lv = self.build_lv_list[build_id].lev
+            end
+        end
+        value:setBuildIngLv(lv, self.activity_data.isinit)
+    end
+end
+
+-- 设置奖励相关数据
+function ActionMonopolyPanel:setTopRewardinfo()
+    if not self.activity_data then
+        return
+    end
+    local turn_num = self.activity_data.round or 0
+    self.turn_label:setString(string.format(TI18N("语言_c_1558"), turn_num))
+    -- 普通奖励
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    if campid and Config.WonderlandData.data_wonderland_act_list[campid] and Config.WonderlandData.data_wonderland_act_list[campid].group_id then
+        local v_id = Config.WonderlandData.data_wonderland_act_list[campid].group_id -- 活动版本id
+        local reward_cfg = Config.WonderlandData.data_wonderland_point[v_id]
+        local turn_list = reward_cfg.point_cond
+        local act_point = self.activity_data.point or 0
+        for index, value in ipairs(self.top_list) do
+            local id = value.reward_id or 1
+            local str = ""
+            if act_point > turn_list[1][id] then
+                str = turn_list[1][id] .. "/" .. turn_list[1][id]
+            else
+                str = act_point .. "/" .. turn_list[1][id]
+            end
+            if not tolua.isnull(value.item) then
+                value.progress:setString(str)
+                value.item:setTouchEnabled(true)
+                if self.reward_status_list and self.reward_status_list[id] then -- 表示已经领取
+                else
+                    if act_point >= turn_list[1][id] then
+                        value.item:setTouchEnabled(false)
+                    end
+                end
+            end
+        end
+        -- 本轮大奖
+        if self.activity_data.award_list and self.activity_data.award_list[1] then
+            local big_reward_index = self.activity_data.award_list[1].index
+            local bigreward_info = self:getGreatRewardInfoByIndex(big_reward_index)
+            if bigreward_info then
+                local item_id = bigreward_info[1].reward[1][1]
+                local item_num = bigreward_info[1].reward[1][2]
+                self.big_reward_item:setBaseData(item_id, item_num)
+                self.big_item_layer:setVisible(true)
+                self.change_btn:setVisible(true)
+                self.select_btn:setVisible(false)
+            else
+                self.big_item_layer:setVisible(false)
+                self.change_btn:setVisible(false)
+                self.select_btn:setVisible(true)
+            end
+        else
+            self.big_item_layer:setVisible(false)
+            self.change_btn:setVisible(false)
+            self.select_btn:setVisible(true)
+        end
+    
+        self.big_reward_item:setCommonStatus(false)
+        local maxpoint = self.activity_data and self.activity_data.maxpoint or 0
+        if act_point >= maxpoint  then
+            if (not self.reward_status_list or not self.reward_status_list[5]) then
+                self.big_reward_item:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_available"))
+                self.get_big_reward_btn:setVisible(true)
+            elseif self:isFinalTurn() then
+                self.big_reward_item:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_get"))
+                self.change_btn:setVisible(false)
+            end
+        else
+            self.get_big_reward_btn:setVisible(false)
+        end
+        self.big_reward_progress:setString(act_point .. "/" .. maxpoint)
+        self.progress:setPercent(act_point / maxpoint * 100)
+        self.progress_val:setString(act_point .. "/" .. maxpoint)
+        if self:isFinalTurn() then -- 最后一轮数据特殊处理
+            if act_point > maxpoint then
+                self.big_reward_progress:setString(maxpoint .. "/" .. maxpoint)
+                self.progress_val:setString(maxpoint .. "/" .. maxpoint)
+            end
+        end
+        -- 进度条
+        -- 设置积分奖励状态
+        for index, value in ipairs(self.top_list) do
+            local id = value.reward_id
+            if self.reward_status_list and self.reward_status_list[id] then --奖励已经领取
+                value.item:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_get"))
+            elseif act_point >= turn_list[1][id] and (not self.reward_status_list or not self.reward_status_list[id]) then --可以领取
+                value.item:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_available"))
+            else
+                value.item:setCommonStatus(false)
+            end
+        end
+    end
+end
+
+-- 扔骰子动画
+function ActionMonopolyPanel:createPointMv()
+    if self.dice_type == 2 then
+        local temp = self:getMoveWayNum()
+        local getNum = temp[1] + temp[2] -- 掷色子的点数
+        self:createMoveWay(temp[1], temp[2])
+        return
+    end
+    self.click_layer:setVisible(false)
+    if self.pointImg then
+        self.pointImg:setVisible(false)
+    end
+    if not self.pointEff then
+        local effect_id = "E70021"
+        self.pointEff = createEffectSpine(effect_id, cc.p(50, 70), cc.p(0.5, 0.5), false)
+        self.eff_layer:addChild(self.pointEff)
+        local function eventFunc(event)
+            local temp = self:getMoveWayNum()
+            local getNum = temp[1] + temp[2] -- 掷色子的点数
+            if not self.pointImg then
+                local res = PathTool.getResFrame("wonderland", "wonderland_dice_result_" .. getNum)
+                self.pointImg = createSprite(res, 50, 70, self.eff_layer, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+            end
+            loadSpriteTexture(self.pointImg, PathTool.getResFrame("wonderland", "wonderland_dice_result_" .. getNum),
+                LOADTEXT_TYPE_PLIST)
+            self.pointEff:setVisible(false)
+            self.pointImg:setVisible(true)
+            if self.order_timer == nil then
+                self.order_timer = GlobalTimeTicket:getInstance():add(function()
+                    if not tolua.isnull(self.pointImg) then
+                        self.pointImg:setVisible(false)
+                        self.click_layer:setVisible(true)
+                        self:createMoveWay(temp[1], temp[2])
+                        if self.order_timer then
+                            GlobalTimeTicket:getInstance():remove(self.order_timer)
+                            self.order_timer = nil
+                        end
+                    end
+                end, 1, 1)
+            end
+        end
+        self.pointEff:registerSpineEventHandler(eventFunc, sp.EventType.ANIMATION_COMPLETE)
+    else
+        self.pointEff:setVisible(true)
+        self.pointEff:setToSetupPose()
+        self.pointEff:setAnimation(0, PlayerAction.action, false)
+    end
+end
+
+function ActionMonopolyPanel:updateTimeInfo()
+    doStopAllActions(self.act_time)
+    local now_time = GameNet:getInstance():getTime()
+    local end_time = self.activity_data.end_time
+    local left_time = end_time - now_time
+    controller:getModel():setCountDownTime(self.act_time, left_time)
+end
+
+function ActionMonopolyPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_monopoly_panel"))
+    self.root_wnd:setPosition(-40, -82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.topbg = self.main_container:getChildByName("image_bg")
+    self.top_list = {}
+    for i = 1, 4, 1 do
+        local item = self.topbg:getChildByName("item_" .. i)
+        local itemitem = BackPackItem.new(false, true, false, 0.8, false, true)
+        itemitem:setPositionX(50)
+        itemitem:setPositionY(70)
+        item:addChild(itemitem)
+        item.item = itemitem
+        item.progress = item:getChildByName("tips")
+        item.reward_id = i
+        item:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self:getScoreReward(i)
+            end
+        end)
+        table_insert(self.top_list, item)
+    end
+    self.big_reward = self.main_container:getChildByName("item_5")
+    self.big_reward:getChildByName("tips1"):setString(TI18N("语言_c_5135"))
+    self.big_reward_progress = self.big_reward:getChildByName("tips")
+    self.big_layer = self.big_reward:getChildByName("big_layer")
+    self.select_btn = self.big_layer:getChildByName("select_btn")
+    self.big_item_layer = self.big_layer:getChildByName("item_layer")
+    self.big_reward_item = BackPackItem.new(false, true, false, 0.9, false, true)
+    self.big_reward_item:setPositionX(50)
+    self.big_reward_item:setPositionY(50)
+    self.big_item_layer:addChild(self.big_reward_item)
+    self.get_big_reward_btn = self.big_layer:getChildByName("Image_16")
+    self.change_btn = self.big_layer:getChildByName("change_btn")--更换奖励按钮
+
+    self.turn_bg = self.main_container:getChildByName("turn_bg")
+    self.turn_label = self.turn_bg:getChildByName("turn_label")
+    self.turn_label:setString("")
+    self.progress_bg = self.main_container:getChildByName("progress_bg")
+    self.progress = self.progress_bg:getChildByName("progress")
+    self.progress_val = self.progress_bg:getChildByName("progress_value")
+
+    self.map_layer = self.main_container:getChildByName("map_layer")
+    self.click_layer = self.main_container:getChildByName("click_layer")
+    self.help_btn = self.click_layer:getChildByName("btn_tips")
+    self.time_txt = self.click_layer:getChildByName("time_txt")
+    self.time_txt:setString(TI18N("语言_c_748"))
+    self.act_time = self.click_layer:getChildByName("act_time")
+    self.normal_btn = self.click_layer:getChildByName("normal_btn")
+    self.normal_name = self.click_layer:getChildByName("normal_name")
+    self.click_layer:getChildByName("normal_name"):setString(TI18N("语言_c_5126"))
+    self.special_btn = self.click_layer:getChildByName("special_btn")
+    self.special_name = self.click_layer:getChildByName("special_name")
+    self.click_layer:getChildByName("special_name"):setString(TI18N("语言_c_5127"))
+    self.item_layer = self.click_layer:getChildByName("item_layer")
+    self.num_txt = self.item_layer:getChildByName("num_txt")
+    self.add_btn = self.item_layer:getChildByName("add_btn")
+    self.checkbox = self.click_layer:getChildByName("checkbox")
+    self.checkbox:getChildByName("name"):setString(TI18N("语言_c_3673"))
+    self.eff_layer = self.main_container:getChildByName("eff_layer")
+    for i = 1, 20, 1 do
+        local aarea = self.map_layer:getChildByName("build_" .. i)
+        if not self.build_list[i] then
+            self.build_list[i] = ActionMonoItem.new()
+            aarea:addChild(self.build_list[i])
+        end
+    end
+    controller:sender29300()
+    self:setData()
+    self:updateItemNum()
+    self:setshowSpineStatus()
+end
+
+function ActionMonopolyPanel:setshowSpineStatus()
+    local status = controller:getMonopolyShowSpine()
+    if status == 1 then
+        self.checkbox:setSelected(true)
+    else
+        self.checkbox:setSelected(false)
+    end
+end
+
+-- 领取积分奖励
+function ActionMonopolyPanel:getScoreReward(i)
+    controller:sender29303(i)
+end
+
+function ActionMonopolyPanel:setData()
+    if not Config.WonderlandData then
+        require "config.wonderland_data"
+    end
+    if not Config.WonderlandData then return end
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    if Config.WonderlandData.data_wonderland_act_list[campid] then
+        local v_id = Config.WonderlandData.data_wonderland_act_list[campid].group_id -- 活动版本id
+        self.list = Config.WonderlandData.data_wonderland_reward[v_id] -- 格子列表
+        for i = 1, 20, 1 do
+            self.build_list[i]:setData(self.list[i])
+        end
+        self:creatMoveRole()
+        local reward_cfg = Config.WonderlandData.data_wonderland_point[v_id]
+        local turn_list = reward_cfg.point_cond
+        for index, value in ipairs(self.top_list) do
+            local id = value.reward_id
+            local item_info = reward_cfg["reward" .. id]
+            value.item:setBaseData(item_info[1][1], item_info[1][2])
+        end
+    end
+end
+
+function ActionMonopolyPanel:creatMoveRole()
+    -- 创建角色
+    if not self.board_role then
+        local effect_id = "H60001"
+        self.board_role = createEffectSpine(effect_id, cc.p(0, 0), cc.p(0.5, 0), true, PlayerAction.idle)
+        self.map_layer:addChild(self.board_role)
+        self.board_role:setScale(0.5)
+    end
+    self.cur_role_action = PlayerAction.idle -- 当前小人的动作
+    self:setInitialPos()
+end
+
+function ActionMonopolyPanel:setInitialPos()
+    local build = self.map_layer:getChildByName("build_" .. self.old_pos)
+    local build_posX = build:getPositionX()
+    local build_posY = build:getPositionY()
+    if self.board_role then
+        self.board_role:setPositionX(build_posX + 46)
+        self.board_role:setPositionY(build_posY + 40)
+        if self.old_pos >= 1 and self.old_pos < 7 then
+            self.board_role:setScaleX(0.5)
+        elseif self.old_pos >= 7 and self.old_pos < 11 then
+            self.board_role:setScaleX(-0.45)
+        elseif self.old_pos >= 11 and self.old_pos < 17 then
+            self.board_role:setScaleX(-0.5)
+        elseif self.old_pos >= 17 and self.old_pos < 20 then
+            self.board_role:setScaleX(0.45)
+        end
+    end
+end
+
+function ActionMonopolyPanel:getMoveWayNum()
+    local way1 = 0
+    local way2 = 0
+    if self.new_pos < self.old_pos then -- 表示转过了一圈
+        way1 = 21 - self.old_pos
+        way2 = self.new_pos - 1
+    else
+        way1 = self.new_pos - self.old_pos
+    end
+    return {way1, way2}
+end
+
+function ActionMonopolyPanel:createMoveWay(num, num2)
+    self.way_list = {}
+    -- print(num, num2)
+    local destination = self.old_pos + num -- 目的地
+    for i = self.old_pos + 1, destination do
+        local now_build = self.map_layer:getChildByName("build_" .. (i - 1))
+        if now_build then
+            local nowposX = now_build:getPositionX()
+            local nowposY = now_build:getPositionY()
+            local build
+            if i > 20 then
+                build = self.map_layer:getChildByName("build_" .. 1)
+            else
+                build = self.map_layer:getChildByName("build_" .. i)
+            end
+            local build_posX = build:getPositionX()
+            local build_posY = build:getPositionY()
+            local info = {}
+            info.posX = build_posX + 46
+            info.posY = build_posY + 40
+            if build_posX > nowposX and build_posY == nowposY then -- 向右
+                info.dir = 1
+            elseif build_posX == nowposX and build_posY < nowposY then -- 向下
+                info.dir = 2
+            elseif build_posX < nowposX and build_posY == nowposY then -- 向左
+                info.dir = 3
+            elseif build_posX == nowposX and build_posY > nowposY then -- 向上
+                info.dir = 4
+            end
+            table_insert(self.way_list, info)
+        end
+    end
+    if num2 and num2 ~= 0 then
+        destination = num2 + 1
+        for i = 2, destination do
+            local now_build = self.map_layer:getChildByName("build_" .. (i - 1))
+            local nowposX = now_build:getPositionX()
+            local nowposY = now_build:getPositionY()
+            local build = self.map_layer:getChildByName("build_" .. i)
+            local build_posX = build:getPositionX()
+            local build_posY = build:getPositionY()
+            local info = {}
+            info.posX = build_posX + 46
+            info.posY = build_posY + 40
+            if build_posX > nowposX and build_posY == nowposY then -- 向右
+                info.dir = 1
+            elseif build_posX == nowposX and build_posY < nowposY then -- 向下
+                info.dir = 2
+            elseif build_posX < nowposX and build_posY == nowposY then -- 向左
+                info.dir = 3
+            elseif build_posX == nowposX and build_posY > nowposY then -- 向上
+                info.dir = 4
+            end
+            table_insert(self.way_list, info)
+        end
+    end
+    self.old_pos = destination
+    self:moveRoleByGrid()
+end
+--刷新指定格子数据
+function ActionMonopolyPanel:updateBuildInfoById()
+    if not self.activity_data then
+        return
+    end
+    local data = self.temp_build_info
+    if data then
+        for index, value in ipairs(data.poslev) do
+           local pos = value.pos
+           self.build_lv_list[pos] = value
+           local build = self.build_list[pos]
+           build:setBuildIngLv(value.lev, self.activity_data.isinit)
+       end
+       -- 判断起点状态
+       if self.activity_data.isinit~= data.isinit then
+           self.activity_data.isinit = data.isinit
+           local first_build = self.build_list[1]
+           local lv = 0
+           if self.build_lv_list[1] and self.build_lv_list[1].lev then
+               lv = self.build_lv_list[1].lev
+           end
+           first_build:setBuildIngLv(lv, self.activity_data.isinit)
+       end 
+    end
+    self.temp_build_info = nil
+end
+
+function ActionMonopolyPanel:moveRoleByGrid()
+    if not self.board_role then
+        return
+    end
+    self.is_role_moving = true
+    -- 角色移动
+    local temp = table.remove(self.way_list, 1)
+    if not temp then return end
+    local new_pos_x = temp.posX
+    local new_pos_y = temp.posY
+    local dir = temp.dir
+    -- local time = distance / MonopolyConst.Move_Speed
+    if not self.cur_role_action or self.cur_role_action ~= PlayerAction.move then
+        self.cur_role_action = PlayerAction.move
+        self.board_role:setToSetupPose()
+        self.board_role:setAnimation(0, PlayerAction.move, true)
+    end
+    if dir == 1 then
+        self.board_role:setScaleX(0.5)
+    elseif dir == 2 then
+        self.board_role:setScaleX(-0.45)
+    elseif dir == 3 then
+        self.board_role:setScaleX(-0.5)
+    elseif dir == 4 then
+        self.board_role:setScaleX(0.45)
+    end
+    self.board_role:setTimeScale(1.4) -- 动画倍速
+    self.board_role:runAction(cc.Sequence:create(cc.MoveTo:create(1, cc.p(new_pos_x, new_pos_y)),
+        cc.CallFunc:create(function()
+            if not tolua.isnull(self.progress) then
+                if tableLen(self.way_list) == 0 then
+                    self:doRoleStopMove()
+                    self:updateBuildInfoById()
+                    self:openGetReardWindow()
+                    self:setTopRewardinfo()
+                else
+                    self:moveRoleByGrid()
+                end
+            end
+        end)))
+end
+
+-- 清除移动中的数据
+function ActionMonopolyPanel:doRoleStopMove()
+    self.board_role:setToSetupPose()
+    self.board_role:setAnimation(0, PlayerAction.idle, true)
+    self.cur_role_action = PlayerAction.idle
+    self.board_role:stopAllActions()
+    self.is_role_moving = false
+end
+
+--打开奖励展示界面
+function ActionMonopolyPanel:openGetReardWindow()
+    local pos = self.old_pos
+    if self.old_pos > 20 then
+        pos = self.old_pos - 20
+    end
+    -- print("...",pos)
+    -- printLuaTable(self.list)
+    local cfg = self.list[pos]
+    if not cfg then
+        return
+    end
+    local type = cfg.type
+    local lv = self.build_lv_list and self.build_lv_list[pos] and self.build_lv_list[pos].lev or 1
+    local item_id
+    local item_num
+    if type == 1 or type == 2 then
+        local itemList = cfg.parameter
+        for index, value in ipairs(itemList) do
+            local temp = value[1]
+            -- printLuaTable(value)
+            if temp == lv then
+                item_id = value[2]
+                item_num = value[3]
+                -- print(item_id,item_num)
+                break
+            end
+        end
+    elseif type == 4 then
+        item_id  = cfg.parameter[1][1]
+        item_num  = cfg.parameter[1][2]
+    end
+    if item_id and item_num then
+        local reward_list = {}
+        local temp = {}
+        temp.bid = item_id
+        temp.num = item_num
+        table_insert(reward_list,temp)
+        MainuiController:getInstance():openGetItemView(true,reward_list,0,{is_backpack = true}, MainuiConst.item_open_type.normal)
+        return
+    end
+    if type == 3 then --表示是积分
+        local score = cfg.parameter[1]
+        message(TI18N("语言_c_4824")..score)
+    end
+end
+
+-- 更新骰子数量
+function ActionMonopolyPanel:updateItemNum()
+    local base_cfg = Config.WonderlandData.data_wonderland_const
+    local normal_item_id = base_cfg.general_dice.val[1]
+    local own_num = BackpackController:getInstance():getModel():getItemNumByBid(normal_item_id)
+    self.num_txt:setString(own_num)
+    self.normal_name:setString(TI18N("语言_c_5126").."\nx"..own_num)
+    local lucky_dice_id = base_cfg.lucky_dice.val[1]
+    local locky_own_num = BackpackController:getInstance():getModel():getItemNumByBid(lucky_dice_id)
+    self.special_name:setString(TI18N("语言_c_5127").."\nx"..locky_own_num)
+end
+
+-- 购买骰子
+function ActionMonopolyPanel:buyItem()
+    if not self.activity_data then return end
+    local base_cfg = Config.WonderlandData.data_wonderland_const
+    local item_id = base_cfg.general_dice.val[1]
+    local item_cfg = Config.ItemData.data_get_data(item_id)
+    local max_count = base_cfg.general_dice_buy_num.val
+    local price = base_cfg.general_dice_buy.val[2]
+    local costInfo = base_cfg.general_dice_buy.val
+    local data = {}
+    data.item_bid = item_id
+    data.name = item_cfg.name
+    data.limit_num = max_count
+    data.has_buy = self.activity_data.buycnt
+    data.price = price
+    data.cost_type = costInfo[1]
+    data.cost_num = costInfo[2]
+    if max_count - self.activity_data.buycnt <= 0 then
+        message(TI18N("语言_c_94"))
+        return
+    end
+    controller:openMonopolyMallBuyWindow(true, data)
+end
+
+-- 判断大奖是否选择
+function ActionMonopolyPanel:isSelectGreatReward()
+    if not self.activity_data then return end
+    if self.activity_data.award_list then
+        return tableLen (self.activity_data.award_list) ~= 0
+    end
+    return false
+end
+
+-- 根据大奖id获取大奖详细数据
+function ActionMonopolyPanel:getGreatRewardInfoByIndex(index)
+    if not self.activity_data then return {} end
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local v_id = Config.WonderlandData.data_wonderland_act_list[campid].group_id -- 活动版本id
+    local cfg = Config.WonderlandData.data_choose_reward[v_id]
+    return cfg[index] or {}
+end
+
+--判断是否是最后一轮
+function ActionMonopolyPanel:isFinalTurn()
+    if not self.activity_data then return end
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    if campid and Config.WonderlandData.data_wonderland_act_list[campid] and Config.WonderlandData.data_wonderland_act_list[campid].group_id then
+        local v_id = Config.WonderlandData.data_wonderland_act_list[campid].group_id -- 活动版本id
+        local reward_cfg = Config.WonderlandData.data_wonderland_point[v_id]
+        local max_turn = reward_cfg.roundnum
+        local curRound = self.activity_data.round or 0
+        return curRound >= max_turn
+    else
+        return false
+    end
+end
+
+--判断红点
+function ActionMonopolyPanel:setRedPointStatus()
+    -- body  setHolidayStatus
+    --判断是否有骰子
+    local base_cfg = Config.WonderlandData.data_wonderland_const
+    local normal_item_id = base_cfg.general_dice.val[1]
+    local own_num = BackpackController:getInstance():getModel():getItemNumByBid(normal_item_id)
+    local lucky_dice_id = base_cfg.lucky_dice.val[1]
+    local locky_own_num = BackpackController:getInstance():getModel():getItemNumByBid(lucky_dice_id)
+    --判断是否能领奖
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local v_id = Config.WonderlandData.data_wonderland_act_list[campid].group_id -- 活动版本id
+    local reward_cfg = Config.WonderlandData.data_wonderland_point[v_id]
+    local turn_list = reward_cfg.point_cond
+    local normal_status = false
+    for index, value in ipairs(self.top_list) do
+        local id = value.reward_id
+        if self.reward_status_list and self.reward_status_list[id] then -- 表示已经领取
+        else
+            if self.activity_data and self.activity_data.point and self.activity_data.point >= turn_list[1][id] then
+                normal_status = true
+            end
+        end
+    end
+    local great_reward_status = false
+    if self.activity_data and self.activity_data.point and self.activity_data.maxpoint and self.activity_data.point >= self.activity_data.maxpoint then
+        if (not self.reward_status_list or not self.reward_status_list[5]) then
+            great_reward_status = true
+        end
+    end
+    controller:setHolidayStatus(self.holiday_bid,(great_reward_status or normal_status or (locky_own_num>0) or (own_num>0)))
+end
+
+function ActionMonopolyPanel:DeleteMe()
+    if self.order_timer then
+        GlobalTimeTicket:getInstance():remove(self.order_timer)
+        self.order_timer = nil
+    end
+    doStopAllActions(self.act_time)
+    for k, item in pairs(self.build_list) do
+        item:DeleteMe()
+        item = nil
+    end
+    self.build_list = nil
+    self.activity_data = nil
+    if self.update_dram_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event)
+        self.update_dram_data_event = nil
+    end
+    if self.get_monopoly_num_event then
+        GlobalEvent:getInstance():UnBind(self.get_monopoly_num_event)
+        self.get_monopoly_num_event = nil
+    end
+    if self.get_monopoly_reward_back_event then
+        GlobalEvent:getInstance():UnBind(self.get_monopoly_reward_back_event)
+        self.get_monopoly_reward_back_event = nil
+    end
+    if self.set_monopoly_reward_back_event then
+        GlobalEvent:getInstance():UnBind(self.set_monopoly_reward_back_event)
+        self.set_monopoly_reward_back_event = nil
+    end
+    if self.monopoly_buy_item_back_event then
+        GlobalEvent:getInstance():UnBind(self.monopoly_buy_item_back_event)
+        self.monopoly_buy_item_back_event = nil
+    end
+    if self.add_goods_event then
+        GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.update_delete_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_delete_good_event)
+        self.update_delete_good_event = nil
+    end
+    if self.update_modify_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+        self.update_modify_good_event = nil
+    end
+    if self.pointEff then
+        self.pointEff:clearTracks()
+        self.pointEff:removeFromParent()
+        self.pointEff = nil
+    end
+    if self.board_role then
+        self.board_role:clearTracks()
+        self.board_role:removeFromParent()
+        self.board_role = nil
+    end
+    if self.touch_summon_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.touch_summon_ticket)
+        self.touch_summon_ticket = nil
+    end
+end
+
+------------------------------------------
+-- 
+ActionMonoItem = class("ActionMonoItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionMonoItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionMonoItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_monopoly_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.img_bg = self.main_container:getChildByName("bg")
+    self.point_layer = self.main_container:getChildByName("point_layer")
+    self.point_layer:setVisible(false)
+    self.point_num_txt = self.point_layer:getChildByName("point_num_txt")
+    self.title_label = self.main_container:getChildByName("title_label") -- 格子的等级信息
+
+    self.start_label = self.main_container:getChildByName("start_label")
+    self.start_label:setString(TI18N("语言_c_1022"))
+    self.start_label:setVisible(false)
+end
+
+function ActionMonoItem:register_event()
+    self.point_layer:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            TipsController:getInstance():openActionScoreTips(true,"wonderland_point_max",TI18N("语言_c_1195"),TI18N("语言_c_5175"))
+        end
+    end)
+end
+
+-- {group_id=10001, num=1, type=1, upgrade=1, parameter={{1,1,10000},{2,1,20000},{3,1,30000}}}
+-- type -->  1起点 2道具 3积分 4事件
+function ActionMonoItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    local type = data.type
+    if type == 1 then -- 是起点
+        loadSpriteTexture(self.img_bg, PathTool.getResFrame("wonderland", "wonderland_plaid_start"), LOADTEXT_TYPE_PLIST)
+    elseif type == 2 then
+        loadSpriteTexture(self.img_bg, PathTool.getResFrame("wonderland", "wonderland_plaid_item"), LOADTEXT_TYPE_PLIST)
+    elseif type == 3 then
+        loadSpriteTexture(self.img_bg, PathTool.getResFrame("wonderland", "wonderland_plaid_point"), LOADTEXT_TYPE_PLIST)
+    elseif type == 4 then
+        loadSpriteTexture(self.img_bg, PathTool.getResFrame("wonderland", "wonderland_plaid_event"), LOADTEXT_TYPE_PLIST)
+    end
+end
+
+function ActionMonoItem:setItemInfo()
+    local type = self.data.type
+    if self.point_img then
+        self.point_img:setVisible(false)
+    end
+    local level = self.lev --  string.format(TI18N("语言_c_4520"), self.lev)
+    self.title_label:setString(string.format(TI18N("语言_c_4520"), self.lev))-- .. "--" .. self.data.num)
+    self.title_label:setVisible(true)
+    self.point_layer:setVisible(false)
+    if type == 1 then -- 是起点
+        if self.isinit == 1 then -- 表示已经初始化
+            loadSpriteTexture(self.img_bg, PathTool.getResFrame("wonderland", "wonderland_plaid_item"),
+                LOADTEXT_TYPE_PLIST)
+            self.start_label:setVisible(false)
+            local item_data
+            local itemList = self.data.parameter
+            for index, value in ipairs(itemList) do
+                local temp = value[1]
+                if temp == level then
+                    item_data = value
+                end
+            end
+            if item_data then
+                if not self.item then
+                    self.item = BackPackItem.new(false, true, false, 0.55, false, true)
+                    self.item:setPositionX(46)
+                    self.item:setPositionY(67)
+                    self.main_container:addChild(self.item)
+                end
+                self.item:setBaseData(item_data[2], item_data[3])
+            end
+        else
+            self.start_label:setVisible(true)
+            self.title_label:setVisible(false)
+        end
+    elseif type == 2 then
+        local item_data
+        local itemList = self.data.parameter
+        for index, value in ipairs(itemList) do
+            local temp = value[1]
+            if temp == level then
+                item_data = value
+            end
+        end
+        if item_data then
+            if not self.item then
+                self.item = BackPackItem.new(false, true, false, 0.55, false, true)
+                self.item:setPositionX(46)
+                self.item:setPositionY(67)
+                self.main_container:addChild(self.item)
+            end
+            self.item:setBaseData(item_data[2], item_data[3])
+        end
+    elseif type == 3 then
+        if not self.point_img then
+            self.point_img = createSprite(PathTool.getResFrame("wonderland", "wonderland_point_max"), 32, 32,
+                self.point_layer, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 2)
+            self.point_img:setScale(0.5)
+        end
+        self.point_img:setVisible(true)
+        self.point_num_txt:setString(self.data.parameter[1])
+        self.point_layer:setVisible(true)
+        self.title_label:setTextColor(cc.c3b(0xf9, 0xee, 0xd0))
+        self.title_label:enableOutline(cc.c4b(58, 41, 10, 255), 2)
+        self.title_label:setVisible(false)
+    elseif type == 4 then
+        if not self.item then
+            self.item = BackPackItem.new(false, true, false, 0.55, false, true)
+            self.item:setPositionX(46)
+            self.item:setPositionY(56)
+            self.item:setIsShowBackground(false)
+            self.item:setScale(0.8)
+            self.main_container:addChild(self.item)
+        end
+        self.item:setBaseData(self.data.parameter[1][1], self.data.parameter[1][2])
+        self.title_label:setVisible(false)
+    end
+end
+
+function ActionMonoItem:setBuildIngLv(lv, isinit)
+    local base_cfg = Config.WonderlandData.data_wonderland_const.lattice_lv_max
+    self.lev = lv + 1
+    if self.lev > base_cfg.val then
+        self.lev = base_cfg.val
+    end
+    self.isinit = isinit
+    self:setItemInfo()
+end
+
+function ActionMonoItem:getBuildId()
+    if not self.data then return nil end
+    return self.data.num
+end
+
+function ActionMonoItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

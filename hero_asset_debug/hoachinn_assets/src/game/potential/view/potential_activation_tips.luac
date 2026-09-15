@@ -1,0 +1,306 @@
+-- --------------------------------------------------------------------
+-- type 1潜能激活弹窗  2满级预览弹窗
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2021-xx-xx
+-- --------------------------------------------------------------------
+PotentialActivationTips = PotentialActivationTips or BaseClass(BaseView)
+
+local controller = PotentialController:getInstance()
+local model = controller:getModel()
+function PotentialActivationTips:__init(type)
+    self.is_full_screen = false
+    self.type = type or 1
+    self.layout_name = "potential/potential_activation_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.act_type = 0
+end
+
+function PotentialActivationTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    -- 基础属性,名字,类型和评分等
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.name = self.base_panel:getChildByName("name")
+    setTextMaxWidth(self.name,250)
+    self.lev_title = self.base_panel:getChildByName("lev_title")
+    setTextSpacing(self.lev_title)
+    self.icon = self.base_panel:getChildByName("icon")
+    self.baseattr_panel = self.container:getChildByName("baseattr_panel")
+    self.baseattr_title = self.baseattr_panel:getChildByName("label")
+    self.baseattr_title:setString(TI18N("语言_c_7032"))
+    self.baseattr_scr = self.baseattr_panel:getChildByName("baseattr_scr")
+    self.baseattr_scr:setVisible(false)
+    self.baseattr_scr:setScrollBarEnabled(false)
+    self.scroll_text = createRichLabel(24,cc.c3b(0xfe, 0xee, 0xba),cc.p(0,1),cc.p(0,0),-4,nil,260)
+    self.baseattr_scr:addChild(self.scroll_text)
+    self.tab_panel = self.container:getChildByName("tab_panel")
+    self.tab_btn = self.tab_panel:getChildByName("tab_btn")
+    self.tab_btn:setTouchEnabled(true)
+    self.tab_txt = self.tab_btn:getChildByName("tab_txt")
+    self.tab_txt:setString(TI18N("语言_c_6080"))
+    self.label_lock = createRichLabel(20,cc.c3b(0xff,0x15,0x15),cc.p(0.5,0.5),cc.p(220,37),nil,nil,400)
+    self.tab_panel:addChild(self.label_lock)
+    self.tab_panel:setVisible(self.type == 1)
+    self.close_btn = self.container:getChildByName("close_btn")
+end
+
+function PotentialActivationTips:register_event()
+    registerButtonEventListener(self.tab_btn, handler(self, function()
+        self:clickActBtn()
+    end) ,true, 2)
+    registerButtonEventListener(self.background, handler(self, function()
+        controller:openPotentialActivationTips(false)
+    end) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, function()
+        controller:openPotentialActivationTips(false)
+    end) ,true, 1)
+end
+function PotentialActivationTips:clickActBtn()
+    if self.act_type == 1 then
+        BackpackController:getInstance():openTipsSource(true, self.need_id)
+    else
+        controller:sender11602(self.potential_id)
+    end
+end
+function PotentialActivationTips:openRootWnd(potential_id)
+    self.potential_id = potential_id
+    self.ex_cfg = Config.PotentialData.data_get_potential_base_ex[self.potential_id]
+    self.lev_cfg = Config.PotentialData.data_get_potential_detail[self.potential_id]
+    self.round_cfg = Config.PotentialData.data_get_round[self.ex_cfg.round_id]
+    self.name:setString(self.ex_cfg.potential_name)
+    self.lev_num = 1
+    loadSpriteTexture(self.icon, PathTool.getPotentialIcon(self.ex_cfg.icon), LOADTEXT_TYPE)
+    if self.potential_id == self.round_cfg.key then
+        self.icon:setScale(0.8)
+    else
+        self.icon:setScale(1)
+    end
+    if self.type == 1 then
+        self.lev_num = 1
+    else
+        self.lev_num = tableLen(self.lev_cfg)
+    end
+    local _txt = ""
+    if self.lev_num >= tableLen(self.lev_cfg) and self.type ~= 1 then
+        _txt = " ("..TI18N("语言_c_4543")..")"
+    end
+    self.lev_title:setString(string.format(TI18N("语言_c_5398"),self.lev_num).._txt)
+    self:updateBasePanel()
+    self:updateBtnPanel()
+    local _h = 0
+    if self.type == 1 then
+        _h = self.base_panel:getContentSize().height + self.baseattr_panel:getContentSize().height + self.tab_panel:getContentSize().height
+    else
+        _h = self.base_panel:getContentSize().height + self.baseattr_panel:getContentSize().height + 50
+    end
+    if self.attr_tip then
+        _h = _h + self.attr_tip:getContentSize().height + 15
+    end
+    self.container:setContentSize(cc.size(self.container:getContentSize().width, _h))
+    self.base_panel:setPositionY(_h - 3)
+    self.close_btn:setPositionY(_h - 14)
+    self.baseattr_panel:setPositionY(_h - self.base_panel:getContentSize().height - 3)
+    self.tab_panel:setPositionY(5)
+end
+
+function PotentialActivationTips:updateBtnPanel()
+    if self.type == 1 then
+        for i, v in pairs(self.ex_cfg.unlock_cost) do
+            local item = createRichLabel(20,cc.c3b(0x1b,0xca,0x0d),cc.p(0.5,0.5),cc.p(220,140),nil,nil,600)
+            self.tab_panel:addChild(item)
+            self.need_id = v[1]
+            local need_num = v[2]
+            local have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.need_id)
+            local item_cfg = Config.ItemData.data_get_data(self.need_id)
+            local _str = "<img src='%s' scale=0.4 />%s/%s"
+            local txt = string.format(_str,PathTool.getItemRes(item_cfg.icon),have_num,need_num)
+            if have_num >= need_num then
+                self.act_type = 2
+                item:setString(string.format("<div fontcolor=#1bca0d>%s</div>",txt))
+            else
+                self.act_type = 1
+                item:setString(string.format("<div fontcolor=#ff1515>%s</div>",txt))
+            end
+        end
+        addRedPointToNodeByStatus(self.tab_btn,model:getPotentialOneStatus(self.potential_id) == PotentialConst.One_Status.canAct,10,10)
+        local str = ""
+        local status = 0 --前置潜能生效
+        local pre_status = false
+        for i, v in pairs(self.ex_cfg.pre_potential_id) do
+            if model:getPotentialOneStatus(v) == PotentialConst.One_Status.haveEff then
+                pre_status = true
+            end
+        end
+        if not pre_status and next(self.ex_cfg.pre_potential_id) then
+            status = 1 --前置潜能不生效
+        end
+        if status == 1 then
+            local _str = ""
+            local is_show = true
+            for i, v in pairs(self.ex_cfg.pre_potential_id) do
+                local cfg = Config.PotentialData.data_get_potential_base_ex[v]
+                if cfg and model:getTabIsHide(cfg.round_id) then
+                    if _str == "" then
+                        _str = cfg.potential_name
+                    else
+                        _str = _str .. TI18N("语言_c_7056") .. cfg.potential_name
+                    end
+                else
+                    is_show = false
+                end
+            end
+            self.label_lock:setFontColor(cc.c3b(0xff,0x15,0x15))
+            if is_show then
+                str = string.format(TI18N("语言_c_7033"),_str)
+            else
+                str = TI18N("语言_c_1891")
+            end
+            addRedPointToNodeByStatus(self.tab_btn,false,10,10)
+            self.tab_btn:setTouchEnabled(false)
+            setChildUnEnabled(true, self.tab_btn)
+        else
+            for i, v in pairs(self.ex_cfg.unlock_cond) do
+                local _txt = ""
+                if v[1] == "partner_unlock" then
+                    local list = {v[2],v[3],v[4]}
+                    local _list = HeroController:getInstance():getModel():getHeroReachCon(list)
+                    local str_txt = LangStringFormat(TI18N("语言_c_7034"),v[4],HeroConst.ScoreList[v[2]],v[3]) .. string.format("(%s/%s)",_list[2],_list[3])
+                    if _list[1] then
+                        _txt = string.format("<div fontcolor=#1bca0d>%s</div>",str_txt)
+                    else
+                        _txt = string.format("<div fontcolor=#ff1515>%s</div>",str_txt)
+                    end
+                elseif v[1] == "cystal_lev" then
+                    local str_txt = string.format(TI18N("语言_c_6222"),v[2])..string.format("(%s/%s)",HeroController:getInstance():getModel().resonate_cystal_lev,v[2])
+                    if HeroController:getInstance():getModel():checkEnoughResLev(v[2]) then
+                        _txt = string.format("<div fontcolor=#1bca0d>%s</div>",str_txt)
+                    else
+                        _txt = string.format("<div fontcolor=#ff1515>%s</div>",str_txt)
+                    end
+                end
+                if str == "" then
+                    str = _txt
+                else
+                    str = str .. "\n" .. _txt
+                end
+            end
+            if model:getPotentialCanActCon(self.potential_id) then --激活条件满足
+                self.tab_btn:setTouchEnabled(true)
+                setChildUnEnabled(false, self.tab_btn)
+            else --激活条件不满足
+                self.tab_btn:setTouchEnabled(false)
+                setChildUnEnabled(true, self.tab_btn)
+            end
+        end
+        self.label_lock:setString(string.format("<div>%s</div>",str))
+
+        self.tab_height = self.tab_panel:getContentSize().height
+    else
+        self.tab_height = 0
+    end
+end
+
+function PotentialActivationTips:updateBasePanel()
+    self.now_lev_cfg = self.lev_cfg[self.lev_num]
+    if self.now_lev_cfg.effect_type == 1 or self.now_lev_cfg.effect_type == 4 or self.now_lev_cfg.effect_type == 5 or self.now_lev_cfg.effect_type == 6 then --加属性
+        self:updateAttrPanel()
+    elseif self.now_lev_cfg.effect_type == 2 then --加光环
+        self:updateHaloPanel()
+    elseif self.now_lev_cfg.effect_type == 3 then --技能
+        self:updateSkillPanel()
+    end
+end
+
+function PotentialActivationTips:updateAttrPanel()
+    self.baseattr_scr:setVisible(false)
+    self.attr_list = {}
+    local list = self.now_lev_cfg.effect
+    
+    for i,v in ipairs(list) do
+        local attr_key = v[1]
+        local attr_val = v[2] or 0
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if not attr_name then
+            attr_name = Config.AttrExtraData.data_key_to_name[attr_key]
+        end
+        if attr_name then
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10) .."%"
+            end
+            
+            local attr_text = createRichLabel(24, cc.c4b(100,50,35,255), cc.p(0, 1), cc.p(50, self.baseattr_panel:getContentSize().height-60-(i-1)*40), -4, nil, 380)
+            self.baseattr_panel:addChild(attr_text)
+            attr_text:setString(attr_name)
+            table.insert(self.attr_list,attr_text)
+            local icon = PathTool.getAttrIconByStr(attr_key)
+            local attr_str = ""
+            if attr_key == "atk_per" or attr_key == "hp_max_per" or attr_key == "def_per" then
+                attr_str = string.format("<img src='%s' scale=1 /> <div fontcolor=#c1b7ab> %s：</div>", PathTool.getResFrame("common", icon), TI18N("语言_c_7075")..attr_name)
+            else
+                attr_str = string.format("<img src='%s' scale=1 /> <div fontcolor=#c1b7ab> %s：</div>", PathTool.getResFrame("common", icon), attr_name)
+            end
+            attr_text:setString(attr_str)
+            attr_text.attr_num = createRichLabel(24, cc.c4b(100,50,35,255), cc.p(0, 1), cc.p(350, self.baseattr_panel:getContentSize().height-60-(i-1)*40), -4, nil, 380)
+            self.baseattr_panel:addChild(attr_text.attr_num)
+            local attr_num = string.format("<div fontcolor=#ffeedd>%s</div>",attr_val)
+            attr_text.attr_num:setString(attr_num)
+        end
+    end
+
+    if (self.now_lev_cfg.effect_type == 4 or self.now_lev_cfg.effect_type == 1 or self.now_lev_cfg.effect_type == 5 or self.now_lev_cfg.effect_type == 6) and self.now_lev_cfg.effect_limit_text and self.now_lev_cfg.effect_limit_text[2] then
+        self.attr_tip = createRichLabel(20, cc.c3b(0x1b,0xca,0x0d), cc.p(0.5, 1), cc.p(220, -5), -4, nil, 380)
+        self.baseattr_panel:addChild(self.attr_tip)
+        self.attr_tip:setString(self.now_lev_cfg.effect_limit_text[2])
+        self.attr_tip:setHorizontalLayoutType(2)
+    end
+end
+
+function PotentialActivationTips:updateHaloPanel()
+    self.baseattr_scr:setVisible(true)
+    self.baseattr_scr:setContentSize(cc.size(270,self.baseattr_scr:getContentSize().height))
+    local skill_data = Config.SkillData.data_get_skill(self.now_lev_cfg.effect[1][tableLen(self.now_lev_cfg.effect[1])])
+    if skill_data then
+        self.eff_item = SkillItem.new(true, true, true, 0.8)
+        self.baseattr_panel:addChild(self.eff_item)
+        self.eff_item:setPosition(cc.p(76,90))
+        self.eff_item:setData(skill_data)
+
+        self.scroll_text:setString(skill_data.des)
+        local _h = math.max(self.baseattr_scr:getContentSize().height,self.scroll_text:getContentSize().height+10)
+        self.baseattr_scr:setInnerContainerSize(cc.size(270,_h))
+        self.scroll_text:setPosition(cc.p(5,_h))
+    end
+end
+
+function PotentialActivationTips:updateSkillPanel()
+    self.baseattr_scr:setVisible(true)
+    self.baseattr_scr:setContentSize(cc.size(270,self.baseattr_scr:getContentSize().height))
+    local skill_data = Config.SkillData.data_get_skill(self.now_lev_cfg.effect[1])
+    if skill_data then
+        self.eff_item = SkillItem.new(true, true, true, 0.8)
+        self.baseattr_panel:addChild(self.eff_item)
+        self.eff_item:setPosition(cc.p(76,90))
+        self.eff_item:setData(skill_data)
+
+        self.scroll_text:setString(skill_data.des)
+        local _h = math.max(self.baseattr_scr:getContentSize().height,self.scroll_text:getContentSize().height+10)
+        self.baseattr_scr:setInnerContainerSize(cc.size(270,_h))
+        self.scroll_text:setPosition(cc.p(5,_h))
+    end
+end
+function PotentialActivationTips:close_callback()
+    controller:openPotentialActivationTips(false)
+end

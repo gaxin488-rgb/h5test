@@ -1,0 +1,151 @@
+-- --------------------------------------------------------------------
+-- 突破升星成功
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      进阶成功
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+HeroTreeUpgradeStarExhibitionPanel = HeroTreeUpgradeStarExhibitionPanel or BaseClass(BaseView)
+
+
+function HeroTreeUpgradeStarExhibitionPanel:__init()
+    self.ctrl = HeroController:getInstance()
+    self.model = self.ctrl:getModel()
+    self.win_type = WinType.Mini
+    self.layout_name = "hero/hero_tree_upgrade_star_exhibition_panel"
+    self.view_tag = ViewMgrTag.MSG_TAG
+    self.is_csb_action = true
+    self.res_list = {
+        -- { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist },
+    }
+
+    self.attr_list ={}
+end
+
+function HeroTreeUpgradeStarExhibitionPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    commonOpenActionLeftMove(self.main_container)
+    local size = self.main_container:getContentSize()
+    self.back_panel = self.main_container:getChildByName("back_panel")
+    self.star_panel = self.main_container:getChildByName("star_panel")
+    self.star_title = self.star_panel:getChildByName("star_title")
+    local star_label = self.star_title:getChildByName("skill_label")
+    star_label:setString(TI18N("语言_c_6857"))
+    self.star_node = self.star_panel:getChildByName("star_node")
+    self.now_step = self.star_panel:getChildByName("now_step")
+    self.lost_star_node = self.star_panel:getChildByName("lost_star_node")
+    self.lost_step = self.star_panel:getChildByName("lost_step")
+    self.attr_panel = self.main_container:getChildByName("attr_panel")
+    self.no_skill_label = self.attr_panel:getChildByName("no_skill_label")
+    self.no_skill_label:setString(TI18N("语言_c_3538"))
+    self.no_skill_label:setVisible(false)
+    self.attr_title = self.attr_panel:getChildByName("attr_title")
+    local attr_label = self.attr_title:getChildByName("skill_label")
+    attr_label:setString(TI18N("语言_c_6867"))
+    self.hero_panel = self.main_container:getChildByName("hero_panel")
+    self.hero_title = self.hero_panel:getChildByName("hero_title")
+    local hero_label = self.hero_title:getChildByName("skill_label")
+    hero_label:setString(TI18N("语言_c_6873"))
+    self.desc_scroll = self.hero_panel:getChildByName("desc_scroll")
+    self.titlepanel = self.main_container:getChildByName("titlepanel")
+    self.title_container = self.titlepanel:getChildByName("title_container")
+    self.title_width = self.title_container:getContentSize().width
+    self.title_height = self.title_container:getContentSize().height
+end
+
+function HeroTreeUpgradeStarExhibitionPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+end
+
+--关闭
+function HeroTreeUpgradeStarExhibitionPanel:_onClickBtnClose()
+    self.ctrl:openHeroTreeUpgradeStarExhibitionPanel(false)
+end
+
+function HeroTreeUpgradeStarExhibitionPanel:openRootWnd(share_level)
+    self.share_level = share_level
+    self.lost_cfg = Config.ResonateData.data_share_lev_up_cost[share_level-1]
+    self.cfg = Config.ResonateData.data_share_lev_up_cost[share_level]
+    self:handleEffect(true)
+    self:updateStarPanel()
+    self:updateAttrPanel()
+    self:updateHeroPanel()
+end
+function HeroTreeUpgradeStarExhibitionPanel:updateStarPanel()
+    local width = 26
+    local lost_num = self.lost_cfg.star[1][1] or 0
+    self.lost_star_setting = self.model:createStar(lost_num, self.lost_star_node, self.lost_star_setting, width)
+    local num = self.cfg.star[1][1] or 0
+    self.now_star_setting = self.model:createStar(num, self.star_node, self.now_star_setting, width)
+    self.lost_step:setString(string.format(TI18N("语言_c_6282"),self.lost_cfg.star[1][2]))
+    self.now_step:setString(string.format(TI18N("语言_c_6282"),self.cfg.star[1][2]))
+end
+function HeroTreeUpgradeStarExhibitionPanel:updateAttrPanel()
+    if next(self.cfg.attr) then
+        local txt_list = {}
+        local math_w = 0
+        for i = 1, tableLen(self.cfg.attr) do
+            local attr_key = self.cfg.attr[i][1]
+            local attr_val = self.cfg.attr[i][2]
+            local res_id = PathTool.getAttrIconByStr(attr_key)
+            local res = PathTool.getResFrame("common",res_id)
+            local attr_name = Config.AttrData.data_key_to_name[attr_key]
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+            local txt = createRichLabel(26,cc.c3b(0x49,0xd8,0x09),cc.p(0,0),cc.p(0,150-i*40),nil,nil,600)
+            self.attr_panel:addChild(txt)
+            txt:setString(string.format(TI18N("<img src=%s visible=true /><div> %s +%s</div>"),res,attr_name,attr_val))
+            txt_list[i] = txt
+            math_w = math.max(math_w,txt:getContentSize().width)
+        end
+        for k,v in pairs(txt_list) do
+            v:setPositionX(360-math_w*0.5)
+        end
+        self.no_skill_label:setVisible(false)
+    else
+        self.no_skill_label:setVisible(true)
+    end
+end
+function HeroTreeUpgradeStarExhibitionPanel:updateHeroPanel()
+    local hero_list = {}
+    local now_star = self.cfg.star[1][1]
+    for key, value in pairs(self.model:getUpStarReList()) do
+        local hero_vo = self.model:getHeroById(value.id)
+        local max_num = Config.PartnerData.data_partner_max_star[hero_vo.bid] or 0
+        local hero_cfg = Config.PartnerData.data_partner_base[hero_vo.bid]
+        if max_num >= now_star then
+            local item = createLabel(24,cc.c3b(0x49,0xd8,0x09),cc.c3b(0x00,0x00,0x00),self.desc_scroll:getContentSize().width*0.5,15,hero_cfg.name,self.desc_scroll,0,cc.p(0.5,0.5))
+            table.insert(hero_list,item)
+        end
+    end
+    local _h = math.max(tableLen(hero_list)*30,self.desc_scroll:getContentSize().height)
+    self.desc_scroll:setInnerContainerSize(cc.size(self.desc_scroll:getContentSize().width,_h))
+    for i = 1, tableLen(hero_list) do
+        hero_list[i]:setPositionY(_h-(i-0.5)*30)
+    end
+end
+function HeroTreeUpgradeStarExhibitionPanel:handleEffect(status)
+    if status == false then
+        if self.play_effect then
+            self.play_effect:clearTracks()
+            self.play_effect:removeFromParent()
+            self.play_effect = nil
+        end
+    else
+        local action = PlayerAction.action_5
+        if not tolua.isnull(self.title_container) and self.play_effect == nil then
+            self.play_effect = createEffectSpine(PathTool.getEffectRes(103), cc.p(self.title_width * 0.5, self.title_height * 0.5), cc.p(0.5, 0.5), false, action)
+            self.title_container:addChild(self.play_effect)
+        end
+    end
+end 
+
+function HeroTreeUpgradeStarExhibitionPanel:close_callback()
+    self:handleEffect(false)
+end

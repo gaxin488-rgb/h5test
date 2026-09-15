@@ -1,0 +1,506 @@
+----------------------------
+-- 
+-- @Date:   2019-12-12 14:52:22
+-- @Description:   集结战令活动
+----------------------------
+ActionLegendaryTrialpanel = class("ActionLegendaryTrialpanel", function()
+	return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionLegendaryTrialpanel:ctor(bid)
+    self.holiday_bid = bid
+    self.trial_data_list={}
+    self.rank_list = {}
+    self.act_vo= controller:getActionSubTabVo(bid)
+    self.actid= Config.HolidayLegendTrialData.data_get_base_id[self.act_vo.camp_id]
+    model:setAcBid(bid,self.act_vo.camp_id)
+	self:configUI()
+    self:register_event()
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("legend_trial","Legendary_trial"), type = ResourcesType.plist},
+    }
+end
+
+function ActionLegendaryTrialpanel:configUI()
+    MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.NinjaTrial)
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_legendary_trial_panel"))
+	self:addChild(self.root_wnd)
+    self.root_wnd:setPosition(-40, -82)
+    
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.progress_panel = self.main_container:getChildByName("progress_panel")
+    self.score_bg = self.progress_panel:getChildByName("score_bg")
+    self.buff_name = self.progress_panel:getChildByName("buff_name")
+    self.buff_name:setChangeScaleOffWidth(-1000)
+    setTextMaxWidth(self.buff_name,150)
+    self.buff_name:getVirtualRenderer():setAlignment(cc.TEXT_ALIGNMENT_CENTER, cc.TEXT_ALIGNMENT_CENTER)
+    self.score_txt= self.progress_panel:getChildByName("score_txt")
+    self.progress_panel:setVisible(false)
+
+    self.rank_panel = self.main_container:getChildByName("rank_panel")
+    self.rank_panel:getChildByName("rank_tip"):setString(TI18N("语言_c_271"))
+    self.list_panel = self.rank_panel:getChildByName("list_panel")
+    self.rank_info_btn = self.rank_panel:getChildByName("rank_info_btn")
+
+    local score_panel=self.main_container:getChildByName("score_panel")
+    self.my_score=score_panel:getChildByName("my_score")
+    -- self.no_reward=score_panel:getChildByName("no_reward")
+    -- self.no_reward:setString(TI18N("语言_c_5410")) 
+    self.my_rank=score_panel:getChildByName("my_rank")
+    -- self.goods_con=score_panel:getChildByName("goods_con")
+    self.btn_rule=self.main_container:getChildByName("btn_rule")
+    self.btn_rule:setVisible(false)
+    local time_panel=self.main_container:getChildByName("time_panel")
+    self.label_time = createRichLabel(22, cc.c4b(0xff,0xff,0xff,0xff), cc.p(1, 0.5), cc.p(240, 60))
+    time_panel:addChild(self.label_time)
+    self.left_txt=time_panel:getChildByName("left_txt")
+    self.left_num=time_panel:getChildByName("left_num")
+    self.left_txt:setString(TI18N("语言_c_2495"))
+    self:updateImg()
+    self.item_list = self.main_container:getChildByName("item_list") 
+    self.new_year_mopping_btn = self.main_container:getChildByName("new_year_mopping_btn")
+    self.new_year_mopping_txt = self.new_year_mopping_btn:getChildByName("new_year_mopping_txt")
+
+    -- local scroll_view_size = self.goods_con:getContentSize()
+    -- local setting = {
+    --     item_class = BackPackItem,      -- 单元类
+    --     start_x = 0,                  -- 第一个单元的X起点
+    --     space_x = 5,                    -- x方向的间隔
+    --     start_y = 3,                    -- 第一个单元的Y起点
+    --     space_y = 4,                   -- y方向的间隔
+    --     item_width = BackPackItem.Width*0.55,               -- 单元的尺寸width
+    --     item_height = BackPackItem.Height*0.55,              -- 单元的尺寸height
+    --     row = 1,                        -- 行数，作用于水平滚动类型
+    --     col = 0,                         -- 列数，作用于垂直滚动类型
+    --     scale = 0.55
+    -- }
+
+    -- self.item_scrollview = CommonScrollViewLayout.new(self.goods_con, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    -- self.item_scrollview:setSwallowTouches(false)
+    controller:send21724(RankConstant.RankType.Legendary_Trial)
+    controller:sender21714(self.holiday_bid)
+    MonopolyController:getInstance():sender16811(ActionRankCommonType.legendary_trial)
+end
+
+function ActionLegendaryTrialpanel:updateImg()
+    local res= self.act_vo.reward_title
+    local path= PathTool.getResFrame("legendary_trial",res)
+    loadSpriteTexture(self.image_bg,path, LOADTEXT_TYPE_PLIST)
+end
+
+function ActionLegendaryTrialpanel:setData(data)
+    if not data or not self.actid then return end
+    --判断新年扫荡是否开启
+    self.mopup_data = controller:getActionSubTabVo(ActionRankCommonType.NewYearMoppingUp)
+    if self.mopup_data then
+        self.camp_id = self.mopup_data.camp_id
+        self.const_cfg = Config.HolidayNewYearData.data_const[self.camp_id]
+        local res = PathTool.getResFrame("new_year", "new_yaer_11")
+        self.new_year_mopping_btn:loadTexture(res, LOADTEXT_TYPE_PLIST)
+        self.new_year_mopping_btn:setVisible(true)
+        self.new_year_mopping_btn:ignoreContentAdaptWithSize(true)
+        self.new_year_mopping_txt:setPositionX(self.new_year_mopping_btn:getContentSize().width / 2)
+        self.new_year_mopping_txt:setString(self.const_cfg.chuanqi_name)
+    else
+        self.new_year_mopping_btn:setVisible(false)
+    end
+
+    self.my_score:setString(string.format(TI18N("语言_c_5233"),data.score))
+    model:setLegendTrialData(data)
+    self.my_rank:setString(string.format(TI18N("语言_c_5234"),data.rank))
+    self.left_num:setString(data.num.."/"..Config.HolidayLegendTrialData.data_constant[self.actid].daily_max)
+    local less_time = data.endtime
+    commonCountDownTime(self.label_time, less_time, {time_title=TI18N("语言_c_5235"), time_color = "#00FF00",outline="#000000", label_type = CommonAlert.type.rich})
+    if data.bufflv>0 then 
+        self.score_txt:setString(data.bufflv)
+    else
+        self.score_txt:setString(1)
+    end
+    local index= 0
+    if data.bufflv<2 then
+        index=3
+    elseif data.bufflv<3 then
+        index=4
+    else
+        index=2
+    end
+    loadSpriteTexture(self.score_bg,PathTool.getResFrame("legendary_trial","legend_trial_"..index), LOADTEXT_TYPE_PLIST) 
+    local buffname= Config.BuffData.data_get_buff_data[data.buff] and Config.BuffData.data_get_buff_data[data.buff].name or ""
+    self.buff_name:setString(buffname)
+--     if data.rank >0 then
+--         self.no_reward:setVisible(false)
+--         self.goods_con:setVisible(true)
+--         local ranklist  = Config.HolidayLegendTrialData.data_get_rank[self.actid]
+--         local item_data
+--         for i,v in ipairs(ranklist) do
+--             if v.rank1<= data.rank and v.rank2>=data.rank then
+--                 item_data=v.award
+--                 break
+--             end
+--         end
+--         if item_data then
+--             self.item_scrollview:setData(item_data)
+--             self.item_scrollview:addEndCallBack(function()
+--                 local list = self.item_scrollview:getItemList()
+--                 for k, v in pairs(list) do
+--                     v:setDefaultTip()
+--                 end
+--             end)
+--         end
+--    else
+--         self.goods_con:setVisible(false)
+--         self.no_reward:setVisible(true)
+--    end
+   self:updateList()
+end
+
+function ActionLegendaryTrialpanel:updateRankData(data)
+    model:setTrialRankData(data)
+    local rank_list = model:getRaknRoleTopThreeList()
+    if rank_list and next(rank_list or {}) ~= nil then
+        for i, v in ipairs(rank_list) do
+            if not self.rank_list[i] then
+                local item = self:createSingleRankItem(i, v)
+                self.list_panel:addChild(item)
+                self.rank_list[i] = item
+            end
+            local item = self.rank_list[i]
+            if item then
+                item:setPosition(0, 130- (i - 1) * item:getContentSize().height)
+                item.label:setString(v.name)
+                -- item.value:setString(string.format(TI18N("语言_c_4731"),(v.val or 0)))
+            end
+        end
+    end
+end
+
+--排行榜单项
+function ActionLegendaryTrialpanel:createSingleRankItem(i, data)
+    local container = ccui.Layout:create()
+    container:setAnchorPoint(cc.p(0, 1))
+    container:setContentSize(cc.size(180, 50))
+    local sp = createSprite(PathTool.getResFrame("common", "common_300" .. i), 30, 40 / 2, container)
+    sp:setScale(0.7)
+    container.sp = sp
+    local label = createLabel(20, 1, nil, 70, 20, "", container)
+    label:setAnchorPoint(cc.p(0, 0.5))
+    label:setDimensions(160, 0)
+    container.label = label
+    -- local value = createLabel(20, cc.c4b(0xff,0x9b,0x1e,0xff), nil, 265, 20, "", container)
+    -- value:setAnchorPoint(cc.p(1, 0.5))
+    -- container.value = value
+    return container
+end
+
+function ActionLegendaryTrialpanel:updateList()
+    self.trial_data_list  = Config.HolidayLegendTrialData.data_get_lv[self.actid]
+    if self.rank_view == nil then
+        local scroll_view_size = self.item_list:getContentSize()
+        local setting = {
+            item_class = ActionLegendaryItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 680,               -- 单元的尺寸width
+            item_height = 172,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.rank_view = CommonScrollViewLayout.new(self.item_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    self.rank_view:setData(self.trial_data_list)
+end
+
+function ActionLegendaryTrialpanel:register_event()
+    if not self.rank_info_event then
+        self.rank_info_event = GlobalEvent:getInstance():Bind(ActionEvent.Update_LegendTrial_rank_info,function (data)
+            if not data then return end
+            controller:send21724(RankConstant.RankType.Legendary_Trial)
+            self:setData(data)
+        end)
+    end
+    self.rank_event=GlobalEvent:getInstance():Bind(RankEvent.RankEvent_Get_Rank_data, function ( data )
+        if data.type == RankConstant.RankType.Legendary_Trial then
+            self:updateRankData(data)
+        end
+    end)
+    registerButtonEventListener(self.rank_info_btn, function()
+        controller:openLegendaryRankView(true,self.actid)
+    end,true, 1)
+    registerButtonEventListener(self.new_year_mopping_btn, function(param,sender, event_type)
+        if self.const_cfg then
+            local desc= self.const_cfg.chuanqi_txt
+            if desc then
+                TipsManager:getInstance():showCommonTips(desc, sender:getTouchBeganPosition())
+            end
+        end
+    end,true, 1)
+    registerButtonEventListener(self.progress_panel, function(param,sender, event_type)
+        local data= model:getLegendTrialData()
+        local buff_desc= Config.BuffData.data_get_buff_data[data.buff].des
+        -- local buff_desc = Config.HolidayLegendTrialData.data_constant[self.actid].buff_desc
+        local hero_id= Config.HolidayLegendTrialData.data_constant[self.actid].hero_id
+        local name=Config.PartnerData.data_partner_base[hero_id].name
+        local str=""
+        if data.bufflv>0 then
+            str=string.format(TI18N("语言_trial_2"),name,buff_desc)
+        else
+            str=string.format(TI18N("语言_c_5399"),name)    
+        end
+        TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition())  
+    end,true, 1)
+    registerButtonEventListener(self.btn_rule, function (param,sender, event_type)
+        local desc= Config.HolidayLegendTrialData.data_constant[self.actid].des_txt
+        if desc then
+            TipsManager:getInstance():showCommonTips(desc, sender:getTouchBeganPosition())
+        end
+    end, true, 1, nil, 1)
+end
+
+function ActionLegendaryTrialpanel:DeleteMe()
+    if self.rank_info_event then
+        GlobalEvent:getInstance():UnBind(self.rank_info_event)
+        self.rank_info_event = nil
+    end
+    if self.rank_event then
+        GlobalEvent:getInstance():UnBind(self.rank_event)
+        self.rank_event = nil
+    end
+    if self.rank_view then
+        self.rank_view:DeleteMe()
+        self.rank_view = nil
+    end
+end
+
+--子项
+ActionLegendaryItem = class("ActionLegendaryItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionLegendaryItem:ctor()
+    self.goods_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function ActionLegendaryItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_legendary_trial_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("main_container")
+    self.goods_con = container:getChildByName("goods_con")
+    self.label_2 = container:getChildByName("label_2")
+    self.label_2:setVisible(false)
+    self.label_3 = container:getChildByName("label_3")
+    self.label_1=container:getChildByName("label_1")
+    self.label_1:setString(TI18N("语言_c_1395"))
+    self.num = container:getChildByName("num")
+    self.btn_go = container:getChildByName("btn_go")
+    self.btn_go:getChildByName("label"):setString(TI18N("语言_c_457"))
+
+    local scroll_view_size = self.goods_con:getContentSize()
+    local setting = {
+        item_class = ActionLengendaryItem,      -- 单元类
+        start_x = 3,                  -- 第一个单元的X起点
+        space_x = 15,                    -- x方向的间隔
+        start_y = 5,                    -- 第一个单元的Y起点
+        space_y = 4,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.7,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.7,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.7
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.goods_con, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+end
+
+function ActionLegendaryItem:register_event( )
+    registerButtonEventListener(self.btn_go, function()
+         self:onClickGoBtn()
+    end,true)
+end
+
+-- 挑战
+function ActionLegendaryItem:onClickGoBtn(  )
+    if not self.isendable then 
+        local setting = {
+            bid = self.bid,
+            num= self.id
+        }
+        HeroController:getInstance():openFormGoFightPanel(true,PartnerConst.Fun_Form.NinjaTrial , setting, HeroConst.FormShowType.eFormFight)
+    else
+        message(TI18N("语言_c_5207"))
+    end
+end
+
+function ActionLegendaryItem:setData(cfg)
+    local info=model:getLegendTrialData()
+    if info then
+        -- self.label_2:setString(cfg.name)
+        self.score= model:getLegendTrialScore(cfg.id)
+        self.label_3:setString(cfg.name)
+        self.item_scrollview:setData(cfg.reward)
+        if self.score~=nil then
+            self.num:setString(self.score)
+        else
+            self.num:setString(0)
+        end
+        local x=self.num:getPositionX()-self.num:getContentSize().width-10
+        self.label_1:setPositionX(x)
+        self.item_scrollview:addEndCallBack(function()
+            local list = self.item_scrollview:getItemList()
+            for k, v in pairs(list) do
+                v:setDefaultTip()
+                v:setSelected(self.score~=nil)
+            end
+        end)
+        local isendable=cfg.id>info.lv+1
+        self.isendable=isendable
+        self.id=cfg.id
+        self.bid=info.bid
+        setChildUnEnabled(isendable, self.btn_go)
+        -- self.btn_go:setTouchEnabled(not isendable)
+    end
+end
+
+function ActionLegendaryItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+--------------------------@ item
+ActionLengendaryItem = class("ActionLengendaryItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionLengendaryItem:ctor(width, height)
+	self.size = cc.size(width,height)
+	self:configUI(width, height)
+	self:register_event()
+end
+
+function ActionLengendaryItem:configUI( width, height )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_lengendary_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:setContentSize(cc.size(width, height))
+	self:setTouchEnabled(false)
+    
+	self:addChild(self.root_wnd)
+	self.container = self.root_wnd:getChildByName("container")
+    self.Node_1 = self.container:getChildByName("Node_1")
+    self.select = self.container:getChildByName("select")
+    self.select_1 = self.container:getChildByName("select_1")
+    self.select:setVisible(false)
+
+    self.item_node = BackPackItem.new(false, true, false, 1, nil, nil, false)
+    self.Node_1:addChild(self.item_node)
+end
+--==============================--
+--desc:设置选中状态
+--time:2017-07-03 09:07:12
+--@status:
+--==============================--
+function ActionLengendaryItem:setSelected(status)
+    if status then
+        self.select:setVisible(true)
+    else
+        self.select:setVisible(false)
+    end
+end
+function ActionLengendaryItem:clearTimeTicket()
+    if self.sequence_action then
+        self.item_node:stopActionByTag(10086)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+
+--==============================--
+--desc:显示tips的开关
+--time:2018-07-02 01:54:41
+--@is_show_source:是否显示来源
+--@return is_tips_source:物品信息界面，显示来源按钮（主要针对未获得的物品，却要显示来源的）
+--==============================--
+function ActionLengendaryItem:setDefaultTip(is_show_tips)
+	self.item_node:setDefaultTip(is_show_tips)
+end
+
+function ActionLengendaryItem:register_event(  )
+    -- registerButtonEventListener(self.item_node, function()
+    -- self.item_node:addTouchEventListener(function (sender, event_type)
+    --     if event_type == ccui.TouchEventType.began then
+    --         GlobalEvent:getInstance():Fire(ActionEvent.OptionalSelectData,self.data)
+    --         local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+    --             TipsManager:getInstance():showGoodsTips(self.data[1])
+    --         end))
+    --         self.sequence_action = self.item_node:runAction(action)
+    --         self.sequence_action:setTag(10086)
+    --     elseif event_type == ccui.TouchEventType.canceled then
+    --         self:clearTimeTicket()
+    --     elseif event_type == ccui.TouchEventType.ended then
+    --         self:clearTimeTicket()
+    --         -- GlobalEvent:getInstance():Fire(ActionEvent.OptionalSelectData,self.data)
+    --     end
+    -- end)
+    -- if not self.update_option_event then
+    --     self.update_option_event = GlobalEvent:getInstance():Bind(ActionEvent.Update_LegendTrial_rank_info,function (data)
+    --         if data["_index"] == self.data["_index"] then
+    --             self:setSelected(true)
+    --         else
+    --             self:setSelected(false)
+    --         end
+    --     end)
+    -- end  
+    -- if not self.update_sele then
+    --     self.update_sele = GlobalEvent:getInstance():Bind(ActionEvent.OptionalUpSeData,function (data)
+    --         if data["_index"] == self.data["_index"] and data[1] == self.data[1] and data[2] == self.data[2] then
+    --             self:setSelected(true)
+    --         else
+    --             self:setSelected(false)
+    --         end
+    --     end)
+    -- end  
+end
+
+function ActionLengendaryItem:setData( data)
+    self.data = data
+	if self.item_node then
+		self.item_node:setBaseData(data[1], data[2])
+        local cfg = Config.ItemData.data_get_data(data[1])
+        if cfg.type == BackPackConst.item_type.HERO_HUN then
+            self.item_node:initCamp(cfg.camp_type)
+        end
+	end
+end
+
+function ActionLengendaryItem:DeleteMe(  )
+    self:clearTimeTicket()
+    if self.update_option_event then
+        GlobalEvent:getInstance():UnBind(self.update_option_event)
+        self.update_option_event = nil
+    end
+    if self.update_sele then
+        GlobalEvent:getInstance():UnBind(self.update_sele)
+        self.update_sele = nil
+    end
+    if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+end

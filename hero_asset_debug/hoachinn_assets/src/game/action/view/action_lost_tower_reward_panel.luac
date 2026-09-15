@@ -1,0 +1,181 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 21:52:40
+-- @description    : 
+		-- 失落之塔奖励
+---------------------------------
+ActionLostTowerRewardPanel = ActionLostTowerRewardPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionLostTowerRewardPanel:__init()
+	self.win_type = WinType.Big
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "action/action_lost_tower_reward_panel"
+
+end
+
+function ActionLostTowerRewardPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container , 1) 
+	local image_2 = main_container:getChildByName("image_2")
+	local win_title = main_container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_21"))
+	image_2:setContentSize(cc.size(win_title:getContentSize().width + 120,image_2:getContentSize().height))
+	local range_label = main_container:getChildByName("range_label")
+	range_label:setString(TI18N("语言_c_1199"))
+	local reward_label = main_container:getChildByName("reward_label")
+	reward_label:setString(TI18N("语言_c_11"))
+	self.close_btn = main_container:getChildByName("close_btn")
+	self.now_rank = main_container:getChildByName("now_rank")
+	self.time_tips = main_container:getChildByName("time_tips")
+	self.time_tips:setString(transformTextToShort(TI18N("语言_c_5924"),50))
+	addEvt2showAllTextTips(self.time_tips,TI18N("语言_c_5924"),50)
+	self.time_value = main_container:getChildByName("time_value")
+	-- self.time_value:setPositionX(self.time_tips:getPositionX() - self.time_tips:getContentSize().width - 5)
+	self.time_txt = main_container:getChildByName("time_txt")
+	self.time_txt:setString(TI18N("语言_c_5821"))
+	self.item_list = main_container:getChildByName("item_list")
+	local bgSize = self.item_list:getContentSize()
+	local scroll_view_size = cc.size(bgSize.width, bgSize.height-8)
+    local setting = {
+        item_class = ActionLostTowerRewardItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 608,               -- 单元的尺寸width
+        item_height = 138,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+
+    self.award_scrollview = CommonScrollViewLayout.new(self.item_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.award_scrollview:setSwallowTouches(false)
+end
+
+function ActionLostTowerRewardPanel:openRootWnd(  )
+	self:setData()
+end
+
+function ActionLostTowerRewardPanel:setData(  )
+	local action_data = controller:getActionSubTabVo(ActionRankCommonType.LostTower)
+	self.camp_id = action_data.camp_id
+	self.reward_cfg = deepCopy(Config.HolidayLostTowerData.data_lv_info[self.camp_id])
+	if not self.reward_cfg then return end
+	table.sort(self.reward_cfg,function(a,b)
+		return a.lv > b.lv
+	end)
+	self.award_scrollview:setData(self.reward_cfg)
+	local str = "语言_c_5822"
+	if model.getLostTowerData then
+		local lostdata = model:getLostTowerData()
+		local stage = lostdata and lostdata.stage or 1
+		for key, value in pairs(self.reward_cfg) do
+			if value.lv == stage then
+				self.now_rank:setString(string.format(TI18N(str),value.lv_name))
+			end
+		end
+	end
+	local action_data = controller:getActionSubTabVo(ActionRankCommonType.LostTower)
+	local countdownTime = action_data.remain_sec
+    controller:getModel():setCountDownTime(self.time_value,countdownTime or 0)
+	self.time_txt:setPositionX(self.time_value:getPositionX() - self.time_value:getContentSize().width-10)
+end
+
+function ActionLostTowerRewardPanel:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), true, 2)
+	registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+end
+
+function ActionLostTowerRewardPanel:_onClickBtnClose(  )
+	controller:openActionLostTowerRewardPanel(false)
+end
+
+function ActionLostTowerRewardPanel:close_callback(  )
+    if self.award_scrollview then
+        self.award_scrollview:DeleteMe()
+        self.award_scrollview = nil
+    end
+	controller:openActionLostTowerRewardPanel(false)
+end
+
+-----------------------------------@ 奖励item
+ActionLostTowerRewardItem = class("ActionLostTowerRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionLostTowerRewardItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function ActionLostTowerRewardItem:configUI(  )
+	self.size = cc.size(608,138)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("action/action_lost_tower_reward_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("main_container")
+    self.container = container
+	self.rank_name= self.container:getChildByName("rank_name")
+	self.reward_list= self.container:getChildByName("reward_list")
+	self.reward_list:setSwallowTouches(false)
+end
+
+function ActionLostTowerRewardItem:register_event(  )
+	
+end
+
+function ActionLostTowerRewardItem:setData( data )
+    local res = PathTool.getResFrame("lost_tower","txt_cn_lost_tower_rank_"..data.lv)
+	loadSpriteTexture(self.rank_name,res,LOADTEXT_TYPE_PLIST)
+
+
+	if not self.good_scrollview then
+		local bgSize = self.reward_list:getContentSize()
+		local scroll_view_size = cc.size(bgSize.width, bgSize.height)
+		local scale = 0.8
+		local setting = {
+			item_class = BackPackItem,      -- 单元类
+			start_x = 0,                  -- 第一个单元的X起点
+			space_x = 10,                    -- x方向的间隔
+			start_y = 0,                    -- 第一个单元的Y起点
+			space_y = 0,                   -- y方向的间隔
+			item_width = BackPackItem.Width*scale,               -- 单元的尺寸width
+			item_height = BackPackItem.Height*scale,              -- 单元的尺寸height
+			row = 1,                        -- 行数，作用于水平滚动类型
+			col = 0,                         -- 列数，作用于垂直滚动类型
+			scale = scale
+		}
+		self.good_scrollview = CommonScrollViewLayout.new(self.reward_list, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+		self.good_scrollview:setSwallowTouches(false)
+	end
+	self.good_scrollview:setData(data.end_reward)
+	self.good_scrollview:addEndCallBack(function ()
+		local list = self.good_scrollview:getItemList()
+        for k,v in pairs(list) do
+            v:setDefaultTip()
+        end
+	end)
+end
+
+function ActionLostTowerRewardItem:DeleteMe(  )
+	if self.good_scrollview then
+		self.good_scrollview:DeleteMe()
+		self.good_scrollview = nil
+	end
+end

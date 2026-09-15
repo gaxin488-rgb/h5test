@@ -1,0 +1,269 @@
+----------------------------
+-- 
+-- @Date:   2019-12-12 14:52:22
+-- @Description:   升星有礼活动
+----------------------------
+ActionRisingStarGiftPanel = class("ActionRisingStarGiftPanel", function()
+	return ccui.Widget:create()
+end)
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionRisingStarGiftPanel:ctor(bid,id,remain_sec)
+    self.remain_sec = remain_sec
+    self.holiday_bid = bid
+    model:setRisingStarBid(bid)
+	self:configUI()
+    self:register_event()
+    self.countNum = -1
+end
+
+function ActionRisingStarGiftPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_RisingStar_gift_panel"))
+	self.root_wnd:setPosition(-40,-70)
+	self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.Image_2 = self.main_container:getChildByName("Image_2")
+    self.next_btn = self.Image_2:getChildByName("next_btn")
+    self.last_btn = self.Image_2:getChildByName("last_btn")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1113"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.surplus_time:setPositionX(self.surplus_txt:getPositionX())
+    controller:getModel():setCountDownTime(self.surplus_time,self.remain_sec or 0)
+    self.explain_bg = self.main_container:getChildByName("explain_bg")
+    if CUR_LANG == LANGUAGE_ZH then
+        self.explain = createRichLabel(32, cc.c4b(0x2b, 0x19, 0x5e, 0xff), cc.p(0.5, 0.5), cc.p(223, 645), nil, nil, 500)
+    else
+        self.explain = createRichLabel(24, cc.c4b(0x2b, 0x19, 0x5e, 0xff), cc.p(0.5, 0.5), cc.p(223, 645), nil, nil, 500)
+    end
+    local explainStr = string.format(TI18N("语言_c_4775"))
+    self.explain:setString(explainStr)
+    self.main_container:addChild(self.explain)
+    -- self.explain_bg:setContentSize(cc.size(self.explain:getContentSize().width + 100,self.explain:getContentSize().height + 100))
+    self.tab_1 = self.main_container:getChildByName("tab_1")
+    self.normal = self.tab_1:getChildByName("normal")
+    self.lunTxt = createRichLabel(24, cc.c4b(0x2b, 0x19, 0x5e, 0xff), cc.p(0.5, 0.5), cc.p(74, 56), nil, nil, 148)
+    self.tab_1:addChild(self.lunTxt)
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.good_cons = self.main_container:getChildByName("good_cons")
+    
+	controller:cs16603(self.holiday_bid)
+end
+function ActionRisingStarGiftPanel:register_event()
+    if not self.getList then
+        self.getList = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE,function(data)
+            self.data = data
+            model:setRisingStarData(data)
+            self:setPanelData(data)
+        end)
+    end
+    if not self.upList then
+        self.upList = GlobalEvent:getInstance():Bind(ActionEvent.RisingStarGift,function()
+            controller:cs16603(self.holiday_bid)
+        end)
+    end
+    registerButtonEventListener(self.next_btn, function()
+        local num = self.countNum + 1 
+        if tableLen(model:getRisingStarData(num)) ~= 0 then
+            self.countNum = self.countNum + 1
+            self.list_data = model:getRisingStarData(self.countNum)
+            local str = string.format(TI18N("语言_c_4776"),self.countNum)
+            self.lunTxt:setString(str)
+            self.child_scrollview:setData(self.list_data)
+            self:updateNextLastBtn(num)
+        end
+    end, true)
+    registerButtonEventListener(self.last_btn, function()
+        local num = self.countNum - 1
+        if tableLen(model:getRisingStarData(num)) ~= 0 then
+            self.countNum = self.countNum - 1
+            self.list_data = model:getRisingStarData(self.countNum)
+            local str = string.format(TI18N("语言_c_4776"),self.countNum)
+            self.lunTxt:setString(str)
+            self.child_scrollview:setData(self.list_data)
+            self:updateNextLastBtn(num)
+        end
+    end, true)
+    if self.btn_rule then
+		self.btn_rule:addTouchEventListener(function( sender,event_type )
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                TipsManager:getInstance():showCommonTips(Config.HolidayClientData.data_constant["rising_star_rules"].desc,sender:getTouchBeganPosition())
+            end
+        end)
+    end
+end
+function ActionRisingStarGiftPanel:updateNextLastBtn(index)
+    self.last_btn:setVisible(true)
+    self.next_btn:setVisible(true)
+    if index == 3 then
+        self.next_btn:setVisible(false)
+    end
+    if index == 1 then
+        self.last_btn:setVisible(false)
+    end
+end
+function ActionRisingStarGiftPanel:setPanelData(data)
+    if data and data.args and data.args[1] and data.args[1].args_val then
+        local lunNum = data.args[1].args_val
+        if lunNum > 3 then
+            lunNum = 3
+        end
+        model:setRisingStarTurn(lunNum)
+        local str = string.format(TI18N("语言_c_4776"),lunNum)
+        self.lunTxt:setString(str)
+        self.list_data = model:getRisingStarData(lunNum)
+        self.countNum = lunNum
+        self:updateNextLastBtn(lunNum)
+        self:updateList()
+    end
+end
+function ActionRisingStarGiftPanel:updateList()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.good_cons:getContentSize()
+        local setting = {
+            item_class = ActionRisingStarGiftItem,      -- 单元类
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 10,                     -- y方向的间隔
+            item_width = 615,                -- 单元的尺寸width
+            item_height = 146,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+    end
+    self.child_scrollview:setData(self.list_data)
+end
+
+function ActionRisingStarGiftPanel:DeleteMe()
+    doStopAllActions(self.remain_time)
+    if self.child_scrollview then
+        self.child_scrollview:DeleteMe()
+        self.child_scrollview = nil
+    end
+
+    if self.getList then
+        GlobalEvent:getInstance():UnBind(self.getList)
+        self.getList = nil
+    end
+    if self.upList then
+        GlobalEvent:getInstance():UnBind(self.upList)
+        self.upList = nil
+    end
+end
+
+--子项
+ActionRisingStarGiftItem = class("ActionRisingStarGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionRisingStarGiftItem:ctor()
+    self.goods_list = {}
+    self.node_list = {}
+    self.image_list = {}
+    self.chose_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function ActionRisingStarGiftItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_RisingStar_gift_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(615,146))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.goods_con_2 = self.main_container:getChildByName("goods_con_2")
+    self.has_bg = self.main_container:getChildByName("has_bg")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.get_text = self.btn_get:getChildByName("Text_10")
+    self.get_text:setString(TI18N("语言_c_8"))
+    self.btn_goto = self.main_container:getChildByName("btn_goto")
+    self.goto_text = self.btn_goto:getChildByName("Text_11")
+    self.goto_text:setString(TI18N("语言_c_7"))
+    self.lock = self.main_container:getChildByName("lock")
+    self.lock:setVisible(false)
+    self.line = self.main_container:getChildByName("line")
+    self.title_txt = createRichLabel(26, cc.c4b(104,69,42,0xff), cc.p(0,0.5), cc.p(15,121))
+    self.main_container:addChild(self.title_txt)
+end
+
+function ActionRisingStarGiftItem:setData( data )
+    self.data = data
+    self.turn = model:getRisingStarTurn()
+    if data.aim_args[3].aim_args_val > self.turn then
+        self.btn_goto:setVisible(false)
+        self.btn_get:setVisible(false)
+        self.lock:setVisible(true)
+        self.has_bg:setVisible(false)
+    elseif data.aim_args[3].aim_args_val < self.turn then
+        self.btn_goto:setVisible(false)
+        self.btn_get:setVisible(false)
+        self.lock:setVisible(false)
+        self.has_bg:setVisible(true)
+    else
+        self.lock:setVisible(false)
+        self.btn_goto:setVisible(data.status == 0)
+        self.btn_get:setVisible(data.status == 1)
+        self.has_bg:setVisible(data.status == 2)
+    end
+    self.title_txt:setString(data.aim_str)
+    for index, value in ipairs(data.item_list) do
+        value.quantity = value.num
+    end
+    if self.item_list2 == nil then
+        local scroll_view_size = self.goods_con_2:getContentSize()
+        local setting = {
+            item_class = BackPackItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            scale = 0.6,
+            item_width = 82,               -- 单元的尺寸width
+            item_height = 82,              -- 单元的尺寸height
+            row = 1,                        -- 行数，作用于水平滚动类型
+            -- col = 4            
+        }
+        self.item_list2 = CommonScrollViewLayout.new(self.goods_con_2, cc.p(0,0) , ScrollViewDir.horizontal, 0, scroll_view_size, setting)
+        self.item_list2:setSwallowTouches(false)
+        self.item_list2:setData(data.item_list)
+        self.item_list2:addEndCallBack(function()
+	        local list = self.item_list2:getItemList()
+	        for k,v in pairs(list) do
+	            v:setDefaultTip()
+	            v:setSwallowTouches(false)
+	        end
+	    end)
+    end
+end
+
+function ActionRisingStarGiftItem:register_event( )
+    registerButtonEventListener(self.btn_get, function()
+        ActionController:getInstance():cs16604(model:getRisingStarBid(),self.data.aim)
+    end,true,1)
+    registerButtonEventListener(self.btn_goto, function()
+        StrongerController:getInstance():clickCallBack(404)
+    end,true,1)
+end
+function ActionRisingStarGiftItem:clickNode()
+    -- controller:openActionRisingStarGiftPanelChose(true,self.id)
+end
+function ActionRisingStarGiftItem:DeleteMe()
+    if self.item_list2 then
+        self.item_list2:DeleteMe()
+        self.item_list2 = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

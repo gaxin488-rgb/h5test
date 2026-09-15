@@ -1,0 +1,604 @@
+--******** 文件说明 ********
+-- @Author:      yuanqi@shiyue.com 
+-- @description: 魔法精英招募
+-- @DateTime:    2020-05-14
+-- *******************************
+local controller = EliteSummonController:getInstance()
+local const_data = Config.RecruitHolidayMagicData.data_const
+local summon_data = Config.RecruitHolidayMagicData.data_summon
+--活动配置
+local action_config = Config.RecruitHolidayMagicData.data_action
+local wish_config = Config.RecruitHolidayMagicData.data_wish
+local item_config = Config.RecruitHolidayMagicData.data_item_show
+local table_insert = table.insert
+local table_remove = table.remove
+
+
+MagicEliteSummonPanel = class("MagicEliteSummonPanel", function()
+    return ccui.Widget:create()
+end)
+
+function MagicEliteSummonPanel:ctor(bid)
+	self.holiday_bid = bid
+	self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("timesummon","timesummon"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("elitesummon","elitesummon"), type = ResourcesType.plist },
+    } 
+    
+    
+    self.touch_recruit_10 = true --点击延迟
+    self.recruit_type_1 = nil --单抽
+    self.recruit_type_10 = nil --10抽
+    self.box_list = {}
+    self.fill_award_list = {}
+    self.up_hero_id = 0
+
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+        	self:loadResListCompleted()
+        end
+    end)
+end
+
+-- 资源加载完成
+function MagicEliteSummonPanel:loadResListCompleted()
+	self:configUI()
+	self:register_event()
+end
+
+function MagicEliteSummonPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("elitesummon/magic_elitesummon_panel"))
+    self.root_wnd:setPosition(-40,-82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container = main_container
+    local image_bg = main_container:getChildByName("image_bg")
+    local bg_res = PathTool.getPlistImgForDownLoad("elitesummon", "txt_cn_magic_summon")
+	self.bg_load = loadSpriteTextureFromCDN(image_bg, bg_res, ResourcesType.single, self.bg_load)
+
+    --单抽
+    self.btn_summon_1 = main_container:getChildByName("btn_summon_1")
+    self.btn_summon_1:getChildByName("Text_8"):setString(TI18N("招募1次"))
+    self.icon_1 = self.btn_summon_1:getChildByName("Sprite_7")
+    self.count_1 = self.btn_summon_1:getChildByName("count")
+    self.remain_time = createRichLabel(18, cc.c4b(0xff,0xff,0xff,0xff), cc.p(0.5,0.5), cc.p(120.50,23))
+    self.btn_summon_1:addChild(self.remain_time)
+    
+    --10抽
+    self.btn_summon_10 = main_container:getChildByName("btn_summon_10")
+    self.btn_summon_10:getChildByName("Text_8"):setString(TI18N("招募10次"))
+    self.icon_10 = self.btn_summon_10:getChildByName("Sprite_7")
+    self.count_10 = self.btn_summon_10:getChildByName("count")
+    self.count_10:setString("")
+    self.btn_award = main_container:getChildByName("btn_award")
+    self.btn_award:getChildByName("label"):setString(TI18N("奖励预览"))
+
+    self.add_btn = main_container:getChildByName("add_btn")
+
+    self.icon = main_container:getChildByName("icon")
+    self.icon_count = main_container:getChildByName("icon_count")
+    self.icon_count:setString("")
+    local config = Config.ItemData.data_get_data(const_data.common_s.val)
+    if config then
+        local icon_res = PathTool.getItemRes(config.icon)
+        loadSpriteTexture(self.icon, icon_res, LOADTEXT_TYPE)
+        self.icon:setScale(0.45)
+    end
+
+    self.summon_item_bid = const_data["common_s"].val
+    local summon_have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.summon_item_bid)
+    self.icon_count:setString(summon_have_num)
+    -- 战斗预览按钮
+    self.battle_preview_btn = main_container:getChildByName("battle_preview_btn")
+    self.preview_btn_label = self.battle_preview_btn:getChildByName("preview_btn_label")
+    self.preview_btn_label:setString(TI18N("战斗预览"))
+    self.battle_preview_btn:setVisible(false)
+    self.holiday_time = main_container:getChildByName("time")
+    self.diamonds_count = main_container:getChildByName("diamonds_count")
+
+    self.select_btn = main_container:getChildByName("select_btn")
+    self.select_panel = main_container:getChildByName("select_panel")
+    self.replace = self.select_panel:getChildByName("replace")
+    self.select_hero = self.select_panel:getChildByName("select_hero")
+    if not self.up_hero_item then
+        self.up_hero_item = BackPackItem.new(true, true, nil, nil, false)
+        self.select_hero:addChild(self.up_hero_item)
+        self.up_hero_item:addBtnCallBack(function() controller:openMagicSummonSelectWindow(true) end)
+    end
+
+    --剩余次数
+    self.remain_up = createRichLabel(20, cc.c4b(0xff,0xff,0xff,0xff), cc.p(1,0.5), cc.p(695,805), nil, nil, 500)
+    main_container:addChild(self.remain_up)
+
+    for i = 1, 7 do
+        local box = main_container:getChildByName("box_"..i)
+        local icon_bg = box:getChildByName("icon_bg")
+        local icon = box:getChildByName("icon")
+        local num = box:getChildByName("num")
+        box.icon_bg = icon_bg
+        box.icon = icon
+        box.num = num
+        box:setVisible(false)
+        self.box_list[i] = box
+    end
+    self:checkShowFrightVideo()
+    controller:send23236()
+end
+
+--******** 设置倒计时
+function MagicEliteSummonPanel:setCountDownTime(node, less_time)
+    if tolua.isnull(node) then return end
+    doStopAllActions(node)
+
+    less_time = less_time - GameNet:getInstance():getTime()
+    local setTimeFormatString = function(time)
+        if tolua.isnull(node) then return end
+        if time > 0 then
+            local str = string.format(TI18N("<div fontcolor=#35FF14>%s</div>%s"),TimeTool.GetTimeFormat(time),"后免费")
+            node:setString(str)
+        else
+            doStopAllActions(node)
+            node:setString(TI18N("免费召唤"))
+        end
+    end
+    if less_time > 0 then
+        setTimeFormatString(less_time)
+        node:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                doStopAllActions(node)
+                node:setString(TI18N("免费召唤"))
+            else
+                setTimeFormatString(less_time)
+            end
+        end))))
+    else
+        setTimeFormatString(less_time)
+    end
+end
+
+function MagicEliteSummonPanel:register_event()
+    if self.box_list then
+        for k, v in pairs(self.box_list) do
+            registerButtonEventListener(v, function()
+                if self.fill_award_list[k] and Config.ItemData.data_get_data(self.fill_award_list[k].id) then
+                    local item_config = Config.ItemData.data_get_data(self.fill_award_list[k].id)
+                    item_config.quantity = self.fill_award_list[k].quantity
+                    TipsManager:getInstance():showGoodsTips(item_config)
+                end
+            end, false)
+        end
+    end
+    if not self.message_event then
+        self.message_event = GlobalEvent:getInstance():Bind(EliteSummonEvent.magicEliteSummon_Message,function(data)
+            if not data then return end
+            local status = controller:getModel():isMagicHasID(data.camp_id)
+            if status then
+                self:setData(data)
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.add_btn, function()
+        local action_controller = ActionController:getInstance()
+        local tab_vo = action_controller:getActionSubTabVo(ActionRankCommonType.trause_grade_shop)
+        if tab_vo and action_controller.action_operate and action_controller.action_operate.tab_list[tab_vo.bid] then
+            action_controller.action_operate:handleSelectedTab(action_controller.action_operate.tab_list[tab_vo.bid])
+        else
+            message(TI18N("该活动已结束或未到开启时间段"))
+        end
+    end, true)
+
+    registerButtonEventListener(self.replace, function()
+        controller:openMagicSummonSelectWindow(true)
+    end, true)
+
+    registerButtonEventListener(self.select_btn, function()
+        controller:openMagicSummonSelectWindow(true)
+    end, true)
+
+    registerButtonEventListener(self.battle_preview_btn, function()
+        TimesummonController:getInstance():send23219(self.holiday_bid)
+    end, true, nil, nil)
+
+    registerButtonEventListener(self.btn_award, function(param,sender, event_type)
+        if self.data and self.data.camp_id then
+            local config = action_config[self.data.camp_id]
+            if config then
+                local probabily_data = Config.RecruitHolidayMagicData.data_probability[config.group_id]
+                TimesummonController:getInstance():openTimeSummonAwardView(true, config.group_id, self.data,TimesummonConst.ActonInfoType.EliteType3)
+            end
+        end
+    end, true, nil, nil)
+
+    registerButtonEventListener(self.btn_summon_1, function()
+        if not self.up_hero_id or self.up_hero_id <= 0 then
+            message(TI18N("请选择心愿英雄后开启召唤"))
+            return
+        end
+        if self.recruit_type_1 then --钻石
+            if self.recruit_type_1 == 3 then
+                if self.data and self.data.camp_id then
+                    self:RecruitDaimond(1)
+                end
+            else
+                controller:send23237(1,self.recruit_type_1)
+            end
+        end
+    end, true)
+    registerButtonEventListener(self.btn_summon_10, function()
+        if not self.up_hero_id or self.up_hero_id <=0 then
+            message(TI18N("请选择心愿英雄后开启召唤"))
+            return
+        end
+
+        if not self.touch_recruit_10 then
+            message(TI18N("点击过快~~~"))
+            return
+        end
+        if self.recruit_10_ticket == nil then
+            self.recruit_10_ticket = GlobalTimeTicket:getInstance():add(function()
+                self.touch_recruit_10 = true
+                if self.recruit_10_ticket ~= nil then
+                    GlobalTimeTicket:getInstance():remove(self.recruit_10_ticket)
+                    self.recruit_10_ticket = nil
+                end
+            end,2)
+        end
+        self.touch_recruit_10 = nil
+        if self.recruit_type_10 then
+            if self.recruit_type_10 == 3 then
+                self:RecruitDaimond(10)
+            else
+                controller:send23237(10,self.recruit_type_10)
+            end
+        end
+    end, true)
+    
+	-- 道具数量更新
+    if not self.update_add_good_event then
+        self.update_add_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS,function(bag_code, data_list)
+            self:updateItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.update_delete_good_event then
+        self.update_delete_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS,function(bag_code, data_list)
+            self:updateItemNum(bag_code,data_list)
+        end)
+    end
+    if not self.update_modify_good_event then
+        self.update_modify_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM,function(bag_code, data_list)
+            self:updateItemNum(bag_code,data_list)
+        end)
+    end
+end
+
+function MagicEliteSummonPanel:checkShowFrightVideo()
+    local show_bid_config = const_data.show_frightvideo
+    if show_bid_config and show_bid_config.val and self.holiday_bid then
+        local tab_vo =  ActionController:getInstance():getActionSubTabVo(self.holiday_bid)
+        for k, v in pairs(show_bid_config.val) do
+            if v == tab_vo.camp_id then
+                self.battle_preview_btn:setVisible(true)
+                return
+            end
+        end
+    end
+end
+
+--用钻石招募的提示
+function MagicEliteSummonPanel:RecruitDaimond(model)
+    if self.data and self.data.camp_id then
+        local config = action_config[self.data.camp_id]
+        if config then
+            local role_vo = RoleController:getInstance():getRoleVo()
+            if summon_data and summon_data[config.group_id] then
+                local data = summon_data[config.group_id]
+
+                local num
+                if model == 1 then
+                    num = data.loss_gold_once[1][2]
+                else
+                    num = data.loss_gold_ten[1][2]
+                end
+                if not num then return end
+
+                local have_gold = role_vo.gold
+                if have_gold < num then
+                    message(TI18N("钻石不足~~~"))
+                    return
+                end
+
+                local str = string.format(TI18N("是否使用 <img src=%s visible=true scale=0.35 /><div fontColor=#289b14 fontsize= 26>%s</div><div fontColor=#764519>(拥有:</div><div fontColor=#289b14 fontsize= 26>%s</div><div fontColor=#764519>)\n</div>"),PathTool.getItemRes(3),num,have_gold)
+        
+                local val_num = 0
+                if model == 1 then
+                    val_num = data.gain_once[1][2]
+                elseif model == 10 then
+                    val_num = data.gain_ten[1][2]
+                end
+
+                local str_ = str..string.format(TI18N("<div fontColor=#764519>购买</div><div fontColor=#289b14 fontsize= 26>%s</div><div fontColor=#764519></div><div fontColor=#d95014 fontsize= 26>英雄经验</div><div fontColor=#764519>(同时附赠</div><div fontColor=#289b14 fontsize= 26>%d</div><div fontColor=#764519>次招募)</div>"),val_num, model)
+                local function call_back()
+                    controller:send23237(model,3)
+                end
+                CommonAlert.show(str_, TI18N("确定"), call_back, TI18N("取消"), nil, CommonAlert.type.rich)
+            end
+        end
+    end
+end
+
+-- 刷新道具数量
+function MagicEliteSummonPanel:updateItemNum(bag_code, data_list)
+    if self.summon_item_bid then
+        if bag_code and data_list then
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then
+                for i,v in pairs(data_list) do
+                    if v and v.base_id and self.summon_item_bid == v.base_id then
+                        local summon_have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.summon_item_bid)
+                        if self.icon_count then
+                            self.icon_count:setString(summon_have_num)
+                        end
+                        self:recruitBtnStatus(1)
+                        self:recruitBtnStatus(10)
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+
+function MagicEliteSummonPanel:setData(data)
+    self.data = data
+    
+    self:recruitBtnStatus(1)
+    self:recruitBtnStatus(10)
+
+    -- self:setCountDownTime(self.remain_time, data.free_time)
+    if data.free_time <= GameNet:getInstance():getTime() then
+        self.icon_1:setVisible(false)
+        self.count_1:setVisible(false)
+        self.remain_time:setString(TI18N("免费召唤"))
+    else
+        self.icon_1:setVisible(true)
+        self.count_1:setVisible(true)
+        self.remain_time:setString(TI18N(""))
+    end 
+
+    local str_time = string.format("%s-%s",TimeTool.getMD2(data.start_time),TimeTool.getMD2(data.end_time))
+    self.holiday_time:setString(str_time)
+    local total_num = const_data.goal_recruit_limit.val
+    local str_gold_time = string.format(TI18N("钻石次数: %d/%d"), self.data.gold_time, total_num)
+    self.diamonds_count:setString(str_gold_time)
+
+    self:updateUpHeroInfo()
+    self:updateItemInfo()
+end
+
+function MagicEliteSummonPanel:updateUpHeroInfo()
+    self.up_hero_id = self.data.lucky_bid
+    if self.up_hero_id and self.up_hero_id > 0 then
+        self.select_panel:setVisible(true)
+        self.select_btn:setVisible(false)
+        if self.up_hero_item then
+            self.up_hero_item:setBaseData(self.up_hero_id, 1)
+            self.up_hero_item:showItemEffect(false)
+        end
+        self:showGuideEffect(false)
+    else
+        self.select_panel:setVisible(false)
+        self.select_btn:setVisible(true)
+        self:showGuideEffect(true)
+    end
+
+    local str = TI18N("<div outline=2,#000000>累计一定招募次数必出心愿英雄</div>")
+    if self.up_hero_id and self.up_hero_id > 0 then
+        self.remain_up:setPositionX(695)
+        if not self.baodi_item then
+            self.baodi_item = BackPackItem.new(true, true, false, 0.35)
+            self.baodi_item:setDefaultTip()
+            self.baodi_item:setPosition(cc.p(450, 805))
+            self.main_container:addChild(self.baodi_item)
+        end
+        self.baodi_item:setBaseData(self.up_hero_id, 1)
+        self.baodi_item:setVisible(true)
+        self.baodi_item:showItemEffect(false)
+        if self.data then
+            str = string.format(TI18N("<div outline=2,#000000>剩余</div><div fontcolor=#5fde46 fontsize=20 outline=2,#000000>%d</div><div outline=2,#000000>次必出心愿英雄</div>"),self.data.must_count)
+        end
+    else
+        self.remain_up:setPositionX(710)
+        if self.baodi_item then
+            self.baodi_item:setVisible(false)
+        end
+    end
+    
+    self.remain_up:setString(str)
+    if self.baodi_item then
+        self.baodi_item:setPositionX(self.remain_up:getPositionX() - self.remain_up:getContentSize().width - 30)
+    end
+end
+
+function MagicEliteSummonPanel:updateItemInfo()
+    local config = item_config[self.data.camp_id]
+    if config then
+        self.fill_award_list = {}
+        for k, v in pairs(config) do
+            table_insert(self.fill_award_list, v)
+        end
+        table.sort(self.fill_award_list, function(a,b) return a.sort < b.sort end)
+        for i, v in pairs(self.box_list) do
+            if self.fill_award_list and self.fill_award_list[i] then
+                v:setVisible(true)
+                local item_config = Config.ItemData.data_get_data(self.fill_award_list[i].id)
+                if item_config then
+                    local res = PathTool.getItemRes(item_config.icon)
+                    loadSpriteTexture(v.icon, res, LOADTEXT_TYPE)
+                    local bg_res = PathTool.getResFrame("elitesummon", "elitesummon_bg_" .. self.fill_award_list[i].icon_bg)
+                    loadSpriteTexture(v.icon_bg, bg_res, LOADTEXT_TYPE_PLIST)
+                    v.num:setString(self.fill_award_list[i].quantity)
+                    self:showItemEffect(self.fill_award_list[i].icon_bg == 2, v, 156, true, PlayerAction.action_1)
+                end
+            end
+        end
+    end
+end
+
+function MagicEliteSummonPanel:showItemEffect(bool, node, effect_id, is_loop, action, scale)
+	if bool == true then
+		scale = scale or 1
+        local res = Config.EffectData.data_effect_info[effect_id]
+        if node.effect_node then
+            node.effect_node:removeFromParent()
+            node.effect_node = nil		
+        end
+        local x = node:getContentSize().width / 2
+        local y = node:getContentSize().height / 2
+       node.effect_node = createEffectSpine(res, cc.p(x, y), cc.p(0.5, 0.5), is_loop, action)
+       node.effect_node:setScale(scale)
+       node:addChild(node.effect_node, 10)
+    elseif node.effect_node then
+		node.effect_node:removeFromParent()
+        node.effect_node = nil		
+	end
+end
+
+--设置招募按钮的状态
+function MagicEliteSummonPanel:recruitBtnStatus(model)
+    if self.data and self.data.camp_id then
+        local config = action_config[self.data.camp_id]
+        if config then
+            if summon_data and summon_data[config.group_id] then
+                local data = summon_data[config.group_id]
+                local summon_have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.summon_item_bid)
+                if summon_have_num >= model then --道具抽取
+                    local config
+                    if model == 1 then
+                        self.recruit_type_1 = 4
+                        config = Config.ItemData.data_get_data(data.loss_item_once[1][1])
+                    elseif model == 10 then
+                        self.recruit_type_10 = 4
+                        config = Config.ItemData.data_get_data(data.loss_item_ten[1][1])
+                    end
+                    if config then
+                        local icon_res = PathTool.getItemRes(config.icon)
+                        if model == 1 then
+                            loadSpriteTexture(self.icon_1, icon_res, LOADTEXT_TYPE)
+                            self.icon_1:setScale(0.30)
+                            self.count_1:setString(data.loss_item_once[1][2])
+                        elseif model == 10 then
+                            loadSpriteTexture(self.icon_10, icon_res, LOADTEXT_TYPE)
+                            self.icon_10:setScale(0.30)
+                            self.count_10:setString(data.loss_item_ten[1][2])
+                        end
+                    end
+                else --钻石抽取
+                    local config
+                    if model == 1 then
+                        self.recruit_type_1 = 3
+                        config = Config.ItemData.data_get_data(data.loss_gold_once[1][1])
+                    elseif model == 10 then
+                        self.recruit_type_10 = 3
+                        config = Config.ItemData.data_get_data(data.loss_gold_ten[1][1])
+                    end
+                    if config then
+                        local icon_res = PathTool.getItemRes(config.icon)
+                        if model == 1 then
+                            self.count_1:setString(data.loss_gold_once[1][2])
+                            loadSpriteTexture(self.icon_1, icon_res, LOADTEXT_TYPE)
+                            self.icon_1:setScale(0.30)
+                        elseif model == 10 then
+                            self.count_10:setString(data.loss_gold_ten[1][2])
+                            loadSpriteTexture(self.icon_10, icon_res, LOADTEXT_TYPE)
+                            self.icon_10:setScale(0.30)
+                        end
+                    end
+                end
+                --单抽免费的时候
+                if self.data.free_time <= GameNet:getInstance():getTime() then
+                    self.recruit_type_1 = 1
+                end
+            end
+        end
+    end
+end
+
+--引导特效
+function MagicEliteSummonPanel:showGuideEffect(bool)
+    if bool == true then
+        if not self.guide_effect_2 then
+            if self.select_btn then
+                self.guide_effect_2 = createEffectSpine(PathTool.getEffectRes(240), cc.p(self.select_btn:getContentSize().width/2, self.select_btn:getContentSize().height/2), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+                self.select_btn:addChild(self.guide_effect_2)    
+            end
+        else
+            self.guide_effect_2:setAnimation(0, PlayerAction.action_1, true)
+        end
+    else
+        if self.guide_effect_2 then 
+            self.guide_effect_2:removeFromParent()
+            self.guide_effect_2 = nil
+        end
+    end
+end
+
+function MagicEliteSummonPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool)
+end
+
+function MagicEliteSummonPanel:DeleteMe()
+    self:showGuideEffect(false)
+    
+    doStopAllActions(self.remain_time)
+    if self.resources_load then
+        self.resources_load:DeleteMe()
+        self.resources_load = nil
+    end
+
+    if self.box_list then
+        for k, v in pairs(self.box_list) do
+            self:showItemEffect(false, v)
+        end
+        self.box_list = nil
+    end
+
+    if self.baodi_item then
+        self.baodi_item:DeleteMe()
+        self.baodi_item = nil
+    end
+
+    if self.up_hero_item then
+        self.up_hero_item:DeleteMe()
+        self.up_hero_item = nil
+    end
+    
+	if self.bg_load then
+		self.bg_load:DeleteMe()
+		self.bg_load = nil
+	end
+    if self.message_event then
+        GlobalEvent:getInstance():UnBind(self.message_event)
+        self.message_event = nil
+    end
+    if self.update_add_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_add_good_event)
+        self.update_add_good_event = nil
+    end
+    if self.update_delete_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_delete_good_event)
+        self.update_delete_good_event = nil
+    end
+    if self.update_modify_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+        self.update_modify_good_event = nil
+    end
+    if self.recruit_10_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.recruit_10_ticket)
+        self.recruit_10_ticket = nil
+    end
+end

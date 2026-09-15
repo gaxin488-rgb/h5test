@@ -1,0 +1,278 @@
+-- --------------------------------------------------------------------
+-- 属性详情
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ArtifactGoldAttrPop = ArtifactGoldAttrPop or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function ArtifactGoldAttrPop:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/artifact_gold_attr_pop"
+    self.res_list = {
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.cloth_type = 1
+end
+
+function ArtifactGoldAttrPop:open_callback()
+    self._ui = self:getExportUI()
+    local ui = self._ui
+    ui._background:setScale(display.getMaxScale())
+    self:playEnterAnimatianByObj(ui._main_panel , 2)
+    ui._title:setString(TI18N("语言_c_5971"))
+	autoSizeTitleBg(ui._title,ui._imgTitleBg)
+    ui._attr_txt:setString(TI18N("语言_c_836"))
+    setLeftRightImg(ui._line_1,ui._attr_txt,ui._line_2,60)
+    ui._skill_txt:setString(TI18N("语言_c_2287"))
+    setLeftRightImg(ui._line_3,ui._skill_txt,ui._line_4,60)
+    ui._attr_scroll:setScrollBarEnabled(false)
+    ui._skill_scroll:setScrollBarEnabled(false)
+end
+function ArtifactGoldAttrPop:register_event()
+    registerButtonEventListener(self._ui._close_btn, function() self:onClickCloseBtn() end ,true, 1)
+    registerButtonEventListener(self._ui._background, function() self:onClickCloseBtn() end ,false, 0)
+end
+
+--关闭
+function ArtifactGoldAttrPop:onClickCloseBtn()
+    controller:openArtifactGoldAttrPop(false)
+end
+
+-- _type1当前属性详情 2属性预览
+function ArtifactGoldAttrPop:openRootWnd(artifact_vo,_type)
+	if not artifact_vo or not _type then
+		return
+	end
+	self.artifact_vo = artifact_vo
+	self._type = _type
+    self:updateTopPanel()
+    self:updateAttrPanel()
+    self:updateSkillPanel()
+end
+function ArtifactGoldAttrPop:updateTopPanel()
+    local ui = self._ui
+    local cfg = Config.PartnerArtifactGoldenData.data_artifact_by_id[self.artifact_vo.artifact_id]
+    local res = PathTool.getResFrame("artifact_golden", cfg.icon)
+    loadSpriteTexture(ui._icon, res, LOADTEXT_TYPE_PLIST)
+end
+function ArtifactGoldAttrPop:updateAttrPanel()
+    local ui = self._ui
+    local artifact_id = self.artifact_vo.artifact_id
+    local enhance_level = self.artifact_vo.enhance_level
+	if self._type == 2 then
+		enhance_level = #Config.PartnerArtifactGoldenData.data_enhance[artifact_id]
+	end
+    local now_cfg = Config.PartnerArtifactGoldenData.data_enhance[artifact_id][enhance_level]
+    local max_cfg = Config.PartnerArtifactGoldenData.data_enhance[artifact_id][#Config.PartnerArtifactGoldenData.data_enhance[artifact_id]]
+    if self.attr_list and next(self.attr_list) then
+        for k, v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v = nil
+        end
+    end
+    self.attr_list = {}
+    local list = deepCopy(now_cfg.attr)
+    for k, v in pairs(max_cfg.attr) do
+        local status = false
+        for key, value in pairs(list) do
+            if v[1] == value[1] then
+                value[3] = v[2]
+                status = true
+            end
+        end
+        if not status then
+            local _list = {v[1],0,v[2]}
+            table.insert(list,_list)
+        end
+    end
+    local item_num = math.ceil(#list/2)
+    local attr_item_top_gap = 3 --属性条距离顶部间距
+    local attr_item_gap_y = 10 --属性条间距
+    local attr_item_left_gap = 3 --属性条左顶部间距
+    local attr_item_gap_x = 8 --属性条间距
+    local _h = math.max(ui._attr_scroll:getContentSize().height,item_num*ArtifactGoldAttrItem4.Height + (item_num-1)*attr_item_gap_y + attr_item_top_gap)
+    ui._attr_scroll:setInnerContainerSize(cc.size(ui._attr_scroll:getContentSize().width,_h))
+    for k, v in pairs(list) do
+        local item = ArtifactGoldAttrItem4.new()
+        ui._attr_scroll:addChild(item)
+        item:setData(v,self._type == 1)
+        table.insert(self.attr_list,item)
+        local _x = attr_item_left_gap+(k-1)%2*(ArtifactGoldAttrItem4.Width+attr_item_gap_x)
+        local _y = _h-attr_item_top_gap-(math.ceil(k/2)-1)*(ArtifactGoldAttrItem4.Height+attr_item_gap_y)
+        item:setPosition(cc.p(_x,_y))
+    end
+end
+function ArtifactGoldAttrPop:updateSkillPanel()
+    local ui = self._ui
+    local skill_id = self.artifact_vo.skill_id --当前使用技能
+
+	self.title_top_gap = 2 --标题距离顶部间距
+	self.skill_title_top_gap = 8 --技能和顶部标题的间距
+	self.skill_title_bot_gap = 6 --技能和底部标题的间距
+	self.skill_start_x = 12 --技能开始位置
+	self.skill_row_top = 21 --技能横向间距
+	self.skill_line_top = 7 --技能竖向间距
+	self.skill_scale = 0.85 --技能缩放
+	self.skill_num = 5 --一行几个技能
+
+	self.artifact_id = self.artifact_vo.artifact_id
+	self.skill_cfg = Config.PartnerArtifactGoldenData.data_artifact_group[self.artifact_id]
+
+	self.exclusive_data = {} --专属技能
+	self.ordinary_data = {} --通用技能
+	self.skill_item_list = {} --技能列表
+	
+	for key,value in pairs(self.skill_cfg[2]) do
+		local cfg = Config.PartnerArtifactGoldenData.data_skill_2[value.group_id]
+		if self._type == 2 then
+			table.insert(self.exclusive_data, {skill_id = cfg[#cfg].skill_id,hero_vo = self.hero_vo,is_use = 0,is_act = 1})
+		else
+			local ststus = false
+			for k,v in pairs(cfg) do
+				if model:getArtifactSkillListForSkillId(self.artifact_id,v.skill_id) then
+					table.insert(self.exclusive_data, {skill_id = v.skill_id,hero_vo = self.hero_vo,is_use = skill_id == v.skill_id and 1 or 0,is_act=1})
+					ststus = true
+					break
+				end
+			end
+			if not ststus then
+				table.insert(self.exclusive_data, {skill_id = cfg[1].skill_id,hero_vo = self.hero_vo,is_use = 0,is_act = 0})
+			end
+		end
+	end
+	for key,value in pairs(self.skill_cfg[1]) do
+		local cfg = Config.PartnerArtifactGoldenData.data_skill_2[value.group_id]
+		if self._type == 2 then
+			table.insert(self.ordinary_data, {skill_id = cfg[#cfg].skill_id,hero_vo = self.hero_vo,is_use = 0,is_act = 1})
+		else
+			local ststus = false
+			for k,v in pairs(cfg) do
+				if model:getArtifactSkillListForSkillId(self.artifact_id,v.skill_id) then
+					table.insert(self.ordinary_data, {skill_id = v.skill_id,hero_vo = self.hero_vo,is_use = skill_id == v.skill_id and 1 or 0,is_act=1})
+					ststus = true
+					break
+				end
+			end
+			if not ststus then
+				table.insert(self.ordinary_data, {skill_id = cfg[1].skill_id,hero_vo = self.hero_vo,is_use = 0,is_act = 0})
+			end
+		end
+	end
+	
+	local sort_func = SortTools.tableCommonSorter({{"is_use", true}, {"is_act", true},{"skill_id",true}})
+    table.sort(self.exclusive_data, sort_func)
+	local sort_func = SortTools.tableCommonSorter({{"is_use", true}, {"is_act", true},{"skill_id",true}})
+    table.sort(self.ordinary_data, sort_func)
+
+	local _h = 0 --滑动列表高度
+	--专属技能行
+	local exclusive_row = math.ceil(#self.exclusive_data/self.skill_num)
+	 --通用技能行
+	local ordinary_row = math.ceil(#self.ordinary_data/self.skill_num)
+	if exclusive_row > 0 then
+		_h = _h + self.title_top_gap + ArtifactGoldSkillTitleCell.Height + self.skill_title_top_gap + (exclusive_row-1)*self.skill_line_top + exclusive_row*ArtifactGoldSkillItem.Height*self.skill_scale + self.skill_title_bot_gap
+	end
+	if ordinary_row > 0 then
+		_h = _h + self.title_top_gap + ArtifactGoldSkillTitleCell.Height + self.skill_title_top_gap + (ordinary_row-1)*self.skill_line_top + ordinary_row*ArtifactGoldSkillItem.Height*self.skill_scale + self.skill_title_bot_gap
+	end
+	_h = math.max(_h,ui._skill_scroll:getContentSize().height)
+	ui._skill_scroll:setInnerContainerSize(cc.size(ui._skill_scroll:getContentSize().width,_h))
+
+	if exclusive_row > 0 then
+		if not self.exclusive_title then
+			self.exclusive_title = ArtifactGoldSkillTitleCell.new()
+			ui._skill_scroll:addChild(self.exclusive_title)
+		end
+		self.exclusive_title:setData(TI18N("语言_c_7540"))
+		self.exclusive_title:setOpacity(102)
+		_h = _h - self.title_top_gap
+		self.exclusive_title:setPosition(cc.p(ui._skill_scroll:getContentSize().width*0.5 - ArtifactGoldSkillTitleCell.Width*0.5,_h))
+		_h = _h - ArtifactGoldSkillTitleCell.Height
+
+		for k,v in ipairs(self.exclusive_data) do
+			local item = ArtifactGoldSkillItem.new()
+			ui._skill_scroll:addChild(item)
+			item:setData(v,self._type == 1)
+			local fun = function()
+				local skill_cfg = Config.SkillData.data_get_skill(v.skill_id)
+				if skill_cfg then
+					TipsManager:getInstance():showSkillTips(skill_cfg)
+				end
+			end
+			item:setScale(self.skill_scale)
+			item:addCallBack(fun)
+			item:addLongTimeTouchCallback()
+			self.skill_item_list[v.skill_id] = item
+			local _x = self.skill_start_x + (k-1)%5 * (self.skill_row_top + ArtifactGoldSkillItem.Width*self.skill_scale)
+			local _y = _h - self.skill_title_top_gap - (math.ceil(k/self.skill_num)-1)*(self.skill_line_top + ArtifactGoldSkillItem.Height*self.skill_scale)
+			item:setPosition(cc.p(_x,_y))
+		end
+		_h = _h - (self.skill_title_top_gap + (exclusive_row-1)*self.skill_line_top + exclusive_row*ArtifactGoldSkillItem.Height + self.skill_title_bot_gap)
+	end
+	if ordinary_row > 0 then
+		if not self.ordinary_title then
+			self.ordinary_title = ArtifactGoldSkillTitleCell.new()
+			ui._skill_scroll:addChild(self.ordinary_title)
+		end
+		self.ordinary_title:setData(TI18N("语言_c_7541"))
+		self.ordinary_title:setOpacity(102)
+		_h = _h - self.title_top_gap
+        self.ordinary_title:setPosition(cc.p(ui._skill_scroll:getContentSize().width*0.5 - ArtifactGoldSkillTitleCell.Width*0.5,_h))
+		_h = _h - ArtifactGoldSkillTitleCell.Height
+
+		for k,v in ipairs(self.ordinary_data) do
+			local item = ArtifactGoldSkillItem.new()
+			item:setScale(self.skill_scale)
+			ui._skill_scroll:addChild(item)
+			item:setData(v,self._type == 1)
+			item.skill_item:setShowLevel(true,0.8,12,111)
+			local fun = function()
+				local skill_cfg = Config.SkillData.data_get_skill(v.skill_id)
+				if skill_cfg then
+					TipsManager:getInstance():showSkillTips(skill_cfg)
+				end
+			end
+			item:addCallBack(fun)
+			item:addLongTimeTouchCallback()
+			self.skill_item_list[v.skill_id] = item
+			local _x = self.skill_start_x + (k-1)%5 * (self.skill_row_top + ArtifactGoldSkillItem.Width*self.skill_scale)
+			local _y = _h - self.skill_title_top_gap - (math.ceil(k/self.skill_num)-1)*(self.skill_line_top + ArtifactGoldSkillItem.Height*self.skill_scale)
+			item:setPosition(cc.p(_x,_y))
+		end
+		_h = _h - (self.skill_title_top_gap + (ordinary_row-1)*self.skill_line_top + ordinary_row*ArtifactGoldSkillItem.Height + self.skill_title_bot_gap)
+	end
+end
+
+function ArtifactGoldAttrPop:close_callback()
+    if self.attr_list and next(self.attr_list) then
+        for k, v in pairs(self.attr_list) do
+            v:removeFromParent()
+            v = nil
+        end
+    end
+    if self.skill_item_list and next(self.skill_item_list) then
+        for k, v in pairs(self.skill_item_list) do
+            v:removeFromParent()
+            v = nil
+        end
+    end
+    if self.exclusive_title then
+        self.exclusive_title:removeFromParent()
+        self.exclusive_title = nil
+    end
+    if self.ordinary_title then
+        self.ordinary_title:removeFromParent()
+        self.ordinary_title = nil
+    end
+    controller:openArtifactGoldAttrPop(false)
+end

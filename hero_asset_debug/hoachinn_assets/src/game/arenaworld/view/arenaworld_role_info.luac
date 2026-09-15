@@ -1,0 +1,314 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 20:01:19
+-- @description    : 
+		-- 功能描述
+---------------------------------
+ArenaWorldRoleInfoWindow = ArenaWorldRoleInfoWindow or BaseClass(BaseView)
+
+local controller = ArenaWorldController:getInstance()
+local model = controller:getModel()
+
+function ArenaWorldRoleInfoWindow:__init()
+	self.is_full_screen = false
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG  
+	self.layout_name = "arenaworld/arenaworld_role_info"
+
+	self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("friend","friend"), type = ResourcesType.plist },
+    }
+end
+
+function ArenaWorldRoleInfoWindow:open_callback(  )
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self:playEnterAnimatianByObj(self.main_panel , 2) 
+
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.challenge_btn = self.main_panel:getChildByName("challenge_btn")
+    local challenge_btn_label = self.challenge_btn:getChildByName("label")
+    challenge_btn_label:setString(TI18N("语言_c_457"))
+    self.black_btn = self.main_panel:getChildByName("black_btn")
+    local black_btn_label = self.black_btn:getChildByName("label")
+    black_btn_label:setString(TI18N("语言_c_166"))
+
+    self.title_container = self.main_panel:getChildByName("title_container")
+    local title_label = self.title_container:getChildByName("title_label")
+    title_label:setString(TI18N("语言_c_4111"))
+
+    self.info_con = self.main_panel:getChildByName("info_con")
+    self.name = self.info_con:getChildByName("name")
+    local rank_title = self.info_con:getChildByName("rank_title")
+    rank_title:setString(TI18N("语言_c_4112"))
+    self.rank = self.info_con:getChildByName("rank")
+    self.rank:setString(TI18N("语言_c_273"))
+    local guild_title = self.info_con:getChildByName("guild_title")
+    guild_title:setString(TI18N("语言_c_694"))
+    self.guild = self.info_con:getChildByName("guild")
+    self.guild:setString(TI18N("语言_c_273"))
+
+    setItemXOneByOne({rank_title,self.rank},5)
+    setItemXOneByOne({guild_title,self.guild},5)
+
+    self.head = PlayerHead.new(PlayerHead.type.circle)
+    self.head:setAnchorPoint(cc.p(0, 0))
+    self.head:setPosition(cc.p(10, -5))
+    self.info_con:addChild(self.head)
+
+    self.vip_label = CommonNum.new(19, self.info_con, 0, -2, cc.p(0, 0.5))
+	self.vip_label:setPosition(145, 85)
+
+	self.main_container = self.main_panel:getChildByName("main_container")
+    local fight_title = self.main_container:getChildByName("fight_title")
+    fight_title:setString(TI18N("语言_c_4113"))
+
+	self.scrollCon = self.main_container:getChildByName("scrollCon")
+    if self.list_view == nil then
+        local scroll_view_size = self.scrollCon:getContentSize()
+        local setting = {
+            item_class = ArenaWorldTeamItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 550,               -- 单元的尺寸width
+            item_height = 150,              -- 单元的尺寸height
+            row = 2,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.list_view = CommonScrollViewLayout.new(self.scrollCon, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+
+    self.skip_battle_btn = self.main_panel:getChildByName("skip_battle_btn")
+    local is_auto = model:getAutoBattle()
+    self.skip_battle_btn:setSelected(is_auto == 1)
+    self.skip_battle_btn:getChildByName("name"):setString(TI18N("语言_c_462"))
+    self.skip_battle_btn:setVisible(true)
+end
+
+function ArenaWorldRoleInfoWindow:register_event(  )
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), false, 2)
+	registerButtonEventListener(self.black_btn, handler(self, self._onClickAdjustRoleForm))
+	registerButtonEventListener(self.challenge_btn, handler(self, self._onClickBtnChallenge))
+
+    self.skip_battle_btn:addEventListener(function ( sender,event_type )
+        if event_type == ccui.CheckBoxEventType.selected then
+            playButtonSound2()
+            local skip_cfg = Config.ArenaWorldData.data_const["sky_arenaworld_skip_count"]
+            local skip_time_cfg = Config.ArenaWorldData.data_const["sky_arenaworld_skip_time"]
+            if (skip_cfg and skip_cfg.val <= model:getCombatCount()) or (skip_time_cfg and checkSuficeDay(skip_time_cfg.val)) then
+                model:setAutoBattle(1)
+            else
+                if skip_cfg then
+                    message(skip_cfg.desc)
+                end
+                self.skip_battle_btn:setSelected(false)
+            end
+        elseif event_type == ccui.CheckBoxEventType.unselected then 
+            playButtonSound2()
+            model:setAutoBattle(0)
+        end
+    end)
+
+	if self.arenaworld_enemy_data_event == nil then
+    	self.arenaworld_enemy_data_event = GlobalEvent:getInstance():Bind(ArenaWorldEvent.GetArenaEnemyData, function ( data )
+            self:setData(data)
+        end)
+    end
+end
+
+function ArenaWorldRoleInfoWindow:_onClickBtnClose(  )
+	controller:openArenaRoleInfoWindow(false)
+end
+
+function ArenaWorldRoleInfoWindow:_onClickAdjustRoleForm(  )
+    HeroController:getInstance():openFormMainWindow(true, PartnerConst.Fun_Form.arenaworld)
+end
+
+function ArenaWorldRoleInfoWindow:_onClickBtnChallenge(  )
+	if self.data and self.data.rid and self.data.srv_id then
+		controller:checkJoinArenaBattle(self.data.rid, self.data.srv_id)
+	end
+end
+
+function ArenaWorldRoleInfoWindow:setData( data )
+	self.data = data
+	self.name:setString(transformNameByServ(data.name, data.srv_id))
+    self.head:setHeadRes(data.face, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+	if data.gname and data.gname ~= "" then
+		self.guild:setString(data.gname)
+    end
+    --头像框
+    local vo = Config.AvatarData.data_avatar[data.avatar_id or 0]
+    if vo then
+        local res_id = vo.res_id or 1 
+        local res = PathTool.getTargetRes("headcircle","txt_cn_headcircle_"..res_id,false,false)
+        self.head:showBg(res,nil,false,vo.offy)
+    end
+    self.head:setLev(data.lev)
+    self.rank:setString(string.format(TI18N("语言_c_2608"), data.rank or 0))
+    self.head:setSex(data.sex,cc.p(70,4))
+    self.vip_label:setNum(data.vip_lev)
+    if data.formations and next(data.formations)~=null then
+        table.sort(data.formations, function(a,b) 
+            if a.team_id then
+                return a.team_id < b.team_id
+            elseif a.order then
+                return a.order < b.order
+            else
+                return false
+            end
+        end)
+        self.list_view:setData(data.formations)
+    end
+end
+
+function ArenaWorldRoleInfoWindow:UpdataRoleList( list )
+	local temp = {}
+    for k,v in pairs(list) do
+        local vo = HeroVo.New()
+        local hero_data = deepCopy(v)
+        hero_data.use_skin = hero_data.quality
+        hero_data.partner_id = v.id
+        vo:updateHeroVo(hero_data)
+        table.insert(temp,vo)
+    end
+    local p_list_size = #temp
+    local total_width = p_list_size * 104 + (p_list_size - 1) * 6
+    local start_x = 7
+    local max_width = math.max(total_width,self.scroll_view_size.width) 
+    self.scroll_view:setInnerContainerSize(cc.size(max_width,self.scroll_view_size.height))
+    for i,v in ipairs(temp) do
+        delayRun(self.main_panel, i / 60, function() 
+            if self.item_list[i]==nil then 
+                local partner_item = HeroExhibitionItem.new(0.88, true)
+                partner_item:setPosition(start_x+104*0.5+(i-1)*(104+6), self.scroll_view_size.height*0.5)
+                partner_item:setData(v)
+                partner_item:addCallBack(function(item)
+                    local vo = item:getData()
+                    if vo and next(vo) ~=nil then 
+                        local partner_id = vo.partner_id
+                        local rid = self.data.rid
+                        local srv_id = self.data.srv_id
+                        controller:requestCheckRoleInfo(rid, srv_id, vo.pos)
+                        --LookController:getInstance():sender11061(rid,srv_id,partner_id)
+                    end
+                end)
+                self.scroll_view:addChild(partner_item)
+                self.item_list[i] = partner_item
+            end
+        end)
+    end
+end
+
+function ArenaWorldRoleInfoWindow:openRootWnd( data )
+	if data and data.rid and data.srv_id then
+		controller:requestArenaEnemyData( data.rid, data.srv_id )
+	end
+end
+
+function ArenaWorldRoleInfoWindow:close_callback(  )
+	if self.arenaworld_enemy_data_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.arenaworld_enemy_data_event)
+        self.arenaworld_enemy_data_event = nil
+    end
+
+    if self.vip_label then
+        self.vip_label:DeleteMe()
+        self.vip_label = nil
+    end
+
+    if self.head then 
+        self.head:DeleteMe()
+        self.head = nil
+    end
+
+	controller:openArenaRoleInfoWindow(false)
+end
+
+ArenaWorldTeamItem = class("ArenaWorldTeamItem",function()
+    return ccui.Layout:create()
+end)
+
+function ArenaWorldTeamItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworld/arenaworld_team_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+    self.item_list = {}
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+    self.container=self.root_wnd:getChildByName("main_container")
+    self.image = self.container:getChildByName("image")
+    self.team_label = self.container:getChildByName("team_label")
+    self.role_con = self.container:getChildByName("role_con")
+    self.fight_label = CommonNum.new(20, self.container, 0, -2, cc.p(0, 0.5))
+	self.fight_label:setPosition(420, 132)
+    self.scroll_view_size = self.role_con:getContentSize()
+    self.scroll_view = createScrollView(self.scroll_view_size.width,self.scroll_view_size.height,0,0,self.role_con,ccui.ScrollViewDir.horizontal)
+    self:registerEvent()
+end
+
+function ArenaWorldTeamItem:registerEvent()
+    
+end
+
+function ArenaWorldTeamItem:setData(data)
+    self.data=data
+    self.team_label:setString(string.format(TI18N("语言_c_2023"),data.team_id))
+    autoSizeTitleBg(self.team_label,self.image,20,80)
+    self.fight_label:setNum(15000)--data.power
+    self:createPartnerList(data.p_list)
+end
+
+function ArenaWorldTeamItem:createPartnerList( list )
+	local temp = {}
+    for k,v in pairs(list) do
+        local vo = HeroVo.New()
+        local hero_data = deepCopy(v)
+        hero_data.use_skin = hero_data.quality
+        hero_data.partner_id = v.id
+        vo:updateHeroVo(hero_data)
+        table.insert(temp,vo)
+    end
+    local p_list_size = #temp
+    local total_width = p_list_size * 104 + (p_list_size - 1) * 6
+    local start_x = 4
+    local max_width = math.max(total_width,self.scroll_view_size.width) 
+    self.scroll_view:setInnerContainerSize(cc.size(max_width,self.scroll_view_size.height))
+    for i,v in ipairs(temp) do
+        delayRun(self.container, i / 60, function() 
+            if self.item_list[i]==nil then 
+                local partner_item = HeroExhibitionItem.new(0.88, true)
+                partner_item:setPosition(start_x+104*0.5+(i-1)*(104+6), self.scroll_view_size.height*0.5)
+                partner_item:setData(v)
+                partner_item:addCallBack(function(item)
+                    local vo = item:getData()
+                    if vo and next(vo) ~=nil then 
+                        local partner_id = vo.partner_id
+                        local rid = self.data.rid
+                        local srv_id = self.data.srv_id
+                        controller:requestCheckRoleInfo(rid, srv_id, vo.pos)
+                    end
+                end)
+                self.scroll_view:addChild(partner_item)
+                self.item_list[i] = partner_item
+            end
+        end)
+    end
+end
+
+function ArenaWorldTeamItem:DeleteMe()
+    if self.fight_label then
+        self.fight_label:DeleteMe()
+        self.fight_label = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

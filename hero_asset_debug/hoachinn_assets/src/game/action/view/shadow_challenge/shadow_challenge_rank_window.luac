@@ -1,0 +1,159 @@
+-- --------------------------------------------------------------------
+-- 
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      影之试炼排行榜主界面
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ShadowChallengeRankWindow = ShadowChallengeRankWindow or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local string_format = string.format
+
+function ShadowChallengeRankWindow:__init(type)
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big
+    self.is_full_screen = true
+    self.layout_name = "shadowchallenge/shadow_challenge_rank_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("bigbg", "bigbg_3"), type = ResourcesType.single}
+    }
+
+    self.tab_info_list = {
+        {label = TI18N("语言_c_6336"), index = Endless_trailEvent.type.rank , status = true},
+        {label = TI18N("语言_c_6338"),index = Endless_trailEvent.type.reward, status = true},
+    }
+    self.selected_tab = nil -- 当前选中的标签
+    self.tab_list = {}
+    self.panel_list = {}
+end
+
+function ShadowChallengeRankWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.title_bg = self.main_panel:getChildByName("Image_2")
+    self.win_title = self.main_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6289"))
+    autoSizeTitleBg(self.win_title, self.title_bg)
+    self.container = self.main_panel:getChildByName("container")
+
+    local tab_container = self.main_panel:getChildByName("tab_container")
+    for i = 1, 2 do
+        local tab_btn = tab_container:getChildByName("tab_btn_" .. i)
+        if tab_btn then
+            local title = tab_btn:getChildByName("title")
+            if i == 1 then
+                title:setString(TI18N("语言_c_6336"))
+            elseif i == 2 then
+                title:setString(TI18N("语言_c_6338"))
+            end
+            title:setTextColor(cc.c4b(0xff, 0xff, 0xff, 0xff))
+            tab_btn.unselect= tab_btn:getChildByName("unselect_bg")
+            tab_btn.select = tab_btn:getChildByName("select_bg")
+            tab_btn.select:setVisible(false)
+            tab_btn.index = i
+            tab_btn.label = title
+            self.tab_list[i] = tab_btn
+        end
+    end
+end
+
+function ShadowChallengeRankWindow:register_event()
+    for k, tab_btn in pairs(self.tab_list) do
+        tab_btn:addTouchEventListener(
+            function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    self:changeSelectedTab(sender.index)
+                end
+            end
+        )
+    end
+    if self.background then
+        self.background:addTouchEventListener(
+            function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    controller:openShadowChallengeRankView(false) 
+                end
+            end
+        )
+    end
+    if self.close_btn then
+        self.close_btn:addTouchEventListener(
+            function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    controller:openShadowChallengeRankView(false) 
+                end
+            end
+        )
+    end
+end
+
+function ShadowChallengeRankWindow:openRootWnd(type,camp_id)
+    type = type or Endless_trailEvent.type.rank
+    self.camp_id = camp_id
+    self:changeSelectedTab(type)
+end
+
+--==============================--
+--desc:切换标签页
+--time:2018-06-12 10:51:51
+--@index:
+--@return
+--==============================--
+function ShadowChallengeRankWindow:changeSelectedTab(index)
+    if self.selected_tab ~= nil then
+        if self.selected_tab.index == index then
+            return
+        end
+    end
+    if self.selected_tab then
+        self.selected_tab.label:setTextColor(cc.c4b(0xff, 0xff, 0xff, 0xff))
+        self.selected_tab.unselect:setVisible(true)
+        self.selected_tab.select:setVisible(false)
+        self.selected_tab = nil
+    end
+    self.selected_tab = self.tab_list[index]
+    if self.selected_tab then
+        self.selected_tab.label:setTextColor(cc.c4b(0xf8,0xef,0x76,0xff))
+        self.selected_tab.unselect:setVisible(false)
+        self.selected_tab.select:setVisible(true)
+    end
+    if self.cur_panel ~= nil then
+        self.cur_panel:setNodeVisible(false)
+        self.cur_panel = nil
+    end
+
+    self.cur_panel = self.panel_list[index]
+    if self.cur_panel == nil then
+        if index == Endless_trailEvent.type.rank then
+            self.cur_panel = ShadowChallengeRankPanel.new()
+        elseif index ==  Endless_trailEvent.type.reward then
+            self.cur_panel = ShadowChallengeAwardsPanel.new(self.camp_id)
+        end
+        self.panel_list[index] = self.cur_panel
+        self.container:addChild(self.cur_panel)
+        if self.cur_panel.addToParent then
+            self.cur_panel:addToParent()
+        end
+    end
+    self.cur_panel:setNodeVisible(true)
+end
+
+function ShadowChallengeRankWindow:close_callback()    
+    for k, panel in pairs(self.panel_list) do
+        panel:DeleteMe()
+    end
+    self.panel_list = {}
+    controller:openShadowChallengeRankView(false)
+end

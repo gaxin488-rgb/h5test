@@ -1,0 +1,161 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-20 17:10:31
+-- @description    : 
+		-- 禁术主界面
+---------------------------------
+HeroProsPanel = HeroProsPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function HeroProsPanel:__init()
+	self.win_type = WinType.Full
+	self.view_tag = ViewMgrTag.WIN_TAG
+	self.is_full_screen = true
+	self.res_list = {
+		-- {path = PathTool.getPlistImgForDownLoad("seerpalace", "seerpalace"), type = ResourcesType.plist},
+	}
+	self.layout_name = "hero/hero_pros_panel"
+	self.panel_list = {}
+end
+
+function HeroProsPanel:open_callback(  )
+	-- self.background = self.root_wnd:getChildByName("background")
+    -- self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 1)
+	self.container = self.main_container:getChildByName("container")
+	self.back_btn = self.main_container:getChildByName("back_btn")
+
+	-- 适配
+	local top_off = display.getTop(self.main_container)
+    local container_size = self.main_container:getContentSize()
+	local bottom_off = display.getBottom(self.main_container)
+	-- local tab_y = self.back_btn:getPositionY()
+	-- self.back_btn:setPositionY(bottom_off + tab_y)
+end
+
+function HeroProsPanel:register_event(  )
+	registerButtonEventListener(self.back_btn, handler(self, self._onClickCloseBtn), nil, REGISTER_BUTTON_SOUND_CLOSED_TYPY)
+	--切换页签
+    if self.hero_pros_switch_event == nil then
+        self.hero_pros_switch_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Pros_Switch_Event, function(index)
+            self:changeSelectedTab(index)
+        end)
+    end
+end
+
+
+-- 切换标签页
+function HeroProsPanel:changeSelectedTab( index )
+	local status = false
+	if self.panel_list[MainuiConst.pros_type.pros] and self.panel_list[MainuiConst.pros_type.pros]:isVisible() then
+		status = true
+	end
+	if model:getProsIsShield() and self.setting and self.setting.data and self.setting.data.hero_vo and model:getOneProsIsShield(self.setting.data.hero_vo) then
+		local list = self.setting.data.hero_vo.proscription
+		if list and next(list) then
+			for k, v in pairs(list) do
+				if v.p_lev >= 1 then
+					status = true
+				end
+			end
+		end
+	end
+	if index == MainuiConst.pros_type.pros and not status then
+		if self.setting and self.setting.data and self.setting.data.hero_vo then
+			local hero_vo = self.setting.data.hero_vo
+			if not model:getProsIsOpen(hero_vo) then
+				if not model:getProsIsShield() then
+					message(TI18N("语言_c_6217"))
+					return
+				end
+				local id = Config.PartnerData.data_partner_base[hero_vo.bid].proscription_id
+				local list = Config.PartnerProscriptionData.data_get_open_lv[id]
+				if list then
+					if hero_vo.h_lev < list.lv and hero_vo.star < list.star then
+						message(string.format(TI18N("语言_c_6540"),list.lv)..","..string.format(TI18N("语言_c_6739"),list.star))
+					else
+						if hero_vo.h_lev < list.lv then
+							message(string.format(TI18N("语言_c_6540"),list.lv))
+						elseif hero_vo.star < list.star then
+							message(string.format(TI18N("语言_c_6739"),list.star))
+						end
+					end
+				else
+					message(TI18N("语言_c_6217"))
+				end
+				return
+			end
+		else
+			return
+		end
+	end
+	if self.setting and self.setting.data then
+		if self.select_panel then
+			self.select_panel:addToParent(false)
+			self.select_panel = nil
+		end
+		self.select_panel = self.panel_list[index]
+		if self.select_panel == nil then
+			if index == MainuiConst.pros_type.pros then
+				self.select_panel = HeroProsMainWindow.new(self.setting.data,self.setting.pros_type)
+			elseif index == MainuiConst.pros_type.soul then
+				self.setting.data.panel_type = HERO_SOUL_TYPE
+				self.select_panel = HeroSuperHeartStrengPanel.new(self.setting.data)
+			end
+			if self.select_panel then
+				self.container:addChild(self.select_panel)
+				self.panel_list[index] = self.select_panel
+			end
+		end
+		if self.select_panel then
+			self.select_panel:addToParent(true)
+		end
+		GlobalEvent:getInstance():Fire(HeroEvent.Hero_Pros_Switch_Back_Event,index)
+	end
+end
+
+function HeroProsPanel:openRootWnd(setting)
+    self.setting = setting or {}
+	if self.setting and self.setting.data and self.setting.data.hero_vo then
+		MainuiController:getInstance():getMainUi():changeBottomShowStatus(MainuiConst.bottom_btn_type.pros,{data=self.setting.data.hero_vo})
+		MainuiController:getInstance():setIsShowMainUIBottom(true)
+	end
+	if self.setting and self.setting.data and self.setting.data.hero_vo then
+		local hero_vo = self.setting.data.hero_vo
+		MainuiController:getInstance():updateProBtn(hero_vo)
+	end
+	local index = self.setting.index or MainuiConst.special_type.pros
+	self:changeSelectedTab(index)
+end
+
+-- function HeroProsPanel:setBottomStatusTest(bool)
+--     if bool then
+--         MainuiController:getInstance():setIsShowMainUIBottom(true)
+--     end
+-- end
+
+-----------------@ 按钮点击事件
+-- 关闭
+function HeroProsPanel:_onClickCloseBtn(  )
+	controller:openHeroProsPanel(false)
+end
+
+function HeroProsPanel:close_callback(  )
+	for k, panel in pairs(self.panel_list) do
+        panel:DeleteMe()
+    end
+    self.panel_list = nil
+	
+    if self.hero_pros_switch_event then
+        GlobalEvent:getInstance():UnBind(self.hero_pros_switch_event)
+        self.hero_pros_switch_event = nil
+    end
+    controller:openHeroProsPanel(false)
+	controller:openExclusiveBackPanel(false)
+    MainuiController:getInstance():getMainUi():changeBottomShowStatus(1)
+end

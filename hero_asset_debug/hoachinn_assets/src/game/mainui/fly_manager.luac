@@ -1,0 +1,204 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      获取道具 收取动画
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+FlyManager = FlyManager or BaseClass()
+--bezier config
+
+local bezierConfig = {
+	--bezier
+	bezierlines = {
+		{
+			cross_scale_1 = -0.1,
+			potrait_rate_1 = -0.2,
+
+			cross_scale_2 = -0.1,
+			potrait_rate_2 = -0.3,
+		},
+		{
+			cross_scale_1 = -0.5,
+			potrait_rate_1 = -0.2,
+
+			cross_scale_2 = -0.5,
+			potrait_rate_2 = -0.3,
+		},
+	},
+
+	angle_min = 30,
+	angle_max = 80,
+	bezier_time = 0.3,
+	bezier_speed = 1800,
+	fade_time_rate = 0.45,
+	fly_scale_from = 0.7,
+	fly_scale_to = 0.3,
+
+	bezier_detaltime = 0.02,
+
+	--协同动画 扩散动画
+    radius_width = 100,
+    radius_height = 50,
+	jumptime = 0.3,
+	delayTime = 0.01,
+}
+function FlyManager:getInstance()
+    if not self.is_init then
+        self.fly_list = {}
+        self.is_init = true
+    end
+    return self
+end
+
+-- {
+--     [1] = {
+--         bid = 50035,
+--         id = 0,
+--         is_bind = 1,
+--         move_to = 0,
+--         num = 1,
+--         w_pos = cc.p(0, 0), --额外添加
+--     },
+-- }
+function FlyManager:flyRwards(container, data)
+    -- print("FlyManager flyRwards", vardump(data))
+    if tolua.isnull(container) or (not data) or (data and not next(data)) then
+        return
+    end
+    for i,v in ipairs(data) do
+        self:runCommonFlyItem(container, v.bid, v.num, v.w_pos or cc.p(display.width/2 , display.height/2), nil)
+    end
+end
+
+function FlyManager:createItem(container, bid, num, position)
+    -- local item = BackPackItem.new(true, true)
+    -- item:setAnchorPoint(0.5, 0.5)
+    -- item:setScale(1)
+    -- item:setSwallowTouches(false)
+    -- container:addChild(item)
+    -- item:setPosition(position)
+    -- item:setBaseData(bid, num, true)
+    -- item:setTouchEnabled(false)
+    -- -- if bid == Config.ItemData.data_assets_label2id.coin
+    -- --     or bid == Config.ItemData.data_assets_label2id.exp then
+    -- --     item:setBackgroundOpacity(0)
+    -- -- end
+    -- item:setBackgroundOpacity(0)
+    local sprite = createSprite(nil, 0, 0, container, cc.p(0.5, 0.5))
+    local config = Config.ItemData.data_get_data(bid)
+    if config then
+        local head_icon = PathTool.getItemRes(config.icon, false)
+        loadSpriteTexture(sprite, head_icon, LOADTEXT_TYPE)
+    end
+    sprite:setPosition(position)
+    return sprite
+end
+
+function FlyManager:runCommonFlyItem(container, bid, num, position, callBack)
+    -- print("FlyManager runCommonFlyItem", bid)
+    local count = num or 0
+    local scale = 1
+    local endPos = MainuiController:getInstance():getMainUi():getItemFlyEndPos(bid)
+    if bid == Config.ItemData.data_assets_label2id.coin then
+        if num <= 24 then
+            count = 12
+        elseif num <= 36 then
+            count = 24
+        elseif num <= 48 then
+            count = 36
+        else
+            count = 48
+        end
+        scale = 0.3
+    elseif bid == Config.ItemData.data_assets_label2id.exp then
+        count = 12
+        scale = 0.8
+    elseif bid == Config.ItemData.data_assets_label2id.hero_exp then
+        count = 1
+    else
+        scale = 0.6
+        count = count >= 10 and 10 or count
+    end
+    local flyComplete = function()
+    end
+    for i = 1, count do
+        delayOnce(function()
+            local item = self:createItem(container, bid, 1, position)
+            local basePos = position
+            self:startBezierAction(bid,item,basePos,endPos,flyComplete, i, scale)
+        end, 0.1)
+    end
+end 
+
+function FlyManager:startBezierAction(bid,item,basePos,endPos,flyComplete, index, scale)
+    -- print("FlyManager startBezierAction", bid)
+    -- body
+    local args = {}
+    local noJump = false
+    local isScaleAndFade = false
+    local jumpRatio = math.random()
+    local jumptime = bezierConfig.jumptime or 1
+    local random_count = math.random(-1, 1)
+    local radius_width = bezierConfig.radius_width * math.random(-1, 1)
+    local radius_height = bezierConfig.radius_height * math.random(0, 1)
+    local degree = math.random() * math.pi * 2
+
+    local jumpoffsetx = radius_width * math.cos(degree)
+    local jumpoffsety = radius_height * math.sin(degree)
+
+    local jumppos = cc.p(basePos.x + jumpoffsetx, basePos.y + jumpoffsety)
+    
+    --create
+    local midPoint = cc.pMidpoint(jumppos,endPos)
+    local length =  cc.pGetLength(cc.pSub(endPos,jumppos))
+
+    local posXDvalue = endPos.x - jumppos.x
+    local posYDvalue = endPos.y - jumppos.y
+    local bezier_time = length / bezierConfig.bezier_speed
+    local index = index
+    local lineindex = index % (#bezierConfig.bezierlines) + 1
+    local lineconfig = bezierConfig.bezierlines[lineindex]
+    local detaltime = bezierConfig.bezier_detaltime
+    local delaytime = bezierConfig.delayTime
+    local controlPos1 = cc.p(midPoint.x + posXDvalue*lineconfig.cross_scale_1,midPoint.y + posYDvalue*lineconfig.potrait_rate_1)
+    local controlPos2 = cc.p(midPoint.x + posXDvalue*lineconfig.cross_scale_2,midPoint.y + posYDvalue*lineconfig.potrait_rate_2)
+
+    local ccBezierConfig = {
+        controlPos1,
+        controlPos2,
+        endPos,
+    }
+    
+    local jumpaAction = cc.MoveTo:create(jumptime or 1, jumppos)
+    local delayAction = cc.DelayTime:create(delaytime)
+    local bezierAction = cc.BezierTo:create(bezier_time + index * detaltime, ccBezierConfig)
+    local callfunc = cc.CallFunc:create(function ( ... )
+        -- body
+        GlobalEvent:getInstance():Fire(MainuiEvent.GET_ITEM_EXECUTE_FLY_SHAKE_EVENT, bid)
+    end)
+
+    local scoleTo = cc.ScaleTo:create(bezier_time, 0)
+    local fadeout = cc.FadeOut:create(bezier_time)
+
+    local sequence = nil
+    local array = {}
+    if noJump then
+        array = {bezierAction,callfunc}
+        if isScaleAndFade then
+            local spawn = cc.Spawn:create({bezierAction, scoleTo, fadeout})
+            array = {spawn, callfunc}
+        end
+    else
+        array = {jumpaAction,delayAction,bezierAction,callfunc, cc.RemoveSelf:create(true)}
+    end
+    sequence = cc.Sequence:create(array)
+    local fadeInAction
+    local scaleAction
+    fadeInAction = cc.FadeIn:create(bezier_time*bezierConfig.fade_time_rate)
+    item:setScale(bezierConfig.fly_scale_from)
+    scaleAction = cc.ScaleTo:create(bezier_time, scale or bezierConfig.fly_scale_to)
+    
+    local spawn = cc.Spawn:create({sequence,fadeInAction,scaleAction})
+    item:runAction(spawn)
+end

@@ -1,0 +1,676 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-13 15:36:39
+-- @description    : 
+		-- 时空争霸赛   预选赛
+---------------------------------
+PreselectionMainWindow = class("PreselectionMainWindow",function()
+    return ccui.Layout:create()
+end)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function PreselectionMainWindow:ctor()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/preselection_main_window"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+
+    -- 资源加载
+    local res_list = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("tips", "tips"), type = ResourcesType.plist})
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("common", "common_1"), type = ResourcesType.plist})
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("elitematch", "elitematch"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.stronghold_list = {}
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function PreselectionMainWindow:loadResListCompleted( )
+	self:initView()
+    self:registerEvent()
+    self:updateRewardRed()
+    self:updateBattleRed()
+    self:updateOrderRed()
+    controller:sender14503()
+    self:setBackpack()
+    self:updatePage()
+    self:updateStronghold()
+    self.btn_order:setVisible(model:getOrderIsOpen())
+end
+
+
+-- 初始化数据
+function PreselectionMainWindow:initElfinData(  )
+    self.is_cross = false
+    self.const_cfg = Config.ArenaTimeWarpData.data_const
+	self.period_date = Config.ArenaTimeWarpData.data_period_date[model:getPeriod()]
+    self.group_date = Config.ArenaTimeWarpData.data_group[model:getPreGroupId()]
+    self.nation_cfg = Config.ArenaTimeWarpData.data_nation[model:getnation()]
+    self.room_list = {}
+end
+
+-- 初始化界面
+function PreselectionMainWindow:initView(  )
+	self.background = self.root_wnd:getChildByName("background")
+    self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+    self.background_2 = self.root_wnd:getChildByName("background_2")
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.middle_panel = self.main_container:getChildByName("middle_panel")
+    self.stone_bg = self.middle_panel:getChildByName("stone_bg")
+    for i = 1, 5 do
+        local item = self.middle_panel:getChildByName("stronghold_"..i)
+        self.stronghold_list[i] = item
+    end
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.black_bg = self.bottom_panel:getChildByName("black_bg")
+    self.rank_bg = self.bottom_panel:getChildByName("rank_bg")
+    self.my_rank_txt = self.bottom_panel:getChildByName("my_rank_txt")
+    self.race_schedule_txt = self.bottom_panel:getChildByName("race_schedule_txt")
+    self.race_schedule_txt:setString(TI18N("语言_c_551"))
+    self.open_time_txt = self.bottom_panel:getChildByName("open_time_txt")
+    self.open_time_txt:setString(TI18N("语言_c_5261"))
+    self.condition_txt = self.bottom_panel:getChildByName("condition_txt")
+    self.condition_txt:setString(TI18N("语言_c_5262"))
+    self.reward_txt = self.bottom_panel:getChildByName("reward_txt")
+    self.reward_txt:setString(TI18N("语言_c_5980"))
+    self.race_schedule_value = self.bottom_panel:getChildByName("race_schedule_value")
+    self.race_schedule_value:setPositionX(self.race_schedule_txt:getPositionX()+self.race_schedule_txt:getContentSize().width + 5)
+    self.open_time_value = self.bottom_panel:getChildByName("open_time_value")
+    self.open_time_value:setPositionX(self.open_time_txt:getPositionX()+self.open_time_txt:getContentSize().width + 5)
+    self.condition_value = self.bottom_panel:getChildByName("condition_value")
+    setTextSpacing(self.condition_value,-10)
+    self.condition_value:setPositionX(self.condition_txt:getPositionX()+self.condition_txt:getContentSize().width + 5)
+    self.reward_scrollView = self.bottom_panel:getChildByName("reward_scrollView")
+    self.reward_scrollView:setPositionX(self.reward_txt:getPositionX()+self.reward_txt:getContentSize().width + 5)
+    self.reward_scrollView:setScrollBarEnabled(false)
+    self.group_panel = self.bottom_panel:getChildByName("group_panel")
+    self.group_bg = self.group_panel:getChildByName("group_bg")
+    self.group_txt = self.group_panel:getChildByName("group_txt")
+    self.group_img = self.group_panel:getChildByName("group_img")
+    self.region_img = self.group_panel:getChildByName("region_img")
+    self.score_txt = self.group_panel:getChildByName("score_txt")
+    self.score_txt:setString(TI18N("语言_c_6668"))
+    self.score_value = self.group_panel:getChildByName("score_value")    
+    self.power_txt = self.group_panel:getChildByName("power_txt")
+    self.power_txt:setString(TI18N("语言_c_7052"))
+    self.power_value = self.group_panel:getChildByName("power_value")
+    self.power_value:setString(model:getMaxPower())
+    local _w = self.power_txt:getContentSize().width + self.power_value:getContentSize().width + 20
+    self.power_txt:setPositionX(self.group_panel:getContentSize().width - _w)
+    self.power_value:setPositionX(self.power_txt:getPositionX() + self.power_txt:getContentSize().width + 5)
+    self.matching_btn = self.bottom_panel:getChildByName("matching_btn")
+    self.matching_txt = self.matching_btn:getChildByName("label")
+    self.matching_txt:setString(TI18N("语言_c_3867"))
+    self.count_title = self.bottom_panel:getChildByName("count_title")
+    self.count_title:setString(TI18N("语言_c_3868"))
+    self.count_label = self.bottom_panel:getChildByName("count_label")
+    self.count_label:setPositionX(self.count_title:getPositionX()+self.count_title:getContentSize().width+5)
+    self.add_btn = self.bottom_panel:getChildByName("add_btn")
+    self.surplus_count_txt = createRichLabel(18,cc.c3b(0xff,0xff,0xff),cc.p(0,0.5),cc.p(25,-63))
+    self.bottom_panel:addChild(self.surplus_count_txt)
+    self.btn_log = self.main_container:getChildByName("btn_log")
+    self.log_txt = self.btn_log:getChildByName("label")
+    self.log_txt:setString(TI18N("语言_c_2595"))
+    setTextMaxWidth(self.log_txt,120,-10)
+    self.btn_shop = self.main_container:getChildByName("btn_shop")
+    self.shop_txt = self.btn_shop:getChildByName("label")
+    self.shop_txt:setString(TI18N("语言_c_3347"))
+    setTextMaxWidth(self.shop_txt,120,-10)
+    self.btn_rank = self.main_container:getChildByName("btn_rank")
+    self.rank_txt = self.btn_rank:getChildByName("label")
+    self.rank_txt:setString(TI18N("语言_c_271"))
+    setTextMaxWidth(self.rank_txt,120,-10)
+    self.btn_reward = self.main_container:getChildByName("btn_reward")
+    self.reward_txt = self.btn_reward:getChildByName("label")
+    self.reward_txt:setString(TI18N("语言_c_6669"))
+    setTextMaxWidth(self.reward_txt,120,-10)
+    self.btn_order = self.main_container:getChildByName("btn_order")
+    self.btn_order:setVisible(false)
+    self.order_txt = self.btn_order:getChildByName("label")
+    self.order_txt:setString(TI18N("语言_c_5302"))
+    setTextMaxWidth(self.order_txt,120,-10)
+    self.btn_form = self.main_container:getChildByName("btn_form")
+    self.form_txt = self.btn_form:getChildByName("label")
+    self.form_txt:setString(TI18N("语言_c_548"))
+    setTextMaxWidth(self.form_txt,120,-10)
+    self.btn_score = self.main_container:getChildByName("btn_score")
+    self.btn_score:setVisible(false)
+    self.btn_score_txt = self.btn_score:getChildByName("label")
+    self.btn_score_txt:setString(TI18N("语言_c_6670"))
+    setTextMaxWidth(self.btn_score_txt,120,-10)
+    self.btn_look = self.root_wnd:getChildByName("btn_look")
+
+
+    -- 适配
+	local top_off = display.getTop(self.main_container)
+    local container_size = self.main_container:getContentSize()
+	local bottom_off = display.getBottom(self.main_container)
+	local tab_y = self.main_container:getPositionY()
+	self.main_container:setPositionY(bottom_off + tab_y)
+	local tab_y = self.background_2:getPositionY()
+	self.background_2:setPositionY(bottom_off + tab_y)
+    local tab_y = self.btn_look:getPositionY()
+	self.btn_look:setPositionY(top_off - (container_size.height - tab_y))
+end
+
+function PreselectionMainWindow:registerEvent(  )
+    registerButtonEventListener(self.btn_look, function (  )
+        self:onClickLookBtn()
+    end, true)
+    registerButtonEventListener(self.matching_btn, function (  )
+        self:onClickMatchingBtn()
+    end, true)
+    registerButtonEventListener(self.group_img, function (  )
+        self:onClickGroupBtn()
+    end, true)
+    registerButtonEventListener(self.btn_log, function (  )
+        controller:openPreselectionLogsWindow(true)
+    end, true)
+    registerButtonEventListener(self.btn_rank, function (  )
+        controller:openPreselectionRankWindow(true)
+    end, true)
+    registerButtonEventListener(self.add_btn, function (  )
+        self:onClickAddBtn()
+    end, true)
+    registerButtonEventListener(self.btn_shop, function (  )
+        controller:openArenaworldbullyMallWindow(true)
+    end, true)
+    registerButtonEventListener(self.btn_form, function (  )
+        HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.WorldPreselection, {}, HeroConst.FormShowType.eFormSave)
+    end, true)
+    registerButtonEventListener(self.btn_score, function (  )
+        if model:getPreGroupId() == 0 then return end
+        local group_date = Config.ArenaTimeWarpData.data_group[model:getPreGroupId()]
+        local cfg = group_date.init_score
+        local list = {}
+        local _list = {}
+        _list.id = 1
+        _list.title = group_date.name..TI18N("语言_c_6671")
+        local str = TI18N("语言_c_6672")
+        for k, v in pairs(cfg) do
+            if v[1][1] == v[1][2] then
+                str = str .. string.format(TI18N("语言_c_6673"),v[1][1],v[2]) .. "\n"
+            else
+                str = str .. string.format(TI18N("语言_c_6673"),v[1][1].."~"..v[1][2],v[2]) .. "\n"
+            end
+        end
+        _list.desc = str
+        table.insert(list,_list)
+        MainuiController:getInstance():openCommonExplainView(true, list,TI18N("语言_c_6670"))
+        -- Config.ArenaTimeWarpData.data_explain_score
+    end, true)
+    registerButtonEventListener(self.btn_reward, function (  )
+        local cfg = deepCopy(Config.ArenaTimeWarpData.data_group[model:getPreGroupId()])
+        controller:openPreselectionStrongholdRewardWindow(true,cfg)
+    end, true)
+    --战令点击事件
+    registerButtonEventListener(self.btn_order, function (  )
+        controller:openArenaOrderWindow(true)
+    end, true)
+    -- registerButtonEventListener(self.btn_rule, function (  )
+    --     MainuiController:getInstance():openCommonExplainView(true, Config.ArenaTimeWarpData.data_explain_score)
+    -- end, true)
+    if self.update_preselection_data == nil then
+        self.update_preselection_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdatePreselectionData, function(data)
+            if not data then return end
+            self.period_date = Config.ArenaTimeWarpData.data_period_date[model:getPeriod()]
+            self.group_date = Config.ArenaTimeWarpData.data_group[model:getPreGroupId()]
+            self.nation_cfg = Config.ArenaTimeWarpData.data_nation[model:getnation()]
+            self:setBackpack()
+            self:updatePage()
+            self:updateStronghold()
+        end)
+    end
+    
+	if not self.update_arenaworldbully_red then
+        self.update_arenaworldbully_red = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateArenaworldbullyRed,function()
+            self:updateRewardRed()
+            self:updateBattleRed()
+            self:updateOrderRed()
+        end)
+    end
+end
+function PreselectionMainWindow:updateRewardRed(  )
+    addRedPointToNodeByStatus(self.btn_reward,model:getRedForIndex(ArenaworldbullyConst.RedType.Strongpoint),10,10)
+end
+function PreselectionMainWindow:updateBattleRed(  )
+    addRedPointToNodeByStatus(self.matching_btn,model:getRedForIndex(ArenaworldbullyConst.RedType.Challenge),10,10)
+end
+function PreselectionMainWindow:updateOrderRed(  )
+    addRedPointToNodeByStatus(self.btn_order,model:getRedForIndex(ArenaworldbullyConst.RedType.OrderTask),10,10)
+end
+function PreselectionMainWindow:onClickGroupBtn(  )
+    controller:openPreselectionGroupingInfoWindow(true)
+end
+function PreselectionMainWindow:onClickMatchingBtn(  )
+    if model:getStatus() ~= ArenaworldbullyConst.stage.preliminariesBattle then
+        local week_time = LangStringFormat(TI18N("语言_c_6686"),self.const_cfg.qualifier_day.val)
+        local hour_time = LangStringFormat(TI18N("{1}:00-{2}:00"),self.const_cfg.qualifier_start_time.val[1],self.const_cfg.qualifier_end_time.val[1])
+        local txt = string.format(TI18N("语言_c_6753"),week_time,hour_time)
+        message(txt)
+        return
+    end
+    if model:getPreCanCombatNum() < 1 then
+        if model:getPreCanCombatNum() < 1 then
+            self:onClickAddBtn()
+            return
+        end
+    end
+    controller:openPreselectionMatchingWindow(true)
+end
+function PreselectionMainWindow:onClickAddBtn(  )
+    if model:getStatus() == ArenaworldbullyConst.stage.preliminariesBattle then
+        local buy_combat_num = model:getPreBuyCombatNum()
+        if buy_combat_num < self.const_cfg.buy_count.val then
+            local msg =string.format(TI18N("语言_c_2844"),PathTool.getItemRes(self.const_cfg.buy_cost.val[1]),self.const_cfg.buy_cost.val[2])
+            CommonAlert.show(
+                msg,
+                TI18N("语言_c_63"),
+                function()
+                    controller:sender14509()
+                end,
+                TI18N("语言_c_62"),
+                nil,
+                CommonAlert.type.rich
+            )
+        else
+            message(TI18N("语言_c_2606"))
+        end
+    else
+        local week_time = LangStringFormat(TI18N("语言_c_6686"),self.const_cfg.qualifier_day.val)
+        local hour_time = LangStringFormat(TI18N("{1}:00-{2}:00"),self.const_cfg.qualifier_start_time.val[1],self.const_cfg.qualifier_end_time.val[1])
+        local txt = string.format(TI18N("语言_c_6753"),week_time,hour_time)
+        message(txt)
+    end
+end
+function PreselectionMainWindow:onClickLookBtn(  )
+    if not self.look_bg then
+        self.look_bg = ccui.Layout:create()
+        self.look_bg:setAnchorPoint(cc.p(0.5, 0.5))
+        self.look_bg:setTouchEnabled(true)
+        self.look_bg:setPosition(cc.p(self.main_container:getContentSize().width*0.5,self.main_container:getContentSize().height*0.5))
+        self.look_bg:setContentSize(cc.size(self.main_container:getContentSize().width,self.main_container:getContentSize().height))
+        self.main_container:addChild(self.look_bg)
+        registerButtonEventListener(self.look_bg, handler(self, function()
+            if self.look_panel then
+                self.look_panel:setVisible(false)
+            end
+            if self.look_bg then
+                self.look_bg:setVisible(false)
+            end
+        end),true, 1)
+    end
+    self.look_bg:setVisible(true)
+    if not self.look_panel then
+        self.look_panel = ccui.Layout:create()
+        self.look_panel:setAnchorPoint(cc.p(0.5, 0.5))
+        self.look_panel:setPosition(cc.p(self.main_container:getContentSize().width*0.5,self.main_container:getContentSize().height*0.5))
+        self.look_panel:setContentSize(cc.size(590, 50))
+        self.look_panel:setTouchEnabled(true)
+        self.main_container:addChild(self.look_panel)
+    end
+    self.look_panel:setVisible(true)
+    if not self.look_panel_bg then
+        local res = PathTool.getResFrame("common_2", "tips_6")
+        self.look_panel_bg = createImage(self.look_panel,res,0,0,cc.p(0,0),true,nil,true)
+    end
+    local _h = 40
+    if not self.tip_bg_1 then
+        self.tip_bg_1 = createImage(self.look_panel,PathTool.getResFrame("common", "common_1_307",false,"common_1"),294,0,cc.p(0.5,1),true,nil,true)
+    end
+    if not self.tip_txt_1 then
+        self.tip_txt_1 = createLabel(22,cc.c3b(0xed,0xe0,0xb0),cc.c3b(0x00,0x00,0x00),20,0,"",self.look_panel,nil,cc.p(0,1))
+    end
+    self.tip_txt_1:setString(TI18N("语言_c_6585"))
+    local _h1 = self.tip_txt_1:getContentSize().height
+    if not self.tip_value_1 then
+        self.tip_value_1 = createLabel(20,cc.c3b(0xff,0xff,0xff),nil,20,0,"",self.look_panel,nil,cc.p(0,1))
+    end
+    self.tip_value_1:setWidth(540)
+    self.tip_value_1:setString(TI18N("语言_c_6676"))
+    local _h2 = self.tip_value_1:getContentSize().height
+    if not self.tip_bg_2 then
+        self.tip_bg_2 = createImage(self.look_panel,PathTool.getResFrame("common", "common_1_307",false,"common_1"),294,0,cc.p(0.5,0),true,nil,true)
+    end
+    if not self.tip_txt_2 then
+        self.tip_txt_2 = createLabel(22,cc.c3b(0xed,0xe0,0xb0),cc.c3b(0x00,0x00,0x00),20,0,"",self.look_panel,nil,cc.p(0,1))
+    end
+    self.tip_txt_2:setString(TI18N("语言_c_6586"))
+    local _h3 = self.tip_txt_2:getContentSize().height
+    if not self.tip_value_2 then
+        self.tip_value_2 = createLabel(20,cc.c3b(0xff,0xff,0xff),nil,20,0,"",self.look_panel,nil,cc.p(0,1))
+    end
+    self.tip_value_2:setWidth(540)
+    self.tip_value_2:setString(TI18N("语言_c_6677"))
+    local _h4 = self.tip_value_2:getContentSize().height
+    _h = _h + _h1 + _h2 + _h3 + _h4 + 40
+    self.look_panel:setContentSize(cc.size(self.look_panel:getContentSize().width,_h))
+    self.look_panel_bg:setContentSize(cc.size(self.look_panel:getContentSize().width,_h))
+    self.tip_bg_1:setContentSize(cc.size(560,_h1+_h2+20))
+    self.tip_bg_2:setContentSize(cc.size(560,_h3+_h4+20))
+    self.tip_txt_1:setPositionY(_h - 20)
+    self.tip_value_1:setPositionY(_h - _h1 - 25)
+    self.tip_txt_2:setPositionY(_h - _h1 - _h2 - 50)
+    self.tip_value_2:setPositionY(_h - _h1 - _h2 - _h3 - 55)
+    self.tip_bg_1:setPositionY(_h - 15)
+    self.tip_bg_2:setPositionY(15)
+    if not self.my_tip then
+        self.my_tip = createSprite(PathTool.getResFrame("common","txt_cn_common_unusual_3"),0,0,self.look_panel,cc.p(1,1))
+    end
+    if model:getSelfIsCross() then
+        self.my_tip:setPosition(cc.p(574,self.tip_bg_1:getPositionY()))
+    else
+        self.my_tip:setPosition(cc.p(574,self.tip_bg_2:getPositionY() + self.tip_bg_2:getContentSize().height))
+    end
+end
+function PreselectionMainWindow:setBackpack()
+    local res = ""
+    local res_1 = ""
+    if model:getSelfIsCross() then
+        res = PathTool.getTargetRes("time_warp","qualifier_bg_2",false)
+        res_1 = PathTool.getTargetRes("time_warp","qualifier_bg_22",false)
+        self.btn_score:setVisible(true)
+    else
+        res = PathTool.getTargetRes("time_warp","qualifier_bg_1",false)
+        res_1 = PathTool.getTargetRes("time_warp","qualifier_bg_11",false)
+        self.btn_score:setVisible(false)
+    end
+    self.background:loadTexture(res_1, LOADTEXT_TYPE)
+    self.background_2:loadTexture(res, LOADTEXT_TYPE)
+    if not self.background_spine then
+        self.background_spine = createEffectSpine("E24913",cc.p(720*0.5,1280*0.5),cc.p(0,0),true,PlayerAction.action)
+        self.background_2:addChild(self.background_spine)
+    end
+    local action_name = PlayerAction.action
+    if model:getSelfIsCross() then
+        action_name = PlayerAction.action_2
+    else
+        action_name = PlayerAction.action
+    end
+    if not self.cloud_spine then
+        -- 适配
+        local top_off = display.getTop(self.main_container)
+        local container_size = self.main_container:getContentSize()
+        self.cloud_spine = createEffectSpine("E24915",cc.p(720*0.5,top_off - (container_size.height - 1088)),cc.p(0,0),true,action_name)
+        self.background_2:addChild(self.cloud_spine)
+    end
+end
+function PreselectionMainWindow:updatePage()
+    if model:getPreRank() and model:getPreRank() ~= 0 then
+        self.my_rank_txt:setString(string.format(TI18N("语言_c_6678"),model:getPreRank()))
+    else
+        self.my_rank_txt:setString(string.format(TI18N("语言_c_6678"),TI18N("语言_c_5410")))
+    end
+    local _w = math.max(self.rank_bg:getContentSize().width,self.my_rank_txt:getContentSize().width + 50)
+    self.rank_bg:setContentSize(cc.size(_w,self.rank_bg:getContentSize().height))
+    self.surplus_count_txt:setString(string.format(TI18N("语言_c_6679"),self.const_cfg.buy_count.val - model:getPreBuyCombatNum()))
+    self.score_value:setString(model:getPreScore())
+    local _x = (self.group_panel:getContentSize().width - (self.score_txt:getContentSize().width + self.score_value:getContentSize().width + 10))*0.5
+    self.score_txt:setPositionX(_x)
+    self.score_value:setPositionX(_x + self.score_txt:getContentSize().width+5)
+    self.count_label:setString(string.format("%s/%s",model:getPreCanCombatNum(),self.const_cfg.match_count.val))
+    self.add_btn:setPositionX(self.count_label:getPositionX() + self.count_label:getContentSize().width + 10)
+    local txt = ""
+    local status = model:getStatus()
+    if status == ArenaworldbullyConst.stage.preliminariesBattle then
+        if model:getSelfIsCross() then
+            txt = TI18N("语言_c_6680")
+        else
+            txt = TI18N("语言_c_6681")
+        end
+        self.race_schedule_value:setTextColor(cc.c4b(0x3f,0xff,0x05,0xff))
+    elseif status > ArenaworldbullyConst.stage.preliminariesBattle then
+        if model:getSelfIsCross() then
+            txt = TI18N("语言_c_6682")
+        else
+            txt = TI18N("语言_c_6683")
+        end
+        self.race_schedule_value:setTextColor(cc.c4b(0xff,0x53,0x53,0xff))
+    else
+        if model:getSelfIsCross() then
+            txt = TI18N("语言_c_6684")
+        else
+            txt = TI18N("语言_c_6685")
+        end
+        self.race_schedule_value:setTextColor(cc.c4b(0xff,0x53,0x53,0xff))
+    end
+    self.race_schedule_value:setString(txt)
+    if self.period_date and self.const_cfg then
+        local start_time = LangStringFormat(TI18N("{1}.{2}.{3}"),self.period_date.score_start_time)
+        local end_time = LangStringFormat(TI18N("{1}.{2}.{3}"),self.period_date.score_end_time)
+        local week_time = LangStringFormat(TI18N("语言_c_6686"),self.const_cfg.qualifier_day.val)
+        local hour_time = LangStringFormat(TI18N("{1}:00-{2}:00"),self.const_cfg.qualifier_start_time.val[1],self.const_cfg.qualifier_end_time.val[1])
+        local txt = string.format(TI18N("语言_c_6687"),start_time,end_time,week_time,hour_time)
+        self.open_time_value:setString(transformTextToShort(txt,35))
+        addEvt2showAllTextTips(self.open_time_value,txt,35)
+    end
+    local txt = ""
+    if model:getSelfIsCross() then
+        txt = TI18N("语言_c_6676")
+    else
+        txt = TI18N("语言_c_6677")
+    end
+    self.condition_value:setString(transformTextToShort(txt,35))
+    setTextMaxWidth(self.condition_value,360)
+    addEvt2showAllTextTips(self.condition_value,txt,35)
+    local reward_list = {}
+    for k,v in pairs(self.const_cfg.qualifier_reward_preview.val or {}) do
+        if v[1] == model:getPreGroupId() then
+            reward_list = v[2]
+        end
+    end
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 2
+    setting.max_count = 3
+    setting.is_center = false
+    self.item_list = commonShowSingleRowItemList(self.reward_scrollView, self.item_list, reward_list, setting)
+    self.group_img:loadTexture(PathTool.getResFrame("time_warp",self.group_date.icon,false,"qualifier"),LOADTEXT_TYPE_PLIST)
+    self.group_img:ignoreContentAdaptWithSize(true)
+    self.group_txt:setString(self.group_date.name)
+    loadSpriteTexture(self.group_bg, PathTool.getResFrame("time_warp","qualifier_txt_"..self.group_date.id,false,"qualifier"), LOADTEXT_TYPE_PLIST)
+    if self.nation_cfg then
+        self.region_img:loadTexture(PathTool.getTargetRes("time_warp/region",self.nation_cfg.icon,false),LOADTEXT_TYPE)
+        self.region_img:ignoreContentAdaptWithSize(true)
+        self.region_img:setVisible(true)
+    else
+        self.region_img:setVisible(false)
+    end
+end
+function PreselectionMainWindow:updateStronghold(  )
+    for i = 1, tableLen(self.stronghold_list) do
+        if not self.room_list[i] then
+            local item = ArenaworldbullySignupItem.new()
+            self.room_list[i] = item
+            self.stronghold_list[i]:addChild(item)
+            item:setPosition(cc.p(self.stronghold_list[i]:getContentSize().width*0.5,self.stronghold_list[i]:getContentSize().height*0.5))
+        end
+        self.room_list[i]:setData(i)
+    end
+end
+function PreselectionMainWindow:DeleteMe(  )
+    if self.update_preselection_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_preselection_data)
+        self.update_preselection_data = nil
+    end
+    if self.update_arenaworldbully_red ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_arenaworldbully_red)
+        self.update_arenaworldbully_red = nil
+    end
+    
+    if not tolua.isnull(self.background_spine) then
+        self.background_spine:clearTracks()
+        self.background_spine = nil
+    end
+    if not tolua.isnull(self.cloud_spine) then
+        self.cloud_spine:clearTracks()
+        self.cloud_spine = nil
+    end
+    for k, v in pairs(self.room_list) do
+        v:DeleteMe()
+        v = nil
+    end
+end
+
+
+
+
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-13 15:36:39
+-- @description    : 
+		-- 据点
+---------------------------------
+--子项
+ArenaworldbullySignupItem = class("ArenaworldbullySignupItem", function()
+    return ccui.Widget:create()
+end)
+
+function ArenaworldbullySignupItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ArenaworldbullySignupItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/preselection_main_item"))
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(200,200))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.stronghold_img = self.main_container:getChildByName("stronghold_img")
+    self.score_img = self.main_container:getChildByName("score_img")
+	self.score_txt = self.main_container:getChildByName("score_txt")
+    self.num_img = self.main_container:getChildByName("num_img")
+	self.num_txt = self.main_container:getChildByName("num_txt")
+    self.my_head = self.main_container:getChildByName("my_head")
+	self.lock_bg = self.main_container:getChildByName("lock_bg")
+    self.lock = self.lock_bg:getChildByName("lock")
+    self.lock_tip = self.lock_bg:getChildByName("lock_tip")
+end
+
+function ArenaworldbullySignupItem:register_event( )
+    registerButtonEventListener(self.stronghold_img, function (  )
+        controller:openPreselectionStrongholdInfoWindow(true,self.index)
+    end, true)
+end
+
+function ArenaworldbullySignupItem:updatePos(i)
+    if self.choose_spine then
+        self.choose_spine:setVisible(false)
+    end
+    if i == 1 then
+        self.lock_bg:setPosition(cc.p(100,56))
+        self.my_head:setPosition(cc.p(109,163))
+        self.num_txt:setPosition(cc.p(191,143))
+        self.num_img:setPosition(cc.p(185,122))
+        self.score_txt:setPosition(cc.p(23,101))
+        self.score_img:setPosition(cc.p(27,94))
+    elseif i == 2 then
+        self.lock_bg:setPosition(cc.p(89,54))
+        self.my_head:setPosition(cc.p(100,183))
+        self.num_txt:setPosition(cc.p(185,137))
+        self.num_img:setPosition(cc.p(178,118))
+        self.score_txt:setPosition(cc.p(28,83))
+        self.score_img:setPosition(cc.p(32,78))
+    elseif i == 3 then
+        self.lock_bg:setPosition(cc.p(91,37))
+        self.my_head:setPosition(cc.p(89,166))
+        self.num_txt:setPosition(cc.p(167,157))
+        self.num_img:setPosition(cc.p(164,137))
+        self.score_txt:setPosition(cc.p(19,101))
+        self.score_img:setPosition(cc.p(21,94))
+    elseif i == 4 then
+        self.lock_bg:setPosition(cc.p(131,54))
+        self.my_head:setPosition(cc.p(86,201))
+        self.num_txt:setPosition(cc.p(167,157))
+        self.num_img:setPosition(cc.p(164,137))
+        self.score_txt:setPosition(cc.p(19,101))
+        self.score_img:setPosition(cc.p(21,94))
+    elseif i == 5 then
+        self.lock_bg:setPosition(cc.p(153,-4))
+        self.my_head:setPosition(cc.p(163,228))
+        self.num_txt:setPosition(cc.p(284,171))
+        self.num_img:setPosition(cc.p(281,150))
+        self.score_txt:setPosition(cc.p(59,83))
+        self.score_img:setPosition(cc.p(65,79))
+        if not self.choose_spine then
+            self.choose_spine = createEffectSpine("E24914",cc.p(291,185),cc.p(0,0),true,PlayerAction.action)
+            self.stronghold_img:addChild(self.choose_spine)
+        end
+        self.choose_spine:setVisible(true)
+    end
+end
+
+function ArenaworldbullySignupItem:setData(i)
+    self.index = i
+    self:updatePos(i)
+    local index = model:getSelfIsCross() and 2 or 1
+    self.cfg = Config.ArenaTimeWarpData.data_room_info[index][i]
+    if not self.cfg then return end
+    local data = model:getPreRoomDataForId(i)
+    self.num_txt:setString(string.format(TI18N("语言_c_6688"),data.num or 0))
+    self.score_txt:setString(string.format(TI18N("语言_c_2586"),self.cfg.unlock_score))
+    if model:getPreRoomLockForId(i) then
+        self.lock_bg:setVisible(false)
+    else
+        self.lock_bg:setVisible(true)
+        local txt = ""
+        if self.cfg.unlock_rank == 0 then
+            txt = string.format(TI18N("语言_c_6689"),self.cfg.unlock_score)
+        else
+            txt = string.format(TI18N("语言_c_6690"),self.cfg.unlock_score,self.cfg.unlock_rank)
+        end
+        self.lock_tip:setString(transformTextToShort(txt,10))
+        addEvt2showAllTextTips(self.lock_tip,txt,10)
+    end
+    self.stronghold_img:loadTexture(PathTool.getResFrame("time_warp",self.cfg.icon,false,"qualifier"),LOADTEXT_TYPE_PLIST)
+    self.stronghold_img:ignoreContentAdaptWithSize(true)
+    if model:getPreRoomId() == i then
+        self.my_head:setVisible(true)
+        if not self.head_node then
+            self.head_node = PlayerHead.new(PlayerHead.type.circle)
+            self.head_node:setHeadRes(role_vo.face_id, false, LOADTEXT_TYPE, role_vo.face_file, role_vo.face_update_time)
+            self.head_node:setScale(0.6)
+            self.my_head:addChild(self.head_node)
+        end
+        doStopAllActions(self.treasure_icon)
+        local act_1 = cc.MoveBy:create(1, cc.p(0, 5))
+        local act_2 = cc.MoveBy:create(1, cc.p(0, -5))
+        self.my_head:runAction(cc.RepeatForever:create(cc.Sequence:create(act_1, act_2)))
+    else
+        self.my_head:setVisible(false)
+        doStopAllActions(self.treasure_icon)
+    end
+end
+
+function ArenaworldbullySignupItem:DeleteMe()
+    if not tolua.isnull(self.choose_spine) then
+        self.choose_spine:clearTracks()
+        self.choose_spine = nil
+    end
+end

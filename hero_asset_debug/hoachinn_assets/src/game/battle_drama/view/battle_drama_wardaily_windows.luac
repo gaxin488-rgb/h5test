@@ -1,0 +1,145 @@
+-- --------------------------------------------------------------------
+-- 
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      快速战斗
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+
+BattlDramaDailyWindow = BattlDramaDailyWindow or BaseClass(BaseView)
+
+local controller = BattleDramaController:getInstance()
+local model = BattleDramaController:getInstance():getModel()
+local table_insert = table.insert
+
+function BattlDramaDailyWindow:__init()
+    self.layout_name = "battledrama/battle_drama_WarDaily_windows"
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("War_tolerance", "War_tolerance"), type = ResourcesType.plist},
+	}
+end
+
+function BattlDramaDailyWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("root")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.Image_1 = self.main_container:getChildByName("Image_1")
+    self.title_label = self.main_container:getChildByName("title_label")
+    self.title_label:setString(TI18N("语言_c_6366"))
+    self.Image_1:setContentSize(cc.size(self.title_label:getContentSize().width + 100,63))
+    self.list_view = self.main_container:getChildByName("list_view")
+    local scroll_view_size = self.list_view:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 10,                    -- x方向的间隔
+        start_y = 10,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.80,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.80,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 3,                         -- 列数，作用于垂直滚动类型
+        scale = 0.80,
+        is_backpack_item = true
+    }
+    self.good_scrollview = CommonScrollViewLayout.new(self.list_view, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.good_scrollview:setSwallowTouches(false)
+    self.use_title = self.main_container:getChildByName("use_title")
+    self.use_title:setString(TI18N("语言_c_6311"))
+    self.scroll_view = self.main_container:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.scroll_txt = createRichLabel(18,cc.c3b(0x7c,0x55,0x36),cc.p(0,1),cc.p(0,15),nil,nil,330)
+    self.scroll_view:addChild(self.scroll_txt)
+    self.scroll_txt:setString(TI18N("语言_c_6312"))
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_view:getContentSize().width,self.scroll_txt:getContentSize().height))
+    local _h = math.max(self.scroll_txt:getContentSize().height,self.scroll_view:getContentSize().height)
+    self.scroll_txt:setPositionY(_h)
+    self.source_btn = self.main_container:getChildByName("source_btn")
+    self.source_txt = self.source_btn:getChildByName("label")
+    self.source_txt:setString(TI18N("语言_c_109"))
+    self.tip_txt = createRichLabel(22,cc.c3b(0x7c,0x55,0x36),cc.p(0.5,0.5),cc.p(449,312))
+    self.main_container:addChild(self.tip_txt)
+    self.no_txt = self.main_container:getChildByName("no_txt")
+    self.no_txt:setString(TI18N("语言_c_502"))
+    self.no_txt:setVisible(false)
+end
+
+function BattlDramaDailyWindow:updateData()
+    local data = model:getDailyReward()
+    if not data then
+        self.no_txt:setVisible(true)
+        self.list_view:setVisible(false)
+        setChildUnEnabled(true,self.source_btn)
+        self.source_btn:setTouchEnabled(false)
+        return
+    end
+    if next(data.item_rewards) then
+        self.no_txt:setVisible(false)
+        self.list_view:setVisible(true)
+        self.good_scrollview:setData(data.item_rewards)
+        setChildUnEnabled(false,self.source_btn)
+        self.source_btn:setTouchEnabled(true)
+    else
+        self.no_txt:setVisible(true)
+        self.list_view:setVisible(false)
+        setChildUnEnabled(true,self.source_btn)
+        self.source_btn:setTouchEnabled(false)
+    end
+    self.tip_txt:setString(string.format(TI18N("语言_c_6313"), data.cur_day,data.max_day))
+end
+
+function BattlDramaDailyWindow:register_event()
+    if self.background then
+        self.background:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                controller:openDramDailyView(false) 
+            end
+        end)
+    end
+    if self.close_btn then
+        self.close_btn:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                controller:openDramDailyView(false) 
+            end
+        end)
+    end
+    if self.source_btn then
+        self.source_btn:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                controller:sender13207(false) 
+            end
+        end)
+    end
+    if not self.update_daily_reward_event then
+        self.update_daily_reward_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Update_Daily_Reward_Event, function()
+            self:updateData()
+        end)
+    end
+end
+
+function BattlDramaDailyWindow:openRootWnd()
+    self:updateData()
+end
+
+function BattlDramaDailyWindow:close_callback()
+    if self.good_scrollview then
+        self.good_scrollview:DeleteMe()
+        self.good_scrollview = nil
+    end
+
+    if self.update_daily_reward_event then
+        GlobalEvent:getInstance():UnBind(self.update_daily_reward_event)
+        self.update_daily_reward_event = nil
+    end
+    controller:openDramDailyView(false)
+end

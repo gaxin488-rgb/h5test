@@ -1,0 +1,634 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-03-5 15:12:43
+-- @description    : 
+		-- up英雄选择界面
+---------------------------------
+local _controller = NewPartnersummonController:getInstance()
+local _model = _controller:getModel()
+local _string_format = string.format
+local _table_insert = table.insert
+
+NewpartnersummonSelectWindow = NewpartnersummonSelectWindow or BaseClass(BaseView)
+
+function NewpartnersummonSelectWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "newpartnersummon/newpartnersummon_select_window"
+	
+    self.camp_id = nil
+    self.upcamp_id = nil
+	self.select_cell = nil
+	self.hero_data_list = {}
+    self.select_camp = 0
+	
+end
+
+function NewpartnersummonSelectWindow:open_callback(  )
+    -- _controller:send23236()
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+
+	container:getChildByName("win_title"):setString(TI18N("语言_c_3600"))
+	self.left_btn = container:getChildByName("left_btn")
+	self.left_btn:getChildByName("label"):setString(TI18N("语言_c_395"))
+	self.right_btn = container:getChildByName("right_btn")
+	self.right_btn:getChildByName("label"):setString(TI18N("语言_c_261"))
+	self.close_btn = container:getChildByName("close_btn")
+	self.hero_info_panel = container:getChildByName("hero_info_panel")
+	self.hero_list = self.hero_info_panel:getChildByName("hero_list")
+    self.hero_list:setVisible(false)
+	self.other_reward = createRichLabel(22,cc.c3b(0x7c,0x55,0x36),cc.p(0.5,0.5),cc.p(306,45),-4,nil,600)
+    self.hero_info_panel:addChild(self.other_reward)
+    self.other_reward:setVisible(false)
+	self.more_hero_list = self.hero_info_panel:getChildByName("more_hero_list")
+    self.more_hero_list:setScrollBarEnabled(false)
+    self.more_hero_list:setVisible(false)
+	self.name_txt = self.hero_info_panel:getChildByName("name_txt")
+	local name_txt_0 = self.hero_info_panel:getChildByName("name_txt_0")
+    name_txt_0:setString(transformTextToShort(TI18N("语言_c_4513"),50))
+    addEvt2showAllTextTips(name_txt_0,TI18N("语言_c_4513"),50)
+	local camp_node = self.root_wnd:getChildByName("camp_node")
+	self.camp_btn_list = {}
+    self.camp_btn_list[0] = camp_node:getChildByName("camp_btn0")
+    self.camp_btn_list[1] = camp_node:getChildByName("camp_btn1")
+    self.camp_btn_list[2]  = camp_node:getChildByName("camp_btn2")
+    self.camp_btn_list[3]  = camp_node:getChildByName("camp_btn3")
+    self.camp_btn_list[4]  = camp_node:getChildByName("camp_btn4")
+    self.camp_btn_list[5]  = camp_node:getChildByName("camp_btn5")
+    self.img_select = camp_node:getChildByName("img_select")
+    local x, y = self.camp_btn_list[0]:getPosition()
+    self.img_select:setPosition(x - 0.5, y + 1)
+
+    self.PopularBg = container:getChildByName("PopularBg")
+    self.PopularTxt = container:getChildByName("PopularTxt")
+    setTextMaxWidth(self.PopularTxt,300)
+end
+
+function NewpartnersummonSelectWindow:register_event(  )	
+	registerButtonEventListener(self.right_btn, handler(self, self.onClickChooseBtn), true)
+
+	registerButtonEventListener(self.left_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	registerButtonEventListener(self.close_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	
+	registerButtonEventListener(self.background, function ( )
+		self:onClickCloseBtn()
+	end, false, 2)
+
+	--阵营按钮
+    for select_camp, v in pairs(self.camp_btn_list) do
+        registerButtonEventListener(v, function() self:onClickBtnShowByIndex(select_camp) end ,true, 2)
+    end
+end
+
+--显示根据类型 0表示全部
+function NewpartnersummonSelectWindow:onClickBtnShowByIndex(select_camp)
+    if self.img_select and self.camp_btn_list[select_camp] then
+        local x, y = self.camp_btn_list[select_camp]:getPosition()
+        self.img_select:setPosition(x - 0.5, y + 1)
+    end
+    if self._type == PartnersummonConst.Summon_Type.UrHero then
+        self:getMoreIdList()
+        self.hero_list:setVisible(false)
+        self.more_hero_list:setVisible(true)
+        self:updateMoreList(select_camp)
+    else
+        self:getIdList()
+        self.hero_list:setVisible(true)
+        self.more_hero_list:setVisible(false)
+        self:updateList(select_camp)
+    end
+end
+
+function NewpartnersummonSelectWindow:onClickCloseBtn(  )
+	_controller:openNewPartnerSummonSelectWindow(false)
+end
+
+function NewpartnersummonSelectWindow:onClickChooseBtn(  )
+	if next(self.hero_data_list) == nil then
+		message(TI18N("语言_c_3601"))
+		return
+	end
+
+	if self.camp_id == nil or self.camp_id <= 0 then
+		message(TI18N("语言_c_3602"))
+		return 
+    end
+	_controller:send23253(self.camp_id,self._type)
+    --确定修改选择忍者发送
+    -- _model:setSelectSummonData(self.camp_id)
+    -- _model:setSelectSummonNum(110)
+    GlobalEvent:getInstance():Fire(PartnersummonEvent.updateSummonChooseEvent)
+	self:onClickCloseBtn()
+end
+
+
+function NewpartnersummonSelectWindow:setData(_type)
+    if _type == PartnersummonConst.Summon_Type.LingtDark then
+        self.name_txt:setString(transformTextToShort(TI18N("语言_c_5303"),60))
+        self.name_txt:setTouchEnabled(true)
+        addEvt2showAllTextTips(self.name_txt,TI18N("语言_c_5303"),60)
+    elseif _type == PartnersummonConst.Summon_Type.Special then        
+        self.name_txt:setString(transformTextToShort(TI18N("语言_c_5303"),60))
+        self.name_txt:setTouchEnabled(true)
+        addEvt2showAllTextTips(self.name_txt,TI18N("语言_c_5303"),60)
+    elseif _type == PartnersummonConst.Summon_Type.UrHero then        
+        self.name_txt:setString(transformTextToShort(TI18N("语言_c_5303"),60))
+        self.name_txt:setTouchEnabled(true)
+        addEvt2showAllTextTips(self.name_txt,TI18N("语言_c_5303"),60)
+    end
+	--需要获取已选择up英雄id
+	local data = _model:getSelectSummonData(_type)
+    self._type = _type
+	if not data then
+		return
+	end
+    self.camp_id = data
+    self:updateCampImg()
+    local config =  Config.RecruitData.data_hero_data[self._type]
+    if config then
+        local PopularItem = BackPackItem.new(true, true, false, nil, nil, false)
+        self.PopularBg:addChild(PopularItem)
+        PopularItem:setPosition(cc.p(140,95))
+        local nohideIds = {}
+        if _type == PartnersummonConst.Summon_Type.LingtDark then
+            nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_up_data")
+        elseif _type == PartnersummonConst.Summon_Type.Special then 
+            nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_sp_up_data")
+        elseif _type == PartnersummonConst.Summon_Type.UrHero then 
+            nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_ur_up_data")
+        end
+        local vo = {}
+        if next(nohideIds) then
+            for i=1,#nohideIds do
+                local list = Config.ItemData.data_get_data(nohideIds[i])
+                if list and next(list) then
+                    vo = list
+                    break
+                end
+            end
+        else
+            for i, v in pairs(config) do
+                if v.sort == 1 then
+                    vo = deepCopy(Config.ItemData.data_get_data(v.base_id))
+                    break
+                end
+            end
+        end
+        local item_id = vo.effect[1].val[1]
+        local item_cfg = Config.PartnerData.data_partner_base[item_id]
+        local item_cfg_name = item_cfg.name or ""
+        PopularItem:setData(vo)
+        PopularItem:setIsHero(true)
+        PopularItem:setDefaultTip()
+        self.PopularTxt:setString(_string_format(TI18N("语言_c_g_258"),item_cfg_name))
+    end
+    
+    self:getIdList()	
+	self:onClickBtnShowByIndex(0)
+end
+function NewpartnersummonSelectWindow:updateCampImg()
+    local config =  Config.RecruitData.data_hero_data[self._type]
+    local img_status_list = {[0]=true,[1]=false,[2]=false,[3]=false,[4]=false,[5]=false}
+    local num = 1
+    for i,v in pairs(config or {}) do
+        local config = Config.ItemData.data_get_data(v.base_id)
+        local id = config.effect[1].val[1]
+        local cfg = Config.PartnerData.data_partner_base[id]
+        local nohideIds = {}
+        if self._type == PartnersummonConst.Summon_Type.LingtDark then
+            nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_data")
+        elseif self._type == PartnersummonConst.Summon_Type.Special then 
+            nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_sp_data")
+        elseif self._type == PartnersummonConst.Summon_Type.UrHero then 
+            nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_ur_data")
+        end
+        if v.is_close == 1 or (v.is_close == 0 and table.indexof(nohideIds,v.base_id)) then 
+            local camp_type = cfg.camp_type
+            if not img_status_list[camp_type] then
+                num = num + 1
+                img_status_list[camp_type] = true
+            end
+        end
+    end
+    local spacing = 90
+    local statr_x = num%2 == 0 and -(num/2-0.5)*spacing or -(num-1)/2*spacing
+    local pos_x_num = 0
+    for i=0,tableLen(self.camp_btn_list)-1 do
+        self.camp_btn_list[i]:setVisible(img_status_list[i])
+        if img_status_list[i] then
+            self.camp_btn_list[i]:setPositionX(statr_x + pos_x_num * spacing)
+            pos_x_num = pos_x_num + 1
+        end
+    end
+
+end
+function NewpartnersummonSelectWindow:getIdList()
+    self.hero_data_list = {}
+	local temp_list = {}
+    local config =  Config.RecruitData.data_hero_data[self._type]
+    if config then
+        for k,v in pairs(config) do
+            _table_insert( temp_list, {id = v.base_id,is_close = v.is_close,sort = v.sort})
+        end
+	end
+	table.sort(temp_list, SortTools.KeyLowerSorter("sort"))
+    local nohideIds = {}
+    if self._type == PartnersummonConst.Summon_Type.LingtDark then
+        nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_data")
+    elseif self._type == PartnersummonConst.Summon_Type.Special then 
+        nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_sp_data")
+    elseif self._type == PartnersummonConst.Summon_Type.UrHero then 
+        nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_ur_data")
+    end
+	for i,v in ipairs(temp_list) do        
+		if v.is_close == 1 or v.is_close == 0 and table.indexof(nohideIds,v.id) then 
+            _table_insert( self.hero_data_list, v.id)
+        end
+    end
+end
+function NewpartnersummonSelectWindow:openRootWnd(_type)
+	self:setData(_type)
+end
+
+function NewpartnersummonSelectWindow:getMoreIdList()
+    self.more_hero_data_list = {}
+    local temp_list = {}
+    local config = Config.RecruitData.data_hero_data[self._type]
+    if config then
+        for k,v in pairs(config) do
+            _table_insert( temp_list, {id = v.base_id,is_close = v.is_close,sort = v.sort,type = v.type,type_name = v.type_name})
+        end
+	end
+	table.sort(temp_list, SortTools.KeyLowerSorter("sort"))
+    local nohideIds = {}
+    if self._type == PartnersummonConst.Summon_Type.LingtDark then
+        nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_data")
+    elseif self._type == PartnersummonConst.Summon_Type.Special then 
+        nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_sp_data")
+    elseif self._type == PartnersummonConst.Summon_Type.UrHero then 
+        nohideIds = RoleController:getInstance():getModel():getSeverShowIds("recruit_ur_data")
+    end
+	for i,v in ipairs(temp_list) do
+		if v.is_close == 1 or v.is_close == 0 and table.indexof(nohideIds,v.id) then 
+            if not self.more_hero_data_list[0] then
+                self.more_hero_data_list[0] = {}
+            end
+            if not self.more_hero_data_list[0][v.type] then
+                self.more_hero_data_list[0][v.type] = {}
+            end
+            _table_insert(self.more_hero_data_list[0][v.type], v.id)
+            local config = Config.ItemData.data_get_data(v.id)
+            local id = config.effect[1].val[1]
+            local cfg = Config.PartnerData.data_partner_base[id]
+            local camp_type = cfg.camp_type
+            if not self.more_hero_data_list[camp_type] then
+                self.more_hero_data_list[camp_type] = {}
+            end
+            if not self.more_hero_data_list[camp_type][v.type] then
+                self.more_hero_data_list[camp_type][v.type] = {}
+            end
+            _table_insert(self.more_hero_data_list[camp_type][v.type], v.id)
+        end
+    end
+end
+function NewpartnersummonSelectWindow:updateMoreList(select_camps)
+    local list = {}
+    for k, v in pairs(self.more_hero_data_list[select_camps]) do
+        table.insert(list,v)
+    end
+    local cfg = Config.RecruitData.data_hero_data[self._type]
+    table.sort(list,function(a,b)
+        if a and b then
+            local _type_1 = cfg[a[1]].type
+            local _type_2 = cfg[b[1]].type
+			if _type_1 < _type_2 then
+				return true
+			else
+				return false
+			end
+		else
+			return false
+		end
+    end)
+    self.hero_data_list = {}
+    local _h =  0
+    for k, v in ipairs(list) do
+        local _num = math.ceil(tableLen(v)/5)
+        _h = _h + 44 + _num*130
+        for key, value in ipairs(v) do
+            table.insert(self.hero_data_list,value)
+        end
+    end
+    _h = math.max(_h,self.more_hero_list:getContentSize().height)
+    self.more_hero_list:setInnerContainerSize(cc.size(self.more_hero_list:getContentSize().width,_h))
+    if not self.type_list then
+        self.type_list = {}
+    end
+    for key, value in pairs(self.type_list) do
+        for k, v in pairs(value) do
+            v:removeFromParent()
+            v=nil
+        end
+        value = nil
+    end
+    self.type_list = {}
+    local _index = 1
+    for key, value in pairs(list) do
+        if not self.type_list[key] then
+            local _list = {}
+            _list.bg = createImage(self.more_hero_list,PathTool.getResFrame("prohibitor","prohibitor_task_2"), 0,_h, cc.p(0, 1), true, 0, true)
+            -- _list.bg:setContentSize(cc.size(600, 40))
+            _list.name_txt = createRichLabel(22,cc.c3b(0x7b,0x35,0x35),cc.p(0,0.5),cc.p(10,_h-18),nil,nil,600)
+            self.more_hero_list:addChild(_list.name_txt)
+            _list.name_txt:setString(cfg[value[1]].type_name)
+            _h = _h - 44
+            for k, v in pairs(value) do
+                local item = NewpartnersummonSelectItem.new(120, 120)
+                self.more_hero_list:addChild(item)
+                item:addCallBack(function() 
+                    self:onCellTouched(item)
+                end)
+                item.index = _index
+                local item_vo = self.hero_data_list[_index]
+                local data = {}
+                _table_insert( data, item_vo)
+                _table_insert( data, self.camp_id)
+                if item_vo then
+                    item:setData(data, #self.hero_data_list)
+                    if self.camp_id and self.camp_id == item_vo then
+                        item:setSelected(true)
+                        self:updateOtherReward()
+                        self.select_cell = item
+                    else
+                        item:setSelected(false)
+                    end
+                end
+                local _x = (k-1)%5*120 + 10
+                local _y = _h - (math.floor((k-1)/5)+1)*130+5
+                item:setPosition(cc.p(_x,_y))
+                _index = _index + 1
+                table.insert(_list,item)
+            end
+            local _num = math.ceil(tableLen(value)/5)
+            _h = _h - _num*130
+            self.type_list[key] = _list
+        end
+    end
+end
+function NewpartnersummonSelectWindow:updateList(select_camps)
+    local select_camp = select_camps or 0
+    if not self.hero_data_list and select_camp == self.select_camp then return end
+    if self.hero_list_view == nil then
+         local width = 120
+        -- if #self.hero_data_list >= 6 then
+        --     width = 110
+        -- end
+        self.hero_list = self.hero_info_panel:getChildByName("hero_list")
+        local scroll_view_size = self.hero_list:getContentSize()
+        local list_setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 0,
+            space_y = 10,
+            item_width = 120,
+            item_height = 120,
+            row = 5,
+            col = 5,
+            need_dynamic = true
+        }
+        self.hero_list_view = CommonScrollViewSingleLayout.new(self.hero_list, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0, 0)) 
+
+        self.hero_list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.hero_list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.hero_list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.hero_list_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end
+    self.select_camp = select_camp
+    local hero_new_list = {}
+    if select_camp > 0 then
+        for i=1,tableLen(self.hero_data_list) do
+            local config = Config.ItemData.data_get_data(self.hero_data_list[i])
+            local id = config.effect[1].val[1]
+            local cfg = Config.PartnerData.data_partner_base[id]
+            local camp_type = cfg.camp_type
+            if select_camp == camp_type then
+                _table_insert( hero_new_list, self.hero_data_list[i])
+            end
+        end
+        self.hero_data_list = hero_new_list
+    end
+    self.hero_list_view:reloadData()
+end
+
+function NewpartnersummonSelectWindow:createNewCell( width, height )
+    local cell = NewpartnersummonSelectItem.new(width, height)
+    cell:addCallBack(function() 
+        self:onCellTouched(cell)
+    end)
+    return cell
+end
+
+function NewpartnersummonSelectWindow:numberOfCells(  )
+    if not self.hero_data_list then return 0 end
+    return #self.hero_data_list
+end
+
+function NewpartnersummonSelectWindow:updateCellByIndex( cell, index )
+    cell.index = index
+    local item_vo = self.hero_data_list[index]
+	local data = {}
+	_table_insert( data, item_vo)
+    _table_insert( data, self.camp_id)
+    if item_vo then
+        cell:setData(data, #self.hero_data_list)
+        if self.camp_id and self.camp_id == item_vo then
+            cell:setSelected(true)
+            self.select_cell = cell
+        else
+            cell:setSelected(false)
+        end
+	end
+end
+
+function NewpartnersummonSelectWindow:onCellTouched( cell )
+    local isSelect = false
+    local item_vo = self.hero_data_list[cell.index]
+    if self.camp_id and item_vo and item_vo == self.camp_id and self.select_cell and self.select_cell.setSelected then
+        self.select_cell:setSelected(true)
+        return
+    end
+    if self.camp_id and self.select_cell and self.select_cell.setSelected then
+        self.select_cell:setSelected(false)
+        self.select_cell = nil
+        self.camp_id = nil
+    end
+    self.select_cell = cell
+    self.select_cell:setSelected(true)
+    self.camp_id = item_vo
+    self:updateOtherReward()
+    
+    -- self.select_cell:addTouchEventListener(function(sender, event_type)
+    -- if event_type == ccui.TouchEventType.began then
+    --     doStopAllActions(cell)
+    --     self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+    --     delayRun(cell, 0.6, function ()
+            -- if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                -- TipsManager:getInstance():showGoodsTips(item_vo)
+    --         end
+    --         self.long_touch_type = LONG_TOUCH_END_TYPE
+    --     end)
+    -- end
+    -- end)
+end 
+
+function NewpartnersummonSelectWindow:updateOtherReward()
+    local cfg = Config.RecruitData.data_hero_data[self._type]
+    local reward = cfg[self.camp_id].extra_reward
+    if reward and next(reward) then
+        local item_id = reward[1][1]
+        local item_num = reward[1][2]
+        local item_cfg = Config.ItemData.data_get_data(item_id)
+        if item_cfg then
+            local res = PathTool.getItemRes(item_cfg.icon)
+            self.other_reward:setString(string.format(TI18N("语言_c_7333"),item_num,res))
+            self.other_reward:setVisible(true)
+        end
+    else
+        self.other_reward:setVisible(false)
+    end
+end
+function NewpartnersummonSelectWindow:close_callback(  )
+	if self.hero_list_view then
+		self.hero_list_view:DeleteMe()
+		self.hero_list_view = nil
+	end
+
+	_controller:openNewPartnerSummonSelectWindow(false)
+end
+
+
+--------------------------@ item
+NewpartnersummonSelectItem = class("NewpartnersummonSelectItem", function()
+    return ccui.Widget:create()
+end)
+
+function NewpartnersummonSelectItem:ctor(width, height)
+	self.size = cc.size(width,height)
+	self:configUI(width, height)
+	self:register_event()
+end
+
+function NewpartnersummonSelectItem:configUI( width, height )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("elitesummon/summon_select_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:setContentSize(cc.size(width, height))
+	self:setTouchEnabled(false)
+    
+	self:addChild(self.root_wnd)
+	self.container = self.root_wnd:getChildByName("container")
+
+    self.item_node = BackPackItem.new(false, true, false, 1, nil, nil, false)
+    self.item_node:setPosition(cc.p(self:getContentSize().width*0.5, self:getContentSize().height*0.5))
+    self.container:addChild(self.item_node)
+end
+--==============================--
+--desc:设置选中状态
+--time:2017-07-03 09:07:12
+--@status:
+--@return 
+--==============================--
+function NewpartnersummonSelectItem:setSelected(status)
+    if status then
+        if self.lay_select == nil then
+            self.lay_select = ccui.Layout:create()
+            self.lay_select:setAnchorPoint(cc.p(0.5,0.5))
+            self.lay_select:setContentSize(self.size)
+            self.lay_select:setPosition(self.size.width/2, self.size.height/2) 
+            self.lay_select:setTouchEnabled(false)
+            showLayoutRect(self.lay_select, 150)
+            local res = PathTool.getResFrame("common","common_1043")
+            createImage(self.lay_select,res,self.size.width/2,self.size.height/2,cc.p(0.5,0.5),true,1,false)
+
+            self:addChild(self.lay_select, 3)
+        else
+            self.lay_select:setVisible(true)
+        end
+    else
+        if self.lay_select then
+            self.lay_select:setVisible(false)
+        end
+    end
+end
+function NewpartnersummonSelectItem:register_event(  )
+	self.item_node:addTouchEventListener(function (sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            if self.callback then
+                self.callback()
+                local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                    TipsManager:getInstance():showGoodsTips(self.data[1],nil,nil,nil,true,true)
+                end))
+                self.sequence_action = self.item_node:runAction(action)
+                self.sequence_action:setTag(10086)
+            end
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+        end
+    end)
+end
+
+function NewpartnersummonSelectItem:clearTimeTicket()
+    if self.sequence_action then
+        self.item_node:stopActionByTag(10086)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+function NewpartnersummonSelectItem:addCallBack( callback )
+	self.callback = callback
+	if self.item_node then
+		self.item_node:addCallBack(callback)
+    end
+    
+end
+
+function NewpartnersummonSelectItem:setData( data , total_len)
+    self.data = data
+	if self.item_node then
+		self.item_node:setBaseData(data[1], 1)
+        -- if total_len and total_len >= 6 then
+        --     self.item_node.scale = 0.8
+        --     self.item_node:setScale(0.8)
+        -- end
+	end
+	if data[1] == data[2] then
+		self:setSelected(true)
+	else
+		self:setSelected(false)
+	end
+end
+
+function NewpartnersummonSelectItem:DeleteMe(  )
+    self:clearTimeTicket()
+	if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+end

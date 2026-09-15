@@ -1,0 +1,176 @@
+--******** 文件说明 ********
+-- 
+-- @description: 回归活动数据处理
+-- @DateTime:    2019-12-13 17:13:08
+-- *******************************
+NewReturnActionModel = NewReturnActionModel or BaseClass()
+
+local table_insert = table.insert
+local table_sort = table.sort
+function NewReturnActionModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function NewReturnActionModel:config()
+end
+
+function NewReturnActionModel:setBasicInfo(data)
+    self.base_info = data
+    GlobalEvent:getInstance():Fire(NewReturnActionEvent.Base_Data_Event,data)
+end
+function NewReturnActionModel:getStartTime()
+    if self.base_info and self.base_info.start_time then
+        return self.base_info.start_time
+    end
+    return 0
+end
+function NewReturnActionModel:getNowPeriod()
+    if self.base_info and self.base_info.period then
+        return self.base_info.period
+    end
+    return 0
+end
+function NewReturnActionModel:setResBackInfo(data)
+    self.res_back_info = data
+    self:updateReturnRed(NewReturnActionConstants.ReturnActionType.resourceBack,data.status == 1)
+    GlobalEvent:getInstance():Fire(NewReturnActionEvent.ResBack_Data_Event,data)
+end
+function NewReturnActionModel:getResBackInfo()
+    if self.res_back_info then
+        return self.res_back_info
+    end
+    return nil
+end
+
+function NewReturnActionModel:setChargeGiftInfo(data)
+    self.charge_gift_info = {}
+    local status = true
+    local free_id = Config.HolidayBackData.data_const.gift_free.val
+    for k, v in pairs(data.gift) do
+        self.charge_gift_info[v.charge_id] = v
+        if v.charge_id == free_id then
+            local cfg = Config.HolidayBackData.data_get_gift[self:getNowPeriod()]
+            if cfg then
+                for key, value in pairs(cfg) do
+                    if value.charge_id == free_id then
+                        status = v.buy_count < value.limit_buy_num
+                    end
+                end
+            end
+        end
+    end
+    self:updateReturnRed(NewReturnActionConstants.ReturnActionType.specialGift,status)
+    
+    GlobalEvent:getInstance():Fire(NewReturnActionEvent.Gift_Data_Event,data)
+end
+function NewReturnActionModel:getChargeGiftInfo()
+    if self.charge_gift_info then
+        return self.charge_gift_info
+    end
+    return nil
+end
+function NewReturnActionModel:getChargeGiftForId(charge_id)
+    if self.charge_gift_info and self.charge_gift_info[charge_id] then
+        return self.charge_gift_info[charge_id]
+    end
+    return nil
+end
+
+function NewReturnActionModel:setLoginGiftInfo(data)
+    self.login_day = data.login_day
+    self.login_gift_info = {}
+    for k, v in pairs(data.reward) do
+        self.login_gift_info[v.day] = true
+    end
+    local status = self.login_day > tableLen(self.login_gift_info)
+    self:updateReturnRed(NewReturnActionConstants.ReturnActionType.loginGift,status)
+    GlobalEvent:getInstance():Fire(NewReturnActionEvent.LoginGift_Data_Event,data)
+end
+function NewReturnActionModel:getLoginGiftDay()
+    return self.login_day or 0
+end
+function NewReturnActionModel:getLoginGiftInfo()
+    if self.login_gift_info then
+        return self.login_gift_info
+    end
+    return nil
+end
+function NewReturnActionModel:getLoginGiftForId(day)
+    if self.login_gift_info and self.login_gift_info[day] then
+        return self.login_gift_info[day]
+    end
+    return false
+end
+
+function NewReturnActionModel:setReturnRed(data)
+    self.return_back_red = false
+    self.red_data = {}
+    for k, v in pairs(data.red_point_list or {}) do
+        self.return_back_red = self.return_back_red or v.code == 1
+        self.red_data[v.type] = v.code == 1
+        if v.type == NewReturnActionConstants.ReturnActionType.resourceBack and v.code == 1 then
+	        ActionController:getInstance():sender16808(ActionStorageBool.returnResBack)
+        end
+        MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.new_return_action, {bid=v.type,num=v.code})
+    end
+
+    GlobalEvent:getInstance():Fire(NewReturnActionEvent.Update_Red_Event,data)
+end
+function NewReturnActionModel:updateReturnRed(type,status)
+    if not self.red_data then
+        self.red_data = {}
+    end
+    self.red_data[type] = status
+    MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.new_return_action, {bid=type,num=status and 1 or 0})
+    
+    GlobalEvent:getInstance():Fire(NewReturnActionEvent.Update_Red_Event)
+end
+function NewReturnActionModel:getReturnAllRed()
+    if self.red_data then
+        return self.red_data
+    end
+    return nil
+end
+function NewReturnActionModel:getReturnRedForId(id)
+    if self.red_data and self.red_data[id] then
+        return self.red_data[id]
+    end
+    return false
+end
+
+function NewReturnActionModel:setReturnResBackFirst(status)
+    self.return_res_back_first = status
+    if status then
+        self.ctrl:openNewReturnResourceBackPanel(true)
+    end
+end
+function NewReturnActionModel:getReturnResBackFirst()
+    return self.return_res_back_first or false
+end
+-- 是否屏蔽功能
+function NewReturnActionModel:isHideNewReturn()
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	local featuresId = MainuiConst.FeaturesShield.NewReturn
+    if not table.indexof(nohideIds,featuresId) then
+		return true
+	end
+    return false
+end
+function NewReturnActionModel:setBackSixGiftRed(status)
+    if status then
+        local cfg = Config.HolidayBackData.data_get_gift_6[self:getNowPeriod()]
+        if cfg then
+            local list = self:getChargeGiftForId(cfg[1].charge_id)
+            if list and next(list) then
+                if list.buy_count >= cfg[1].limit_buy_num then
+                    status = false
+                end
+            end
+        end
+    end
+    self.back_sixGift_red = status
+    self:updateReturnRed(NewReturnActionConstants.ReturnActionType.sixGift,status)
+end
+function NewReturnActionModel:__delete()
+end

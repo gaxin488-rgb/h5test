@@ -1,0 +1,200 @@
+--********************
+--跨服传奇忍者宝箱奖励
+--********************
+CrossServerPrimusBoxRewardWindow = CrossServerPrimusBoxRewardWindow or BaseClass(BaseView)
+
+local controller = PrimusController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local table_sort = table.sort
+local string_format = string.format
+function CrossServerPrimusBoxRewardWindow:__init(kill_master)
+	self.kill_master = kill_master or 0
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "adventure/adventure_box_reward_window"
+    self.theme_num = 0
+    self.ShadowNum = 0   --宝箱进度
+    self.ReceiveNum = 0   --宝箱领取进度
+end
+
+function CrossServerPrimusBoxRewardWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("bg")
+    self.background:setScale(display.getMaxScale())
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    local image_2 = main_container:getChildByName("image_2")
+    local title = main_container:getChildByName("title")
+    title:setString(TI18N("语言_c_107"))
+    image_2:setContentSize(cc.size(title:getContentSize().width + 120,63))
+    self:playEnterAnimatianByObj(main_container, 2)
+    self.btn_close = main_container:getChildByName("btn_close")
+
+    local good_cons = main_container:getChildByName("good_cons")
+    local scroll_view_size = good_cons:getContentSize()
+    local setting = {
+        item_class = CrossServerPrimusBoxRewardItem,      -- 单元类
+        start_x = 10,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 600,               -- 单元的尺寸width
+        item_height = 168,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(good_cons, cc.p(0,0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+end
+
+function CrossServerPrimusBoxRewardWindow:openRootWnd(index)
+    self.theme_num = index
+    self.ShadowNum = model:getCrossServerPrimusData().num or 0  --宝箱进度
+    self.ReceiveNum = model:getCrossServerPrimusData().reward_num or 0   --宝箱领取进度
+	self:updataTeskRewardList()
+end
+
+function CrossServerPrimusBoxRewardWindow:updataTeskRewardList()
+    self.cfg = Config.PrimusElementData.data_primus_desc[self.theme_num]
+    local list = {}
+    local cfg_list = self.cfg.fit_reward
+    local reward_list = {}
+    for key, value in pairs(cfg_list) do
+        table.insert(reward_list, key, value[1])
+    end
+    for key, value in pairs(reward_list) do
+        local data = {}
+        data.id = key 
+        data.num = value
+        for k, v in pairs(self.cfg.fit_reward) do
+            if value == v[1] then
+                data.reward = v[2]
+            end
+        end
+        data.ShadowNum = self.ShadowNum
+        local status = 0
+        if self.ShadowNum >= value then --已达到领取条件
+            if self.ReceiveNum >= value then -- 已领取
+                status = 3
+            else -- 可领取
+                status = 2
+            end
+        else --未达到领取条件
+            status = 1
+        end
+        data.status = status
+        table.insert(list,data)
+    end
+    self.item_scrollview:setData(list)
+end
+
+function CrossServerPrimusBoxRewardWindow:register_event()
+	registerButtonEventListener(self.btn_close, function()
+        controller:openCrossServerPrimusBoxRewardWindow(false)
+    end,true,2)
+    registerButtonEventListener(self.background, function()
+        controller:openCrossServerPrimusBoxRewardWindow(false)
+    end,false,2)
+end
+function CrossServerPrimusBoxRewardWindow:close_callback()
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+	end
+	self.item_scrollview = nil
+	controller:openCrossServerPrimusBoxRewardWindow(false)
+end
+------------------------------------------
+-- 子项
+CrossServerPrimusBoxRewardItem = class("CrossServerPrimusBoxRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function CrossServerPrimusBoxRewardItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function CrossServerPrimusBoxRewardItem:configUI()
+	self.size = cc.size(600,168)
+	self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("adventure/adventure_box_reward_item"))
+    self:addChild(self.root_wnd)
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.name_text = main_container:getChildByName("name_text")
+
+    self.btn_goto = main_container:getChildByName("btn_goto")
+    self.btn_goto:setVisible(false)
+    local Text_2 = self.btn_goto:getChildByName("Text_2")
+    setTextSpacing(Text_2,-10)
+    Text_2:setString(TI18N("语言_c_1564"))
+    self.btn_goto:setTouchEnabled(false)
+    setChildUnEnabled(true,self.btn_goto)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_get:setVisible(false)
+    self.btn_get:getChildByName("Text_2"):setString(TI18N("语言_c_109"))
+    self.spr_has = main_container:getChildByName("spr_has")
+    self.spr_has:setVisible(false)
+
+    local good_cons = main_container:getChildByName("good_cons")
+    local scroll_view_size = good_cons:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 10,                    -- x方向的间隔
+        start_y = 5,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.80,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.80,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.80                     -- 缩放
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(good_cons, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+end
+function CrossServerPrimusBoxRewardItem:register_event()
+	registerButtonEventListener(self.btn_goto, function()
+        controller:openCrossServerPrimusBoxRewardWindow(false)
+    end,true,1)
+    registerButtonEventListener(self.btn_get, function()
+        controller:sender21810()
+    end,true,1)
+end
+function CrossServerPrimusBoxRewardItem:setExtendData(index)
+	self.kill_index = index
+end
+function CrossServerPrimusBoxRewardItem:setData(data)
+    if not data then return end
+    self.data = data
+	self.btn_goto:setVisible(data.status == 1)
+	self.btn_get:setVisible(data.status == 2)
+	self.spr_has:setVisible(data.status == 3)
+	local str = string.format(TI18N("语言_c_5780"),data.num,data.ShadowNum,data.num)
+	self.name_text  :setString(str)
+	local list = {}
+    for k, v in pairs(data.reward) do
+        local vo = {}
+    	vo.bid = v[1]
+        vo.quantity = v[2]
+        table.insert(list, vo)
+    end
+	self.item_scrollview:setData(list)
+	self.item_scrollview:addEndCallBack(function()
+        local list = self.item_scrollview:getItemList()
+        for k,v in pairs(list) do
+            v:setDefaultTip()
+            v:setSwallowTouches(false)
+        end
+    end)
+end
+function CrossServerPrimusBoxRewardItem:DeleteMe()
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+	end
+	self.item_scrollview = nil
+	self:removeAllChildren()
+	self:removeFromParent()
+end

@@ -1,0 +1,661 @@
+----------------------------
+-- 
+-- @Date:   2020-1-4
+-- @Description:   不放回抽奖
+----------------------------
+ActionBingoPanel =
+    class(
+    "ActionBingoPanel",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local flip_delay = 30
+local flip_open_delay = 30
+local item_count = 35
+
+function ActionBingoPanel:ctor(bid)
+    self.holiday_bid = bid
+    self.task_list = {}
+    self.raund_list = {}
+    self.select_round = 0
+    self.select_task = nil
+    self:loadResources()
+end
+
+function ActionBingoPanel:loadResources()
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("fortunebag", "fortunebag"), type = ResourcesType.plist}
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(
+        self.res_list,
+        function()
+            if self and self.configUI then
+                self:configUI()
+                self:register_event()
+            end
+        end
+    )
+end
+
+function ActionBingoPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_bingo_panel"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setPosition(-40, -80)
+    self:setAnchorPoint(0, 0)
+    self.Sprite_1 = self.root_wnd:getChildByName("Sprite_1")
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.goods_con = self.main_container:getChildByName("goods_con")
+    self.left_btn = self.main_container:getChildByName("left_btn")
+    self.right_btn = self.main_container:getChildByName("right_btn")
+    self.txt_time_title = self.main_container:getChildByName("time_title")
+    self.txt_time_title:setString(TI18N("语言_c_1242"))
+    self.txt_time_value = self.main_container:getChildByName("time_val")
+    self.txt_time_value:setString("")
+    self.go_btn = self.main_container:getChildByName("go_btn")
+    setTextMaxWidth(self.go_btn:getChildByName("label"), 110,-6)
+    self.go_btn:getChildByName("label"):setString(TI18N("语言_c_6375"))
+    self.reward_btn = self.main_container:getChildByName("reward_btn")
+    setTextMaxWidth(self.reward_btn:getChildByName("label"), 110,-6)
+    self.reward_btn:getChildByName("label"):setString(TI18N("语言_c_625"))
+    local img = self.main_container:getChildByName("img")
+    img:getChildByName("title_txt_0"):setString(TI18N("语言_c_6376"))
+    self.task_layer = self.main_container:getChildByName("task_layer")
+    self.task_layer:setVisible(false)
+    local task_txt = self.task_layer:getChildByName("task_txt")
+    local pos_X = task_txt:getPositionX()
+    local pos_y = task_txt:getPositionY()
+    self.task_txt = createRichLabel(22, cc.c3b(0x38, 0x00, 0x00), cc.p(0.5, 0.5), cc.p(pos_X, pos_y), 0, nil, 470)
+    self.task_layer:addChild(self.task_txt)
+    task_txt:setVisible(false)
+
+    self.to_task = self.task_layer:getChildByName("to_task")
+    local temp = self.to_task:getChildByName("label")
+    temp:setString(TI18N("语言_c_1680"))
+    temp:setScale(1)
+    local size = temp:getContentSize()
+    self.to_task:setContentSize(cc.size(size.width, size.height))
+    temp:setPosition(cc.p(size.width/2, size.height/2))
+
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.tips1 = self.main_container:getChildByName("tips1")
+    self.tips1:setString(TI18N("语言_c_6373"))
+    self.tips2 = self.main_container:getChildByName("tips2")
+    self.tips2:setString(TI18N("语言_c_6374"))
+    self.tips3 = self.main_container:getChildByName("tips3")
+    self.tips3:setString(TI18N("语言_c_6377"))
+    setTextMaxWidth(self.tips3, 275)
+    self.unlock_time = self.main_container:getChildByName("unlock_time")
+    self.tips4 = self.main_container:getChildByName("tips4")
+    self.tips4:setString(TI18N("语言_c_6378"))
+    setTextMaxWidth(self.tips4,450)
+    self.divide_img = self.main_container:getChildByName("divide_img")
+    self.item_1_node = self.main_container:getChildByName("item_1_node")
+    self.item1 = BackPackItem.new(false, true, false, 0.35, false, true)
+    self.item_1_node:addChild(self.item1)
+    self.item_num1 = self.item_1_node:getChildByName("item_num1")
+    self.item_2_node = self.main_container:getChildByName("item_2_node")
+    self.item2 = BackPackItem.new(false, true, false, 0.35, false, true)
+    self.item_2_node:addChild(self.item2)
+    self.item_num2 = self.item_2_node:getChildByName("item_num2")
+    local goods_size = self.goods_con:getContentSize()
+    if not self.task_list then self.task_list = {} end
+    for i = 1, 9, 1 do
+        local task_item = ActionBingoTaskItem.new()
+        self.goods_con:addChild(task_item)
+        task_item:setPosition(cc.p((i-1)%3*136+14, goods_size.height-12- math.floor((i-1)/3)*145))
+        self.task_list[i] = task_item
+        task_item:addCallBack(
+            function()
+                self:onCellTouched(task_item)
+            end
+        )
+    end
+    controller:sender21613(self.holiday_bid)
+    controller:sender16814(self.holiday_bid)
+end
+
+function ActionBingoPanel:register_event()
+    registerButtonEventListener(self.left_btn, function() self:clickSelectUltimate(-1) end, true, 1, nil, 0.6)
+    registerButtonEventListener(self.right_btn, function() self:clickSelectUltimate(1) end, true, 1, nil, 0.6)
+    registerButtonEventListener(self.to_task, function() self:gotoFinishTask() end, false, 1)
+    registerButtonEventListener(self.go_btn, function() self:gotoOtherAction() end, true, 1)
+    registerButtonEventListener(self.reward_btn, function() self:openRewardView() end, true, 1)
+    registerButtonEventListener(self.main_container, function() 
+        self.task_layer:setVisible(false)
+    end, false)
+
+    if not self.updatebasedataevent then
+        self.updatebasedataevent = GlobalEvent:getInstance():Bind(ActionEvent.UpdateBingoBaseData,function(data)
+            if not data then return end
+            --print(vardump(data))
+            if self and self.setServerData then
+                self:setServerData(data)
+            end
+            if self.select_round == 0 then
+                self.select_round = data.num
+                self:setDefaultSelelct()
+            end
+            self.open_round = data.num
+            self.end_time = data.end_time
+            if self.updateActTime then
+                self:updateActTime()
+            end
+            self:setData()
+            self:setRewardInfo()
+            self:setRedPoint()
+        end)
+    end
+    if not self.updatedataevent then
+        self.updatedataevent = GlobalEvent:getInstance():Bind(ActionEvent.UpdateBingoData,function()
+            self:setData()
+            self:setRewardInfo()
+        end)
+    end   
+    if not self.updatebingotime then
+        self.updatebingotime = GlobalEvent:getInstance():Bind(ActionEvent.UpdateBingoTime,function()
+            local data= ActionController:getInstance():getModel():getBingoTime()
+            if data and data.bid == self.holiday_bid then 
+                self.act_time = data
+                self:setOpenTime()
+                self:setDefaultSelelct()
+                self:setData()
+                self:setRewardInfo()
+                self:setRedPoint()
+            end
+        end)
+    end
+end
+
+function ActionBingoPanel:setDefaultSelelct()
+    if not self.lock_time or next(self.lock_time) == nil then return end
+    local _tem_select = self.select_round
+    local task_list = Config.HolidayBingoData.data_get_task[_tem_select]
+    local now_time = GameNet:getInstance():getTime()
+    local next_time = self.lock_time[_tem_select]
+    if task_list then
+        if now_time >= next_time then
+            return
+        else
+            self.select_round = self.select_round - 1
+            self:setDefaultSelelct()
+        end
+    else
+        return
+    end
+end
+
+function ActionBingoPanel:gotoOtherAction()
+    local camp_id = controller:getActionSubTabVo(self.holiday_bid).camp_id
+    local cfg = Config.HolidayBingoData.data_get_base[camp_id] or {}
+    local skip_id --= --tonumber(cfg[1].desc) 
+    for k, v in pairs(cfg) do
+        local data = cfg[k]
+        if data.skip then
+            skip_id =  data.skip
+        end
+    end
+    if not skip_id then return end
+    JumpController:getInstance():jumpViewByEvtData({700,skip_id})
+end
+
+function ActionBingoPanel:setOpenTime()
+    local camp_id = controller:getActionSubTabVo(self.holiday_bid).camp_id
+    local cfg = Config.HolidayBingoData.data_get_base[camp_id] or {}
+    local start_time = self.act_time.start_time
+    self.lock_time = {}
+    for k, v in pairs(cfg) do
+        local num = v.num
+        local open_time = start_time + v.open
+        self.lock_time[num] = open_time
+    end
+end
+
+function ActionBingoPanel:openRewardView()
+    controller:openBingoRewardView(true,self.raund_list,self.holiday_bid,self.open_round)
+end
+
+function ActionBingoPanel:gotoFinishTask()
+    if self.select_task then
+        local task_data = self.select_task:getData()
+        if not task_data then return end
+        local jump_id = task_data.skip
+        -- print(vardump(task_data))
+        local config = Config.SourceData.data_source_data[jump_id]
+        if config then
+            BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+        else
+            StrongerController:getInstance():clickCallBack(jump_id)
+        end
+    end
+end
+--左右切换bingo卡
+function ActionBingoPanel:clickSelectUltimate(num)
+    self.task_layer:setVisible(false)
+    local camp_id = controller:getActionSubTabVo(self.holiday_bid).camp_id
+    local cfg = Config.HolidayBingoData.data_get_base[camp_id]
+    local star_round,end_round
+    for k, v in pairs(cfg) do
+        local data = cfg[k]
+        if not star_round then
+            star_round = data.num
+        end
+        if data.num < star_round then
+            star_round = data.num
+        end
+        if not end_round then
+            end_round = data.num
+        end
+        if data.num > end_round then
+            end_round = data.num
+        end
+    end
+
+    local _tem_select = self.select_round + num
+    if _tem_select < star_round or _tem_select > end_round then
+        return
+    end
+    local task_list = Config.HolidayBingoData.data_get_task[_tem_select]
+    local now_time = GameNet:getInstance():getTime()
+    if not self.lock_time or next(self.lock_time) == nil then return end
+    local next_time = self.lock_time[_tem_select]
+    if task_list then
+        if now_time >= next_time then
+            if _tem_select > self.open_round then
+                message(TI18N("语言_c_6393"))
+            else
+                self.select_round = _tem_select
+                controller:sender21614(self.holiday_bid,self.select_round)
+            end
+        else
+            message(TI18N("语言_c_1586"))
+        end
+    else
+    end
+end
+--整合服务器发送的数据
+function ActionBingoPanel:setServerData(data)
+    local raund_list = data.round_list
+    for k, v in pairs(raund_list) do
+        local __temp = {}
+        local round = v.round
+        local list = v.list
+        local _temp = {}
+        for key, value in pairs(list) do
+            local id = value.id
+            _temp[id] = value
+        end
+        __temp.round = round
+        __temp.list = _temp
+        __temp.reward_num = v.reward_num
+        self.raund_list[round] = __temp
+    end
+    -- print("self.raund_list--------------",vardump(self.raund_list))
+end
+
+function ActionBingoPanel:setData()
+    if not self.lock_time or next(self.lock_time) == nil then return end
+    local task_list = Config.HolidayBingoData.data_get_task[self.select_round]
+    if not task_list then
+        return
+    end
+    local action_vo = controller:getActionSubTabVo(self.holiday_bid)
+    local res = PathTool.getPlistImgForDownLoad("holiday_bingo",action_vo.aim_title)
+    loadSpriteTexture(self.Sprite_1, res, LOADTEXT_TYPE)
+    local camp_id = action_vo.camp_id
+    local cfg = Config.HolidayBingoData.data_get_base[camp_id]
+    local show_round = cfg[self.select_round].show
+    self.title_txt:setString(string_format(TI18N("语言_c_6372"), show_round, tableLen(cfg)))--("当前bingo轮次"..self.select_round.."/"..#Config.HolidayBingoData.data_get_task)
+    for k, v in pairs(task_list) do
+        local task_data = v
+        local task_id = task_data.task_id
+        local id = task_data.id
+        local task_item = self.task_list[task_id]
+        task_item:setData(task_data)
+        local round_data = self.raund_list[self.select_round]
+        if round_data and round_data.list then
+            if round_data.list[task_id]  then
+                task_item:setTaskInfo(round_data.list[task_id])
+            else
+                task_item:setTaskInfo({})
+            end
+        end
+    end
+end
+
+function ActionBingoPanel:onCellTouched(item)
+    if self.select_task then
+        self.select_task:setSelect(false)
+    end
+    self.select_task = nil
+    item:setSelect(true)
+    self.select_task = item
+    local task_data = item:getData()
+    local task_info = item:getTaskInfo()
+    -- print(vardump(task_data))
+    -- print(vardump(task_info))
+    if task_info then
+        if task_info.finish == 0 then
+            
+        elseif task_info.finish == 1 then
+            controller:sender21615(self.holiday_bid,self.select_round,task_data.task_id)
+        elseif task_info.finish == 2 then
+        end
+    end
+    self.task_layer:setVisible(true)
+    if task_info then
+        local str = string_format("<div fontcolor=\'#249003\'>(%s/%s)</div>", task_info.value,task_info.target_val) 
+        self.task_txt:setString(task_data.desc..str)
+    end
+end
+
+function ActionBingoPanel:setRewardInfo()
+    if not self.lock_time or next(self.lock_time) == nil then return end
+    local camp_id = controller:getActionSubTabVo(self.holiday_bid).camp_id
+    local cfg = Config.HolidayBingoData.data_get_rewards[self.select_round]
+    if not cfg then return end
+    local round_info = self.raund_list[self.select_round]
+    if not round_info then return end
+    local reward_num = round_info.reward_num
+    if reward_num >= 8 then --本页全部完成
+        self.tips1:setVisible(false)
+        self.tips2:setVisible(false)
+        self.item_1_node:setVisible(false)
+        self.item_2_node:setVisible(false)
+        self.tips3:setVisible(false)
+        self.unlock_time:setVisible(false)
+        self.tips4:setVisible(false)
+        self.divide_img:setVisible(false)
+        local finish_all = self:checkFinishAllStatus()
+        -- print("-------------------",finish_all)
+        if finish_all then self.tips4:setVisible(true) end --所有的都完成了
+        local next_round = self.select_round + 1
+        local next_unlock_time = self.lock_time[next_round]
+        if not next_unlock_time then return end
+        local nowtime = GameNet:getInstance():getTime()
+        if nowtime >= next_unlock_time then --说明已经解锁
+            self.tips4:setVisible(true)
+        else
+            self.tips3:setVisible(true)
+            self.unlock_time:setVisible(true)
+            commonCountDownTime(self.unlock_time, (next_unlock_time-nowtime))
+        end
+    else
+        self.tips1:setVisible(true)
+        self.tips2:setVisible(true)
+        self.item_1_node:setVisible(true)
+        self.item_2_node:setVisible(true)
+        self.divide_img:setVisible(true)
+        self.tips3:setVisible(false)
+        self.unlock_time:setVisible(false)
+        self.tips4:setVisible(false)
+        local now_reward = cfg[reward_num+1]
+        local now_reward_id = now_reward[1][1]
+        local now_reward_num = now_reward[1][2]
+        self.item1:setBaseData(now_reward_id,now_reward_num)
+        self.item1:showNumLabel(false)
+        self.item_num1:setString("x"..now_reward_num)
+        local final_reward = cfg[9]
+        local final_reward_id = final_reward[1][1]
+        local final_reward_num = final_reward[1][2]
+        self.item2:setBaseData(final_reward_id,final_reward_num)
+        self.item2:showNumLabel(false)
+        self.item_num2:setString("x"..final_reward_num)
+    end
+    local finish_all = self:checkFinishAllStatus()
+    if not finish_all then
+        self.tips4:setString(TI18N("语言_c_6392"))
+    end
+end
+
+--活动时间
+function ActionBingoPanel:updateActTime()
+    doStopAllActions(self.txt_time_value)
+    -- local time = self.holiday_data.remain_sec --这里要显示每天的倒计时
+    local nowtime = GameNet:getInstance():getTime()
+    local left_time = self.end_time - nowtime
+    model:setCountDownTime(self.txt_time_value, left_time)
+end
+
+function ActionBingoPanel:setRedPoint()
+    local left_status = self:checkRedPoint(1,self.select_round-1)
+    local max_round = #Config.HolidayBingoData.data_get_task
+    local right_status = self:checkRedPoint(self.select_round+1,max_round)
+    self.left_btn:getChildByName("red_point"):setVisible(left_status)
+    self.right_btn:getChildByName("red_point"):setVisible(right_status)
+end
+function ActionBingoPanel:checkRedPoint(from_round,end_round)
+    if from_round>end_round then
+        return false
+    end
+    local red_status = false
+    for i = from_round, end_round do
+        local data = self.raund_list[i]
+        if data then
+            local list = data.list or {}
+            for k, v in pairs(list) do
+                local task_info = v
+                if task_info.finish == 1 then
+                    red_status = true
+                    break
+                end
+            end
+        end
+    end
+    return red_status
+end
+function ActionBingoPanel:checkFinishAllStatus()
+    if next(self.raund_list) == nil then return end
+
+    local camp_id = controller:getActionSubTabVo(self.holiday_bid).camp_id
+    local cfg = Config.HolidayBingoData.data_get_base[camp_id]
+    local this_turn_list = {}
+    for k, v in pairs(cfg) do
+        local num = v.num
+        table_insert(this_turn_list,num)
+    end
+    local all_status = true
+    local task_cfg = Config.HolidayBingoData.data_get_task 
+    for k, v in pairs(this_turn_list) do
+        local trun = v
+        local task_list = task_cfg[trun]
+        if task_list then
+            for key, value in pairs(task_list) do
+                local task_id = value.task_id
+                if self.raund_list[trun] and self.raund_list[trun].list and self.raund_list[trun].list[task_id]then --已解锁未完成的
+                    -- print(self.raund_list.list[round_id][task_id].finish)
+                    local finish_status = self.raund_list[trun].list[task_id].finish == 2
+                    if not finish_status then
+                        all_status = false
+                    end
+                else --未解锁
+                    all_status = false
+                end
+            end
+        end
+    end
+    
+    -- local cfg = Config.HolidayBingoData.data_get_task 
+    -- for k, v in pairs(cfg) do
+    --     local round_id = v[1].task_num
+    --     -- print(vardump(v),"$$$$$$$$$$$$$$$")
+    --     for key, value in pairs(v) do
+    --         local task_id = value.task_id
+    --         -- print(task_id)
+    --         if self.raund_list[round_id] and self.raund_list[round_id].list and self.raund_list[round_id].list[task_id]then --已解锁未完成的
+    --             -- print(self.raund_list.list[round_id][task_id].finish)
+    --             local finish_status = self.raund_list[round_id].list[task_id].finish == 2
+    --             if not finish_status then
+    --                 all_status = false
+    --             end
+    --         else --未解锁
+    --             all_status = false
+    --         end
+    --     end
+    -- end   
+    return all_status
+end
+function ActionBingoPanel:DeleteMe()
+    doStopAllActions(self.txt_time_value)
+    if self.updatebasedataevent then
+        GlobalEvent:getInstance():UnBind(self.updatebasedataevent)
+        self.updatebasedataevent = nil
+    end
+    if self.updatedataevent then
+        GlobalEvent:getInstance():UnBind(self.updatedataevent)
+        self.updatedataevent = nil
+    end
+    if self.updatebingotime then
+        GlobalEvent:getInstance():UnBind(self.updatebingotime)
+        self.updatebingotime = nil
+    end
+    if self.task_list then
+        for i, v in pairs(self.task_list) do
+            v:DeleteMe()
+        end
+        self.task_list = nil
+    end
+    -- if self.update_modify_good_event then
+    --     GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+    --     self.update_modify_good_event = nil
+    -- end
+end
+
+-- --------------------------------------------------------------------
+-- 不放回抽奖福袋
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-01-4
+-- --------------------------------------------------------------------
+ActionBingoTaskItem =
+    class(
+    "ActionBingoTaskItem",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+function ActionBingoTaskItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionBingoTaskItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_bingo_reward_item"))
+    self:addChild(self.root_wnd)
+    self:setContentSize(cc.size(110, 131))
+    self:setAnchorPoint(0, 1)
+    self:setSwallowTouches(true)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+    self.Sprite_1 = self.main_container:getChildByName("Sprite_1")
+    self.select_img = self.main_container:getChildByName("select_img")
+    self.select_img:setVisible(false)
+    self.title = self.main_container:getChildByName("title")
+    self.item_node = self.main_container:getChildByName("item_node")
+    self.finish_img = self.item_node:getChildByName("img")
+    self.finish_img:setLocalZOrder(99)
+    self.finish_img:setVisible(false)
+    self.get_img = self.main_container:getChildByName("get")
+    self.get_img:setVisible(false)
+    self.can_get = self.main_container:getChildByName("can_get")
+    self.can_get:setVisible(false)
+
+    self.goods_item = BackPackItem.new(false,true,false,0.65,false,true)
+    self.goods_item:setAnchorPoint(0.5, 0.5)
+    self.goods_item:setSwallowTouches(false)
+    self.goods_item:setDefaultTip(false)
+    self.item_node:addChild(self.goods_item)
+    self.goods_item:setVisible(false)
+end
+
+function ActionBingoTaskItem:register_event()
+    self.main_container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+        elseif event_type == ccui.TouchEventType.ended or event_type == ccui.TouchEventType.canceled then
+        end
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            if self.callback ~= nil then
+                self:callback()
+            end
+        end
+    end)
+end
+
+function ActionBingoTaskItem:setData(data)
+    -- print(vardump(data))
+    if data == nil then
+        return
+    end
+    self.data = data
+    self.title:setString(data.title)
+    local reward = data.rewards[1]
+    self.goods_item:setData(reward)
+    self.goods_item:setLongTimeTouchEffect(true)
+    local function clickItem()
+        TipsManager:getInstance():showGoodsTips(reward[1], true, true,nil)
+    end
+    self.goods_item:addLongTimeTouchCallback(clickItem)
+    self.goods_item:setVisible(true)
+end
+
+function ActionBingoTaskItem:setTaskInfo(data)
+    local res = PathTool.getResFrame("holiday_bingo","holiday_bingo_03")
+    self.can_get:setVisible(false)
+    self.get_img:setVisible(false)
+    self.finish_img:setVisible(false)
+    self.title:setTextColor(cc.c3b(0x56, 0x29, 0x0d))
+    self.title:disableEffect(cc.LabelEffect.OUTLINE)
+    if data and next(data) ~= nil then
+        self.task_info = data
+        if data.finish == 0 then
+            -- self.goods_item:setTouchEnabled(true)
+        elseif data.finish == 1 then
+            self.can_get:setVisible(true)
+            -- self.goods_item:setTouchEnabled(false)
+        elseif data.finish == 2 then
+            res = PathTool.getResFrame("holiday_bingo","holiday_bingo_02")
+            self.get_img:setVisible(true)
+            self.finish_img:setVisible(true)
+            self.title:setTextColor(cc.c3b(0xfd, 0xec, 0xb3))
+            self.title:enableOutline(cc.c4b(0x56, 0x29, 0x0d, 0xff), 2)
+            -- self.goods_item:setTouchEnabled(false)
+        end
+        loadSpriteTexture(self.Sprite_1, res, LOADTEXT_TYPE_PLIST)
+    end
+end
+		
+function ActionBingoTaskItem:setSelect(status)
+    self.select_img:setVisible(status)
+end
+
+function ActionBingoTaskItem:addCallBack(value)
+    self.callback = value
+end
+
+function ActionBingoTaskItem:getData()
+    return self.data
+end
+function ActionBingoTaskItem:getTaskInfo()
+    return self.task_info
+end
+
+function ActionBingoTaskItem:DeleteMe()
+    if self.goods_item then
+        self.goods_item:DeleteMe()
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

@@ -1,0 +1,520 @@
+-- --------------------------------------------------------------------
+-- @author: xhj@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      圣物转换材料界面
+-- <br/> 2020年6月12日
+-- --------------------------------------------------------------------
+HalidowSyntheticPanel = HalidowSyntheticPanel or BaseClass(BaseView)
+
+local controller = HalidomController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local string_format = string.format
+
+function HalidowSyntheticPanel:__init(is_show_one)
+    self.is_show_one = is_show_one -- 是否显示虚空宝石界面
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/halidom_synthetic_panel"
+    self.cur_selected_sum = 1                       -- 当前选中消耗的数量
+    self.max_num = 1 -- 最大可选择数量
+    self.have_item_num = 0 -- 拥有的材料
+    self.need_num = 0 -- 合成一个新材料需要的数量
+
+    local max_lev = model:getHalidomCurMaxLev()
+    local temp_list = {}
+    
+    local temp_cfg = Config.HalidomData.data_label[1] or {}
+    for k,v in pairs(temp_cfg) do
+        if v.show and v.show[1] and v.show[1][2] and v.show[1][2] <= max_lev then
+            table_insert(temp_list,v)
+        end
+    end
+    
+    table.sort( temp_list, SortTools.KeyLowerSorter("id"))
+    local temp_obj = {id = 17021,label_name = TI18N("虚空宝石")}
+    table_insert(temp_list,temp_obj)
+    self.tab_suit_perfix = temp_list
+    self.cur_index = nil
+    self.tab_view_list = {}
+
+    self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("artifact", "artifact"), type = ResourcesType.plist},
+	}
+
+end
+
+function HalidowSyntheticPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+
+    self.panel_1 = self.main_container:getChildByName("Panel_1")
+    self.panel_1:setVisible(false)
+    self.title = self.main_container:getChildByName("win_title")
+    self.title:setString(TI18N("材料转换"))
+
+    self.right_btn = self.panel_1:getChildByName("right_btn")
+    self.right_btn_lab = self.right_btn:getChildByName("label")
+    self.right_btn_lab:setString(TI18N("转 换"))
+
+    self.tips_num = self.panel_1:getChildByName("tips_num")
+    self.rneed_num = self.panel_1:getChildByName("rneed_num")
+    self.lneed_num = self.panel_1:getChildByName("lneed_num")
+
+    self.left_item_1 = BackPackItem.new(true, true,nil,nil,nil,true)
+    self.left_item_1:setAnchorPoint(0.5, 0.5)
+    self.left_item_1:setPosition(self.panel_1:getContentSize().width / 2-170, 402.00)
+    self.panel_1:addChild(self.left_item_1)
+    
+
+    self.right_item_1 = BackPackItem.new(true, true,nil,nil,nil,true)
+    self.right_item_1:setAnchorPoint(0.5, 0.5)
+    self.right_item_1:setPosition(self.panel_1:getContentSize().width / 2+170, 402.00)
+    self.panel_1:addChild(self.right_item_1)
+
+    self.container = self.panel_1:getChildByName("container")
+    self.sub_btn = self.container:getChildByName("btn_redu")                                 -- 减号
+    self.add_btn = self.container:getChildByName("btn_add")                                 -- 加号
+    self.buy_num = self.container:getChildByName("buy_num")                                
+    
+    self.edit_content = createEditBox(self.container, PathTool.getResFrame("common","common_99998"),cc.size(200,40), Config.ColorData.data_color4[2], 26, Config.ColorData.data_color4[2], 26, "", nil, nil, LOADTEXT_TYPE_PLIST)
+    self.edit_content:setInputMode(cc.EDITBOX_INPUT_MODE_NUMERIC)
+    self.edit_content:setAnchorPoint(cc.p(0.5,0.5))
+    self.edit_content:setPosition(cc.p(184, 33))
+
+    local begin_change_label = false
+    local function editBoxTextEventHandle(strEventName,pSender)
+        if strEventName == "return" or strEventName == "ended" then
+            if begin_change_label then  
+                begin_change_label = false
+                self.buy_num:setVisible(true)
+                local str = pSender:getText()
+                pSender:setText("")  
+                if str ~= "" then
+                    local num = tonumber(str)
+                    if num ~= nil and num >= 0 then
+                        self:setCurUseItemInfoByNum(num)
+                    else
+                        self:setCurUseItemInfoByNum(self.cur_selected_sum)
+                        message(TI18N("请输入数字"))
+                    end
+                else
+                    self:setCurUseItemInfoByNum(self.cur_selected_sum)
+                end 
+
+            end
+        elseif strEventName == "began" then
+            if not begin_change_label then
+                self.buy_num:setVisible(false)
+                begin_change_label = true
+            end
+        elseif strEventName == "changed" then
+
+        end
+    end
+    self.edit_content:registerScriptEditBoxHandler(editBoxTextEventHandle)
+
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self:createTabList()
+end
+
+
+function HalidowSyntheticPanel:createTabList()
+	local tab_view = self.main_container:getChildByName("tab_view")
+    tab_view:setScrollBarEnabled(false)
+    tab_view:setTouchEnabled(false)
+    local count = #self.tab_suit_perfix
+    local tab_bg = tab_view:getChildByName("tab_bg")
+    tab_bg:setContentSize(cc.size(HalidowSyntheticTab.Width*count+10,54))
+    tab_view:setContentSize(cc.size(HalidowSyntheticTab.Width*count+10,63))
+    tab_view:setInnerContainerSize(cc.size(HalidowSyntheticTab.Width*count+10,63))
+    local posx = self.main_container:getContentSize().width/2
+    tab_view:setPositionX(posx)
+
+    local max_lev = model:getHalidomCurMaxLev()
+    local sel_index = 1
+    for i=1,count do
+    	self.tab_view_list[i] = HalidowSyntheticTab.new()
+    	self.tab_view_list[i]:setPosition(((i-1)*HalidowSyntheticTab.Width)+80,31)
+		tab_view:addChild(self.tab_view_list[i])
+		self.tab_view_list[i]:setData(i,count,self.tab_suit_perfix[i])
+		local function func(index)
+			self:tabChangeView(index)
+		end
+        self.tab_view_list[i]:addCallBack(func)
+        
+        local vo = self.tab_suit_perfix[i]
+        if vo and vo.conds and vo.conds[1] and vo.conds[1][2] and vo.conds[1][2] <= max_lev and sel_index < i then
+            sel_index = i
+        end
+    end
+
+    if self.is_show_one and self.is_show_one == true then
+        sel_index = count
+    end
+
+    self:tabChangeView(sel_index)
+end
+
+function HalidowSyntheticPanel:tabChangeView(index)
+	index = index or 1
+	if self.cur_index == index then return end
+	if not self.tab_view_list[index] then return end
+
+    local temp_data = self.tab_suit_perfix[index]
+    if not temp_data then return end
+
+	if self.cur_tab ~= nil then
+		self.cur_tab:setNormal(false)
+		self.cur_tab:setSelect(true)
+		self.cur_tab:setName(cc.c4b(0xcf,0xb5,0x93,0xff))
+	end
+	self.cur_index = index
+	self.cur_tab = self.tab_view_list[self.cur_index]
+	if self.cur_tab ~= nil then
+		self.cur_tab:setNormal(true)
+		self.cur_tab:setSelect(false)
+		self.cur_tab:setName(cc.c4b(0xff,0xed,0xd6,0xff))
+	end
+    
+    
+    if temp_data.id == 17021 then
+        self.panel_1:setVisible(false)
+        if self.halidow_synthetic_two == nil then
+            self.halidow_synthetic_two = HalidowSyntheticPanelTwo.new()
+            self.halidow_synthetic_two:setPosition(cc.p(0,0))
+            self.main_container:addChild(self.halidow_synthetic_two)
+        end
+        
+		if self.halidow_synthetic_two then
+			self.halidow_synthetic_two:setVisibleStatus(true)
+		end
+    else
+        if self.halidow_synthetic_two then
+			self.halidow_synthetic_two:setVisibleStatus(false)
+		end
+        self.panel_1:setVisible(true)
+        if temp_data.expend and temp_data.expend[1] then
+            self.item_bid = temp_data.expend[1][1]
+            self.need_num = temp_data.expend[1][2]
+        end
+        self.new_bid = temp_data.id
+        self:setData()
+    end
+    
+end
+
+function HalidowSyntheticPanel:openHalidowSyntheticTwo()
+    if self.tab_suit_perfix then
+        self:tabChangeView(#self.tab_suit_perfix)
+    end
+end
+
+function HalidowSyntheticPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose) ,true, 1)
+    registerButtonEventListener(self.right_btn, handler(self, self._onClickBtnRight) ,true, 2)
+
+
+
+    self.sub_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            if self.cur_selected_sum == 0 then return end
+            self.cur_selected_sum = self.cur_selected_sum - 1
+            self:setCurUseItemInfoByNum(self.cur_selected_sum)
+        end
+    end)
+    self.add_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            if self.cur_selected_sum >= self.max_num then return end
+            self.cur_selected_sum = self.cur_selected_sum + 1
+            self:setCurUseItemInfoByNum(self.cur_selected_sum)
+        end
+    end)
+
+    -- 物品数量变化
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code, item_list)
+            if bag_code ~= BackPackConst.Bag_Code.BACKPACK then return end
+            self:setData()
+        end)
+    end
+ 
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code, item_list)
+            if bag_code ~= BackPackConst.Bag_Code.BACKPACK then return end
+            self:setData()
+        end)
+    end
+end
+
+--关闭
+function HalidowSyntheticPanel:_onClickBtnClose()
+    controller:openHalidowSyntheticPanel(false)
+end
+
+
+--确认消耗
+function HalidowSyntheticPanel:_onClickBtnRight()
+    if self.item_bid and self.cur_selected_sum*self.need_num > self.have_item_num then
+        local config = Config.ItemData.data_get_data(self.item_bid)
+        if config then 
+            message(TI18N("物品数量不足"))
+            BackpackController:getInstance():openTipsSource( true,config )
+            return
+        end
+    end 
+
+    if self.new_bid then
+		controller:sender22210(self.new_bid, self.cur_selected_sum)
+	end
+end
+
+function HalidowSyntheticPanel:setBtnStatus()
+    if self.max_num == 1 then
+        self:setTouchEnable_Redu(true)
+        self:setTouchEnable_Add(true)
+    else
+        if self.cur_selected_sum == 1 then
+            self:setTouchEnable_Redu(true)
+            self:setTouchEnable_Add(false)
+        elseif self.cur_selected_sum == self.max_num then
+            self:setTouchEnable_Redu(false)
+            self:setTouchEnable_Add(true)
+        else
+            self:setTouchEnable_Redu(false)
+            self:setTouchEnable_Add(false)
+        end
+    end
+end
+
+function HalidowSyntheticPanel:setTouchEnable_Add(bool)
+    setChildUnEnabled(bool,self.add_btn)
+    self.add_btn:setTouchEnabled(not bool)
+end
+function HalidowSyntheticPanel:setTouchEnable_Redu(bool)
+    setChildUnEnabled(bool,self.sub_btn)
+    self.sub_btn:setTouchEnabled(not bool)
+end
+
+--@
+function HalidowSyntheticPanel:openRootWnd()
+    
+end
+
+
+function HalidowSyntheticPanel:setCurUseItemInfoByNum(num)
+    num = math.max(1, num)
+    local sum = math.min(self.max_num,num)
+    self.cur_selected_sum = sum
+    self.buy_num:setString(tostring(sum))
+    local color = 1
+    if sum*self.need_num > self.have_item_num then
+        color = 127
+    end 
+    if color and Config.ColorData.data_color4[color] then
+		self.lneed_num:setTextColor(Config.ColorData.data_color4[color])
+	end
+    self.lneed_num:setString(string_format("%s/%s",sum*self.need_num,self.have_item_num))
+    self.rneed_num:setString(tostring(sum))
+    self:setBtnStatus()
+end
+
+function HalidowSyntheticPanel:setData()
+    if not self.item_bid or not self.new_bid then return end
+    
+    local have_num = 0
+    local item_cfg = Config.ItemData.data_get_data(self.item_bid)
+    if item_cfg then
+        have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.item_bid)
+        self.have_item_num = have_num
+        
+        local vo = {}
+        vo = deepCopy(item_cfg)
+        self.left_item_1:setData(vo)
+        self.left_item_1:setGoodsName(vo.name,cc.p(BackPackItem.Width/2,-70))
+    end
+
+    local next_item_cfg = Config.ItemData.data_get_data(self.new_bid)
+    if next_item_cfg then
+        local vo_2 = {}
+        vo_2 = deepCopy(next_item_cfg)
+        self.right_item_1:setData(vo_2)
+        self.right_item_1:setGoodsName(vo_2.name,cc.p(BackPackItem.Width/2,-70))
+    end
+
+    have_num = math.floor( have_num/self.need_num )
+    if have_num >0 then
+        self.max_num = have_num
+    end
+
+    self:setCurUseItemInfoByNum(self.max_num)
+
+    self.tips_num:setString(string_format(TI18N("%d换%d"),self.need_num,1))
+end
+
+
+function HalidowSyntheticPanel:close_callback()
+    if self.add_goods_event then
+        GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+ 
+    if self.modify_goods_event then
+        GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+
+    if self.left_item_1 then
+        self.left_item_1:DeleteMe()
+    end
+    self.left_item_1 = nil
+
+    if self.right_item_1 then
+        self.right_item_1:DeleteMe()
+    end
+    self.right_item_1 = nil
+
+    if self.halidow_synthetic_two then
+        self.halidow_synthetic_two:DeleteMe()
+    end
+    self.halidow_synthetic_two = nil
+
+    if self.tab_view_list then
+        for k,v in pairs(self.tab_view_list) do
+            if v.DeleteMe then
+                v:DeleteMe()
+                v = nil
+            end
+        end
+    end
+    self.tab_view_list = {}
+    
+    controller:openHalidowSyntheticPanel(false)
+end
+
+
+------------------------------------------
+HalidowSyntheticTab = class("HalidowSyntheticTab", function()
+    return ccui.Widget:create()
+end)
+HalidowSyntheticTab.Width = 150
+HalidowSyntheticTab.Height = 50
+function HalidowSyntheticTab:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function HalidowSyntheticTab:configUI()
+	self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("hero/hero_clothes_lustrat_tab"))
+	self.root_wnd:setContentSize(cc.size(HalidowSyntheticTab.Width,HalidowSyntheticTab.Height))
+    self:addChild(self.root_wnd)
+    self:setTouchEnabled(true)
+
+    self:setContentSize(cc.size(HalidowSyntheticTab.Width,HalidowSyntheticTab.Height))
+	
+	local main_container = self.root_wnd:getChildByName("main_container")
+	
+	self.select = main_container:getChildByName("select")
+	self.normal = main_container:getChildByName("normal")
+    self.normal:setVisible(false)
+    self.name = main_container:getChildByName("name")
+    self.name:setString("")
+    self.name:setFontSize(18)
+
+    main_container:setContentSize(cc.size(HalidowSyntheticTab.Width,HalidowSyntheticTab.Height))
+    self.select:setContentSize(cc.size(HalidowSyntheticTab.Width,HalidowSyntheticTab.Height))
+    self.normal:setContentSize(cc.size(HalidowSyntheticTab.Width,HalidowSyntheticTab.Height))
+
+    main_container:setPositionX(HalidowSyntheticTab.Width/2)
+    self.select:setPositionX(HalidowSyntheticTab.Width/2)
+    self.normal:setPositionX(HalidowSyntheticTab.Width/2)
+    self.name:setPositionX(HalidowSyntheticTab.Width/2)
+end
+function HalidowSyntheticTab:setSelect(visible)
+	if self.select then
+		self.select:setVisible(visible)
+	end
+end
+function HalidowSyntheticTab:setNormal(visible)
+	if self.normal then
+		self.normal:setVisible(visible)
+	end
+end
+function HalidowSyntheticTab:setName(color)
+	if self.name then
+		self.name:setTextColor(color)
+	end
+end
+
+function HalidowSyntheticTab:addCallBack(func)
+	self.callback = func
+end
+
+function HalidowSyntheticTab:register_event()
+	self:addTouchEventListener(function ( sender, event_type )
+		if event_type == ccui.TouchEventType.began then
+			self.touch_began = sender:getTouchBeganPosition()
+		elseif event_type == ccui.TouchEventType.ended then
+			self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click = math.abs(self.touch_end.x - self.touch_began.x) <= 20 and math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click then
+                playTabButtonSound()
+                if self.data then
+                    local max_lev = model:getHalidomCurMaxLev()
+                    if self.data.conds and self.data.conds[1] and self.data.conds[1][2] and self.data.conds[1][2] > max_lev then
+                        message(string_format(TI18N("圣物达到%d级开启"),self.data.conds[1][2]))
+                        return
+                    end
+                end
+                
+            	if self.callback and self.data_index then
+            		self.callback(self.data_index)
+            	end
+            end
+		end
+	end)
+end
+
+function HalidowSyntheticTab:setData(index, count,data)
+    self.data_index = index
+    self.data = data
+	self.select:setFlippedX(false)
+	self.normal:setFlippedX(false)
+	if index == 1 then
+		self.select:loadTexture(PathTool.getResFrame("common","common_2023"), LOADTEXT_TYPE_PLIST)
+		self.select:setFlippedX(true)
+		self.normal:loadTexture(PathTool.getResFrame("common","common_2021"), LOADTEXT_TYPE_PLIST)
+		self.normal:setFlippedX(true)
+	elseif index == count then
+		self.select:loadTexture(PathTool.getResFrame("common","common_2023"), LOADTEXT_TYPE_PLIST)
+		self.normal:loadTexture(PathTool.getResFrame("common","common_2021"), LOADTEXT_TYPE_PLIST)
+	end
+	if data and data.label_name then
+		self.name:setString(data.label_name)
+    end
+    
+    local max_lev = model:getHalidomCurMaxLev()
+    if self.data.conds and self.data.conds[1] and self.data.conds[1][2] and self.data.conds[1][2] > max_lev then
+        setChildUnEnabled(true,self.root_wnd)
+    else
+        setChildUnEnabled(false,self.root_wnd)
+    end
+    
+    
+end
+
+function HalidowSyntheticTab:DeleteMe()
+	self:removeAllChildren()
+	self:removeFromParent()
+end

@@ -1,0 +1,759 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 通关战令主界面
+-- @DateTime:    2020-2-20
+-- *******************************
+BattleDrameOrderWindow = BattleDrameOrderWindow or BaseClass(BaseView)
+
+local controller = BattleDramaController:getInstance()
+local model = controller:getModel()
+local controll_action = ActionController:getInstance()
+-- local lev_reward_list = Config.HolidayNewWarOrderData.data_lev_reward_list
+local lev_reward_list = {}
+local table_sort = table.sort
+local table_insert = table.insert
+function BattleDrameOrderWindow:__init()
+    -- self.is_full_screen = true
+    -- self.win_type = WinType.Full
+    -- self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Full
+    self.layout_name = "battledrama/battle_drama_order_window"
+    self.res_list = {{
+        path = PathTool.getPlistImgForDownLoad("planesafkorderaction", "planesafkorderaction"),
+        type = ResourcesType.plist
+    }, {
+        path = PathTool.getPlistImgForDownLoad("oncewarorder", "oncewarorder"),
+        type = ResourcesType.plist
+    }}
+    self.reward_list = {}
+end
+
+function BattleDrameOrderWindow:isFunNeedHideBattle()
+    return false
+end
+
+function BattleDrameOrderWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    -- if self.background ~= nil then
+    --     self.background:loadTexture(PathTool.getResFrame("oncewarorder","once_war_order_1"), LOADTEXT_TYPE_PLIST)
+    -- end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    self.icon_img = self.main_container:getChildByName("icon_img")
+    -- 解锁奖励总览
+    self.btn_open_lock = self.main_container:getChildByName("btn_open_lock")
+    self.btn_open_lock_label = self.btn_open_lock:getChildByName("name")
+    self.btn_open_lock_label:setString(TI18N("语言_c_4991"))
+
+    self.main_container:getChildByName("Image_15"):getChildByName("Text_33_0"):setString(TI18N("语言_c_4990"))
+    self.go_btn = self.main_container:getChildByName("go_btn")
+    self.go_btn:getChildByName("name_0"):setString(TI18N("语言_c_108"))
+
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.btn_close = self.main_container:getChildByName("btn_close")
+    local medal_title = self.main_container:getChildByName("medal_title")
+    medal_title:setString(TI18N("语言_c_4992"))
+    -- setTextMaxWidth(medal_title, 210)
+    self.medal_num = self.main_container:getChildByName("medal_num")
+    self.medal_num:setString("")
+
+    local tips_bg = self.main_container:getChildByName("Image_7")
+    tips_bg:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    self.main_container:getChildByName("Image_4"):getChildByName("Text_33"):setString(TI18N("语言_c_5109"))
+    setTextMaxWidth(self.main_container:getChildByName("Image_4"):getChildByName("Text_33"), 330)
+    self.goods_item = self.main_container:getChildByName("goods_item")
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔 k, 
+        item_width = 720, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+        checkovercallback = handler(self, self.updateSlideShowByVertical)
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,
+        ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),
+        ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),
+        ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),
+        ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    ---进度条相关
+    local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+    local setting = {
+        start_x = 8, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 100, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.reward_num_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,
+        ScrollViewStartPos.top, scroll_view_size2, setting)
+    self.reward_num_item:setClickEnabled(false)
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),
+        ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),
+        ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),
+        ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+
+    -- self:createProgress()
+    self:initAwardConfig()
+    self:adaptationScreen()
+    -- self:updatePercent()
+    self:updateIconImg() -- 背景
+    self:upDataTips() -- 领奖提示
+
+
+    self:changeTestInfo()
+end
+
+function BattleDrameOrderWindow:changeTestInfo()
+    if MAKELIFEBETTER_NEW then
+        self.main_container:getChildByName("Image_15"):setPositionX(360)
+        self.main_container:getChildByName("Image_4"):setPositionX(360)
+        self.main_container:getChildByName("Image_1"):setPositionX(202)
+        self.main_container:getChildByName("medal_title"):setPositionX(209)
+        self.main_container:getChildByName("medal_num"):setPositionX(500)
+        self.btn_open_lock:setVisible(false)
+        self.icon_img:setVisible(false)
+        self.go_btn:setVisible(false)
+    end
+end
+
+function BattleDrameOrderWindow:upDataTips()
+    local nextInfo = model:getNextDramaRewardInfo()
+    if nextInfo then
+        local max_floor = 0 -- 当前最大的通关数量
+        local next_floor -- 下一次奖励需要的关卡
+        local drama_data = model:getDramaData()
+        if drama_data then
+            self.max_dun_id = drama_data.max_dun_id
+            local cur_drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(drama_data.max_dun_id)
+            if cur_drama_dungeon_info then
+                max_floor = cur_drama_dungeon_info.floor or 0 -- 最大通关数
+            end
+        end
+        local drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(nextInfo.limit_id)
+        local next_floor = drama_dungeon_info.floor -- 当前item的所在层数
+        self.medal_num:setString("(" .. max_floor .. "/" .. next_floor .. ")")
+    end
+end
+
+-- 奖励列表
+function BattleDrameOrderWindow:createTaskCell()
+    local cell = BattleDrameOrderItem.new()
+    return cell
+end
+
+function BattleDrameOrderWindow:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function BattleDrameOrderWindow:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+-- 进度条
+-- 功勋数数列表
+function BattleDrameOrderWindow:createTaskCell2()
+    local cell = BattleDramaRewardItem.new()
+    return cell
+end
+
+function BattleDrameOrderWindow:numberOfTaskCells2()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function BattleDrameOrderWindow:updateTaskCellByIndex2(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+-- 设置适配屏幕
+function BattleDrameOrderWindow:adaptationScreen()
+    -- 对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    -- local top_y = display.getTop(self.container)
+    -- local bottom_y = display.getBottom(self.container)
+
+    -- self.top_bg:setPositionY(top_y)
+    -- self.bottom_bg:setPositionY(bottom_y)
+end
+
+-- 进度条
+function BattleDrameOrderWindow:createProgress()
+    if self.comp_bar == nil then
+        local size = cc.size(315, 27)
+        local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+        local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+        if self.reward_goods_item and not tolua.isnull(self.reward_goods_item) and self.reward_goods_item.container and
+            not tolua.isnull(self.reward_goods_item.container) then
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.reward_goods_item.container:addChild(bar_layout, 999)
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =
+                createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 0, 1)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+        end
+    end
+end
+
+function BattleDrameOrderWindow:updatePercent()
+    if tolua.isnull(self.comp_bar) then
+        return
+    end
+    -- local totalNum = #self.reward_list or 1
+    -- -- printLuaTable(model:getNextDramaRewardInfo())
+    -- local getNum = model:getNextDramaRewardInfo().id or 2
+    -- self.comp_bar:setPercent((getNum - 2)/(totalNum - 1) * 100)
+    local max_floor = 0 -- 当前最大的通关数量
+    local drama_data = model:getDramaData()
+    if drama_data then
+        local cur_drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(drama_data.max_dun_id)
+        if cur_drama_dungeon_info then
+            max_floor = cur_drama_dungeon_info.floor or 0 -- 最大通关数
+        end
+    end
+    local totalNum = model:getRewardMaxInfo()
+    self.comp_bar:setPercent(0) -- (max_floor/totalNum * 100)
+end
+
+function BattleDrameOrderWindow:register_event()
+    if not self.update_dram_data_event then
+        self.update_dram_data_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.BattleDrama_Drama_Reward_Data,
+            function(data)
+                self:initAwardConfig()
+                self:upDataTips()
+                self:updateIconImg()
+            end)
+    end
+    if not self.update_order_event then -- 更新战令解锁信息
+        self.update_order_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.BattleDrama_Top_Update_Data,
+            function(data)
+                self:initAwardConfig()
+                self:upDataTips()
+                self:updateIconImg() -- 背景
+            end)
+    end
+    if not self.update_dram_data_event1 then
+        self.update_dram_data_event1 = GlobalEvent:getInstance():Bind(Battle_dramaEvent.BattleDrama_Update_Data,
+            function(data)
+                self:initAwardConfig()
+            end)
+    end
+
+    registerButtonEventListener(self.btn_open_lock, function()
+        controller:openBuyCardView(true)
+    end, true, 1)
+
+    registerButtonEventListener(self.go_btn, function()
+        controller:openDramRewardView(false)
+        TaskController:getInstance():openTaskMainWindow(false)
+        MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Darma)
+    end, true, 1)
+
+    -- 关闭按钮
+    registerButtonEventListener(self.btn_close, function()
+        controller:openDramRewardView(false)
+    end, true, 2)
+
+    -- 帮助说明
+    registerButtonEventListener(self.btn_rule, function(param, sender, event_type)
+        local config = Config.DungeonData.data_drama_const.dungeon_pass_rule_desc
+        if config then
+            local config_desc = config.desc
+            TipsManager:getInstance():showCommonTips(config_desc, sender:getTouchBeganPosition(), nil, nil, 500)
+        end
+    end, false, 1)
+end
+
+-- 滑动的时候处理显示
+function BattleDrameOrderWindow:updateSlideShowByVertical()
+    local container_y = self.reward_goods_item:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+
+function BattleDrameOrderWindow:updateIconImg()
+    if tolua.isnull(self.icon_img) or tolua.isnull(self.btn_open_lock) then
+        return
+    end
+    loadSpriteTexture(self.icon_img, PathTool.getResFrame("oncewarorder", "once_war_order_6"), LOADTEXT_TYPE_PLIST)
+    local status = model:getOrderStatus()
+    if status then
+        setChildUnEnabled(false, self.icon_img)
+    else
+        setChildUnEnabled(true, self.icon_img)
+    end
+    if status then
+        self.btn_open_lock:setVisible(false)
+    else
+        self.btn_open_lock:setVisible(true)
+    end
+
+    if MAKELIFEBETTER_NEW then
+        self.btn_open_lock:setVisible(false)
+        self.icon_img:setVisible(false)
+    end
+    
+end
+
+function BattleDrameOrderWindow:jumpToMoveByY(y)
+    if not y then
+        return
+    end
+    local pos = y
+    if pos < 0 then
+        pos = 0
+    end
+
+    local len = #self.reward_list or 1
+    local scroll_view_size = self.goods_item:getContentSize()
+    local pos_per = pos * 100 / (len * 139 - scroll_view_size.height)
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_goods_item:scrollToPercentVertical(pos_per, 0.5, true)
+end
+
+-- 
+function BattleDrameOrderWindow:setChangeLevelStatus()
+    local freeList = model:getDicDramaRewardID() or {}
+    local payList = model:getDicDramaRewardOrder() or {}
+    local model = BattleDramaController:getInstance():getModel()
+    local drama_data = model:getDramaData()
+    local max_dun_id = 1
+    if drama_data then
+        max_dun_id = drama_data.max_dun_id
+    end
+    local title_pos = 1
+    local order_status = model:getOrderStatus()
+    local cfg = Config.DungeonData.data_drama_reward
+    for i, v in ipairs(cfg) do
+        if max_dun_id >= v.limit_id then --已通关
+            if order_status then--战令已经解锁
+                if not payList[v.id] or not freeList[v.id] then
+                    title_pos = v.id
+                    break
+                end
+            else
+                if not freeList[v.id] then
+                    title_pos = v.id
+                    break
+                end
+            end
+        else--未通关
+            title_pos = v.id
+            break
+        end
+    end
+    self:jumpToMoveByY(139 * (title_pos - 1))
+end
+
+-- 红点
+function BattleDrameOrderWindow:setTabRedPoint()
+    local cur_day = model:getCurDay()
+    local status = model:getRewardLevRedPoint()
+    addRedPointToNodeByStatus(self.tab_view[1].btn_tab_view, status)
+end
+
+function BattleDrameOrderWindow:initAwardConfig()
+    self.reward_list = {}
+    local temp_reward_list = deepCopy(Config.DungeonData.data_drama_reward) 
+    for k, v in ipairs(temp_reward_list) do
+        table_insert(self.reward_list, v)
+    end
+    self.reward_goods_item:reloadData()
+    self.reward_num_item:reloadData()
+    if self.comp_bar_bg and not tolua.isnull(self.comp_bar_bg) and self.comp_bar and not tolua.isnull(self.comp_bar) and
+        self.bar_layout and not tolua.isnull(self.bar_layout) then
+        local len = #self.reward_list or 1
+        self.comp_bar_bg:setContentSize(cc.size(139 * (len - 1), 27))
+        self.comp_bar:setContentSize(cc.size(139 * (len - 1), 15))
+        self.bar_layout:setPosition(cc.p(57, 139 * (len - 1) + 139 / 2))
+    end
+    self:setChangeLevelStatus()
+end
+
+function BattleDrameOrderWindow:openRootWnd()
+    -- controller:send28706()
+end
+
+function BattleDrameOrderWindow:close_callback()
+    doStopAllActions(self.time_text)
+    doStopAllActions(self.task_time_text)
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    if self.reward_num_item then
+        self.reward_num_item:DeleteMe()
+        self.reward_num_item = nil
+    end
+    if self.update_dram_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event)
+        self.update_dram_data_event = nil
+    end
+    if self.update_order_event then
+        GlobalEvent:getInstance():UnBind(self.update_order_event)
+        self.update_order_event = nil
+    end
+    if self.update_dram_data_event1 then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event1)
+        self.update_dram_data_event1 = nil
+    end
+    controller:openDramRewardView(false)
+end
+
+------------------------------------------
+-- 奖励子项
+BattleDrameOrderItem = class("BattleDrameOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function BattleDrameOrderItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function BattleDrameOrderItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("battledrama/battle_drama_order_item"))
+    self:setContentSize(cc.size(720, 139))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.goods_item = main_container:getChildByName("goods_item") -- 付费礼物
+    self.goods_item:setScrollBarEnabled(false)
+    self.free_goods_item = main_container:getChildByName("free_goods_item") -- 免费礼物
+    self.free_goods_item:setScrollBarEnabled(false)
+    self.finish_img = main_container:getChildByName("finish_img")
+    self.finish_img:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_name = self.btn_get:getChildByName("name")
+    self.btn_name:setString("")
+    -- self.common_goods_item = BackPackItem.new(nil, true, nil, 0.8, nil, true)
+    -- main_container:addChild(self.common_goods_item)
+    -- self.common_goods_item:setPosition(cc.p(170, 139 / 2))
+end
+
+function BattleDrameOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local model = BattleDramaController:getInstance():getModel()
+        local is_unlock = model:getOrderStatus()
+        if is_unlock then -- 战令已解锁
+            if self.pay_status == 1 or self.free_status == 1 then
+                controller:send13034()--send13009(self.data.id)
+            elseif self.free_status == 2 or self.pay_status == 2 then
+                controller:openDramRewardView(false)
+                TaskController:getInstance():openTaskMainWindow(false)
+                MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Darma)
+            end
+        else -- 未解锁
+            if self.free_status == 1 then -- 可领取
+                controller:send13034()--self.data.id
+            elseif self.free_status == 2 then -- 前往过关
+                controller:openDramRewardView(false)
+                TaskController:getInstance():openTaskMainWindow(false)
+                MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Darma)
+            elseif self.free_status == 3 then
+                controller:openBuyCardView(true)
+            end
+        end
+    end, true, 1)
+end
+
+function BattleDrameOrderItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    -- 引导需要
+    if self.data then
+        self.btn_get:setTag(self.data.limit_id)
+    end
+
+    local model = BattleDramaController:getInstance():getModel()
+    local drama_data = model:getDramaData()
+    if drama_data then
+        self.max_dun_id = drama_data.max_dun_id
+        local cur_drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(drama_data.max_dun_id)
+        if cur_drama_dungeon_info then
+            self.cur_dun = cur_drama_dungeon_info.floor or 0 -- 最大通关数
+        end
+    end
+    local drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(self.data.limit_id)
+    local floor = drama_dungeon_info.floor -- 当前item的所在层数
+
+    local is_free_received = model:getDicDramaRewardID()[self.data.id]
+    -- 免费道具-
+    local free_getstatus = false
+    local free_effect_id
+    if self.max_dun_id and self.data and self.data.limit_id then
+        if self.max_dun_id >= self.data.limit_id then
+            if is_free_received then
+                free_getstatus = true -- 已领取
+                self.free_status = 3
+            else
+                free_getstatus = false -- 可领取
+                self.free_status = 1
+                free_effect_id = 263
+            end
+        else -- 前往 条件未满足
+            free_getstatus = false
+            self.free_status = 2
+        end
+    else
+        free_getstatus = false
+        self.free_status = 2
+    end
+
+    local free_data_list = data.items or {}
+    local setting1 = {}
+    setting1.start_x = 10
+    setting1.scale = 0.7
+    setting1.is_tip = true
+    setting1.show_effect_id = free_effect_id
+    setting1.is_get_status = free_getstatus
+    setting1.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.free_item_list = commonShowSingleRowItemList(self.free_goods_item, self.free_item_list, free_data_list,setting1)
+
+    -- 进阶奖励
+    local is_order_received = model:getDicDramaRewardOrder()[self.data.id]
+    local is_locak_status = model:getOrderStatus() -- 战令解锁状态
+    local is_pay_status = false -- 进阶奖励领取状态
+    local pay_effect_id
+    if self.max_dun_id >= self.data.limit_id then
+        if is_order_received then
+            is_pay_status = true -- 已领取
+            self.pay_status = 3
+        else
+            is_pay_status = false -- 可领取
+            self.pay_status = 1
+            pay_effect_id = 263
+        end
+    else -- 前往 条件未满足
+        is_pay_status = false
+        self.pay_status = 2
+    end
+    -- 付费道具
+    local data_list = data.items_ext or {}
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.lock = not is_locak_status
+    setting.is_tip = true
+    setting.show_effect_id = pay_effect_id
+    setting.is_get_status = is_pay_status
+    setting.max_count = 2
+    setting.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.item_list = commonShowSingleRowItemList(self.goods_item, self.item_list, data_list, setting)
+
+    if self.btn_get then
+        addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+        if is_locak_status then -- 战令已经解锁
+            if self.free_status == 1 or self.pay_status == 1 then -- 可领取
+                self.btn_name:enableOutline(Config.ColorData.data_color4[264], 2)
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            elseif self.free_status == 3 and self.pay_status == 3 then -- 已领取
+                self.btn_get:setVisible(false)
+                self.finish_img:setVisible(true)
+            elseif self.free_status == 2 or self.pay_status == 2 then -- 前往过关
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+            end
+        else -- 战令未解锁时
+            if self.free_status == 1 then -- 可领取
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            elseif self.free_status == 2 then -- 前往过关
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+            elseif self.free_status == 3 then
+                self.btn_name:setString(TI18N("语言_c_2684"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+            end
+        end
+    end
+end
+
+function BattleDrameOrderItem:DeleteMe()
+    if self.item_list then
+        for i, v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+    if self.free_item_list then
+        for i, v in pairs(self.free_item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+------------------------------------------
+-- 功勋子项
+BattleDramaRewardItem = class("BattleDramaRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function BattleDramaRewardItem:ctor()
+    self.size = cc.size(100, 139)
+    self:configUI()
+    self:register_event()
+end
+
+function BattleDramaRewardItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    self.select_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_2"),
+        self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_1"),
+        self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img:setVisible(false)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+        self.size.width / 2, self.size.height / 5 + 11, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+        self.size.height / 5 + 11, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function BattleDramaRewardItem:register_event()
+end
+
+function BattleDramaRewardItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    local model = BattleDramaController:getInstance():getModel()
+    local drama_data = model:getDramaData()
+    if drama_data then
+        self.max_dun_id = drama_data.max_dun_id
+        local cur_drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(drama_data.max_dun_id)
+        if cur_drama_dungeon_info then
+            self.cur_dun = cur_drama_dungeon_info.floor or 0 -- 最大通关数
+        end
+    end
+    local drama_dungeon_info = Config.DungeonData.data_drama_dungeon_info(self.data.limit_id)
+    local floor = drama_dungeon_info and drama_dungeon_info.floor or 0 -- 当前item的所在层数
+    local exp = floor or 0
+    self.num_txt:setString(tostring(exp))
+
+    local max_dun_id = self.max_dun_id or 0
+    local limit_id = self.data.limit_id or 0
+    if max_dun_id >= limit_id then
+        self.select_img:setVisible(true)
+    else
+        self.select_img:setVisible(false)
+    end
+    -- 进度条相关
+    local cfg = Config.DungeonData.data_drama_reward
+    local id = self.data.id
+    local last_id = id + 1
+    if cfg[last_id] then
+        if self.comp_bar == nil then
+            local size = cc.size(139, 27)
+            local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+            local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.root_wnd:addChild(bar_layout, 1)
+                bar_layout:setPosition(cc.p(50, 77))
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =
+                createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 0, 0)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+            self.comp_bar_bg:setContentSize(cc.size(139, 27))
+            self.comp_bar:setContentSize(cc.size(139, 15))
+        end
+        if self.bar_layout then
+            self.bar_layout:setVisible(true)
+        end
+        -- 上一条数据的相关
+        local last_cfg = cfg[last_id]
+        local last_limit_id = last_cfg.limit_id
+        local last_floor = Config.DungeonData.data_drama_dungeon_info(last_limit_id).floor
+        if max_dun_id >= limit_id then
+            local total = last_floor - floor
+            local now_pas = self.cur_dun - floor
+            self.comp_bar:setPercent(now_pas / total * 100)
+        else
+            self.comp_bar:setPercent(0)
+        end
+    else
+        if self.bar_layout then
+            self.bar_layout:setVisible(false)
+        end
+    end
+    self.select_bg:setLocalZOrder(9)
+    self.select_img:setLocalZOrder(10)
+    self.num_bg:setLocalZOrder(11)
+    self.num_txt:setLocalZOrder(12)
+    self:setLocalZOrder(id)
+end
+
+function BattleDramaRewardItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

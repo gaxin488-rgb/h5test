@@ -1,0 +1,184 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 14:19:50
+-- @description    : 
+		-- 时空争霸赛主界面
+---------------------------------
+ArenaworldbullyMainWindow = ArenaworldbullyMainWindow or BaseClass(BaseView)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+
+function ArenaworldbullyMainWindow:__init()
+	self.is_full_screen = true
+	self.layout_name = "arenaworldbully/arenaworldbully_main_window"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("time_warp", "competition"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("time_warp", "qualifier"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("common", "common_1"), type = ResourcesType.plist},
+	}
+	self.tab_list = {}
+	self.cur_tab_index = ArenaworldbullyConst.Tab_Index.Preselection  -- 当前选中的tab按钮
+end
+
+function ArenaworldbullyMainWindow:open_callback(  )
+	-- self.background = self.root_wnd:getChildByName("background")
+	-- if self.background then
+	-- 	self.background:setScale(display.getMaxScale())
+	-- end
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self.close_btn = self.root_wnd:getChildByName("close_btn")
+    self:playEnterAnimatianByObj(self.main_container , 1) 
+    self.btn_rule = self.root_wnd:getChildByName("btn_rule")
+	local tab_container = self.root_wnd:getChildByName("tab_container")
+	for i=1,2 do
+		local tab_btn = tab_container:getChildByName("tab_btn_" .. i)
+		if tab_btn then
+			local object = {}
+            object.select_bg = tab_btn:getChildByName('select_bg')
+            object.select_bg:setVisible(true)
+            object.unselect_bg = tab_btn:getChildByName('unselect_bg')
+			object.text = tab_btn:getChildByName('text')
+            -- object.text:setChangeScaleOffWidth(65)
+            setTextMaxWidth(object.text,150,-10)
+			object.tip = tab_btn:getChildByName('tip')
+			object.tip:setVisible(false)
+            object.tab_btn = tab_btn
+            object.index = i
+            self.tab_list[i] = object
+		end
+	end
+    if model:getSelfIsCross() then
+        self.tab_list[1].text:setString(TI18N("语言_c_6585"))
+    else
+        self.tab_list[1].text:setString(TI18N("语言_c_6586"))
+    end
+	self.tab_list[2].text:setString(TI18N("语言_c_6587"))
+	setTextSpacing(self.tab_list[1].text,-10)
+	setTextSpacing(self.tab_list[2].text,-10)
+
+	-- 适配
+	local top_off = display.getTop(self.main_container)
+    local container_size = self.main_container:getContentSize()
+	local bottom_off = display.getBottom(self.main_container)
+    
+    local tab_y = tab_container:getPositionY()
+    tab_container:setPositionY(top_off - (container_size.height - tab_y))
+    local tab_y = self.btn_rule:getPositionY()
+    self.btn_rule:setPositionY(top_off - (container_size.height - tab_y))
+	local tab_y = self.close_btn:getPositionY()
+	self.close_btn:setPositionY(bottom_off + tab_y)
+end
+
+function ArenaworldbullyMainWindow:openRootWnd(index)
+	self.cur_tab_index = index or ArenaworldbullyConst.Tab_Index.Preselection
+	self:changeSelectedTab(self.cur_tab_index)
+    if self.cur_tab_index == ArenaworldbullyConst.Tab_Index.Preselection then
+        MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.WorldPreselection)
+    elseif self.cur_tab_index == ArenaworldbullyConst.Tab_Index.Overlord then
+        MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.WorldOverlord)
+    end
+end
+
+function ArenaworldbullyMainWindow:_onClickBtnClose()
+	controller:openMainWindow(false)
+end
+function ArenaworldbullyMainWindow:_onClickBtnRule()
+	if self.cur_tab_index == ArenaworldbullyConst.Tab_Index.Preselection then
+        MainuiController:getInstance():openCommonExplainView(true, Config.ArenaTimeWarpData.data_explain_score)
+    else
+        MainuiController:getInstance():openCommonExplainView(true, Config.ArenaTimeWarpData.data_explain_champion)
+    end
+end
+function ArenaworldbullyMainWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), true, 2)
+    registerButtonEventListener(self.btn_rule, handler(self, self._onClickBtnRule), true, 2)
+	-- tab按钮
+	for k, object in pairs(self.tab_list) do
+		if object.tab_btn then
+			object.tab_btn:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					playTabButtonSound()
+					self:changeSelectedTab(object.index)
+				end
+			end)
+		end
+	end
+    if self.update_preselection_data == nil then
+        self.update_preselection_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateArenaworldbullyRed, function()
+            self:updateTabBtnRedStatus()
+        end)
+    end
+end
+
+-- 切换标签页
+function ArenaworldbullyMainWindow:changeSelectedTab( index )
+	if self.tab_object ~= nil and self.tab_object.index == index then return end
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(true)
+        self.tab_object = nil
+    end
+    self.tab_object = self.tab_list[index]
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(false)
+    end
+	
+	self.cur_tab_index = index
+	if index == ArenaworldbullyConst.Tab_Index.Preselection then
+        if self.overlord_main_window then
+            self.overlord_main_window:setVisible(false)
+        end
+        if not self.preselection_main_window then
+            self.preselection_main_window = PreselectionMainWindow.new()
+            self.main_container:addChild(self.preselection_main_window)
+        end
+        self.preselection_main_window:setVisible(true)
+        -- self.preselection_main_window:setData()
+    elseif index == ArenaworldbullyConst.Tab_Index.Overlord then
+        if self.preselection_main_window then
+            self.preselection_main_window:setVisible(false)
+        end
+        if not self.overlord_main_window then
+            self.overlord_main_window = OverlordMainWindow.new()
+            self.main_container:addChild(self.overlord_main_window)
+        end
+        self.overlord_main_window:setVisible(true)
+        -- self.overlord_main_window:setData()
+    end
+    self:updateTabBtnRedStatus()
+end
+function ArenaworldbullyMainWindow:updateTabBtnRedStatus(  )
+	for _,object in ipairs(self.tab_list) do
+        local red_status = false
+        if object.index == ArenaworldbullyConst.Tab_Index.Preselection and self.cur_tab_index ~= object.index then -- 预选赛
+            if model:getPreselectionRed() then
+                red_status = true
+            end
+        elseif object.index == ArenaworldbullyConst.Tab_Index.Overlord and self.cur_tab_index ~= object.index then -- 争霸赛
+            if model:getOverlordRed() then
+                red_status = true
+            end
+        end
+        if object.tip then
+            object.tip:setVisible(red_status)
+        end
+    end
+end
+function ArenaworldbullyMainWindow:close_callback(  )
+    if self.update_preselection_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_preselection_data)
+        self.update_preselection_data = nil
+    end
+	if self.preselection_main_window then
+        self.preselection_main_window:DeleteMe()
+        self.preselection_main_window = nil
+    end
+	if self.overlord_main_window then
+        self.overlord_main_window:DeleteMe()
+        self.overlord_main_window = nil
+    end
+	self:_onClickBtnClose()
+end

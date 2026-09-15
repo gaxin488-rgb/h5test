@@ -1,0 +1,194 @@
+GiftShopWindow = GiftShopWindow or BaseClass(BaseView)
+local _controller = MallController:getInstance()
+local _model = _controller:getModel()
+
+function GiftShopWindow:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "mall/gift_shop_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("bigbg/gift_shop", "txt_cn_diving_03"), type = ResourcesType.single},
+    }
+    self.win_type = WinType.Mini   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+	self.background_mask_enable = true
+end
+
+function GiftShopWindow:open_callback(  )
+	self._ui = getAllCsbExportChildren(self.root_wnd)
+	local ui = self._ui
+	ui._background:setScale(display.getMaxScale())
+
+	local scroll_view_size = ui._good_cons:getContentSize()
+    local setting = {
+        item_class = GiftShopItem,      -- 单元类
+        start_x = 6,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 15,                   -- y方向的间隔
+        item_width = 622,               -- 单元的尺寸width
+        item_height = 156,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(ui._good_cons, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+end
+
+function GiftShopWindow:openRootWnd(type,setting)
+	local ui = self._ui
+	self._cur_gift_show_type = type
+    local type_config = Config.ExchangeGiftData.data_shop_list_fun(type)
+    if type_config then
+        if type_config.banner_graph and type_config.banner_graph ~= "" then
+            local guild_bg_res =  PathTool.getPlistImgForDownLoad("bigbg/gift_shop", type_config.banner_graph,false)
+            self._bannerResLoad = loadSpriteTextureFromCDN(ui._banner, guild_bg_res, ResourcesType.single, self._bannerResLoad)
+        end
+        if type_config.banner_text and type_config.banner_text ~= "" then
+            local guild_bg_res =  PathTool.getPlistImgForDownLoad("bigbg/gift_shop", type_config.banner_text,false)
+            self._bannerTxtResLoad = loadSpriteTextureFromCDN(ui._banner_txt, guild_bg_res, ResourcesType.single, self._bannerTxtResLoad)
+        end
+    end
+
+	local data = _controller:checGiftShopDataForCmd13431(type,true)
+	self:updateList(data)
+end
+
+function GiftShopWindow:updateList(data)
+    self.server_data = data
+	if data and next(data) then
+		local list = self:getConfig(self._cur_gift_show_type,data)
+		self.data_list = list
+		self.item_scrollview:setData(self.data_list)
+	end
+end
+
+function GiftShopWindow:register_event(  )
+	-- registerButtonEventListener(self._ui._close_btn, handler(self, self.close), true, 2)
+	if self.get_gift_shop_updata == nil then
+        self.get_gift_shop_updata = GlobalEvent:getInstance():Bind(MallEvent.COMMON_GIFT_SHOP_UPDATA,function (data)
+            if data and data.type == self._cur_gift_show_type then
+				self:updateList(data)
+			end 
+        end)
+    end
+	if self.buy_success_event == nil then
+        self.buy_success_event = GlobalEvent:getInstance():Bind(MallEvent.COMMON_GIFT_SHOP_BUY_COMPLETE,function (data)
+            if data and data.type == self._cur_gift_show_type then
+                if self.server_data and next(self.server_data) then
+                    self:updateList(self.server_data)
+                end
+			end 
+        end)
+    end
+    self._ui._background:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            _controller:openGiftShopWindow(false)
+        end
+    end)
+    self._ui._close_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            _controller:openGiftShopWindow(false)
+        end
+    end)
+end
+
+function GiftShopWindow:getConfig( type,data)
+	local config = {}
+	local list = {}
+	local data_shop_data = Config.ExchangeGiftData.data_shop_data
+	if data_shop_data and data_shop_data[type] then
+		config = deepCopy(data_shop_data[type])
+	else
+		if DATA_DEBUG and data == nil then
+			print('(Config.ExchangeGiftData.data_shop_data['..type..'])not found')
+		end
+		return
+	end
+
+	local list = deepCopy(data.item_list)
+    local show_list = {}
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("exchange_data")
+    for a,j in pairs(config) do
+        if j.type == type then
+            if list and next(list) then
+                for k,v in pairs(list) do --已经买过的限购物品
+                    if j.id == v.eid then
+                        if v.ext[1] and v.ext[1].val then --不管是什么限购 赋值已购买次数就好了。。
+                            j.has_buy = v.ext[1].val
+                            table.remove(list,k)
+                        end
+                        break
+                    else
+                        j.has_buy = 0
+                    end
+                end
+            else
+                j.has_buy = 0
+            end
+            local limit_num = 0
+            if j.limit_count and j.limit_count>0 then
+                limit_num = j.limit_count
+            elseif j.limit_this and j.limit_this>0 then
+                limit_num = j.limit_this
+            elseif j.limit_month and j.limit_month>0 then
+                limit_num = j.limit_month
+            elseif j.limit_week and j.limit_week>0 then
+                limit_num = j.limit_week
+            elseif j.limit_day and j.limit_day>0 then
+                limit_num = j.limit_day
+            else
+                limit_num = 1
+            end
+            j.limit_num = limit_num
+            j.buy_state = 0 --可买
+            if j.has_buy >= limit_num then
+                j.buy_state = 1 --已买
+            end
+            -- if j.open_srv_timestamp and j.open_srv_timestamp ~= 0 then  --竞技商店老服去掉周限购
+            --     local openServerTime = InviteCodeController:getInstance():getModel():getOpenServerTime()
+            --     if openServerTime <= j.open_srv_timestamp then
+            --         if j["limit_week"] and j.limit_week ~= 0 then
+            --             j.limit_week = 0
+            --         end
+            --     end
+            -- end
+            local is_show = true
+            if self.role_vo then
+                is_show = self:checkShowLev(j.role_lev)
+            end
+            if is_show then
+                table.insert(show_list,j)
+            end                
+        end
+    end
+    local sort_fun = SortTools.tableLowerSorter({"buy_state", "id"})
+    table.sort(show_list, sort_fun)
+	return show_list
+end
+
+function GiftShopWindow:close_callback(  )
+	if self.buy_success_event then 
+        GlobalEvent:getInstance():UnBind(self.buy_success_event)
+        self.buy_success_event = nil
+    end
+    if self.get_gift_shop_updata then
+        GlobalEvent:getInstance():UnBind(self.get_gift_shop_updata)
+        self.get_gift_shop_updata = nil
+    end
+	if self._bannerResLoad then
+		self._bannerResLoad:DeleteMe()
+		self._bannerResLoad = nil
+	end
+	if self._bannerTxtResLoad then
+		self._bannerTxtResLoad:DeleteMe()
+		self._bannerTxtResLoad = nil
+	end
+	if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+	_controller:openGiftShopWindow(false)
+end

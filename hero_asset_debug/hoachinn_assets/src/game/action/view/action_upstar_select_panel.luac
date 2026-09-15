@@ -1,0 +1,366 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-03-5 15:12:43
+-- @description    : 
+		-- up英雄选择界面
+---------------------------------
+local _controller = ActionController:getInstance()
+local _model = _controller:getModel()
+
+ActionUpstarSelectPanel = ActionUpstarSelectPanel or BaseClass(BaseView)
+
+function ActionUpstarSelectPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "action/action_upstar_select_panel"
+	self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("elitesummon","elitesummon"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("selectelitesummon","selectelitesummon"), type = ResourcesType.plist },
+    } 
+	self.choose_pos = 0
+end
+
+function ActionUpstarSelectPanel:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+	local container = self.root_wnd:getChildByName("container")
+	local image_title = container:getChildByName("image_title")
+	local win_title = container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_3600"))
+	moveTextBg(win_title,image_title,60,image_title:getContentSize().width)
+	self.hero_node = container:getChildByName("hero_node")
+	self.left_btn = container:getChildByName("left_btn")
+	self.left_btn:getChildByName("label"):setString(TI18N("语言_c_395"))
+	self.right_btn = container:getChildByName("right_btn")
+	self.right_btn:getChildByName("label"):setString(TI18N("语言_c_261"))
+	self.close_btn = container:getChildByName("close_btn")
+	self.tip_scroll = container:getChildByName("tip_scroll")
+	self.tip_scroll:setScrollBarEnabled(false)
+	self.tip_2 = self.tip_scroll:getChildByName("tip_2")
+    setTextMaxWidth(self.tip_2,622)
+	self.tip_2:setString(TI18N("语言_c_6772"))
+	local _h = math.max(self.tip_scroll:getContentSize().height,self.tip_2:getContentSize().height)
+	self.tip_scroll:setInnerContainerSize(cc.size(self.tip_scroll:getContentSize().width,_h))
+	self.tip_2:setPositionY(_h)
+	self.tip_1 = container:getChildByName("tip_1")
+    self.tip_1:setString(transformTextToShort(TI18N("语言_c_4513"),50))
+    addEvt2showAllTextTips(self.tip_1,TI18N("语言_c_4513"),50)
+	self.hero_info_panel = container:getChildByName("hero_info_panel")
+	local camp_node = container:getChildByName("camp_node")
+	self.camp_btn_list = {}
+    self.camp_btn_list[0] = camp_node:getChildByName("camp_btn0")
+    self.camp_btn_list[HeroConst.CampType.eWater] = camp_node:getChildByName("camp_btn1")
+    self.camp_btn_list[HeroConst.CampType.eFire]  = camp_node:getChildByName("camp_btn2")
+    self.camp_btn_list[HeroConst.CampType.eWind]  = camp_node:getChildByName("camp_btn3")
+    self.camp_btn_list[HeroConst.CampType.eLight] = camp_node:getChildByName("camp_btn4")
+    self.camp_btn_list[HeroConst.CampType.eDark]  = camp_node:getChildByName("camp_btn5")
+    self.img_select = camp_node:getChildByName("img_select")
+    local x, y = self.camp_btn_list[0]:getPosition()
+    self.img_select:setPosition(x - 0.5, y + 1)
+end
+
+function ActionUpstarSelectPanel:register_event(  )	
+	registerButtonEventListener(self.right_btn, handler(self, self.onClickChooseBtn), true)
+
+	registerButtonEventListener(self.left_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	registerButtonEventListener(self.close_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	
+	registerButtonEventListener(self.background, function ( )
+		self:onClickCloseBtn()
+	end, false, 2)
+
+	--阵营按钮
+    for select_camp, v in pairs(self.camp_btn_list) do
+        registerButtonEventListener(v, function() self:onClickBtnShowByIndex(select_camp) end ,true, 2)
+    end
+
+    if not self.upstar_select_gift then
+        self.upstar_select_gift = GlobalEvent:getInstance():Bind(ActionEvent.UpStarSelectGift,function(pos)
+            self.choose_pos = pos
+            self:updateHeroSpine(pos)
+        end)
+    end
+end
+function ActionUpstarSelectPanel:updateHeroSpine(pos)
+    local list = {}
+    if not self.scroll_list or not next(self.scroll_list) then return end
+    for key, value in pairs(self.scroll_list) do
+        if value.pos == pos then
+            list = value
+        end
+    end
+    if not next(list) then return end
+    local hero_vo = HeroVo.New()
+    local hero_data = {}
+    hero_data.bid = list.partner_id
+    hero_data.lev = 1
+    hero_data.star = 5
+    hero_data.use_skin = 0
+    hero_vo:updateHeroVo(hero_data)
+    if self.spine then
+        self.spine:DeleteMe()
+        self.spine = nil
+    end
+    if not self.spine then
+        self.spine = BaseRole.new(BaseRole.type.partner, hero_vo, nil, {scale = 0.55, skin_id = 0})
+        self.spine:setAnimation(0,PlayerAction.show,true)
+        self.spine:setCascade(true)
+        self.spine:setPosition(cc.p(0,135))
+        self.spine:setAnchorPoint(cc.p(0.5,0.5)) 
+        -- self.spine:setScale(1)
+        self.hero_node:addChild(self.spine) 
+        
+        self.spine:setCascade(true)
+        self.spine:setOpacity(0)
+        local action = cc.FadeIn:create(0.2)
+        self.spine:runAction(action)
+    end
+end
+--显示根据类型 0表示全部
+function ActionUpstarSelectPanel:onClickBtnShowByIndex(select_camp)
+    if self.img_select and self.camp_btn_list[select_camp] then
+        local x, y = self.camp_btn_list[select_camp]:getPosition()
+        self.img_select:setPosition(x - 0.5, y + 1)
+    end
+    self:setData(select_camp)
+end
+
+function ActionUpstarSelectPanel:onClickCloseBtn(  )
+	_controller:openActionUpstarSelectPanel(false)
+end
+
+function ActionUpstarSelectPanel:onClickChooseBtn(  )
+	if self.choose_pos ~= 0 then
+        GlobalEvent:getInstance():Fire(ActionEvent.UpStarSelectOkGift, self.holiday_data.bid,self.choose_pos)
+	end
+	self:onClickCloseBtn()
+end
+
+function ActionUpstarSelectPanel:setHeroList()
+    self.hero_list =  {}
+	self.hero_list[0] = deepCopy(Config.HolidayStarplanPackOptionalData.data_chose_info[self.holiday_data.camp_id])
+	for key, value in pairs(self.hero_list[0]) do
+		value.is_choose = false
+		for k, v in pairs(self.holiday_data.chose_list) do
+			if v.old_chose_id == value.pos then
+				value.is_choose = true
+				break
+			end
+		end
+        local cfg = Config.PartnerData.data_partner_base[value.partner_id]
+        if not self.hero_list[cfg.camp_type] then
+            self.hero_list[cfg.camp_type] = {}
+        end
+        table.insert(self.hero_list[cfg.camp_type], value)
+	end
+end
+
+function ActionUpstarSelectPanel:setData(index)
+    self.scroll_list = self.hero_list[index]
+	if self.combobox_scrollview == nil then
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 2,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 120,                -- 单元的尺寸width
+            item_height = 120,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 5,                         -- 列数，作用于垂直滚动类型
+            delay = 1,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.combobox_scrollview = CommonScrollViewSingleLayout.new(self.hero_info_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, self.hero_info_panel:getContentSize(), setting, cc.p(0, 0))
+
+        self.combobox_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCellCombobox), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.combobox_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCellsCombobox), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.combobox_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndexCombobox), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        
+        self.combobox_scrollview:setSwallowTouches(false)
+    end
+    self.combobox_scrollview:reloadData()
+    self:updateHeroSpine(self.choose_pos)
+end
+
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ActionUpstarSelectPanel:createNewCellCombobox(width, height)
+    local cell = ActionUpstarSelectItem.new()
+    return cell
+end
+
+--获取数据数量
+function ActionUpstarSelectPanel:numberOfCellsCombobox()
+    if not self.scroll_list then return 0 end
+    return #self.scroll_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function ActionUpstarSelectPanel:updateCellByIndexCombobox(cell, index)
+    cell.index = index
+    local data = self.scroll_list[index]
+    if not data then return end
+    cell:setData(data,self.choose_pos)
+end
+
+function ActionUpstarSelectPanel:openRootWnd(data,chose_id)
+    self.holiday_data = data
+    self.choose_pos = chose_id
+    self:setHeroList()
+    self:onClickBtnShowByIndex(0)
+end
+
+
+function ActionUpstarSelectPanel:close_callback(  )
+    if self.upstar_select_gift then
+        GlobalEvent:getInstance():UnBind(self.upstar_select_gift)
+        self.upstar_select_gift = nil
+    end
+    if self.combobox_scrollview then 
+        self.combobox_scrollview:DeleteMe()
+        self.combobox_scrollview = nil
+    end
+	_controller:openActionUpstarSelectPanel(false)
+end
+
+
+ActionUpstarSelectItem = class("ActionUpstarSelectItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionUpstarSelectItem:ctor()
+	self.size = cc.size(120,120)
+	self:configUI(120, 120)
+	self:register_event()
+end
+
+function ActionUpstarSelectItem:configUI( width, height )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("elitesummon/summon_select_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:setContentSize(cc.size(width, height))
+	self:setTouchEnabled(false)
+    
+	self:addChild(self.root_wnd)
+	self.container = self.root_wnd:getChildByName("container")
+    self.container:setTouchEnabled(true)
+    self.container:setSwallowTouches(false)
+
+    self.item_node = HeroExhibitionItem.new(1,true)
+	self.item_node:setTouchEnabled(false)
+    self.item_node:addCallBack(self.clickBack)
+    self.item_node:addLongTimeTouchCallback(self.LongClickBack)
+    self.item_node:setPosition(cc.p(self:getContentSize().width*0.5, self:getContentSize().height*0.5))
+    self.container:addChild(self.item_node)
+end
+function ActionUpstarSelectItem:register_event(  )
+    self.container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                doStopAllActions(self.container)
+                self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+            elseif self.long_touch_type == LONG_TOUCH_END_TYPE then
+                --事件触发了就不处理点击事件了
+                return
+            end
+            
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click =
+                    math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                    math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                self:clickBack()
+            end
+        elseif event_type == ccui.TouchEventType.moved then
+            if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                local touch_began = self.touch_began
+                local touch_move = sender:getTouchMovePosition()
+                if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 20 or math.abs(touch_move.y - touch_began.y) > 20) then 
+                    --移动大于20了..表示取消长点击效果
+                    doStopAllActions(self.container)
+                    self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+                end 
+            end
+        elseif event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+            --有长点击效果
+            doStopAllActions(self.container)
+            self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+            delayRun(self.container, 0.6, function ()
+                if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                    self:LongClickBack()
+                end
+                self.long_touch_type = LONG_TOUCH_END_TYPE
+            end)
+        elseif event_type == ccui.TouchEventType.canceled then
+            if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                doStopAllActions(self.container)
+                self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+            end
+        end
+    end)
+
+
+    if not self.upstar_select_gift then
+        self.upstar_select_gift = GlobalEvent:getInstance():Bind(ActionEvent.UpStarSelectGift,function(pos)
+            self.chose_pos = pos
+            self:setData(self.data,self.chose_pos)
+        end)
+    end
+end
+function ActionUpstarSelectItem:clickBack()
+    self.item_node:setSelected(true)
+    GlobalEvent:getInstance():Fire(ActionEvent.UpStarSelectGift, self.data.pos)
+end
+function ActionUpstarSelectItem:LongClickBack()
+    local cfg = Config.PartnerData.data_partner_base[self.data.partner_id]
+    TipsManager:getInstance():showGoodsTips(cfg.item_id)
+end
+
+function ActionUpstarSelectItem:setData(data,chose_pos)
+    self.data = data
+    self.chose_pos = chose_pos
+    local hero_vo = HeroVo.New()
+    hero_vo.bid = self.data.partner_id
+    hero_vo.lev = 1
+    hero_vo.star = 5
+    self.item_node:setData(hero_vo)
+    if self.data.is_choose then
+        setChildUnEnabled(true,self)
+    else
+        setChildUnEnabled(false,self)
+    end
+    if self.chose_pos == self.data.pos then
+        self.item_node:setSelected(true)
+    else
+        self.item_node:setSelected(false)
+    end
+end
+
+function ActionUpstarSelectItem:DeleteMe(  )
+	if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+    if self.upstar_select_gift then
+        GlobalEvent:getInstance():UnBind(self.upstar_select_gift)
+        self.upstar_select_gift = nil
+    end
+end

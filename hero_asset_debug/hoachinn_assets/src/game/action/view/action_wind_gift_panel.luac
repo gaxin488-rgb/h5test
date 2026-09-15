@@ -1,0 +1,528 @@
+--******** 文件说明 ********
+-- 
+-- @description: 疾风之礼
+-- @DateTime:    2019-08-22 10:57:23
+-- *******************************
+ActionWindGiftPanel = class("ActionWindGiftPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionWindGiftPanel:ctor(bid,id,remain_sec)
+    self.remain_sec = remain_sec
+	self.holiday_bid = bid
+	self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("elitesummon","elitesummon"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("gale_gift","gale_bg_01"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("gale_gift/gale","gale"), type = ResourcesType.plist },
+    } 
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+    end)
+    self.reward_list = {}
+    
+    self.stage = 0
+    self.index = 0
+end
+
+function ActionWindGiftPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionWindGiftPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_wind_gift_panel"))
+    self.root_wnd:setPosition(-40,-82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.hero = self.main_container:getChildByName("hero")
+    self.txt_img = self.main_container:getChildByName("txt_img")
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.exchange_btn = self.main_container:getChildByName("exchange_btn")
+    self.exchange_txt = self.exchange_btn:getChildByName("exchange_txt")
+    self.exchange_txt:setString(TI18N("语言_c_1475"))
+    self.current_txt = createRichLabel(26,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(120,22))
+    self.exchange_btn:addChild(self.current_txt)
+    self.no_line = self.main_container:getChildByName("no_line")
+    self.original_txt = createRichLabel(24,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(590,230),-10,nil,250)
+    self.main_container:addChild(self.original_txt,5)
+    self.no_line:setZOrder(6)
+    self.no_line:setVisible(false)
+    self.original_txt:setVisible(false)
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.act_time = self.main_container:getChildByName("act_time")
+    controller:getModel():setCountDownTime(self.act_time,self.remain_sec or 0)
+    self.time_txt = self.main_container:getChildByName("time_txt")
+    self.time_txt:setString(TI18N("语言_c_1242"))
+    self.act_time:setPositionX(self.time_txt:getPositionX() + self.time_txt:getContentSize().width + 5)
+    self.time_bg:setContentSize(cc.size(self.time_txt:getContentSize().width + self.act_time:getContentSize().width + 25,30))
+    self.have_bg = self.main_container:getChildByName("have_bg")
+    self.have_txt = createRichLabel(24,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(589,90),-10,nil,250)
+    self.main_container:addChild(self.have_txt)
+    self.tip_bg = self.main_container:getChildByName("tip_bg")
+    self.tip_txt = self.tip_bg:getChildByName("tip_txt")
+    self.tip_txt:setChangeScaleOffWidth(-2000)
+    self.tip_txt:setString(TI18N("语言_c_5958"))
+    setTextMaxWidth(self.tip_txt,700,-10)
+    self.jump1_btn = self.main_container:getChildByName("jump1_btn")
+    self.jump1_txt = self.jump1_btn:getChildByName("label")
+    setTextMaxWidth(self.jump1_txt,86,-10)
+    self.jump2_btn = self.main_container:getChildByName("jump2_btn")
+    self.jump2_txt = self.jump2_btn:getChildByName("label")
+    setTextMaxWidth(self.jump2_txt,86,-10)
+    self.item_panel = self.main_container:getChildByName("item_panel")
+    self:setPanel()
+    controller:cs16603(self.holiday_bid)
+end
+function ActionWindGiftPanel:setPanel()
+    self.camp_id = model:getWindGiftCampId()
+    self.constant = Config.GaleGiftData.data_constant[self.camp_id]
+    if not self.constant or not self.constant.base_id2 then
+        self.jump2_btn:setVisible(false)
+    else
+        local data = ActionController:getInstance():getActionSubTabVo(self.constant.base_id2)
+        if data then
+            self.jump2_txt:setString(data.title)
+            self.jump2_btn:setVisible(true)
+        else
+            self.jump2_btn:setVisible(false)
+        end
+    end
+    if self.constant and self.constant.base_id1 then
+        local data = ActionController:getInstance():getActionSubTabVo(self.constant.base_id1)
+        if data then
+            self.jump1_txt:setString(data.title)
+            self.jump1_btn:setVisible(true)
+        else
+            self.jump1_btn:setVisible(false)
+        end
+    else
+        self.jump1_btn:setVisible(false)
+    end
+    self.reward_data = deepCopy(Config.GaleGiftData.data_reward_info[self.camp_id])
+    self.gift_list = {}
+    if self.constant then
+        loadSpriteTexture(self.txt_img, PathTool.getResFrame("gale_gift",self.constant.write,false,"gale"), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(self.image_bg, string.format("resource/gale_gift/%s.png",self.constant.bg), LOADTEXT_TYPE)
+        local have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.constant.need_id)
+        self.have_txt:setString(string.format(TI18N("语言_c_5960"),have_num,PathTool.getItemRes(self.constant.need_id)))
+        self.have_bg:setContentSize(cc.size(315,self.have_txt:getContentSize().height + 15))
+        self:setCurrent(0)
+        self:setOriginal(0)
+        for key, value in pairs(self.reward_data) do
+            local item = ActionWindGiftItem.new()
+            item:setPosition(cc.p(0,(key-1)*(127*0.9)))
+            self.gift_list[key] = item
+            self.item_panel:addChild(item)
+            item:setData(value)
+        end
+    end
+end
+
+function ActionWindGiftPanel:setCurrent(num)
+    local str = "<img src=\'%s\' scale=0.35 /> <div fontColor=#ffffff outline=2,#512b01>%s</div>"
+    self.current_txt:setString(string.format(TI18N(str),PathTool.getItemRes(self.constant.need_id),num))
+end
+function ActionWindGiftPanel:setOriginal(num)
+    if num and num ~= 0 then
+        self.no_line:setVisible(true)
+        self.original_txt:setVisible(true)
+        self.original_txt:setString(string.format(TI18N("语言_c_5959"),num,PathTool.getItemRes(self.constant.need_id)))
+        self.no_line:setContentSize(cc.size(self.original_txt:getContentSize().width + 20,4))
+    else
+        self.no_line:setVisible(false)
+        self.original_txt:setVisible(false)
+    end
+end
+function ActionWindGiftPanel:setData(data)
+    for key, value in pairs(self.gift_list) do
+        local list = self.reward_list[key] or {}
+        value:setPanel(list,tableLen(self.reward_list) + 1)
+    end
+
+    local config = Config.GaleGiftData.data_constant[model:getWindGiftCampId()]
+    local skin_cfg = config.p_info[1]
+    local pos_cfg = config.p_point[1]
+    self.rightImgIndeX = math.random(tableLen(skin_cfg))
+	local res_id2 = PathTool.getPlistImgForDownLoad("herodraw/herodrawres", skin_cfg[self.rightImgIndeX])
+	self.load = createResourcesLoad(res_id2, ResourcesType.single, function()
+        if self.hero and not tolua.isnull(self.hero) then
+			loadSpriteTexture(self.hero, res_id2, LOADTEXT_TYPE)
+			self.hero:setVisible(true)
+            self.hero:setScale(pos_cfg[self.rightImgIndeX][3])
+            self.hero:setPositionY(500 + pos_cfg[self.rightImgIndeX][2])
+			commonOpenActionRightMove(self.hero,500 + pos_cfg[self.rightImgIndeX][1])
+			self.rightImgIndeX = self.rightImgIndeX + 1
+			if self.rightImgIndeX>tableLen(skin_cfg) then
+				self.rightImgIndeX = 1
+			end
+        end
+    end, self.load)
+    if self.board_move_timer then
+		GlobalTimeTicket:getInstance():remove(self.board_move_timer)
+	end
+	self.board_move_timer = GlobalTimeTicket:getInstance():add(function()
+		self:PlayAnimatian()
+	end, Config.GaleGiftData.data_constant[model:getWindGiftCampId()].show_time or 10)
+end
+
+--左右进场动画
+function ActionWindGiftPanel:PlayAnimatian()
+	if not self.hero then return end	
+    local config = Config.GaleGiftData.data_constant[model:getWindGiftCampId()]
+    local skin_cfg = config.p_info[1]
+    local pos_cfg = config.p_point[1]
+	if self.rightImgIndeX>tableLen(skin_cfg) then
+		self.rightImgIndeX = 1
+	end
+	local res_id2 = PathTool.getPlistImgForDownLoad("herodraw/herodrawres", skin_cfg[self.rightImgIndeX])
+	self.item_load = createResourcesLoad(res_id2, ResourcesType.single, function()
+        if self.hero and not tolua.isnull(self.hero) then
+			loadSpriteTexture(self.hero, res_id2, LOADTEXT_TYPE)
+			self.hero:setVisible(true)
+            self.hero:setScale(pos_cfg[self.rightImgIndeX][3])
+            self.hero:setPositionY(500 + pos_cfg[self.rightImgIndeX][2])
+			commonOpenActionRightMove(self.hero,500 + pos_cfg[self.rightImgIndeX][1])
+			self.rightImgIndeX = self.rightImgIndeX + 1
+			if self.rightImgIndeX>tableLen(skin_cfg) then
+				self.rightImgIndeX = 1
+			end
+        end
+    end, self.item_load)
+end
+function ActionWindGiftPanel:register_event()
+    --商店
+    registerButtonEventListener(self.btn_rule, function(param,sender, event_type)
+        local config = Config.GaleGiftData.data_constant[model:getWindGiftCampId()]
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        end
+    end, true)
+    registerButtonEventListener(self.jump1_btn, function(param,sender, event_type)
+        local config = Config.GaleGiftData.data_constant[model:getWindGiftCampId()]
+        if config then
+            if ActionController:getInstance():getActionSubTabVo(config.base_id1) then
+                ActionController:getInstance():openActionMainPanel(false)
+                ActionController:getInstance():openActionMainPanel(true, nil, config.base_id1)
+            else
+                message(TI18N("语言_c_1473"))
+            end
+        end
+    end, true)
+    registerButtonEventListener(self.jump2_btn, function(param,sender, event_type)
+        local config = Config.GaleGiftData.data_constant[model:getWindGiftCampId()]
+        if config then
+            if ActionController:getInstance():getActionSubTabVo(config.base_id2) then
+                ActionController:getInstance():openActionMainPanel(false)
+                ActionController:getInstance():openActionMainPanel(true, nil, config.base_id2)
+            else
+                message(TI18N("语言_c_1473"))
+            end
+        end
+    end, true)
+    registerButtonEventListener(self.exchange_btn, function(param,sender, event_type)
+        if self.remain_sec <= 0 then
+            message(TI18N("语言_c_233"))
+        end
+        if self.stage == 0 or self.index == 0 then
+            message(TI18N("语言_c_5961"))
+        else
+            if self.is_unlock then
+                local config = Config.GaleGiftData.data_constant[model:getWindGiftCampId()]
+                local have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.constant.need_id)
+                if have_num >= self.item_data.now_price then
+                    controller:cs16604(self.holiday_bid,self.stage,self.index)
+                else
+                    local res1 = PathTool.getItemRes(config.need_id)
+                    local num1 = self.item_data.now_price - have_num
+                    local res2 = PathTool.getItemRes(3)
+                    local num2 = config.coin_num * num1
+                    local str = string.format(TI18N("语言_c_5962"),res1,num1,res2,num2)
+                    local fun = function()
+                        local num = BackpackController:getInstance():getModel():getItemNumByBid(3)
+                        if num >= num2 then
+                            controller:cs16604(self.holiday_bid,self.stage,self.index)
+                        else
+                            message(TI18N("语言_c_1254"))
+                        end
+                    end 
+                    CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                end
+            else
+                message(TI18N("语言_c_5963"))
+            end
+        end
+    end, true)
+
+    if not self.wind_gift_click_event  then
+        self.wind_gift_click_event = GlobalEvent:getInstance():Bind(ActionEvent.WindGiftClickEvent,function (stage,index,is_unlock)
+            local cfg = Config.GaleGiftData.data_reward_info[self.camp_id]
+            self.stage = stage
+            self.index = index
+            self.is_unlock = is_unlock
+            self.item_data = cfg[stage][index]
+            self:setCurrent(self.item_data.now_price)
+            if self.item_data.discount == 1 then
+                self:setOriginal(self.item_data.old_price)
+            else
+                self:setOriginal(0)
+            end
+        end)
+    end
+
+    if not self.update_holiday_single then
+        self.update_holiday_single = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE,function(data)
+            if data.bid == self.holiday_bid then
+                if self.stage ~= 0 and self.index ~= 0 and self.reward_data[self.stage][self.index].limit ~= 1 then
+                    self.stage = 0
+                    self.index = 0
+                    self:setCurrent(0)
+                    self:setOriginal(0)
+                end
+                for key, value in pairs(data.aim_list) do
+                    if value.aim ~= 0 then
+                        local list = {}
+                        for k, v in pairs(value.item_list) do
+                            table.insert(list,v.bid)
+                        end
+                        self.reward_list[value.aim] = list
+                    end
+                end
+                self:setData()
+            end
+        end)
+    end
+
+    -- 道具数量更新
+    if not self.update_add_good_event then
+        self.update_add_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS,function(bag_code, data_list)
+            if self.updateItemNum then
+                self:updateItemNum(bag_code,data_list)
+            end
+        end)
+    end
+    if not self.update_delete_good_event then
+        self.update_delete_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS,function(bag_code, data_list)
+            if self.updateItemNum then
+                self:updateItemNum(bag_code,data_list)
+            end
+        end)
+    end
+    if not self.update_modify_good_event then
+        self.update_modify_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM,function(bag_code, data_list)
+            if self.updateItemNum then
+                self:updateItemNum(bag_code,data_list)
+            end
+        end)
+    end
+end
+-- 刷新道具数量
+function ActionWindGiftPanel:updateItemNum(bag_code, data_list)
+    if self.constant.need_id then
+        if bag_code and data_list then
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then
+                for i,v in pairs(data_list) do
+                    if v and v.base_id and self.constant.need_id == v.base_id then
+                        local summon_have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.constant.need_id)
+                        if self.have_txt then
+                            self.have_txt:setString(string.format(TI18N("语言_c_5960"),summon_have_num,PathTool.getItemRes(self.constant.need_id)))
+                            self.have_bg:setContentSize(cc.size(315,self.have_txt:getContentSize().height + 15))
+                        end
+                        break
+                    end
+                end
+            end
+        end
+    end
+end
+function ActionWindGiftPanel:DeleteMe()
+	if self.item_load2 then
+        self.item_load2:DeleteMe()
+		self.item_load2 = nil
+    end
+	if self.board_move_timer then
+		GlobalTimeTicket:getInstance():remove(self.board_move_timer)
+	end
+    if self.update_add_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_add_good_event)
+        self.update_add_good_event = nil
+    end
+    if self.update_delete_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_delete_good_event)
+        self.update_delete_good_event = nil
+    end
+    if self.update_modify_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+        self.update_modify_good_event = nil
+    end
+    if self.wind_gift_click_event then
+        self.wind_gift_click_event = GlobalEvent:getInstance():UnBind(self.wind_gift_click_event)
+        self.wind_gift_click_event = nil
+    end
+    if self.update_holiday_single then
+        GlobalEvent:getInstance():UnBind(self.update_holiday_single)
+        self.update_holiday_single = nil
+    end
+    
+end
+
+--子项
+ActionWindGiftItem = class("ActionWindGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionWindGiftItem:ctor()
+    self.goods_list = {}
+    -- self.click_index = 0 --0单击弹tips 1单击选中  长按tips
+    self.is_lock = false
+    self.index = 0
+    self.limit = 0
+    self.name_list = {
+        [1] = TI18N("语言_c_5964"),
+        [2] = TI18N("语言_c_5965"),
+        [3] = TI18N("语言_c_5966"),
+        [4] = TI18N("语言_c_5967"),
+        [5] = TI18N("语言_c_5968"),
+    }
+    self:configUI()
+    self:register_event()
+end
+
+function ActionWindGiftItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_wind_gift_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(450,100))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg = self.main_container:getChildByName("bg")
+    self.good_panel = self.main_container:getChildByName("good_panel")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.lock = self.main_container:getChildByName("lock")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.select_img = createImage(self.good_panel,PathTool.getResFrame("common", "common_1_109",false,"common_1"),0,0,cc.p(0.5,0.5),true,1,true)
+    self.select_img:setVisible(false)
+end
+function ActionWindGiftItem:setPanel(data,lock_num)
+    if self.stage <= lock_num then
+        self.is_lock = true
+        self.lock:setVisible(false)
+        self.title_bg:loadTexture(PathTool.getResFrame("gale_gift","gale_02",false,"gale"), LOADTEXT_TYPE_PLIST)
+        self.bg:loadTexture(PathTool.getResFrame("common","common_1_107",false,"common_1"), LOADTEXT_TYPE_PLIST)
+        for key, value in pairs(self.goods_list) do
+            value:showOrderWarLockBg(false)
+        end
+    else
+        self.is_lock = false
+        self.lock:setVisible(true)
+        self.title_bg:loadTexture(PathTool.getResFrame("gale_gift","gale_01",false,"gale"), LOADTEXT_TYPE_PLIST)
+        self.bg:loadTexture(PathTool.getResFrame("common","common_1_108",false,"common_1"), LOADTEXT_TYPE_PLIST)
+        for key, value in pairs(self.goods_list) do
+            value:showOrderWarLockBg(true)
+        end
+    end
+    if data and tableLen(data) > 0 then
+        if self.limit ~= self.index then
+            self.select_img:setVisible(false)
+        end
+        for key, value in pairs(self.goods_list) do
+            if table.indexof(data,value.index) and self.limit ~= key then
+                value:setReceivedIcon3(true)
+                value:showOrderWarLockBg(true)
+                value.click_index = 0
+            else
+                value:setReceivedIcon3(false)
+                value:showOrderWarLockBg(false)
+                value.click_index = 1
+            end
+        end
+    end
+end
+function ActionWindGiftItem:setData( data)
+    self.stage = data[1].stage
+    self.title_txt:setString(self.name_list[self.stage])
+    self.title_bg:setContentSize(cc.size(self.title_txt:getContentSize().width + 70,28))
+    self:setScale(0.9)
+    local scale = 0.7
+    local _w = 90
+    self.select_img:setScale(1)
+    if self.stage == 5 then
+        self:setScale(1)
+    end
+    for key, value in pairs(data) do
+        local item = BackPackItem.new(true, true, nil, scale, false)
+        item:setAnchorPoint(cc.p(0,0))
+        item:setPosition(cc.p((key-1) * _w, 0))
+        item:setBaseData(value.store[1][1],value.store[1][2],nil,true)
+        item:showOrderWarLockBg(true)
+        self.good_panel:addChild(item)
+        item.index = value.num
+        item.click_index = 1
+        if value.limit == 1 then
+            self.limit = key
+            local unlimited = createSprite(PathTool.getResFrame("gale_gift","txt_cn_gale_04",false,"gale"),(key-1) * _w +119*scale*0.5,115*scale,self.good_panel,cc.p(0.5,0),LOADTEXT_TYPE_PLIST,1)
+        end
+        item:setDiscountIcon(value.discount == 1)
+        table.insert(self.goods_list,item)
+        item:addTouchEventListener(function (sender, event_type)
+            self.index = key
+            if event_type == ccui.TouchEventType.began then
+                if item.click_index == 0 then
+                    TipsManager:getInstance():showGoodsTips(Config.ItemData.data_get_data(value.store[1][1]), false, true,nil)
+                elseif item.click_index == 1 then
+                    self.select_img:setPosition(cc.p(item:getPositionX()+35,item:getPositionY()+39))
+                    GlobalEvent:getInstance():Fire(ActionEvent.WindGiftClickEvent,self.stage,item.index,self.is_lock)
+                    local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                        TipsManager:getInstance():showGoodsTips(Config.ItemData.data_get_data(value.store[1][1]), false, true,nil)
+                    end))
+                    self.sequence_action = item:runAction(action)
+                    self.sequence_action:setTag(10086)
+                end
+            elseif event_type == ccui.TouchEventType.canceled then
+                if self.sequence_action then
+                    item:stopActionByTag(10086)
+                    self.sequence_action = nil
+                end
+            elseif event_type == ccui.TouchEventType.ended then
+                if self.sequence_action then
+                    item:stopActionByTag(10086)
+                    self.sequence_action = nil
+                end
+            end
+        end)
+
+    end
+end
+function ActionWindGiftItem:register_event( )
+    if not self.wind_gift_click_event  then
+        self.wind_gift_click_event = GlobalEvent:getInstance():Bind(ActionEvent.WindGiftClickEvent,function (stage,index,is_lock)
+            if self.stage ~= stage then
+                if self.select_img then
+                    self.select_img:setVisible(false)
+                end
+            else
+                if self.select_img then
+                    self.select_img:setVisible(true)
+                end
+            end
+        end)
+    end
+end
+
+function ActionWindGiftItem:DeleteMe()
+	if self.wind_gift_click_event then
+        self.wind_gift_click_event = GlobalEvent:getInstance():UnBind(self.wind_gift_click_event)
+        self.wind_gift_click_event = nil
+    end
+end

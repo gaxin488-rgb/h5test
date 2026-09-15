@@ -1,0 +1,394 @@
+-- @Date:   2019-04-24 15:26:48
+-- @description:	--活动页合集
+--
+ActionCollectionPanel = class("ActionCollectionPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local col_controller = CollectionController:getInstance()
+local col_model = col_controller:getModel()
+
+function ActionCollectionPanel:ctor(bid,id,remain_sec)
+    self.holiday_bid = bid
+    self.remain_sec = remain_sec
+
+    if self.loadResListCompleted then
+        self:loadResListCompleted()
+    end
+end
+
+function ActionCollectionPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionCollectionPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_collection_panel"))
+    self.root_wnd:setPosition(cc.p(-40, -80))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.top_bg = self.top_panel:getChildByName("top_bg")
+    self.top_title = self.top_panel:getChildByName("top_title")
+    self.time_bg = self.top_panel:getChildByName("time_bg")
+    self.surplus_txt = self.top_panel:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.top_panel:getChildByName("surplus_time")
+    self.open_tip = createRichLabel(20,cc.c3b(0xff,0xff,0xff),cc.p(0,0.5),cc.p(68,80),-6,nil,1000)
+    self.top_panel:addChild(self.open_tip)
+    self.open_tip:setString("")
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self:updatePanel()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ActionCollectionPanel:createNewCell(width, height)
+    local cell = ActionCollectionItem.new()
+     return cell
+ end
+ --获取数据数量
+ function ActionCollectionPanel:numberOfCells()
+     if not self.show_list then return 0 end
+     return #self.show_list
+ end
+ --更新cell(拖动的时候.刷新数据时候会执行次方法)
+ --cell :createNewCell的返回的对象
+ --index :数据的索引
+ function ActionCollectionPanel:updateCellByIndex(cell, index)
+     cell.index = index
+     local cell_data = self.show_list[index]
+     if not cell_data then return end
+     cell:setData(cell_data)
+ end
+function ActionCollectionPanel:register_event()
+end
+function ActionCollectionPanel:updatePanel()
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if tab_vo then
+        self.camp_id = tab_vo.camp_id
+        local list = string.split(tab_vo.reward_title, ",")
+        if list and next(list) then
+            local res = PathTool.getPlistImgForDownLoad("activityset", list[1])
+            loadSpriteTexture(self.top_bg, res, LOADTEXT_TYPE)
+            local res = PathTool.getPlistImgForDownLoad("activityset", list[2])
+            loadSpriteTexture(self.top_title, res, LOADTEXT_TYPE)
+        end
+        self.open_tip:setString(tab_vo.rule_str)
+        local pos_list = string.split(tab_vo.aim_title,",")
+        if pos_list and pos_list[1] and pos_list[2] then
+            self.open_tip:setPosition(cc.p(68 + pos_list[1],80 + pos_list[2]))
+        end
+        model:setCountDownTime(self.surplus_time,self.remain_sec,true)
+        local _start_x = self.top_title:getPositionX() + self.top_title:getContentSize().width * 0.5
+        local all_w = self.surplus_time:getContentSize().width + self.surplus_txt:getContentSize().width
+        self.surplus_txt:setPositionX(_start_x - all_w * 0.5)
+        self.surplus_time:setPositionX(self.surplus_txt:getPositionX() + self.surplus_txt:getContentSize().width+10)
+        local _w = math.max(self.time_bg:getContentSize().width,self.surplus_txt:getContentSize().width + self.surplus_time:getContentSize().width+130)
+        self.time_bg:setContentSize(cc.size(_w,self.time_bg:getContentSize().height))
+
+        if self.item_scrollview == nil then
+            local scroll_view_size = self.bottom_panel:getContentSize()
+            local setting = {
+                start_x = 0,                     -- 第一个单元的X起点
+                space_x = 0,                     -- x方向的间隔
+                start_y = 0,                     -- 第一个单元的Y起点
+                space_y = 3,                     -- y方向的间隔
+                item_width = 700,                -- 单元的尺寸width
+                item_height = 211,               -- 单元的尺寸height
+                row = 1,                         -- 行数，作用于水平滚动类型
+                col = 1,                         -- 列数，作用于垂直滚动类型
+                once_num = 1,                    -- 每次创建的数量
+            }
+            self.item_scrollview = CommonScrollViewSingleLayout.new(self.bottom_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+    
+            self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+            self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+            self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        end
+        self.show_list = {}
+        self.cfg = deepCopy(Config.ActivitysetData.data_info[self.camp_id])
+        for i = 1, tableLen(self.cfg) do
+            local list = {}
+            for k,v in pairs(self.cfg[i]) do
+                table.insert(list, v)
+            end
+            if list and next(list) then
+                table.sort(list, function(a,b) return a.pos < b.pos end)
+            end
+            table.insert(self.show_list, list)
+        end
+        if self.show_list and next(self.show_list) then
+            table.sort(self.show_list, function(a,b) return a[1].row < b[1].row end)
+        end
+        self.item_scrollview:reloadData()
+    end
+end
+function ActionCollectionPanel:DeleteMe()
+    
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+end
+
+
+
+------------------------------------------
+-- 子项
+ActionCollectionItem = class("ActionCollectionItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionCollectionItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionCollectionItem:configUI(  )
+    self.size = cc.size(700,211)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("action/action_collection_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+    self.bg = self.main_container:getChildByName("bg")
+    self.tittle_img = self.main_container:getChildByName("tittle_img")
+    self.reward_scr = self.main_container:getChildByName("reward_scr")
+    self.reward_scr:setSwallowTouches(true)
+    self.reward_scr:setScrollBarEnabled(false)
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.two_container_list = {}
+    self.two_container = self.root_wnd:getChildByName("two_container")
+    for i = 1, 2 do
+        local list = {}
+        list.panel = self.two_container:getChildByName("container_"..i)
+        list.panel:setSwallowTouches(false)
+        list.bg = list.panel:getChildByName("bg")
+        list.tittle_img = list.panel:getChildByName("tittle_img")
+        list.reward_scr = list.panel:getChildByName("reward_scr")
+        list.reward_scr:setSwallowTouches(true)
+        list.reward_scr:setScrollBarEnabled(false)
+        list.surplus_txt = list.panel:getChildByName("surplus_txt")
+        list.surplus_txt:setString(TI18N("语言_c_1242"))
+        list.surplus_time = list.panel:getChildByName("surplus_time")
+        self.two_container_list[i] = list
+    end
+    self.main_container:setVisible(false)
+    self.two_container:setVisible(false)
+end
+
+function ActionCollectionItem:register_event( )
+    self.main_container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click =
+                    math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                    math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                if not self.data[2] then
+                    if self.data[1].activityset_icon and self.data[1].activityset_icon ~= "" then
+                        if controller:getActionSubTabVo(self.data[1].sub_id) then
+                            col_controller:openCollectionMainWindow(true,self.data[1])
+                        else
+                            message(TI18N("语言_c_233"))
+                        end
+                    else
+                        local config = Config.SourceData.data_source_data[self.data[1].jump_id]
+                        if config then
+                            BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+                        end
+                    end
+                end
+            end
+            elseif event_type == ccui.TouchEventType.moved then
+            elseif event_type == ccui.TouchEventType.began then
+                self.touch_began = sender:getTouchBeganPosition()
+            elseif event_type == ccui.TouchEventType.canceled then
+            end
+    end)
+    for i = 1, 2 do
+        self.two_container_list[i].panel:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self.touch_end = sender:getTouchEndPosition()
+                local is_click = true
+                if self.touch_began ~= nil then
+                    is_click =
+                        math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                        math.abs(self.touch_end.y - self.touch_began.y) <= 20
+                end
+                if is_click == true then
+                    playButtonSound2()
+                    if self.data[1] and self.data[2] then
+                        if self.data[i].activityset_icon and self.data[i].activityset_icon ~= "" then
+                            if controller:getActionSubTabVo(self.data[i].sub_id) then
+                                col_controller:openCollectionMainWindow(true,self.data[i])
+                            else
+                                message(TI18N("语言_c_1473"))
+                            end
+                        else
+                            local config = Config.SourceData.data_source_data[self.data[i].jump_id]
+                            if config then
+                                BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+                            end
+                        end
+                    end
+                end
+            elseif event_type == ccui.TouchEventType.moved then
+            elseif event_type == ccui.TouchEventType.began then
+                self.touch_began = sender:getTouchBeganPosition()
+            elseif event_type == ccui.TouchEventType.canceled then
+            end
+        end)
+    end
+    if not self.update_holiday_red_event then
+        self.update_holiday_red_event = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_TAB_STATUS,function (function_id, vo)
+            self:updateComfirmRedPoint(vo)
+        end)
+    end
+end
+function ActionCollectionItem:updateComfirmRedPoint(data)
+    if self.data then
+        if self.data[2] then
+            for k, v in ipairs(self.data) do
+                if data.bid == v.sub_id and self.data[k].jump_id ~= 766 and self.data[k].activityset_icon ~= "" then
+                    addRedPointToNodeByStatus(self.two_container_list[k].panel, data.status, 5, 5)
+                end    
+            end
+        else
+            if data.bid == self.data[1].sub_id and self.data[1].jump_id ~= 766 and self.data[1].activityset_icon ~= "" then
+                addRedPointToNodeByStatus(self.main_container, data.status, 5, 5)
+            end
+        end
+    end
+end
+function ActionCollectionItem:setData(data)
+    self.data = data
+    if self.data[2] then
+        self.main_container:setVisible(false)
+        self.two_container:setVisible(true)
+        for i = 1, tableLen(self.two_container_list) do
+            local list = self.two_container_list[i]
+            local res = PathTool.getPlistImgForDownLoad("activityset", self.data[i].sub_pic)
+            loadSpriteTexture(list.bg, res, LOADTEXT_TYPE)
+            local res = PathTool.getPlistImgForDownLoad("activityset", self.data[i].sub_name)
+            loadSpriteTexture(list.tittle_img, res, LOADTEXT_TYPE)
+            list.tittle_img:setScale(self.data[i].name_pos[1][1])
+            list.tittle_img:setPositionX(self.data[i].name_pos[1][2])
+            list.tittle_img:setPositionY(self.data[i].name_pos[1][3]+211)
+            local reward_list = {}
+            for k, v in pairs(self.data[i].show_item[1]) do
+                local _list = {}
+                _list[1] = v
+                _list[2] = 1
+                if self.data[i].dis[1] and self.data[i].dis[1][k] then
+                    if self.data[i].dis[1][k] > 0 and self.data[i].dis[1][k] < 10 then
+                        _list.zhekou = self.data[i].dis[1][k]
+                        _list.zhekou_scale = 1.25
+                    end
+                end
+                table.insert(reward_list, _list)
+            end
+            local setting = {}
+            setting.scale = 0.6
+            setting.space_x = 2
+            setting.max_count = 2
+            setting.is_center = false
+            setting.is_swallow = true
+            list.item_list = commonShowSingleRowItemList(list.reward_scr, list.item_list, reward_list, setting)
+            local tab_vo = controller:getActionSubTabVo(self.data[i].sub_id)
+            if tab_vo then
+                local surplus_time = 0
+                if self.data[i].end_time_adjust then
+                    surplus_time = self.data[i].end_time_adjust*3600
+                end
+                model:setCountDownTime(list.surplus_time,tab_vo.remain_sec-surplus_time,true)
+                local _w = list.surplus_txt:getContentSize().width + list.surplus_time:getContentSize().width + 35
+                list.surplus_txt:setPositionX(list.panel:getContentSize().width - _w)
+                list.surplus_time:setPositionX(list.surplus_txt:getPositionX() + list.surplus_txt:getContentSize().width + 5)
+            else
+                list.surplus_txt:setString(TI18N("语言_c_1473"))
+                list.surplus_time:setString("")
+                list.surplus_txt:setPositionX(list.panel:getContentSize().width-5)
+            end
+            if self.data[i].jump_id ~= 766 and self.data[i].activityset_icon ~= "" then
+                local action_vo = controller:getHolidayAweradsStatus(self.data[i].sub_id)
+                addRedPointToNodeByStatus(self.two_container_list[i].panel, action_vo and action_vo.status or false, 5, 5)
+            end
+        end
+    else
+        self.main_container:setVisible(true)
+        self.two_container:setVisible(false)
+        local res = PathTool.getPlistImgForDownLoad("activityset", self.data[1].sub_pic)
+        loadSpriteTexture(self.bg, res, LOADTEXT_TYPE)
+        local res = PathTool.getPlistImgForDownLoad("activityset", self.data[1].sub_name)
+        loadSpriteTexture(self.tittle_img, res, LOADTEXT_TYPE)
+        self.tittle_img:setScale(self.data[1].name_pos[1][1])
+        self.tittle_img:setPositionX(self.data[1].name_pos[1][2])
+        self.tittle_img:setPositionY(self.data[1].name_pos[1][3]+211)
+        local list = {}
+        for k, v in pairs(self.data[1].show_item[1]) do
+            local _list = {}
+            _list[1] = v
+            _list[2] = 1
+            if self.data[1].dis[1] and self.data[1].dis[1][k] then
+                if self.data[1].dis[1][k] > 0 and self.data[1].dis[1][k] < 10 then
+                    _list.zhekou = self.data[1].dis[1][k]
+                    _list.zhekou_scale = 1.4
+                end
+            end
+            table.insert(list, _list)
+        end
+        local setting = {}
+        setting.scale = 0.7
+        setting.space_x = 2
+        setting.max_count = 2
+        setting.is_center = false
+        setting.is_swallow = true
+        self.item_list = commonShowSingleRowItemList(self.reward_scr, self.item_list, list, setting)
+        local tab_vo = controller:getActionSubTabVo(self.data[1].sub_id)
+        if tab_vo then
+            local surplus_time = 0
+            if self.data[1].end_time_adjust then
+                surplus_time = self.data[1].end_time_adjust*3600
+            end
+            model:setCountDownTime(self.surplus_time,tab_vo.remain_sec-surplus_time,true)
+        else
+            self.surplus_txt:setString(TI18N("语言_c_1473"))
+            self.surplus_time:setString("")
+        end
+        local _w = self.surplus_txt:getContentSize().width + self.surplus_time:getContentSize().width + 35
+        self.surplus_txt:setPositionX(self.main_container:getContentSize().width - _w)
+        self.surplus_time:setPositionX(self.surplus_txt:getPositionX() + self.surplus_txt:getContentSize().width + 5)
+        if self.data[1].jump_id ~= 766 and self.data[1].activityset_icon ~= "" then
+            local action_vo = controller:getHolidayAweradsStatus(self.data[1].sub_id)
+            addRedPointToNodeByStatus(self.main_container, action_vo and action_vo.status or false, 5, 5)
+        end
+    end
+end
+
+function ActionCollectionItem:DeleteMe( )
+    if self.update_holiday_red_event then
+        GlobalEvent:getInstance():UnBind(self.update_holiday_red_event)
+        self.update_holiday_red_event = nil
+    end
+    col_controller:openCollectionMainWindow(false)
+    self:removeAllChildren()
+    self:removeFromParent()
+end

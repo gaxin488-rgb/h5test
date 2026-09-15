@@ -1,0 +1,575 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 22:09:37
+-- @description    : 
+		-- 天梯排行榜
+---------------------------------
+ShinobiRankWindow = ShinobiRankWindow or BaseClass(BaseView)
+
+local controller = ShinobiController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+
+function ShinobiRankWindow:__init()
+	self.win_type = WinType.Big
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "shinobi/shinobi_rank_window"
+    --奖励
+    self.dic_reward_list = {}
+    self.show_list = {}
+end
+
+function ShinobiRankWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.tab_container = self.main_panel:getChildByName("tab_container")
+    local tab_name_list = {
+        [1] = TI18N("语言_c_6003"),
+        [2] = TI18N("语言_c_4890"),
+		[3] = TI18N("语言_c_6004")
+    }
+	self.tab_list = {}
+    for i=1,3 do
+        local tab_btn = self.tab_container:getChildByName("tab_btn_"..i)
+        if tab_btn then
+            local object = {}
+            object.select_bg = tab_btn:getChildByName('select_bg')
+            object.select_bg:setVisible(false)
+            object.unselect_bg = tab_btn:getChildByName('unselect_bg')
+            object.title = tab_btn:getChildByName("title")
+            object.title:setTextColor(cc.c4b(0xcf, 0xb5, 0x93, 0xff))
+            setTextMaxWidth(object.title,120)
+            setTextSpacing(object.title,-15)
+            if tab_name_list[i] then
+                object.title:setString(tab_name_list[i])
+            end
+            if object.title:getContentSize().height >65 then
+                object.title:setFontSize(22)
+            end
+            object.tab_btn = tab_btn
+            object.index = i
+            self.tab_list[i] = object
+        end
+    end
+	self.title = self.main_panel:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_271"))
+	self.close_btn = self.main_panel:getChildByName("close_btn")
+	self.reward_panel= self.main_panel:getChildByName("reward_panel")
+    self.bottom_label = self.main_panel:getChildByName("bottom_label")
+    setTextMaxWidth(self.bottom_label,660)
+    self.col_name_list = {
+        [1] = {TI18N("语言_c_255"),TI18N("语言_c_1879"),TI18N("语言_c_6005")},
+        [2] = {TI18N("语言_s_12"), TI18N("语言_c_282")},
+        [3] = {TI18N("语言_c_255"),TI18N("语言_c_1879"),TI18N("语言_c_1199"),TI18N("语言_exc_02_3")},
+    }
+    self.col_name_label = {}
+    for i=1,4 do
+        -- table_insert(self.col_name_label,self.main_panel:getChildByName("col_name"..i))
+        self.col_name_label[i] = self.main_panel:getChildByName("col_name"..i)
+    end
+    self.col_position_list = {
+        [1] = {80,300,540},
+        [2] = {150,440},
+        [3] = {80,300,480,580},
+    }
+    self.scroll_container = self.reward_panel:getChildByName("scroll_container")
+    self.rank_panel = self.main_panel:getChildByName('rank_panel')
+	self.rank_scroll=self.rank_panel:getChildByName("rank_scroll")
+	self.no_log_image = self.rank_panel:getChildByName("no_log_image")
+    self.no_log_image:setVisible(false)
+    self.no_log_label = self.no_log_image:getChildByName("no_log_label")
+	self.no_log_label:setString(TI18N("语言_c_1825"))
+    self.my_rank = self.rank_panel:getChildByName('my_rank')
+    local title = self.my_rank:getChildByName('title')
+    title:setString(TI18N("语言_c_258"))
+    self.no_rank_label = self.my_rank:getChildByName("no_rank_label")
+    self.duanimg = self.my_rank:getChildByName("duanimg")
+    self.level_name = self.my_rank:getChildByName("level_name")
+    self.no_rank_label:setString(TI18N("语言_c_4935"))
+    self.no_rank_label:setVisible(false)
+    self.my_rank_id = self.my_rank:getChildByName("rank_id")
+    self.my_name_label = self.my_rank:getChildByName("my_name_label")
+    self.my_attk_label = self.my_rank:getChildByName("my_attk_label")
+    self.my_score_label = self.my_rank:getChildByName("my_score_label")
+    self.saiqu_label = self.my_rank:getChildByName("saiqu_label")
+    self.my_head = PlayerHead.new(PlayerHead.type.circle)
+    self.my_head:setHeadLayerScale(0.8)
+    self.my_head:setPosition(160, 66)
+    self.my_rank:addChild(self.my_head)
+
+    local bgSize = self.rank_scroll:getContentSize()
+	local scroll_view_size = cc.size(bgSize.width, bgSize.height-4)
+    local setting = {
+        item_class = ShinobiRankItem,      -- 单元类
+        start_x = 5,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 612,               -- 单元的尺寸width
+        item_height = 112,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.rank_scrollview = CommonScrollViewLayout.new(self.rank_scroll, cc.p(0,5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.rank_scrollview:setSwallowTouches(false)
+end
+
+function ShinobiRankWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), false, 2)
+	registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+
+	if self.shinobi_rank_event == nil then
+        self.shinobi_rank_event = GlobalEvent:getInstance():Bind(ShinobiEvent.Update_Rank_Data_Event, function ( data )
+            self:setRankData(data,false)
+        end)
+    end
+
+    if self.shinobi_zonerank_event == nil then
+        self.shinobi_zonerank_event = GlobalEvent:getInstance():Bind(ShinobiEvent.Update_ZoneRank_Data_Event, function ( data )
+            self:setRankData(data,true)
+        end)
+    end
+
+	for k, object in pairs(self.tab_list) do
+        if object.tab_btn then
+            object.tab_btn:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    self:changeSelectedTab(object.index)
+                end
+            end)
+        end
+    end
+end
+
+-- 切换标签页
+function ShinobiRankWindow:changeSelectedTab( index )
+    if self.tab_object ~= nil and self.tab_object.index == index then return end
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(false)
+        self.tab_object.title:setTextColor(cc.c4b(0xcf, 0xb5, 0x93, 0xff))
+        self.tab_object = nil
+    end
+    self.tab_object = self.tab_list[index]
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(true)
+        self.tab_object.title:setTextColor(cc.c4b(0xff, 0xed, 0xd6, 0xff))
+    end
+    self:updateColName(index)
+    if index==1 then
+        controller:sender14408()
+    elseif index==3 then
+        controller:sender14409()
+    end
+    self:updateList(index)
+end
+
+function ShinobiRankWindow:_onClickBtnClose(  )
+	controller:openShinobiRankWindow(false)
+end
+
+function ShinobiRankWindow:updateColName(index)
+    if self.col_name_list[index] then
+        for i=1,4 do 
+            local label=self.col_name_label[i]
+            if i<=#self.col_name_list[index] then
+                label:setVisible(true)
+                label:setPositionX(self.col_position_list[index][i])  
+                if index == 1 and i == 3 then
+                    label:setTouchEnabled(true)
+                    label:setString(transformTextToShort(self.col_name_list[index][i],20))
+                    addEvt2showAllTextTips(label,self.col_name_list[index][i],20)
+                else
+                    -- label:setTouchEnabled(false)
+                    label:setString(self.col_name_list[index][i])  
+                end
+            else
+                label:setVisible(false)
+            end
+        end
+    end
+end
+
+function ShinobiRankWindow:openRootWnd(index )
+	local index = index or 1
+    self:changeSelectedTab(index)
+end
+
+function ShinobiRankWindow:updateList(index)
+    if not index then return end
+	self.reward_panel:setVisible(index==2)
+	self.rank_panel:setVisible(index~=2)
+	if index==2 then
+        if self.item_scrollview == nil then
+			local scroll_view_size = self.scroll_container:getContentSize()
+			local setting = {
+				start_x = 0,                     -- 第一个单元的X起点
+				space_x = 0,                     -- x方向的间隔
+				start_y = 0,                     -- 第一个单元的Y起点
+				space_y = 0,                     -- y方向的间隔
+				item_width = 628,                -- 单元的尺寸width
+				item_height = 138,               -- 单元的尺寸height
+				row = 1,                         -- 行数，作用于水平滚动类型
+				col = 1,                         -- 列数，作用于垂直滚动类型
+				once_num = 1,                    -- 每次创建的数量
+			}
+			self.item_scrollview = CommonScrollViewSingleLayout.new(self.scroll_container, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+	
+			self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+			self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+			self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+		end
+		self.show_list = Config.ArenaShinobiData.data_shinobi_rank_reward
+		self.item_scrollview:reloadData()
+        self.bottom_label:setString(TI18N("语言_c_6008"))
+	end
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ShinobiRankWindow:createNewCell(width, height)
+	local cell = ShinobiRewardItem.new()
+	 return cell
+ end
+ --获取数据数量
+ function ShinobiRankWindow:numberOfCells()
+	 if not self.show_list then return 0 end
+	 return #self.show_list
+ end
+ --更新cell(拖动的时候.刷新数据时候会执行次方法)
+ --cell :createNewCell的返回的对象
+ --index :数据的索引
+ function ShinobiRankWindow:updateCellByIndex(cell, index)
+	 cell.index = index
+	 local cell_data = self.show_list[index]
+	 if not cell_data then return end
+	 cell:setData(cell_data)
+ end
+
+function ShinobiRankWindow:getShinobiMyRank(list,rid)
+	if list and next(list)~=nil then
+        for i,v in ipairs(list) do
+            if v.rid==rid then
+               return v
+            end
+        end
+    end
+	return nil
+end
+
+function ShinobiRankWindow:setRankData( data,iszone)
+	data = data or {}
+	local role_vo = RoleController:getInstance():getRoleVo()
+	self.my_head:setHeadRes(role_vo.face_id, false, LOADTEXT_TYPE, role_vo.face_file, role_vo.face_update_time)
+	self.my_head:setLev(role_vo.lev)
+	self.my_name_label:setString(role_vo.name)
+	self.my_attk_label:setString(MoneyTool.moneyFormat(role_vo.power))
+    local base_info = model:getShinobiMyBaseInfo()
+    if iszone then
+       self.duanimg:setVisible(true)
+       self.level_name:setVisible(true)
+       if not data.rank_list or next(data.rank_list) == nil then
+            self.no_log_image:setVisible(true)
+            self.rank_scrollview:setData({})
+       else
+            self.no_log_image:setVisible(false)
+            self.rank_scrollview:setData(data.rank_list)
+       end
+        if not data.rank or data.rank == 0 then
+		   self.no_rank_label:setVisible(true)
+		   self.my_rank_id:setVisible(false)
+           self.my_score_label:setString(base_info.tol_score) 
+	    else
+            self.my_rank_id:setString(data.rank)
+            self.my_rank_id:setVisible(true)
+            self.no_rank_label:setVisible(false)
+            self.my_score_label:setString(base_info.tol_score) 
+	    end
+        self:updateDanInfo(base_info.cur_dan)
+        self.bottom_label:setString(string.format(TI18N("语言_c_6010")))
+    else	
+        local mydata=self:getShinobiMyRank(data.rank_list_daily,role_vo.rid)
+        if mydata then
+            self.my_score_label:setString(mydata.add_score or 0)
+        end
+        if not data.rank_list_daily or next(data.rank_list_daily) == nil then
+            self.no_log_image:setVisible(true)
+            self.rank_scrollview:setData({})
+        else
+            self.no_log_image:setVisible(false)
+            self.rank_scrollview:setData(data.rank_list_daily)
+        end
+        local cfg=Config.ArenaShinobiData.data_shinobi_const
+        if not mydata or not mydata.rank or mydata.rank == 0 then
+            self.no_rank_label:setVisible(true)
+            self.my_rank_id:setVisible(false)
+            self.my_score_label:setString(0)
+            -- self.bottom_label:setString(TI18N("语言_c_5887"))
+        else
+            self.my_rank_id:setVisible(true)
+            self.my_rank_id:setString(mydata.rank)
+            self.no_rank_label:setVisible(false)
+        end
+        self.bottom_label:setString(string.format(TI18N("语言_c_6007"), cfg.match_number_players.val))
+        self.duanimg:setVisible(false)
+        self.level_name:setVisible(false)
+    end
+    self.saiqu_label:setVisible(false)
+	-- if base_info and  base_info.group > 0 then
+	-- 	self.saiqu_label:setString(string.format(TI18N("语言_c_558"), base_info.group))
+	-- else
+	-- 	self.saiqu_label:setString(string.format(TI18N("语言_c_5886")))
+	-- end
+end
+
+function ShinobiRankWindow:updateDanInfo(dan)
+    local config = Config.ArenaShinobiData.data_shinobi_level[dan]
+    if config then
+        self.level_name:setString(config.name)
+        local res= PathTool.getPlistImgForDownLoad("shinobi/shinobi_icon",config.little_ico, false)
+        loadSpriteTextureFromCDN(self.duanimg, res, ResourcesType.single, self.item_load) 
+    end
+end
+
+function ShinobiRankWindow:close_callback(  )
+	if self.rank_scrollview then
+		self.rank_scrollview:DeleteMe()
+		self.rank_scrollview = nil
+	end
+	if self.my_head then
+		self.my_head:DeleteMe()
+		self.my_head = nil
+	end
+	if self.shinobi_rank_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.shinobi_rank_event)
+        self.shinobi_rank_event = nil
+    end
+    if self.shinobi_zonerank_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.shinobi_zonerank_event)
+        self.shinobi_zonerank_event = nil
+    end
+	if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+    end
+    self.item_scrollview = nil
+	controller:openShinobiRankWindow(false)
+end
+
+---------------------------@ 排行榜 子项
+ShinobiRankItem = class("ShinobiRankItem", function()
+    return ccui.Widget:create()
+end)
+
+function ShinobiRankItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function ShinobiRankItem:configUI(  )
+	self.size = cc.size(612,112)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("shinobi/shinobi_rank_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("main_panel")
+    self.container = container
+    self.container:setSwallowTouches(false)
+    self.level_name = container:getChildByName("level_name")
+    self.rank_id = container:getChildByName("rank_id")
+    self.rank_image = container:getChildByName("rank_image")
+    self.rank_image:ignoreContentAdaptWithSize(true)
+    self.duanimg=container:getChildByName("duanimg")
+    self.my_srv_label = container:getChildByName("my_srv_label")
+    self.my_srv_label:setVisible(false)
+    self.attk_label = container:getChildByName("my_attk_label")
+    self.name_label = container:getChildByName("my_name_label")
+    self.score_label = container:getChildByName("my_score_label")
+    self.role_head = PlayerHead.new(PlayerHead.type.circle)
+    self.role_head:setHeadLayerScale(0.8)
+    self.role_head:setPosition(160, 56)
+    self.role_head:addCallBack(handler(self, self.openChatMessage))
+    container:addChild(self.role_head)
+end
+
+function ShinobiRankItem:register_event(  )
+	
+end
+
+function ShinobiRankItem:openChatMessage(  )
+	local roleVo = RoleController:getInstance():getRoleVo()
+	local rid = self.data.rid
+	local srv_id  = self.data.srv_id
+	if self.data.srv_id and self.data.srv_id == "robot" then 
+		message(TI18N("语言_c_476"))
+		return
+	end
+	if rid and srv_id and roleVo.rid== rid and roleVo.srv_id == srv_id then 
+		message(TI18N("语言_c_349"))
+		return 
+	end
+	if self.data then 
+		local vo = {rid = rid, srv_id = srv_id}
+		ChatController:getInstance():openFriendInfo(vo,cc.p(0,0))
+	end
+end
+
+function ShinobiRankItem:setData( data )
+	data = data or {}
+	self.data = data
+	if data.rank == 1 then
+		self.rank_id:setVisible(false)
+		self.rank_image:setVisible(true)
+		self.rank_image:loadTexture(PathTool.getResFrame("common","common_3001"), LOADTEXT_TYPE_PLIST)
+	elseif data.rank == 2 then
+		self.rank_id:setVisible(false)
+		self.rank_image:setVisible(true)
+		self.rank_image:loadTexture(PathTool.getResFrame("common","common_3002"), LOADTEXT_TYPE_PLIST)
+	elseif data.rank == 3 then
+		self.rank_id:setVisible(false)
+		self.rank_image:setVisible(true)
+		self.rank_image:loadTexture(PathTool.getResFrame("common","common_3003"), LOADTEXT_TYPE_PLIST)
+	else
+		self.rank_id:setString(data.rank)
+		self.rank_id:setVisible(true)
+		self.rank_image:setVisible(false)
+	end
+
+	self.role_head:setHeadRes(data.face, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+	self.role_head:setLev(data.lev)
+    local name_txt = transformNameByServ(data.name, self.data.srv_id)
+	self.name_label:setString(name_txt)
+	self.attk_label:setString(MoneyTool.moneyFormat(data.power))
+    if data.dan~=nil then
+        self.duanimg:setVisible(true)
+        self:updateDanInfo(data.dan)
+        self.score_label:setString(data.exp)
+        self.level_name:setVisible(true)
+    else
+        self.duanimg:setVisible(false)
+        self.level_name:setVisible(false)
+        self.score_label:setString(data.add_score)
+    end
+    local roleVo = RoleController:getInstance():getRoleVo()
+	-- if roleVo.srv_id == data.srv_id  or data.srv_id == "robot" then
+	-- 	-- self.my_srv_label:setVisible(false)
+	-- else
+    --     -- self.my_srv_label:setVisible(true)
+    -- --     local srv_name = getServerName(self.data.srv_id)
+    -- --     if srv_name == "" then
+    -- --         srv_name = TI18N("语言_c_101")
+    -- --     end
+    -- --     self.my_srv_label:setString(string_format("[%s]",srv_name))
+	-- end
+end
+
+
+function ShinobiRankItem:updateDanInfo(dan)
+    local config = Config.ArenaShinobiData.data_shinobi_level[dan]
+    self.level_name:setString(config.name)
+    if config then
+        local res= PathTool.getPlistImgForDownLoad("shinobi/shinobi_icon",config.little_ico, false)
+        loadSpriteTextureFromCDN(self.duanimg, res, ResourcesType.single, self.item_load) 
+    end
+end
+function ShinobiRankItem:DeleteMe(  )
+	if self.role_head then
+		self.role_head:DeleteMe()
+		self.role_head = nil
+	end
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+ShinobiRewardItem = class("ShinobiRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function ShinobiRewardItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ShinobiRewardItem:configUI(  )
+    self.size = cc.size(628,138)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("shinobi/shinobi_reward_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    self.rank_img = container:getChildByName("rank_img")
+    self.rank_label = container:getChildByName("rank_label")
+    self.item_scrollview = container:getChildByName("item_scrollview")
+    self.item_scrollview:setScrollBarEnabled(false)
+    self.item_scrollview:setSwallowTouches(false)
+
+    self.setting = {}
+    self.setting.scale = 0.8
+    self.setting.max_count = 3
+    
+end
+
+function ShinobiRewardItem:register_event( )
+   
+end
+
+function ShinobiRewardItem:setData(data)
+    if not data then return end
+    self.data = data
+    if data.min_rank ~= nil then
+        if data.min_rank <= 3 then
+            self.rank_label:setVisible(false)
+            if data.min_rank == 0 then
+                self.rank_img:setVisible(false)
+            else
+                local res_id = PathTool.getResFrame("common", string.format("common_200%s", data.min_rank))
+                if self.rank_res_id ~= res_id then
+                    self.rank_res_id = res_id
+                    loadSpriteTexture(self.rank_img, res_id, LOADTEXT_TYPE_PLIST)
+                end
+                self.rank_img:setVisible(true)
+            end
+        else
+            self.rank_img:setVisible(false)
+            self.rank_label:setVisible(true)
+            if data.min_rank>=data.max_rank then
+                self.rank_label:setString(data.min_rank)
+            else
+                self.rank_label:setString(string.format("%s~%s", data.min_rank, data.max_rank))
+            end
+        end 
+    end
+    local reward = data.award or {}
+    self.item_list = commonShowSingleRowItemList(self.item_scrollview, self.item_list, reward, self.setting)
+end
+
+function ShinobiRewardItem:DeleteMe( )
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    if self.item_load then
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

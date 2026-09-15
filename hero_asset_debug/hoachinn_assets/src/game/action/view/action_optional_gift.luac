@@ -1,0 +1,341 @@
+----------------------------
+-- 
+-- @Date:   2019-12-12 14:52:22
+-- @Description:   自选礼包活动
+----------------------------
+ActionOptionalGiftPanel = class("ActionOptionalGiftPanel", function()
+	return ccui.Widget:create()
+end)
+local color_text = {
+    [1] = cc.c4b(0x80,0xf7,0x31,0xff),
+    [2] = cc.c4b(0x64,0x32,0x23,0xff),
+}
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+
+function ActionOptionalGiftPanel:ctor(bid,id,remain_sec)
+    self.remain_sec = remain_sec
+    self.holiday_bid = bid
+    model:setOptionalBid(bid)
+    self.list_data = {}
+    self.click_btn_list = -1
+	self:configUI()
+    self:register_event()
+
+end
+
+function ActionOptionalGiftPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_hero_expedit_panel"))
+	self.root_wnd:setPosition(-40,-70)
+	self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_con = self.main_container:getChildByName("title_con")
+    self.title_img = self.title_con:getChildByName("title_img")
+    self.time_label = self.title_con:getChildByName("label_time_key")
+    self.time_label:setString(TI18N("语言_c_1242"))
+    self.time_text = self.title_con:getChildByName("label_time")
+    self.time_text:setTextColor(color_text[1])
+    self.time_text:setAnchorPoint(cc.p(0, 0.5))
+    controller:getModel():setCountDownTime(self.time_text,self.remain_sec or 0)
+    self.rank_btn = self.title_con:getChildByName("rank_btn")
+    self.reward_btn = self.title_con:getChildByName("reward_btn")
+    self.btn_rule = self.title_con:getChildByName("btn_rule") --规则说明按钮，，就是问号的图片
+    self.btn_rule:setVisible(false)
+
+    self:loadBannerImage()
+
+    self.good_cons = self.main_container:getChildByName("charge_con")
+
+    self.Sprite_3 = self.main_container:getChildByName("Sprite_3")
+    -- self:updateScrollviewList()
+    
+	controller:sender28310(self.holiday_bid)
+end
+--加载banner图片
+function ActionOptionalGiftPanel:loadBannerImage()
+    if self.holiday_bid == ActionRankCommonType.optional_gift then
+        self.btn_rule:setVisible(false)
+        self.reward_btn:setVisible(false)
+        self.rank_btn:setVisible(false)
+
+        local str_banner = "txt_cn_welfare_banner11"
+        local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+        if tab_vo and tab_vo.reward_title ~= "" and tab_vo.reward_title then
+            str_banner = tab_vo.reward_title
+        end
+
+        local res = PathTool.getWelfareBannerRes(str_banner)
+        if not self.item_load then
+            self.item_load = createResourcesLoad(res, ResourcesType.single, function()
+                if not tolua.isnull(self.title_img) then
+                    loadSpriteTexture(self.title_img, res, LOADTEXT_TYPE)
+                end
+            end,self.item_load)
+        end
+    end
+end
+function ActionOptionalGiftPanel:register_event()
+    if not self.update_option_event then
+        self.update_option_event = GlobalEvent:getInstance():Bind(ActionEvent.OptionalData,function (data)
+            if tableLen(data.award_list) == 0 then
+                message(TI18N("语言_c_48"))
+            end
+            self:setPanelData(data)
+            model:setOptionalCampId(data.camp_id)
+        end)
+    end    
+
+    if not self.close_self then
+        self.close_self = GlobalEvent:getInstance():Bind(ActionEvent.OptionalFireData,function(data)
+            if data.code ~= 0 then
+                controller:sender28310(self.holiday_bid)
+            end
+        end)
+    end
+end
+function ActionOptionalGiftPanel:setPanelData(data)
+    self.list_data = data.award_list
+    self:updateList()
+end
+function ActionOptionalGiftPanel:updateList()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.good_cons:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 688,                -- 单元的尺寸width
+            item_height = 150,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    self.child_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ActionOptionalGiftPanel:createNewCell(width, height)
+    local cell = ActionOptionalGiftItem.new()
+	return cell
+end
+
+--获取数据数量
+function ActionOptionalGiftPanel:numberOfCells()
+    if not self.list_data then return 0 end
+    return #self.list_data
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function ActionOptionalGiftPanel:updateCellByIndex(cell, index)
+    if not self.list_data then return end
+    cell.index = index
+    if self.tab ~= nil and cell.setExtendData ~= nil then
+        cell:setExtendData(self.tab)
+    end
+    local cell_data = self.list_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+function ActionOptionalGiftPanel:DeleteMe()
+
+    if self.update_option_event then
+        GlobalEvent:getInstance():UnBind(self.update_option_event)
+        self.update_option_event = nil
+    end
+    if self.close_self then
+        GlobalEvent:getInstance():UnBind(self.close_self)
+        self.close_self = nil
+    end
+end
+
+--子项
+ActionOptionalGiftItem = class("ActionOptionalGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionOptionalGiftItem:ctor()
+    self.goods_list = {}
+    self.node_list = {}
+    self.image_list = {}
+    self.chose_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function ActionOptionalGiftItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_optional_gift_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(688,150))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.Image_1 = self.main_container:getChildByName("Image_1")
+    self.has_get = self.main_container:getChildByName("has_get")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.Text_7 = self.btn_get:getChildByName("Text_7")
+    self.good_cons = self.main_container:getChildByName("good_cons")
+    self.text_tesk = self.main_container:getChildByName("text_tesk")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.Node_1 = self.main_container:getChildByName("Node_1")
+    self.Node_2 = self.main_container:getChildByName("Node_2")
+    self.Image_1 = self.Node_2:getChildByName("Image_1")
+    self.Image_1_1 = self.Image_1:getChildByName("Image_1_1")
+    self.chose_1 = self.Node_2:getChildByName("chose_1")
+    self.Node_3 = self.main_container:getChildByName("Node_3")
+    self.Image_2 = self.Node_3:getChildByName("Image_2")
+    self.Image_2_1 = self.Image_2:getChildByName("Image_2_1")
+    self.chose_2 = self.Node_3:getChildByName("chose_2")
+    self.Node_4 = self.main_container:getChildByName("Node_4")
+    self.Image_3 = self.Node_4:getChildByName("Image_3")
+    self.Image_3_1 = self.Image_3:getChildByName("Image_3_1")
+    self.chose_3 = self.Node_4:getChildByName("chose_3")
+    table.insert(self.node_list,self.Node_2)
+    table.insert(self.node_list,self.Node_3)
+    table.insert(self.node_list,self.Node_4)
+    
+    table.insert(self.image_list,self.Image_1)
+    table.insert(self.image_list,self.Image_2)
+    table.insert(self.image_list,self.Image_3)
+
+    table.insert(self.chose_list,self.chose_1)
+    table.insert(self.chose_list,self.chose_2)
+    table.insert(self.chose_list,self.chose_3)
+    for i=1,tableLen(self.node_list) do
+        self.node_list[i]:setVisible(false)
+        self.image_list[i]:setVisible(false)
+        self.chose_list[i]:setVisible(false)
+    end
+end
+
+function ActionOptionalGiftItem:setData( data)
+    local id = data.id
+    self.count = data.count
+    self.reward = data.awards
+    local bid = model:getOptionalCampId()
+    self.id = bid.."_"..id
+    self.cfg = Config.HolidayOptionalGiftData.data_gift_info[self.id]
+    local reward_item = BackPackItem.new(true, true, false, 1)
+    reward_item:setDefaultTip()
+    reward_item:setScale(0.7)
+    self.Node_1:addChild(reward_item)
+    reward_item:setBaseData(self.reward[1]["item_id"], self.reward[1]["item_count"])
+    if self.count == 0 then
+        self.has_get:setVisible(true)
+        self.btn_get:setVisible(false)
+    else
+        self.btn_get:setVisible(true)
+        self.has_get:setVisible(false)
+    end
+    for i=1,self.cfg.count do
+        local id = i+1
+        self.node_list[i]:setVisible(true)
+        if self.reward[id] then
+            local reward_item = BackPackItem.new(true, true, false, 1)
+            reward_item:setDefaultTip()
+            reward_item:setScale(0.7)
+            self.node_list[i]:addChild(reward_item)
+            reward_item:setBaseData(self.reward[id]["item_id"], self.reward[id]["item_count"])
+            self.chose_list[i]:setVisible(true)
+            self.chose_list[i]:setLocalZOrder(1)
+        else
+            self.image_list[i]:setVisible(true)
+        end
+        if self.count == 0 then
+            self.chose_list[i]:setVisible(false)
+        end
+    end
+    local charge_id = self.cfg["charge_id"]
+    local charge_txt = MoneyTool.GetMoneyString(Config.ChargeData.data_charge_data[charge_id]["val"])
+    local str = string.format(TI18N("语言_c_4782"),charge_txt)
+    self.title_txt:setString(str)
+    local title_width = self.title_txt:getContentSize().width
+    self.title_bg:setContentSize(cc.size(title_width + 65,50))
+    if self.count <= 0 then
+        self.text_tesk:setVisible(false)
+        self.has_get:setVisible(true)
+    else
+        self.text_tesk:setVisible(true)
+        self.has_get:setVisible(false)
+        self.text_tesk:setString(string.format(TI18N("语言_c_1872"),self.count))
+    end
+    if tableLen(self.reward) == self.cfg.count + 1 then
+        self.Text_7:setString(string.format(TI18N("语言_c_4440"),charge_txt))
+    else
+        self.Text_7:setString(string.format(TI18N("语言_c_4779")))
+    end
+end
+
+function ActionOptionalGiftItem:register_event( )
+    for key, value in pairs(self.image_list) do
+        registerButtonEventListener(value, function()
+            self:clickNode()
+        end,true,1,nil,0.7)
+    end
+    for key, value in pairs(self.chose_list) do
+        registerButtonEventListener(value, function()
+            self:clickNode()
+        end,true,1)
+    end
+    registerButtonEventListener(self.btn_get, function()
+        if tableLen(self.reward) == self.cfg.count + 1 then
+            ActionController:getInstance():sender21016(self.cfg.charge_id)
+            model:setOptionalChargeId(self.cfg.charge_id)
+        else
+            self:clickNode()
+        end
+    end,true,1)
+    -- registerButtonEventListener(self.btn_goto, function()
+    --     if self.finish == 0 then
+    --         StrongerController:getInstance():clickCallBack(120)
+    --         -- NewPartnersummonController:getInstance():openNewPartnerSummonWindow(true)
+    --     else
+    --         controller:openActionwaradvanced(true)
+    --     end
+    -- end,true, 1)
+
+    if not self.message_event then
+        self.message_event = GlobalEvent:getInstance():Bind(ActionEvent.Is_Charge_Event,function(data)
+            -- local charge = model:getOptionalChargeId()
+            if self and self.cfg then
+                local charge = self.cfg.charge_id
+                if charge and data and charge == data.charge_id and data.status == 1 then
+                    local charge_list = Config.ChargeData.data_charge_data
+                    sdkOnPay(charge_list[charge].val, 1, charge_list[charge].id, charge_list[charge].name)
+                    self.has_get:setVisible(true)
+                    self.btn_get:setVisible(false)
+                    for key, value in pairs(self.chose_list) do
+                        value:setVisible(false)
+                    end
+                end
+            end
+        end)
+	end
+end
+function ActionOptionalGiftItem:clickNode()
+    controller:openActionOptionalGiftPanelChose(true,self.id)
+end
+function ActionOptionalGiftItem:DeleteMe()
+    if self.message_event then
+        GlobalEvent:getInstance():UnBind(self.message_event)
+        self.message_event = nil
+    end
+end

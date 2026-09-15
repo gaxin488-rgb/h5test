@@ -1,0 +1,4120 @@
+__spine_list = {}
+__down_spine_list = {}
+spSkeletonAnimationCreate = function(js_path, atlas_path, pixelformal)
+    pixelformal = pixelformal or cc.TEXTURE2_D_PIXEL_FORMAT_RGB_A4444
+    -- 跑新手时候统计加载资源
+    if PLATFORM_NAME == "demo" or PLATFORM_NAME == "release" or PLATFORM_NAME == "release2" then 
+        local args = Split(js_path, "/")
+        if __down_spine_list[args[2]] == nil then
+            __down_spine_list[args[2]] = args[2]
+        end
+    end
+
+    if not js_path or not atlas_path or js_path == "" or atlas_path == "" 
+            or not PathTool.isFileExist(js_path)
+            or not PathTool.isFileExist(atlas_path) then 
+        js_path, atlas_path = PathTool.defaultSpine()
+    end
+    local spine__ = nil
+    if string.find(js_path, ".skel") ~= nil then
+        spine__ = sp.SkeletonAnimation:createBinary(js_path, atlas_path, 1, pixelformal)
+    else
+        spine__ = sp.SkeletonAnimation:create(js_path, atlas_path, 1, pixelformal)-- setTimeScale
+    end
+    spine__._lua_fileName = js_path
+    return spine__
+end
+
+
+--==============================--
+--desc:创建模型,这里主要是模型类的.H打头的
+--time:2018-07-22 10:44:11
+--@spine_name:模型id,对应文件夹名字
+--@action_name:动作id,对应资源名
+--@root:
+--@zorder:
+--@scale:
+--@pixelformal:使用的纹理格式
+--@return 
+--==============================--
+function createSpineByName(spine_name, action_name, root, zorder, scale, pixelformal)
+    spine_name = spine_name or "H99999"
+    if GmCmd and GmCmd:addLoadList("spine/"..spine_name) then end
+    local frist_letter = string.sub(spine_name, 1, 1)
+    if frist_letter == "H" and pixelformal == nil then
+        pixelformal = getPixelFormat(spine_name)     
+    end
+    local js_path, atlas_path, png_path = PathTool.getSpineByName(spine_name, action_name)
+    local armature = spSkeletonAnimationCreate(js_path, atlas_path, pixelformal)
+    if not tolua.isnull(root) then
+         root:addChild(armature, zorder or 0)
+    end
+    if scale and type(scale) == "number" then
+    	armature:setScale(scale)
+	end
+	return armature
+end
+
+
+--==============================--
+--desc:创建特效
+--time:2018-01-04 03:01:57
+--@effectName:
+--@pos:
+--@arPos:
+--@loop:
+--@action:
+--@call_back:
+--@pixelformal:外部设置不用,直接在内部充足
+--@not_play_action: 是否播放动作,只要有值,就不播放动作了
+--@return 
+--==============================--
+function createEffectSpine( effectName, pos, arPos, loop, action, call_back, pixelformal, not_play_action )
+    if loop == nil then loop = true end
+    effectName = effectName  or "E88888"
+    if GmCmd and GmCmd:addLoadList("spine/"..effectName) then end
+    local skel_path, atlas_path, png_path, spine_path, return_name = PathTool.getSpineByName(effectName)
+    if pixelformal == nil then
+        pixelformal = getPixelFormat(effectName)
+    end
+    local spine = spSkeletonAnimationCreate(skel_path, atlas_path, pixelformal)
+    spine:setPosition(pos or cc.p(0, 0))
+    action = action or PlayerAction.action
+    if not_play_action == nil then
+        spine:setAnimation(0, action, loop)
+    end
+    spine:setAnchorPoint(arPos or cc.p(0.5, 0.5))
+    if call_back then
+        spine:registerSpineEventHandler(call_back, sp.EventType.ANIMATION_COMPLETE)
+    end
+    return spine
+end
+
+--==============================--
+--desc:创建富文本
+--time:2018-07-22 10:45:14
+--@fontsize:
+--@textcolor:
+--@ap:
+--@pos:
+--@lineSpace:
+--@charSpace:
+--@max_width:
+--@return 
+--==============================--
+function createRichLabel(fontsize, textcolor, ap, pos, lineSpace, charSpace, max_width,font)
+    local RichLabel = require("common.richlabel.RichLabel")
+    if type(textcolor) == "number" then
+        textcolor = Config.ColorData.data_color3[textcolor]
+    end
+    -- 文字信息
+    local rich_label = RichLabel.new {
+        fontName = font or DEFAULT_FONT,
+        fontSize = fontsize,
+        fontColor = textcolor or cc.c3b(255, 255, 255),
+        maxWidth = max_width or 300,
+        lineSpace = lineSpace or 0,
+        charSpace = charSpace or 0,
+        anchorPoint = ap or cc.p(0, 0)
+    }
+    rich_label:setAnchorPoint(ap or cc.p(0, 0))
+    rich_label:setPosition(pos or cc.p(0, 0))
+    return rich_label
+end
+
+--==============================--
+--desc:创建csb节点
+--time:2018-07-22 10:45:30
+--@csb_name:
+--@return 
+--==============================--
+function createCSBNote(csb_name)
+    -- cc.CSLoader:setCsbPlistFlag(true)
+    local node = cc.CSLoader:createNode(csb_name)
+    -- cc.CSLoader:setCsbPlistFlag(false)
+    return node
+end
+
+--==============================--
+--desc:创建系统文字
+--time:2018-07-22 10:45:43
+--@word:
+--@args:
+--@return 
+--==============================--
+function createWithSystemFont(word, ...)
+    word = word or ""
+    return cc.Label:createWithTTF(word, ...)
+end
+
+--==============================--
+--desc:创建一个普通文本
+--time:2018-07-22 10:46:03
+--@font_size:
+--@text_color:
+--@line_color:
+--@x:
+--@y:
+--@text_content:
+--@parent_wnd:
+--@line_num:
+--@anchorpoint:
+--@font:
+--@return 
+--==============================--
+function createLabel(font_size,text_color,line_color,x,y,text_content,parent_wnd,line_num, anchorpoint,font)
+    font_size = font_size
+    local label = createWithSystemFont("",  font or DEFAULT_FONT , font_size)
+    if type(text_color) == "number" then
+        text_color = Config.ColorData.data_color4[text_color]
+    end
+    label:setTextColor(text_color or Config.ColorData.data_color4[1])
+    label:setAnchorPoint(anchorpoint or cc.p(0,0))
+    if line_color then
+        if type(line_color) == "number" then
+            line_color = Config.ColorData.data_color4[line_color]
+        end
+        label:enableOutline(line_color, line_num or 1)
+    end
+    if x and y then
+        label:setPosition(cc.p(x, y))
+    end
+    if text_content then
+        label:setString(text_content)
+    end
+    if not tolua.isnull(parent_wnd) then
+        parent_wnd:addChild(label)
+    end
+    return label
+end
+
+--==============================--
+--desc:创建自定义按钮
+--time:2018-07-22 10:46:22
+--@conatiner:
+--@label:
+--@x:
+--@y:
+--@size:
+--@normal_res:普通状态资源
+--@fontsize:
+--@label_color:
+--@press_res:
+--@disable_res:
+--@load_type:
+--@return 
+--==============================--
+function createButton(conatiner, label, x, y, size, normal_res, fontsize, label_color, press_res, disable_res, load_type,font_type)
+    label = label or ""
+    load_type = load_type or LOADTEXT_TYPE_PLIST
+    local btn = CustomButton.New(conatiner, normal_res, press_res, disable_res, load_type,font_type)
+    if fontsize == nil then
+        btn:setLabelSize(30)
+    else
+        btn:setLabelSize(fontsize)
+    end
+    label_color = label_color or Config.ColorData.data_color4[1]
+    btn:setBtnLableColor(label_color)
+    if size ~= nil then
+        btn:setSize(size)
+    end
+    btn:setBtnLabel(label,font_type)
+    btn:setOffsetPos(2, 2)
+    x = x or 0
+    y = y or 0
+    btn:setPosition(cc.p(x, y))
+    return btn
+end
+
+--==============================--
+--desc:创建image
+--time:2018-07-22 10:46:58
+--@parent:
+--@res:
+--@x:
+--@y:
+--@anchorPoint:
+--@usePlist:
+--@zorder:
+--@is_Scale9:
+--@return 
+--==============================--
+function createImage(parent, res, x, y, anchorPoint, usePlist, zorder, is_Scale9)
+    local image = ccui.ImageView:create()
+    if res ~= nil then
+        if usePlist == true then
+            image:loadTexture(res, LOADTEXT_TYPE_PLIST)
+        else
+            image:loadTexture(res,LOADTEXT_TYPE)
+        end
+    end
+    if anchorPoint == nil then
+        image:setAnchorPoint(cc.p(0.5, 0.5))
+    else
+        image:setAnchorPoint(anchorPoint)
+    end
+
+    if is_Scale9 == true then
+        image:setScale9Enabled(true)
+    end
+
+    if x ~= nil and y ~= nil then
+        image:setPosition(cc.p(x , y))
+    end
+    if not tolua.isnull(parent) then
+        parent:addChild(image, zorder or 0)
+    end
+    return image
+end
+
+--==============================--
+--desc:创建一张九宫格资源
+--time:2018-07-22 10:47:13
+--@res:
+--@x:
+--@y:
+--@type:
+--@parent:
+--@return 
+--==============================--
+function createScale9Sprite(res, x, y, type, parent)
+    type = type or LOADTEXT_TYPE_PLIST
+    local sprite = ccui.Scale9Sprite:create()
+    if res ~= nil then
+        loadScale9SpriteTexture(sprite, res, type)
+    end
+
+    if x ~= nil and y ~= nil then
+        sprite:setPosition(cc.p(x, y))
+    end
+    if not tolua.isnull(parent) then
+        parent:addChild(sprite)
+    end
+    return sprite
+end
+
+
+
+--==============================--
+--desc:创建一个精灵单位
+--time:2017-05-31 10:55:18
+--@res:
+--@x:
+--@y:
+--@container:
+--@anchorPoint:
+--@type:
+--@zorder:
+--return 
+--==============================--
+function createSprite(res, x, y, container, anchorPoint, type, zorder)
+    x = x or 0
+    y = y or 0
+    type = type or LOADTEXT_TYPE_PLIST
+    local sprite = cc.Sprite:create()
+    if res ~= nil and res ~= "" then
+        loadSpriteTexture(sprite, res, type)
+    end
+    sprite:setPosition(cc.p(x, y))
+    if not tolua.isnull(container) then
+        container:addChild(sprite, zorder or 0)
+    end
+    if anchorPoint ~= nil then
+        sprite:setAnchorPoint(anchorPoint)
+    end
+    return sprite
+end
+
+--==============================--
+--desc:给一张九宫格资源设置纹理
+--time:2018-07-22 10:48:02
+--@sprite:
+--@res:
+--@type:
+--@return 
+--==============================--
+function loadScale9SpriteTexture(sprite, res, type)
+    type = type or ccui.TextureResType.plistType
+    if type == ccui.TextureResType.localType then
+        sprite:initWithFile(res)
+    else
+        sprite:initWithSpriteFrameName(res)
+    end
+end
+
+--==============================--
+--desc:给普通sprite设置纹理资源
+--time:2018-07-22 10:48:17
+--@sprite:
+--@res:
+--@res_type:
+--@return 
+--==============================--
+function loadSpriteTexture(sprite, res, res_type)
+    if not sprite then return end
+	if not res then return end
+    if res_type == ccui.TextureResType.localType then
+        sprite:setTexture(res)
+    else
+		if type(res) == "string" and string.len(res) > 0 then
+			sprite:setSpriteFrame(res)
+		end
+    end
+end
+
+--==============================--
+--desc:创建输入文本
+--time:2018-07-22 10:48:33
+--@parent:
+--@ui_res:
+--@size:
+--@font_color:
+--@font_size:
+--@placeholder_color:
+--@placeholder_size:
+--@placeholder_str:
+--@pos:
+--@max_len:
+--@load_type:
+--@input_model:
+--@input_flag:
+--@input_return:
+--@return 
+--==============================--
+function createEditBox(parent, ui_res, size, font_color, font_size, placeholder_color, placeholder_size, placeholder_str, pos, max_len, load_type, input_model, input_flag, input_return)
+    size = size or cc.size(100,30)
+    load_type = load_type or LOADTEXT_TYPE
+    local editBox = ccui.EditBox:create(size, ui_res, load_type)
+    input_model = input_model or cc.EDITBOX_INPUT_MODE_SINGLELINE
+    input_flag = input_flag or cc.EDITBOX_INPUT_FLAG_INITIAL_CAPS_WORD
+    input_return = input_return or cc.KEYBOARD_RETURNTYPE_DEFAULT
+    editBox:setInputMode(input_model)
+    editBox:setInputFlag(input_flag)
+    editBox:setReturnType(input_return)
+    if pos then
+        editBox:setPosition(pos)
+    end
+
+    font_size = font_size or 20
+    editBox:setFont(DEFAULT_FONT,font_size)
+
+    font_color = font_color or Config.ColorData.data_color3[1]
+    editBox:setFontColor(font_color)
+
+    placeholder_size = placeholder_size or 20
+    editBox:setPlaceholderFont(DEFAULT_FONT, placeholder_size)
+
+    placeholder_color = placeholder_color or Config.ColorData.data_color3[5]
+    editBox:setPlaceholderFontColor(placeholder_color)
+
+    placeholder_str = placeholder_str or ""
+    editBox:setPlaceHolder(placeholder_str)
+
+    if max_len then
+        editBox:setMaxLength(max_len)
+    end
+    
+    if parent then
+        parent:addChild(editBox,10)
+    end
+
+    return editBox
+end
+
+--创建文本输入域
+-- setting.x  位置
+-- setting.y
+-- setting.text_offset_y  文本框想到xy 位置的y偏移
+-- setting.ap 描点
+-- setting.size 大小
+-- setting.font_size 文本大小 默认 20
+-- setting.font_color 文本颜色
+-- setting.max_len 最大长度
+-- setting.input_txt 输入文本
+-- setting.bg_res 背景资源  (有值才创建 位置就在输入框的下方)
+-- setting.bg_size 背景大小 有背景资源的时候有效
+function createTextField(parent, setting)
+    if not parent then return end
+    setting = setting or {}
+    local x = setting.x or 0
+    local y = setting.y or 0
+    -- local text_offset_y = setting.text_offset_y or 0
+    local ap = setting.ap or cc.p(0,0)
+    local font_color = setting.font_color or cc.c4b(0xff,0x00,0x00,0xff)
+    local size = setting.size or cc.size(160, 60)
+    local max_len = setting.max_len or 100
+    local input_txt = setting.input_txt or TI18N("请输入")
+    local bg_res = setting.bg_res
+    local font_size = setting.font_size or 20
+    local bg_size = setting.bg_size or size
+
+    local bg = nil
+    if bg_res then
+        local usePlist = setting.usePlist
+        if setting.usePlist == nil then
+            usePlist = true
+        end
+        bg = createImage(parent, bg_res, x, y, ap, usePlist, nil, true)
+        bg:setContentSize(bg_size)
+    end
+
+    local text_field = ccui.TextField:create(input_txt, DEFAULT_FONT, font_size)
+    text_field:setTouchSize(size)
+    text_field:setMaxLengthEnabled(true)
+    text_field:ignoreContentAdaptWithSize(false)
+    text_field:setContentSize(size)
+    text_field:setCursorEnabled(true) --设置显示光标
+    text_field:setTouchEnabled(true)
+    text_field:setMaxLength(max_len) --这个不赋值 不会触发点击事件
+    text_field:setTextColor(font_color)
+
+    --因为是要替换 createEditBox 方法不一样..设置成一样.增加兼容性
+    text_field.getText = text_field.getString
+    text_field.setText = text_field.setString
+
+    if bg then
+        text_field:setAnchorPoint(cc.p(0,1))
+        local t_x = 2
+        local t_y = (bg_size.height - font_size)/2
+        text_field:setPosition(cc.p(t_x, bg_size.height-t_y))
+        bg:addChild(text_field)
+        text_field.bg = bg
+    else
+        text_field:setAnchorPoint(ap)
+        text_field:setPosition(cc.p(x, y))
+        parent:addChild(text_field)
+    end
+    return text_field
+end
+
+--==============================--
+--desc:滚动容器
+--time:2018-07-22 10:48:48
+--@width:
+--@height:
+--@x:
+--@y:
+--@parent_wnd:
+--@type:
+--@return 
+--==============================--
+function createScrollView(width,height,x,y,parent_wnd,type)
+    local scroll_view = ccui.ScrollView:create()
+    scroll_view:setBounceEnabled(true)
+    scroll_view:setScrollBarEnabled(false)
+    if type == ccui.ScrollViewDir.horizontal then
+        scroll_view:setDirection(ccui.ScrollViewDir.horizontal)
+    else
+        scroll_view:setDirection(ccui.ScrollViewDir.vertical)
+    end
+    
+    scroll_view:setTouchEnabled(true)
+    scroll_view:setContentSize(cc.size(width, height))
+    scroll_view:setInnerContainerSize(scroll_view:getContentSize())
+    scroll_view:setPosition(cc.p(x, y))
+    if not tolua.isnull(parent_wnd) then
+        parent_wnd:addChild(scroll_view)
+    end
+    return scroll_view
+end
+
+--==============================--
+--desc:创建一个进度条
+--time:2018-07-22 10:49:43
+--@bg_res:
+--@progress_res:
+--@size:
+--@parent:
+--@ap:
+--@x:
+--@y:
+--@usePlist:
+--@is_Scale9:
+--@return 
+--==============================--
+function createLoadingBar(bg_res, progress_res, size, parent, ap, x, y, usePlist,is_Scale9,offX,offY)
+    local load_type = usePlist and LOADTEXT_TYPE_PLIST or LOADTEXT_TYPE
+    local is_Scale9 = is_Scale9 or true
+    local bg = createScale9Sprite(bg_res, x, y, load_type, parent)
+    bg:setContentSize(size)
+    bg:setCascadeOpacityEnabled(true)
+    bg:setAnchorPoint(ap)
+    local of_x = offX or 0
+    local of_y = offY or 0
+    local progress = ccui.LoadingBar:create()
+    progress:setAnchorPoint(cc.p(0, 0.5))
+    progress:setScale9Enabled(is_Scale9)
+    progress:setCascadeOpacityEnabled(true)
+    progress:loadTexture(progress_res,load_type)
+    progress:setContentSize(cc.size(size.width-2, size.height-2))
+    progress:setPosition(cc.p(1+of_x, size.height/2 + of_y))
+    bg:addChild(progress)
+    return bg, progress
+end
+
+--==============================--
+--desc:可点击对象回调
+--time:2018-07-22 10:50:13
+--@touch_obj:
+--@call_back:
+--@return 
+--==============================--
+function handleTouchEnded(touch_obj, call_back)
+    touch_obj:addTouchEventListener(function(sender, event)
+        if ccui.TouchEventType.ended == event then
+            call_back()
+        end
+    end)
+end
+
+--==============================--
+--desc:转换色码
+--time:2018-07-22 10:50:26
+--@color_code:
+--@return 
+--==============================--
+function tranformC3bTostr(color_code)
+    local color = Config.ColorData.data_color3[color_code]
+    return c3bToStr(color)
+end
+
+--==============================--
+--desc:给Layout显示一个透明度的背景
+--time:2018-07-22 10:50:38
+--@layout:
+--@value:
+--@return 
+--==============================--
+function showLayoutRect( layout, value )
+    if tolua.isnull(layout) then return end
+    layout:setBackGroundColor(cc.c3b(0,0,0))
+    layout:setBackGroundColorOpacity(value or 216)
+    layout:setBackGroundColorType(1)
+end
+
+--==============================--
+--desc:延迟执行
+--time:2018-07-22 10:51:14
+--@func:
+--@time:
+--@return 
+--==============================--
+function delayOnce(func, time)
+    local timer_id 
+    timer_id = cc.Director:getInstance():getScheduler():scheduleScriptFunc(function(dt)
+        if timer_id then    -- 撤销定时器
+            cc.Director:getInstance():getScheduler():unscheduleScriptEntry(timer_id)
+            timer_id = nil
+        end
+        func()
+    end, time, false)
+    return timer_id
+end
+
+--==============================--
+--desc: 设置对象变灰,递归下去
+--time:2017-05-20 02:37:43
+--@bool: 是否变灰
+--@parent: 
+--@color: 这个数值主要是针对label的颜色,变灰之后,字体的颜色需要指定色度,不填可以默认
+--return 
+--==============================--
+function setChildUnEnabled(bool, parent, color)
+    if tolua.isnull(parent) then return end
+    local shader_path = PathTool.getShaderRes("grey_shader")
+    setAllChildFilter(parent, bool, shader_path, color)
+end
+
+-- 设置模糊效果
+function setChildBlurShader(bool, parent)
+    if tolua.isnull(parent) then return end
+    local shader_path = PathTool.getShaderRes("blur_shader")
+    setAllChildFilter(parent, bool, shader_path)
+end
+
+--==============================--
+--desc: 递归对象变暗
+--time:2017-05-20 02:38:50
+--@bool:
+--@parent:
+--@color: 针对label的颜色变换
+--return 
+--==============================--
+function setChildDarkShader(bool, parent, color)
+    if tolua.isnull(parent) then return end
+    local shader_path = PathTool.getShaderRes("darkness_shader")
+    setAllChildFilter(parent, bool, shader_path, color)
+end
+
+--==============================--
+--desc:设置描边效果
+--time:2017-06-30 05:59:38
+--@bool:
+--@parent:
+--@outline_size:
+--@outlin_color:
+--@size:
+--@return 
+--==============================--
+function setOutlineStatus(bool, parent, outline_size, outlin_color, size)
+    if tolua.isnull(parent) then return end
+    local shader_path = PathTool.getShaderRes("stroke_shader")
+    if parent.setOutlineStatus then
+        if bool == false then
+            parent:setOutlineStatus(bool)
+        else
+            outline_size = outline_size or 0.8
+            if outlin_color and  type(outlin_color) == "number" then
+                outlin_color = Config.ColorData.data_color3[outlin_color]
+            end
+            outlin_color = outlin_color or Config.ColorData.data_color3[169]
+            size = size or parent:getContentSize()
+            parent:setOutlineStatus(bool, outline_size, outlin_color, size, shader_path)
+        end
+    end
+end
+
+--==============================--
+--desc:冰冻效果
+--time:2017-06-07 03:59:03
+--@bool:
+--@parent:
+--@color:
+--return 
+--==============================--
+function setChildFrozenShader(bool, parent, color)
+    if tolua.isnull(parent) then return end
+    local shader_path = PathTool.getShaderRes("frozen_shader")
+    setAllChildFilter(parent, bool, shader_path, color)
+end
+
+function delayRun(obj, delay_time, fun)
+    if not tolua.isnull(obj) then
+        obj:runAction(cc.Sequence:create(cc.DelayTime:create(delay_time), cc.CallFunc:create(
+            function()
+                if not tolua.isnull(obj) and fun ~= nil then
+                    fun()
+                end
+            end
+        )))
+    end
+end
+
+_effect_once = _effect_once or {}
+--==============================--
+--desc:只播放一次特效
+--time:2018-07-22 10:51:41
+--@effect_name:
+--@x:
+--@y:
+--@parent:
+--@finish_call:
+--@isgore_playing:
+--@ignore_battle:
+--@delay_play:
+--@action_name:
+--@scale:
+--@return 
+--==============================--
+function playEffectOnce(effect_name, x, y, parent, finish_call, isgore_playing, ignore_battle, delay_play, action_name, scale, force, timescale)
+    action_name = action_name or PlayerAction.action 
+    if _effect_once_playing and not isgore_playing then
+        if _effect_once_last ~= effect_name or force == true then
+            table.insert(_effect_once, {effect_name, x, y, parent, finish_call, isgore_playing, ignore_battle})
+        end
+    else
+        _effect_once_playing = true
+        if not _G["GlobalTimeTicket"] then
+            require "sys/global_time_ticket"
+        end
+        GlobalTimeTicket:getInstance():remove("play_effect_timeout")
+        GlobalTimeTicket:getInstance():add(function()
+            _effect_once_playing = false
+        end, 1, 1, "play_effect_timeout")
+        _effect_once_last = effect_name
+
+        local js_path, atlas_path, png = PathTool.getSpineByName(effect_name)
+        local remove_fun = function()
+            if finish_call then
+                finish_call()
+            end
+            if #_effect_once > 0 then 
+                local data = _effect_once[1]
+                _effect_name, _x, _y, _parent, _finish_call, _isgore_playing, _ignore_battle = data[1], data[2], data[3], data[4], data[5], data[6], data[7]
+                table.remove(_effect_once, 1)
+                playEffectOnce(_effect_name, _x, _y, _parent, _finish_call, _isgore_playing, _ignore_battle)
+            end
+        end
+
+        local call_back = function(spine)
+            if type(parent) == "table" then
+                if not tolua.isnull(parent[1]) then
+                    parent[1]:addChild(spine, parent[2])
+                else
+                    remove_fun()
+                    return
+                end
+            elseif not tolua.isnull(parent) then
+                parent:addChild(spine, 99)
+            else
+                remove_fun()
+                return
+            end 
+            local finish_func = function( event)
+                if event.animation == action_name then
+                    _effect_once_playing = false
+                    spine:runAction(cc.RemoveSelf:create(true)) 
+                    _effect_once_last = nil
+                    remove_fun()
+                end
+            end
+            -- 有一些时候还在播放途中,就停掉了 这时候是不会切换会播放状态就有问题了
+            if force == true then
+                spine:registerScriptHandler(function(event)
+                    if "enter" == event then
+                    elseif "exit" == event then
+                        _effect_once_playing = false
+                    end 
+                end)
+            end
+
+            spine:setPosition(x, y)
+            spine:registerSpineEventHandler(finish_func, sp.EventType.ANIMATION_COMPLETE)
+            spine:setAnimation(0, action_name or PlayerAction.action, false)
+            scale = scale or 1
+            spine:setScale(scale)
+            if timescale then
+                spine:setTimeScale(timescale)
+            end
+        end
+        call_back(createSpineByName(effect_name)) 
+    end
+end
+
+--==============================--
+--desc:统一释放
+--time:2018-07-22 10:52:16
+--@cobj:
+--@return 
+--==============================--
+function doRelease(cobj)
+    if not tolua.isnull(cobj) and cobj:getReferenceCount() > 1 then
+        cobj:release()
+    end
+end
+
+--==============================--
+--desc:安全判定
+--time:2018-07-22 10:52:26
+--@cobj:
+--@return 
+--==============================--
+function doRemoveFromParent(cobj)
+    if not tolua.isnull(cobj) then
+        cobj:removeFromParent()
+    end
+end
+
+
+function safeCallFunc(func)
+    xpcall(func, 
+    function(msg)
+        local trace = debug.traceback()
+        local ver_code = cc.UserDefault:getInstance():getIntegerForKey("local_version")
+        print_log(string.format("[%s,%s,%s]%s\n%s", ver_code, PLATFORM, PLATFORM_NAME, msg, trace))
+        if buglyReportLuaException then 
+            buglyReportLuaException(string.format("[%s,%s,%s]%s", ver_code, PLATFORM, PLATFORM_NAME, msg), trace)
+        end
+    end)
+end
+
+--==============================--
+--desc:区分服务器名称
+--time:2018-07-22 10:52:50
+--@name:
+--@srv_id:
+--@return 
+--==============================--
+function transformNameByServ(name, srv_id)
+    local tmpName = name
+    if srv_id == nil or name == nil then return tmpName end
+    if name then
+        if string.find(tmpName,"【") then
+            return tmpName
+        end 
+    end
+    if not RoleController:getInstance():isTheSameSvr(srv_id) then
+        local vo = RoleController:getInstance():getRoleVo()
+        if vo then
+            local listOr = Split(srv_id, "_")
+            local listMe = Split(vo.srv_id, "_")
+            if listOr[2] and listMe[1] and listOr[1]~=listMe[1] then
+                tmpName = string.format(TI18N("语言_c_4181"), tmpName)
+            elseif #listOr > 1 then
+                tmpName = string.format("[S%s]%s", listOr[#listOr], tmpName)
+            end
+            if srv_id == "robot_1" or srv_id == "robot" then --代表机器人
+                tmpName = name
+            end
+        end
+    end
+    return tmpName
+end
+
+--==============================--
+--desc:获取服务器名字
+--time:2018-07-22 10:54:30
+--@str:
+--@return 
+--==============================--
+function getServerName(srv_id)
+    if srv_id == nil then 
+        return "" 
+    end
+    local tmpName = ""
+    local vo = RoleController:getInstance():getRoleVo()
+    if vo then
+        local listOr = Split(srv_id, "_")
+        local listMe = Split(vo.srv_id, "_")
+        if listOr[2] and listMe[1] and listOr[1]~=listMe[1] then
+            tmpName = TI18N("语言_c_101")
+        elseif #listOr > 1 then
+            tmpName = string.format("S%s", listOr[#listOr])
+        end
+        if srv_id == "robot_1" then --代表机器人
+            tmpName = name
+        end
+    end
+    return tmpName
+end
+--==============================--
+--desc:获取服务器索引
+--time:2018-07-22 10:54:30
+--@str:
+--@return index, is_local 
+--index == 0 表示 机器 或者 异域(就是无法知道是那个服的)
+--is_local : 表示是否本服
+--==============================--
+function getServerIndex( srv_id )
+    if srv_id == nil then 
+        return "" 
+    end
+    if srv_id == "robot_1" or srv_id == "robot" then --代表机器人
+        return 0
+    end
+    local vo = RoleController:getInstance():getRoleVo()
+    if vo then
+        local listOr = Split(srv_id, "_")
+        local listMe = Split(vo.srv_id, "_")
+        if listOr[2] and listMe[1] and listOr[1]~=listMe[1] then
+            return 0
+        elseif #listOr > 1 then
+            -- 传过来的服务器id 跟角色的 服务器id 或者 主服务器id(合服后用) 一致 算本服
+            if srv_id == vo.srv_id or srv_id == vo.main_srv_id then
+                return listOr[#listOr], true
+            else
+                return listOr[#listOr]
+            end
+        end
+    end
+    return 0
+end
+
+--==============================--
+--desc:预留处理暂时没用了
+--time:2018-07-22 10:54:30
+--@str:
+--@return 
+--==============================--
+function _T(str)
+    return str
+end
+
+--==============================--
+--desc:安全判定
+--time:2018-07-22 10:55:04
+--@cobj:
+--@page:
+--@return 
+--==============================--
+function doScrollToPage(cobj, page)
+    if not tolua.isnull(cobj) then 
+        cobj:scrollToPage(page or 0)
+    end
+end
+
+--==============================--
+--desc:两个对象最排列显示
+--time:2018-07-22 10:55:47
+--@target:
+--@obj:
+--@offX:
+--@offY:
+--@return 
+--==============================--
+function appendToTarget( target, obj, offX, offY)
+    offX = offX or 0
+    offY = offY or 0
+    if target ~= nil and obj ~= nil then
+        local _x, _y = target:getPosition() 
+        if true then
+            obj:setPosition(cc.p(_x + target:getContentSize().width + offX, _y + offY))
+        end
+        obj:setPosition(cc.p(_x + target:getContentSize().width + offX, _y + offY))
+    end
+end
+
+--==============================--
+--desc:通用点击状态显示(先放大再缩小)
+--time:2018-07-22 10:56:16
+--@sender:
+--@event_type:
+--@scale:
+--@return 
+--==============================--
+function customClickAction(sender, event_type, scale)
+    if tolua.isnull(sender) then return end
+    scale = scale or 1
+    if event_type == ccui.TouchEventType.began then
+        sender:stopAllActions()
+        sender:runAction(cc.ScaleTo:create(0.05, 1.1*scale))
+    elseif event_type == ccui.TouchEventType.ended  then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 0.95*scale), cc.ScaleTo:create(0.1, 1*scale)))
+    elseif event_type == ccui.TouchEventType.canceled then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 0.95*scale), cc.ScaleTo:create(0.1, 1*scale)))
+    end
+end
+
+-- 通用点击状态显示（先缩小再放大）
+function customClickAction_2(sender, event_type, scale)
+    if tolua.isnull(sender) then return end
+    scale = scale or 1
+    if event_type == ccui.TouchEventType.began then
+        sender:stopAllActions()
+        sender:runAction(cc.ScaleTo:create(0.05, 0.95*scale))
+    elseif event_type == ccui.TouchEventType.ended  then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 1.1*scale), cc.ScaleTo:create(0.1, 1*scale)))
+    elseif event_type == ccui.TouchEventType.canceled then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 1.1*scale), cc.ScaleTo:create(0.1, 1*scale)))
+    end
+end
+
+-- 主城建筑点击状态显示（先缩小再放大）
+function customClickAction_3(sender, event_type, scale)
+    if tolua.isnull(sender) then return end
+    scale = scale or 1
+    if event_type == ccui.TouchEventType.began then
+        sender:stopAllActions()
+        sender:runAction(cc.ScaleTo:create(0.05, 0.95))
+    elseif event_type == ccui.TouchEventType.ended  then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 1.05*scale), cc.ScaleTo:create(0.1, 1)))
+    elseif event_type == ccui.TouchEventType.canceled then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 1.05*scale), cc.ScaleTo:create(0.1, 1)))
+    end
+end
+
+--==============================--
+--desc:通用点击状态显示
+--time:2018-07-22 10:56:16
+--@sender:
+--@event_type:
+--@scale_x, scale_y x y坐标不一样的时候
+--@return 
+--==============================--
+function customClickActionByXY(sender, event_type, scale_x, scale_y)
+    if tolua.isnull(sender) then return end
+    local scale_x = scale_x or 1
+    local scale_y = scale_y or 1
+    if event_type == ccui.TouchEventType.began then
+        sender:stopAllActions()
+        sender:runAction(cc.ScaleTo:create(0.05, 0.95*scale_x, 0.95*scale_y))
+    elseif event_type == ccui.TouchEventType.ended  then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 1.1*scale_x, 1.1*scale_y), cc.ScaleTo:create(0.1, 1*scale_x, 1*scale_y)))
+    elseif event_type == ccui.TouchEventType.canceled then
+        sender:stopAllActions()
+        sender:runAction(cc.Sequence:create(cc.ScaleTo:create(0.1, 1.1*scale_x, 1.1*scale_y), cc.ScaleTo:create(0.1, 1*scale_x, 1*scale_y)))
+    end
+end
+
+--==============================--
+--desc:配置格式装换
+--time:2018-07-22 10:56:41
+--@content:配置的格式为 {X:OOOOOO}, 其中X 对应的 Config.ColorData里面的id
+--@return 
+--==============================--
+function splitDataStr(content)
+    local result = content
+    if result ~= nil and result ~= "" then
+        while string.find(result,"{") ~= nil do
+            local i,j = string.find(result,"{")
+            local n,m = string.find(result,"}")   
+            local temp = string.sub(result, i, m)
+            local target = string.sub(temp, 2, #temp-1)
+            local list = Split(target, ":")
+            local str = string.format("<div fontcolor=%s>%s</div>",tranformC3bTostr(tonumber(list[1])),list[2])
+            result = string.gsub(result, temp, str,1) 
+        end
+    end
+    local role_vo = RoleController:getInstance():getRoleVo()
+    if role_vo ~= nil then
+        result = string.gsub(result,"~n",role_vo.name)
+    end
+    return result
+end
+
+--==============================--
+--desc:节点进出场处理
+--time:2018-07-22 10:57:34
+--@node:
+--@enterCallBack:
+--@removeCallBack:
+--@return 
+--==============================--
+function registerRemmovePointer(node, enterCallBack, removeCallBack)
+    local function onNodeEvent(event)
+        if "enter" == event then  --进场
+            if enterCallBack then
+                enterCallBack()
+            end
+        elseif "exit" == event then --离场
+            if removeCallBack then
+                removeCallBack()
+            end
+            --当忘记销毁根节点的时候，这个地方帮助吧根节点销毁
+            node = nil
+        end
+    end
+end   
+
+--==============================--
+--desc:只有主界面图标.主UI下面7个按钮以及主城建筑泡泡
+--time:2017-08-07 07:40:52
+--@return 
+--==============================--
+function playButtonSound()
+    if AudioManager then
+        AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.COMMON,"c_002")
+    end
+end
+
+--==============================--
+--desc:标签页声音
+--time:2017-08-07 07:40:52
+--@return
+--==============================--
+function playTabButtonSound()
+    AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.COMMON, "c_002")
+end
+
+--==============================--
+--desc:非主界面图标的可点击控件的按钮省
+--time:2017-08-07 07:38:19
+--@return
+--==============================--
+function playButtonSound2()
+    if AudioManager then
+        AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.COMMON, "c_button1")
+    end
+end
+
+--==============================--
+--desc:关闭是的声音
+--time:2018-07-22 10:58:07
+--@return 
+--==============================--
+function playCloseSound()
+    if AudioManager then
+        AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.COMMON,"c_close")
+    end  
+end
+
+--==============================--
+--desc:播放伙伴配音
+--time:2018-07-22 11:01:29
+--@sound_id:
+--@return 
+--==============================--
+function playPartnerSound(sound_id)
+     if AudioManager then
+        AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.DUBBING,sound_id,false)
+    end
+end
+
+--==============================--
+--desc:点击特殊音效的统一接口
+--time:2018-07-22 11:01:41
+--@sound_id:
+--@type:
+--@return 
+--==============================--
+function playOtherSound(sound_id, type)
+    type = type or AudioManager.AUDIO_TYPE.COMMON 
+	AudioManager:getInstance():playEffect(type, sound_id)
+end
+
+--==============================--
+--desc:模拟点击坐标
+--time:2017-06-06 12:10:13
+--@x:
+--@y:
+--return 
+--==============================--
+function touchPoint(x, y)
+    -- x = x or 0
+    -- y = y or 0 
+    -- x = (x - (SCREEN_WIDTH - VISIBLE_WIDTH)/2) / VISIBLE_WIDTH * SIZE_BASE.width
+    -- y =  y / SCREEN_HEIGHT * SIZE_BASE.height
+    -- local msg = string.format("tap %s %s", x, SIZE_BASE.height - y)
+    
+    -- cc.Director:getInstance():getConsole():commandTouch(0, msg)
+end
+
+--==============================--
+--desc:递归根据tag查找某个节点
+--time:2017-06-06 03:06:25
+--@node:
+--@tag:
+--return 
+--==============================--
+function findNodeByTag(node,tag)     
+    if tolua.isnull(node) == nil then return end   
+    if node == nil then return end
+    if node and node.getTag and node:getTag() == tag then return node end 
+
+    local children = {node:getChildren()}
+    local index = 0  
+    while index < #children do  
+        index = index + 1  
+        for k,v in pairs(children[index]) do
+            if not tolua.isnull(v) then
+                if v.getTag and v:getTag() == tag then  
+                    return v   
+                end  
+                if v.getChildren then  
+                    table.insert(children,v:getChildren())  
+                end
+            end
+        end  
+    end  
+    return nil  
+end
+
+--==============================--
+--desc:递归根据名字查找某个节点
+--time:2017-06-06 03:07:31
+--@node:
+--@name:
+--return 
+--==============================--
+function findNodeByName(node, name)
+    if tolua.isnull(node) == nil then return end
+    if node == nil then return end
+    if node and node.getName and node:getName() == name then return node end 
+
+    local children = {node:getChildren()}
+    local index = 0  
+    while index < #children do  
+        index = index + 1  
+        for k,v in pairs(children[index]) do
+            if not tolua.isnull(v) then
+                if v.getName and v:getName() == name then  
+                    return v   
+                end  
+                if v.getChildren then  
+                    table.insert(children,v:getChildren())  
+                end
+            end
+        end  
+    end  
+    return nil  
+end
+
+-- 获取当前版本号
+function now_ver()
+    local ver = cc.UserDefault:getInstance():getIntegerForKey("local_version") or 0
+    if cc.UserDefault:getInstance():getBoolForKey("is_enter_try_srv") then -- 是否进入优先体验服
+        ver = cc.UserDefault:getInstance():getIntegerForKey("local_try_version") or ver
+    end
+    return math.max(ver, NOW_VERSION)
+end
+
+-- 检查当前需求最小版本号 当前版本小于此版本时 理应强制热更(restart)
+function check_min_ver(Fun, is_force)
+    local is_win_mac = PLATFORM == cc.PLATFORM_OS_WINDOWS or PLATFORM == cc.PLATFORM_OS_MAC
+    if not is_force and ((not WIN_UPDATE and is_win_mac) or UPDATE_SKIP) then return end
+    local url = string.format("%s/min_version2.txt?ts=%s", URL_PATH.update, os.time())
+    if cc.UserDefault:getInstance():getBoolForKey("is_enter_try_srv") then -- 是否进入优先体验服
+        url = string.format("%s/min_tryver.txt?ts=%s", URL_PATH.update, os.time())
+    end
+    print("get_min_ver_url==>", url)
+    local xhr = cc.XMLHttpRequest:new()
+    xhr.responseType = cc.XMLHTTPREQUEST_RESPONSE_STRING
+    xhr:open("GET", url)
+    local function onReadyStateChange()
+        if xhr.readyState == 4 and (xhr.status >= 200 and xhr.status < 207) then
+            Fun(now_ver(), tonumber(xhr.response))
+        end
+    end
+    xhr:registerScriptHandler(onReadyStateChange)
+    xhr:send()
+    return true
+end
+
+--==============================--
+--desc:统一选中的动态效果(策划要求的呼吸发光效果
+--time:2017-07-15 11:48:33
+--@obj:
+--@return 
+--==============================--
+function breatheShineAction(obj, in_time, out_time)
+    in_time = in_time or 0.7
+    out_time = out_time or 0.4
+    if obj == nil or tolua.isnull(obj) then return end
+	local fadein = cc.FadeIn:create(in_time)
+	local fadeout = cc.FadeOut:create(out_time)
+	obj:runAction(cc.RepeatForever:create(cc.Sequence:create(fadein,fadeout)))
+end
+
+--==============================--
+--desc:
+--time:2017-08-10 07:29:38
+--@obj:
+--@delay_time:延迟时间
+--@remain_tiem:停留时间
+--@in_time:
+--@out_time:
+--@return 
+--==============================--
+function breatheShineAction2(obj, delay_time,remain_time,in_time, out_time)
+    in_time = in_time or 0.7
+    out_time = out_time or 0.4
+    delay_time = delay_time or 10
+    remain_time = remain_time or 5
+    if obj == nil or tolua.isnull(obj) then return end
+    obj:setOpacity(0)
+	local fadein = cc.FadeIn:create(in_time)
+	local fadeout = cc.FadeOut:create(out_time)
+    local delay_time = cc.DelayTime:create(delay_time)
+    local remain_time = cc.DelayTime:create(remain_time)
+	obj:runAction(cc.RepeatForever:create(cc.Sequence:create(delay_time,fadein,remain_time,fadeout)))
+end
+
+
+--==============================--
+--desc:放大缩小的强化效果
+--time:2017-09-18 03:35:24
+--@obj:
+--@scale:
+--@scale_time:
+--@return 
+--==============================--
+function breatheShineAction3(obj, scale, scale_time)
+    scale = scale or 1.05
+    scale_time = scale_time or 0.6
+    if obj == nil or tolua.isnull(obj) then return end
+	local scale_open = cc.ScaleTo:create(scale_time,scale)
+	local scale_close = cc.ScaleTo:create(scale_time,1)
+	obj:runAction(cc.RepeatForever:create(cc.Sequence:create(scale_open,scale_close)))
+end
+
+function breatheShineAction4(obj, move_time, off_y)
+    if tolua.isnull(obj) then return end
+    move_time = move_time or 0.5
+    off_y = off_y or 10
+    local move_by_1 = cc.MoveBy:create(move_time, cc.p(0, -off_y))
+    local move_by_2 = cc.MoveBy:create(move_time * 2, cc.p(0, 2 * off_y))
+    local move_by_3 = cc.MoveBy:create(move_time, cc.p(0, -off_y))
+	obj:runAction(cc.RepeatForever:create(cc.Sequence:create(move_by_1,move_by_2, move_by_3)))
+end
+
+
+--通用进入动画 左边进入
+function commonOpenActionLeftMove(obj,pos)
+    if obj == nil or tolua.isnull(obj) then return end
+    pos = pos or 360
+    doStopAllActions(obj)
+    local y = obj:getPositionY()
+    obj:setPosition(0, y)
+    obj:setOpacity(0)
+
+    local moveto = cc.EaseBackOut:create(cc.MoveTo:create(0.3,cc.p(pos, y))) 
+    local fadeIn = cc.FadeIn:create(0.25)
+    local spawn_action = cc.Spawn:create(moveto, fadeIn)
+    obj:runAction(spawn_action)
+end
+
+--通用进入动画 右边进入
+function commonOpenActionRightMove(obj,pos)
+    if obj == nil or tolua.isnull(obj) then return end
+    pos = pos or 360
+    doStopAllActions(obj)
+    local y = obj:getPositionY()
+    obj:setPosition(720, y)
+    obj:setOpacity(0)
+
+    local moveto = cc.EaseBackOut:create(cc.MoveTo:create(0.3,cc.p(pos, y))) 
+    local fadeIn = cc.FadeIn:create(0.25)
+    local spawn_action = cc.Spawn:create(moveto, fadeIn)
+    obj:runAction(spawn_action)
+end
+
+
+
+--通用打开面板动画 缩小放大
+function commonOpenActionCentreScale(obj)
+    if obj == nil or tolua.isnull(obj) then return end
+    doStopAllActions(obj)
+    obj:setPositionX(360)
+    obj:setOpacity(0)
+    obj:setScale(0.3)
+    local fadeIn = cc.FadeIn:create(0.25)
+    local scaleTo = cc.EaseBackOut:create(cc.ScaleTo:create(0.3, 1))
+    local spawn_action = cc.Spawn:create(scaleTo, fadeIn)
+    obj:runAction(spawn_action)
+end
+
+
+
+
+--==============================--
+--desc:消耗红钻的时候统一接口,callback处理具体事项(比如发送协议等)
+--time:2017-12-29 10:50:51
+--@need_value:
+--@callback:
+--@return 
+--==============================--
+function checkGoldIsEnough(need_value, callback)
+    if callback == nil then return end
+    callback()
+end
+
+--==============================--
+--desc:动态加载资源的接口.适应小包处理
+--time:2018-07-22 11:05:34
+--@path:
+--@type:
+--@callback:
+--@load:
+--@lock:
+--@return 
+--==============================--
+function createResourcesLoad(path, type, callback, load, lock)
+    if load ~= nil then
+        load:DeleteMe()
+        load = nil
+    end
+    local load = ResourcesLoad.New()
+    load:addDownloadList(path, type, function() 
+        callback()
+    end)
+
+    return load
+end
+
+--==============================--
+--desc:动态加载资源的接口.适应小包处理
+--time:2018-07-22 11:05:34
+--@node:显示对象,只针对sprite
+--@path:路径
+--@type:
+--@load:
+--@delete_time 自定移除时间
+--@return 
+--==============================--
+function loadSpriteTextureFromCDN(node, path, type, load, delete_time, load_callback)
+    if load ~= nil then
+        load:DeleteMe()
+        load = nil
+    end
+
+    if tolua.isnull(node) then return end
+    
+    local load = ResourcesLoad.New()
+    load:addDownloadList(path, type, function() 
+        if not tolua.isnull(node) then
+            loadSpriteTexture(node, path, LOADTEXT_TYPE)
+            if load_callback then
+                load_callback()
+            end
+        end
+    end, delete_time)
+    return load
+end
+
+--==============================--
+--desc:动态加载资源的接口.适应小包处理
+--time:2018-07-22 11:05:34
+--@node:显示对象,只针对Image
+--@path:路径
+--@type:
+--@load:
+--@delete_time 自定移除时间
+--@return 
+--==============================--
+function loadImageTextureFromCDN(node, path, type, load, delete_time, load_callback)
+    if load ~= nil then
+        load:DeleteMe()
+        load = nil
+    end
+
+    if tolua.isnull(node) then return end
+    
+    local load = ResourcesLoad.New()
+    load:addDownloadList(path, type, function() 
+        if not tolua.isnull(node) then
+            node:loadTexture(path,LOADTEXT_TYPE)
+            if load_callback then
+                load_callback()
+            end
+        end
+    end, delete_time)
+    return load
+end
+
+-- φ  %sφ
+function TI18N(msg)
+    if not Lang then
+        local lang_namd = "lang_" .. DEF_LANG
+        if CUR_LANG then
+            lang_namd = "lang_" .. CUR_LANG
+        end
+        -- if not cc.FileUtils:getInstance():isFileExist(lang_namd) then
+        --     print("没找到语言包，",lang_namd)
+        --     lang_namd = "lang"
+        -- end
+        require(lang_namd)
+    end
+    local str = Lang[msg] or msg or "";
+    -- if str == "unknow" then
+    --     str = ""
+    -- end
+    str = string.gsub(str,"φ",DEF_MONETARY_SYMBOLS)
+    str = string.gsub(str,"α", "")
+    str = string.gsub(str,"语言_", "lang_")
+    return str
+end
+
+function MONEY_MARK(str)
+    return string.gsub(str,"φ",DEF_MONETARY_SYMBOLS)
+end
+
+-- 制定当前语言
+function SetGameChooseLang(lan)
+    if CUR_LANG and CUR_LANG ~= lan then
+        cc.UserDefault:getInstance():setStringForKey("user_choose_lang", lan)
+        cc.UserDefault:getInstance():flush()
+    end
+    CUR_LANG = lan
+    if CHOOSE_LANG_CURRENCY then DEF_CURRENCY = CHOOSE_LANG_CURRENCY[CUR_LANG] end
+    if CHOOSE_LANG_MONETARY then DEF_MONETARY = CHOOSE_LANG_MONETARY[CUR_LANG] end
+    if CHOOSE_LANG_MONETARY_SYMBOLS then DEF_MONETARY_SYMBOLS = CHOOSE_LANG_MONETARY_SYMBOLS[CUR_LANG] end
+end
+
+-- GetMoneyNum(config[id],"recharge")
+-- 获得语言对应货币数据
+function GetMoneyNum(obj, name)
+    if not obj then return 0 end;
+    local newname = name .. DEF_MONETARY;
+    local objstr = obj[newname]
+    if objstr and objstr ~= "" then
+        return objstr;
+    end
+    return obj[name];
+end
+
+-- 解析后端发过来的语言包
+function GetLangSeverStr(str)
+    local oldstr = str
+    local t = type(str);
+    if t ~= "string" then return str end
+    if not str then return "" end
+    str = string.gsub(str,"α", "")
+    str = string.gsub(str,"\n", "∑");
+    local strarr = Split(str,"β")
+    local allstr = ""
+    local strA = nil
+    local strArr = nil
+    local regstr = "%d,"
+    local alen = #strarr
+    if alen > 1 or (alen and string.match(str,regstr)) then
+        local i, j;
+        if alen > 1 then
+            for k,v in ipairs(strarr) do
+                strA = v;
+                if string.match(strA,"ζ") then
+                    strArr = Split(strA,"ζ");
+                    if strArr[1] and strArr[1] ~= "" then
+                        local tobj = nil
+                        if LANGE_NOT_USE_PCALL then
+                            tobj = loadstring("return " .. strArr[1])()
+                        else
+                            local g, h = pcall(loadstring("return " .. strArr[1]))
+                            if g then
+                                tobj = h
+                            else
+                                send_error_to_pf("error_langN"..oldstr)
+                            end
+                        end
+                        allstr = allstr .. GetLangOneSeverStr(tobj, str);
+                        if #strArr > 1 then allstr = allstr .. strArr[2] end
+                    end
+                else
+                    allstr = allstr .. strA;
+                end
+            end
+        else
+            if strarr[1] then
+                local tobj = loadstring("return " .. strarr[1])()
+                allstr = allstr .. GetLangOneSeverStr(tobj, str);
+            end
+        end
+    else
+        local lanstr = Lang[str];
+        if (lanstr) then
+            allstr = lanstr;
+        else
+            allstr = str;
+        end
+    end
+    allstr = string.gsub(allstr, "∑","\n");
+    allstr = string.gsub(allstr,"φ", DEF_MONETARY_SYMBOLS)
+    return allstr;
+end
+
+-- 服务端语言包解析规则
+-- 0:--普通  {0,"@文本"}
+-- 1:--拼接字符  {1,"sss_257"}  {1,"sss_257",{0,"@文本"}}
+-- 2:--基础副本配置表 {2,"LoginDaysData","data_day",1,"name"} 表名1 表名2 ID  字段名     （表名2不需要时可以填空字符""）
+-- 3:--后端定义文本   {3,"%s,%s,%s",{1,\"sss_257\",{0,\"xxx\"},{1,10001}},{0,"@文本"},{0,"@文本"}};
+-- 4:--道具配置表id  {4,110001}
+
+--β{1,\"sss_257\",{0,\"xxx\"},{4,10001}}ζ
+function GetLangOneSeverStr(strBArr, oldstr)
+    if type(strBArr) ~= "table" then
+        return strBArr or ""
+    end
+    local allstr = "";
+    local strlen = #strBArr
+    if next(strBArr) then
+        local itemObj;
+        local type = strBArr[1]
+        if type == 0 then--普通
+            allstr = strBArr[2] or "";
+        elseif type == 1 then--拼接字符  {1,"sss_257"}  {1,"sss_257",{0,"@文本"}}
+            if strlen > 1 then
+                local keystr = GetLangSeverStr(strBArr[2]);
+                local keyarrA = {};
+                for i = 3,strlen do
+                    table.insert(keyarrA,GetLangOneSeverStr(strBArr[i], oldstr))
+                end
+                if next(keyarrA) then 
+                    if LANGE_NOT_USE_PCALL then
+                        keystr = string.format(keystr, unpack(keyarrA))
+                    else
+                        function string_format_for_arr2()
+                            return string.format(keystr, unpack(keyarrA))
+                        end
+                        local g, h = pcall(string_format_for_arr2)
+                        if g then
+                            keystr = h
+                        else
+                            send_error_to_pf("error_langC"..oldstr)
+                        end
+                    end
+                end
+                allstr = keystr;
+            end
+        elseif type == 2 then--3   --基础副本配置表  表名1 表名2 ID  字段名
+            if strlen >= 4 then
+                if strBArr[3] and strBArr[3] ~= "" then
+                    itemObj = Config[strBArr[2]][strBArr[3]] or nil;
+                else
+                    itemObj = Config[strBArr[2]] or nil;
+                end
+                if itemObj and itemObj[strBArr[4]] then
+                    allstr = itemObj[strBArr[4]][strBArr[5]];
+                else
+                    print(strBArr[1], oldstr);
+                end
+            end
+        elseif type == 3 then--也是一个serverkey
+            if strlen > 1 then
+                local keystr = strBArr[2];
+                local keyarrA = {};
+                for i=3,strlen do
+                    table.insert(keyarrA,GetLangOneSeverStr(strBArr[i], oldstr))
+                end
+                if next(keyarrA) then 
+                    if LANGE_NOT_USE_PCALL then
+                        keystr = string.format(keystr, unpack(keyarrA)) 
+                    else
+                        function string_format_for_arr()
+                            return string.format(keystr, unpack(keyarrA))
+                        end
+                        local g, h = pcall(string_format_for_arr)
+                        if g then
+                            keystr = h
+                        else
+                            send_error_to_pf("error_langB"..oldstr)
+                        end
+                    end
+                end
+                allstr = keystr;
+            end
+        elseif type == 4 then--道具配置表
+            local itemobjA = Config.ItemData.data_get_data and Config.ItemData.data_get_data(strBArr[2]);
+            if itemobjA then
+                local itemname = itemobjA.name
+                -- local quality = itemobjA.quality
+                -- if (quality == 7) then
+                --     allstr = PetXilianPanel.GetItemNameColor(itemname)
+                -- else
+                    allstr = itemobjA.name;
+                -- end
+            else
+                print(strBArr[1], oldstr);
+            end
+        end
+    end
+    return allstr;
+end
+
+-- 增加一张可以动态替换内容方式 用法LangStringFormat("tttt{1}{2}{3}{4}","一","二","三","四")
+function LangStringFormat(formatstr,...)
+	local args = { ... }
+	local len = #args
+    local str = ""
+	for i=1,len do
+		if args[i] or args[i] == 0 then
+			str = "" .. args[i]
+			if str and formatstr then
+				formatstr = string.gsub(formatstr,"{" .. i .. "}",str)
+			end
+		end
+	end
+    return formatstr
+end
+
+
+-- 处理于支付相关需要处理的配置表
+function InitMoneyConfig()
+    string_format = string.format
+    if not DEF_MONETARY then return end
+    local name_2
+    local payval
+    local is_change = DEF_MONETARY_CHANGE
+    function change_fun(data,name_1)
+        name_2 = name_1 .. DEF_MONETARY
+        data[name_1] = data[name_2] or data[name_1]
+    end
+    function change_table_fun(data,name_1)
+        name_2 = name_1 .. DEF_MONETARY
+        data[name_1] = data[name_2] and next(data[name_2]) and data[name_2] or data[name_1]
+    end
+    local charge_data = Config.ChargeData.data_charge_data
+    function change_name(name_1)
+        return name_1 .. DEF_MONETARY
+    end
+    for k,v in pairs(charge_data) do
+        change_fun(v,"val")
+        change_fun(v,"vip_exp")
+        v.name = string_format(v.name,v.val)
+        -- if is_change then v.name = TI18N(v.name) end
+    end
+
+    charge_data = Config.MonthFundData.data_fund_data
+    for k,v in pairs(charge_data) do
+        change_fun(v,"val")
+    end
+    -- 改成了地区化的表可以不用加了
+    charge_data = Config.DayGoalsNewDataArea.data_charge_list
+    for k,v in pairs(charge_data) do
+        for b,g in pairs(v) do
+            -- change_fun(g,"progress")
+            g.desc = string_format(g.desc,g.progress[1].target_val)
+            -- if is_change then g.desc = TI18N(g.desc) end
+        end
+    end
+    charge_data = Config.HolidayReturnData.data_recharge
+    for k,v in pairs(charge_data) do
+        for b,g in pairs(v) do
+            change_fun(g,"val")
+            g.name = string_format(g.name,g.val)
+            -- if is_change then g.name = TI18N(g.name) end
+        end
+    end
+    -- 改成了地区化的表可以不用加了
+    charge_data = Config.DayGoalsDataArea.data_welfarecollection
+    for k,v in pairs(charge_data) do
+        for b,g in pairs(v) do
+            for s,f in pairs(g) do
+                -- change_table_fun(f,"condition")
+                if f.condition[1][1] == 'charge_rmb' then
+                    f.desc = string_format(f.desc,f.condition[1][2])
+                    -- if is_change then f.desc = TI18N(f.desc) end
+                end
+            end
+        end
+    end
+
+    -- data_active_target_list功能貌似没有，如果有了可以解开
+    -- charge_data = Config.HolidayQuestData.data_active_target_list
+    -- if charge_data then
+    --     for k,v in pairs(charge_data) do
+    --         if v.payval then
+    --             v.name = string_format(v.name,v.payval.val)
+    --             v.desc = string_format(v.desc,v.payval.val)
+    --         end
+    --     end
+    -- end
+
+    charge_data = Config.ChargeData.data_constant
+    for k,v in pairs(charge_data) do
+        if v.payval then
+            v.desc = string_format(v.desc,v.payval.val)
+            -- if is_change then v.desc = TI18N(v.desc) end
+        end
+    end
+end
+
+-- 特殊替换逻辑
+function ConfigDataGetData(key)
+    local itemdata = Config.ItemData.data_get_data(key)
+    if DEF_MONETARY then
+        local payval = itemdata["payval"..DEF_MONETARY]
+        if payval and payval ~= "" then
+            if itemdata.name then itemdata.name = string.format(payval) end
+            if itemdata.desc then itemdata.desc = string.format(payval) end
+        end
+    end
+    return itemdata
+end
+
+function getMoneyLangNum(num)
+    if not num then num = 0 end
+    if num == 0 then 
+        return num
+    else
+        num = math.round((num / 100) * 100)
+        return num
+    end
+end
+
+function getMoneyLangNumADD(num)
+    if not num then num = 0 end
+    if num == 0 then 
+        return num
+    else
+        return math.round(tonumber(num) * 100)
+    end
+end
+
+function isPayActBid(oldbid)
+    local bid = oldbid
+    local role_vo = RoleController:getInstance():getRoleVo()
+    if role_vo then
+        if bid > 9990000 then bid = bid - 9990000 end
+        if bid > 990000 then bid = bid - 990000 end
+        if bid > 90000 then bid = bid - 90000 end
+        if bid >= 1000 and bid <=1999 then
+            print("isPayActBid",oldbid)
+            return true
+        end
+    end
+    return false
+end
+
+--==============================--
+--desc:创建战斗模型
+--time:2018-07-22 11:06:07
+--@spine_name:
+--@action_name:
+--@return 
+--==============================--
+function createArmature(spine_name, action_name)
+    local armature = nil
+    if string.find(spine_name, "E") == nil then
+        spine_name = spine_name or "H99999"
+        armature = createSpineByName(spine_name, action_name)
+    else
+        armature = createSpineByName(spine_name)
+    end
+    local time_scale = 1
+    if not BattleController:getInstance():getIsNoramalBattle() then
+        time_scale = BattleController:getInstance():getModel():getTimeScale()
+    end
+    armature:setTimeScale(time_scale)
+    armature:setAnchorPoint(cc.p(0.5, 0))
+    return armature
+end
+
+
+local tolua_isnull = tolua.isnull
+--==============================--
+--desc:安全判定
+--time:2018-07-22 11:06:21
+--@node:
+--@return 
+--==============================--
+function doStopAllActions(node)
+    if tolua_isnull(node) then return end
+    node:stopAllActions()
+end
+
+--==============================--
+--desc:是否是全面屏  cc.PLATFORM_OS_ANDROID 
+--time:2018-07-21 11:42:46
+--@return 
+--==============================--
+function hasNotchInScreen()
+    if NOTICE_IN_SCREEN == nil then
+        local notch_in_screen = false
+        local has_notch = device.hasNotchInScreen()
+        if has_notch == "yes" then
+            notch_in_screen = true
+        else
+            local tmp_factor = 2.01
+            local device_name = device.getDeviceName()
+            if device_name == "HONOR_HWTNY(TNY-AL00)" or device_name == " HONOR_HWPCT(PCT-AL10)" or 
+                device_name == " HUAWEI_HWVCE(VCE-AL00)" or device_name == " HONOR_HWOXF(OXF-AN00)" or 
+                device_name == "HONOR_HWOXF(OXF-AN10)" or device_name == "xiaomi_sakura(Redmi 6 Pro)" or 
+                device_name == "Redmi_picasso(Redmi K30 5G)" or
+                device_name == "OPPO_OP4ADD(PDCM00)" or device_name == "Xiaomi_tucana(MI CC9 Pro)" or device_name == "samsung_a8sqltechn(SM-G8870)" then
+                notch_in_screen = true
+            else
+                if string.find(device_name, "dipper") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "sirius") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "equuleus") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "ursa") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "platina") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "cepheus") ~= nil then
+                    notch_in_screen = true
+                    tmp_factor = 2.1
+                elseif string.find(device_name, "grus") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "WLZ-AL10") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "WLZ-AN00") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "OXF-AN00") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "JNY-AL10") ~= nil then
+                    notch_in_screen = true
+                elseif string.find(device_name, "begonia") ~= nil then   --Redmi Note 8 Pro
+                    notch_in_screen = true
+                end
+            end
+            local factor = display.height / display.width
+            notch_in_screen = notch_in_screen and factor > tmp_factor
+        end
+        NOTICE_IN_SCREEN = notch_in_screen
+    end
+    return NOTICE_IN_SCREEN
+end
+
+-- 根据文字内容获取对应的背景大小(大致)
+--[[
+    textStr: 字符内容
+    topMargin: 顶部边距
+    bottomMargin: 底部边距
+    horMargin: 左右边距
+    textMaxWidth: 字符最大宽度
+    textFontSize: 字符大小
+    textLineSpace: 字符行间距
+    textCharSpace: 字符间距
+]]
+function getTextBgSizeByTextContent( textStr, topMargin, bottomMargin, horMargin, textMaxWidth, textFontSize, textLineSpace, textCharSpace)
+    local bgSizeWidth = 0
+    local bgSizeHeight = 0
+    topMargin = topMargin or 30
+    bottomMargin = bottomMargin or 30
+    horMargin = horMargin or 30
+    textMaxWidth = textMaxWidth or 100
+    textFontSize = textFontSize or 20
+    textLineSpace = textLineSpace or 0
+    textCharSpace = textCharSpace or 0
+    if textStr and textStr ~= "" then
+        local textLen = StringUtil.getStrLen(textStr)
+        local charNum = math.ceil(textLen/2)
+        if charNum*(textFontSize+textCharSpace) < textMaxWidth then --文字内容不足一行
+            bgSizeWidth = horMargin*2 + charNum*(textFontSize+textCharSpace)
+            bgSizeHeight = textFontSize + topMargin + bottomMargin
+        else
+            local row = math.ceil(charNum*(textFontSize+textCharSpace)/textMaxWidth)
+            bgSizeWidth = horMargin*2 + textMaxWidth
+            bgSizeHeight = row*textFontSize + (row-1)*textLineSpace +  topMargin + bottomMargin
+        end
+    end
+    return cc.size(bgSizeWidth, bgSizeHeight)
+end
+
+-- 给节点添加红点
+--[[
+    node:红点父节点
+    status:是否显示
+    offset_x:红点x轴偏移
+    offset_y:红点y轴偏移
+    zorder:红点层级
+]]
+function addRedPointToNodeByStatus( node, status, offset_x, offset_y, zorder, red_type ,res)
+    res = res or PathTool.getResFrame("common","common_1014")
+    if node and not tolua.isnull(node) then
+        if status == true then
+            if not node.red_point then
+                offset_x = offset_x or 0
+                offset_y = offset_y or 0
+                zorder = zorder or 10
+                local red_res = res
+                --红点从 common 图集 和 main_ui图集里面 通用用common 需要转大小
+                -- local scale = 25/35  
+                local scale = 1
+                if red_type and red_type == 2 then
+                    -- red_res = PathTool.getResFrame("common","common_1014")
+                    scale = 1
+                end
+                local red_point = createSprite(red_res,0,0,node,cc.p(1,1),LOADTEXT_TYPE_PLIST,zorder)
+                local node_size = node:getContentSize()
+                local pos_x = node_size.width + offset_x
+                local pos_y = node_size.height + offset_y
+                red_point:setPosition(cc.p(pos_x, pos_y))
+                red_point:setScale(scale)
+                node.red_point = red_point
+            end
+            node.red_point:setVisible(true)
+        elseif node.red_point then
+            node.red_point:setVisible(false)
+        end
+    end
+end
+
+-- 注册按钮点击事件
+--[[
+    button_node:
+    clickCallBack:点击回调函数
+    showClickAction:是否添加显示缩放动画 默认为false
+    soundType:点击音效，1为普通按钮，2为关闭按钮 3为标签页 默认为1
+    param:回调参数
+    scale: 按钮的倍率
+    clickDelay:点击延迟
+    clickScroll: 滚动点击( 用于scrollview里面的按钮)
+]]
+
+--注册按钮声音类型 --by lwc
+REGISTER_BUTTON_SOUND_BUTTON_TYPY = 1 --按钮类型
+REGISTER_BUTTON_SOUND_CLOSED_TYPY = 2 -- 关闭
+REGISTER_BUTTON_SOUND_TAB_BUTTON_TYPY = 3 --页签
+function registerButtonEventListener(button_node, clickCallBack, showClickAction, soundType, param, scale, clickDelay, clickScroll)
+    if tolua.isnull(button_node) then return end
+    local showClickAction = showClickAction or false
+    local soundType = soundType or 1
+    local clickDelay = clickDelay or 0
+
+    button_node:addTouchEventListener(function(sender, event_type)
+        if showClickAction then
+            customClickAction_2(sender, event_type, scale)
+        end
+        if clickScroll then
+            if event_type == ccui.TouchEventType.began then
+                button_node.touch_began = sender:getTouchBeganPosition()
+            end    
+        end
+        if event_type == ccui.TouchEventType.ended then
+            if clickScroll then
+                local touch_began = button_node.touch_began
+                local touch_end = sender:getTouchEndPosition()
+                if touch_began and touch_end and (math.abs(touch_end.x - touch_began.x) > 20 or math.abs(touch_end.y - touch_began.y) > 20) then 
+                    --移动大于20了..表示本点击无效
+                    return
+                end 
+
+            end
+            -- 点击间隔
+            if clickDelay > 0 and button_node.last_time and math.abs(GameNet:getInstance():getTimeFloat() - button_node.last_time) < clickDelay then
+                return
+            end
+            button_node.last_time = GameNet:getInstance():getTimeFloat()
+            if soundType == REGISTER_BUTTON_SOUND_BUTTON_TYPY then
+                playButtonSound2()
+            elseif soundType == REGISTER_BUTTON_SOUND_CLOSED_TYPY then
+                playCloseSound()
+            elseif soundType == REGISTER_BUTTON_SOUND_TAB_BUTTON_TYPY then
+                playTabButtonSound()
+            end
+            if clickCallBack then
+                clickCallBack(param, sender, event_type)
+            end
+        end
+    end)
+end
+
+--==============================--
+--desc:获取纹理格式
+--time:2019-01-09 10:09:19
+--@spine_name:spine的命
+--@return 
+--==============================--
+function getPixelFormat(spine_name)
+    if spine_name == nil then 
+        return cc.TEXTURE2_D_PIXEL_FORMAT_RGB_A4444 
+    end
+    local pf = cc.TEXTURE2_D_PIXEL_FORMAT_RGB_A4444 
+
+    local frist_letter = string.sub(spine_name, 1, 1)
+    if frist_letter == "E" and Config.SpecialSpineData then 
+        local pf_value = Config.SpecialSpineData.data_effect[spine_name]
+        if pf_value == 1 then
+            pf = cc.TEXTURE2_D_PIXEL_FORMAT_RGB_A8888
+        end
+    end
+    if EQUIPMENT_QUALITY == 3 then
+        pf = cc.TEXTURE2_D_PIXEL_FORMAT_RGB_A8888 
+    end
+    return pf
+end
+
+--==============================--
+--desc:获取随机名字
+--time:2019-01-26 12:03:54
+--@return 
+--==============================-- 
+function getRandomSaveName()
+	local function randomName(str)	
+		local result = str
+		local a = string.char(math.random(65, 90))
+		local b = string.char(math.random(97, 122))
+		local c = string.char(math.random(48, 57))
+		if math.random(3) % 3 == 0 then
+			result = result..a
+		elseif  math.random(3) % 2 == 0 then
+			result = result..b
+		else
+			result = result..c
+		end
+		if StringUtil.getStrLen(result)<12 then
+			result = randomName(result)
+		end
+		return result
+	end
+
+	local usr = randomName("")
+    return "sy"..usr
+end
+
+--通用显示单行道具列表
+--@ item_scrollview scrollview 对象
+--@ item_list BackPackItem的对象列表 (注意: 需要在那边手动移除)
+--@ data_list 数据列表 结构{{道具id, 数量, 道具名字},...} 就是策划填表的奖励道具结构
+--@setting 
+--@setting.scale 缩小参数 默认 1 
+--@setting.start_x 两边对应道具的间隔
+--@setting.space_x 道具之间的间隔
+--@setting.max_count item_scrollview最大能显示item数量..用于判断是否可以左右滑动  不填则可以移动
+--@setting.is_center 是否不满就居中 max_count必须有值
+--@setting.show_effect_id =特效id 显示对应特效 默认无
+--@setting.is_tip 是否弹通用tips 默认nil
+--@setting.is_show_action 是否有显示放大缩小的动作
+--@setting.is_get_status 是否显示已领取
+--@setting.get_status_res 已领取特殊资源
+--@setting.is_show_bg 是否显示bg框
+--@setting.init_callback 初始化返回函数
+--@setting.is_show_bar 是否显示滚动bar
+function commonShowSingleRowItemList(item_scrollview, item_list, data_list, setting)
+    if not item_scrollview then 
+        -- print("对象 item_scrollview 不能为空")
+        return
+    end
+    if not data_list then 
+        -- print("data_list不能为空!")
+        return
+    end
+    local item_list = item_list
+
+    if item_list then
+        --隐藏物品
+        for i,v in ipairs(item_list) do
+            v:setVisible(false)
+        end
+    end
+
+    if item_list == nil then 
+        item_list = {}
+    end
+
+    if  #data_list == 0 then
+        return 
+    end
+    --道具列表
+    local setting = setting or {}
+    local scale = setting.scale or 1
+    local start_x = setting.start_x or 5
+    local space_x = setting.space_x or 5
+    local max_count = setting.max_count
+    local item_width = setting.item_width or BackPackItem.Width
+    local lock = setting.lock or false
+    local is_lock_bg = setting.is_lock_bg or false
+    local lock_pos = setting.lock_pos or nil
+    local is_show_action = setting.is_show_action or false
+    --点击返回回调函数
+    local is_tip = setting.is_tip
+    local callback = setting.callback or false
+    local is_get_status = setting.is_get_status or false
+    local get_status_res = setting.get_status_res or nil
+    local is_show_bg = setting.is_show_bg
+    local is_show_got = setting.is_show_got
+    
+    local item_count = #data_list
+    item_width = item_width * scale
+
+    local total_width =  start_x * 2 + item_width * item_count + space_x * (item_count - 1)
+    local item_scrollview_size = item_scrollview:getContentSize()
+    local max_width = math.max(item_scrollview_size.width, total_width)
+    item_scrollview:setInnerContainerSize(cc.size(max_width, item_scrollview_size.height))
+    if max_count and item_count <= max_count then
+        item_scrollview:setTouchEnabled(false)
+        if setting.is_center then
+            start_x = (item_scrollview_size.width - total_width) * 0.5
+            if start_x < 0 then
+                start_x = 0
+            end
+        end
+    else
+        item_scrollview:setTouchEnabled(true)
+    end
+    item_scrollview:stopAllActions()
+
+    local function _setItemData(item, v, i)
+        item:setVisible(true)
+        local _x = start_x + (i - 1) * (item_width + space_x)
+        item:setPosition(_x, item_scrollview_size.height * 0.5)
+        item:setBaseData(v[1], v[2], true)
+        item:showOrderWarLock(lock,lock_pos)
+        item:showOrderWarLockBg(is_lock_bg)
+        item:IsGetStatus(is_get_status,nil,get_status_res)
+        if callback then
+            item:addCallBack(function()
+                callback()
+            end)
+        end
+        if v[3] then
+            item:setGoodsName(v[3],nil,24,nil)
+        end
+        item:setDefaultTip(is_tip)
+        if setting.show_effect_id then
+            item:showItemEffect(true, setting.show_effect_id, PlayerAction.action_1, true, 1.1)
+        end
+        
+        if is_show_bg ~= nil then
+            item:setIsShowBackground(is_show_bg)
+        end
+
+        if is_show_got ~= nil then
+            item:setGotIcon(is_show_got)
+        end
+    end
+    local item = nil
+    local size = #item_list 
+    for i, v in ipairs(data_list) do
+        item = item_list[i]
+        if item then
+            _setItemData(item, v, i)
+        else
+            local dealey = i - size
+            if dealey <= 0 then
+                dealey = 1
+            end
+            local time = 0
+            if is_show_action then
+                time = 0.1 * dealey
+            else
+                time = dealey / display.DEFAULT_FPS
+            end
+            delayRun(item_scrollview, time, function ()
+                if not item_list[i] then
+                    item = BackPackItem.new(true, true)
+                    item:setAnchorPoint(0, 0.5)
+                    item:setScale(scale)
+                    item:setSwallowTouches(false)
+                    item_scrollview:addChild(item)
+                    item_list[i] = item
+                    _setItemData(item, v, i)
+                    if v[1] then
+                        local cfg = Config.ItemData.data_get_data(v[1])
+                        if cfg.type == BackPackConst.item_type.HERO_HUN then
+                            if cfg.camp_type ~= 0 then
+                                item:initCamp(cfg.camp_type)
+                            end
+                        end
+                    end
+                    if is_show_action then
+                        item:setScale(scale * 1.3)
+                        item:runAction(cc.ScaleTo:create(0.1, scale))
+                    end
+                end
+            end)
+        end
+    end
+    return item_list
+end
+
+--获取属性对应信息 
+-- @attr_id  策划定义属性id 参考表attr_data.xml
+-- @attr_val  对应值..如果是百分比 传过来的是千分比
+--return 属性icon路径, 属性名字, 属性值
+function commonGetAttrInfoByIDValue(attr_id, attr_val)
+    if not attr_id or not attr_val then return end
+    local attr_key = Config.AttrData.data_id_to_key[attr_id]
+    return commonGetAttrInfoByKeyValue(attr_key, attr_val)
+end
+
+--获取属性对应信息 
+-- @attr_key  策划定义属性key 参考表attr_data.xml
+-- @attr_val  对应值..如果是百分比 传过来的是千分比
+--return 属性icon路径, 属性名字, 属性值
+function commonGetAttrInfoByKeyValue(attr_key, attr_val)
+    if not attr_key or not attr_val then return end
+    local attr_name = Config.AttrData.data_key_to_name[attr_key]
+    if attr_name then
+        local icon = PathTool.getAttrIconByStr(attr_key)
+        local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+        if is_per == true then
+            attr_val = (attr_val/10).."%"
+        end
+        local res = PathTool.getResFrame("common", icon)
+        
+        return res, attr_name, attr_val
+    end
+end
+
+--通用显示空白
+--@parent 父类
+--@bool 显示状态 true 显示 , false 不显示
+--@setting 配置信息
+--setting.text  文本内容 默认: 暂无数据
+--setting.pos  icon显示位置  默认 父类的中心点
+--setting.scale  icon缩放大小  默认 1
+--setting.offset_y 因图标缩放导致文本的位置需要调整 偏移量调整 默认是 -10
+--setting.font_size 文本大小 默认 26
+--setting.label_color 文本颜色 默认 Config.ColorData.data_color4[175]
+function commonShowEmptyIcon(parent, bool, setting)
+    if not parent then return end
+    if bool then
+        local setting = setting or {}
+        local text = setting.text or TI18N("语言_c_130")
+
+        if not parent.empty_con then
+            local parent_size = parent:getContentSize()    
+            local pos = setting.pos or cc.p(parent_size.width * 0.5, parent_size.height * 0.5 + 10)
+            local scale = setting.scale or 1
+            local offset_y = setting.offset_y or -10
+            local label_color = setting.label_color or Config.ColorData.data_color4[175]
+            local font_size   = setting.font_size or 26
+            local maxwidth=  setting.maxwidth or nil
+            local size = cc.size(200, 200)  
+            parent.empty_con = ccui.Widget:create()
+            parent.empty_con:setContentSize(size)
+            parent.empty_con:setAnchorPoint(cc.p(0.5, 0.5))
+            parent.empty_con:setPosition(pos)
+
+            parent:addChild(parent.empty_con, 10)
+            local res = PathTool.getPlistImgForDownLoad('bigbg', 'bigbg_3')
+            if setting.icon_res then
+                res = PathTool.getPlistImgForDownLoad('bigbg', setting.icon_res)
+            end
+            local bg = createImage(parent.empty_con, res, size.width / 2, size.height / 2, cc.p(0.5, 0.5), false)
+            bg:setScale(scale)
+            parent.empty_label = createLabel(font_size, label_color, nil,size.width / 2, offset_y, '', parent.empty_con, 0, cc.p(0.5, 0)) 
+            if maxwidth then 
+               parent.empty_label:setWidth(maxwidth)
+            end
+        else
+            parent.empty_con:setVisible(true)
+        end
+        parent.empty_label:setString(text)
+    else
+        if parent.empty_con and not tolua.isnull(parent.empty_con) then
+            parent.empty_con:setVisible(false)
+        end
+    end
+end
+
+--通用设置倒计时 时间格式默认   TimeTool.GetTimeForFunction 此方法返回格式(需要其他的 在callback 自行处理)
+--注意: 关闭panel的时候记得 doStopAllActions(label) 否则会报错
+--@label 倒计时对象 label 
+--@less_time 剩余时间 
+--@setting 配置信息
+--setting.label_type  文本类型(参考 CommonAlert.type.rich) ..注意:需要增加标题 和 时间颜色 才设置这个(否则没意义)
+--setitng.time_title  时间标题  eg: 剩余时间:
+--setitng.time_color  时间颜色 格式: #ffffff 富文本下 需要变的颜色..(在is_rich_label == true下 必填)
+--setting.callback 回调函数  如果_setTimeFormatString 不能满足需求 自己用回调函数处理
+--setting.end_callback 结束回调函数  在time<=0 的时候会调用此方法
+function commonCountDownTime(label, less_time, setting)
+    if tolua.isnull(label) then return end
+    local setting = setting or {}
+    local callback = setting.callback --回调函数 
+    local end_callback = setting.end_callback --回调函数 
+    local label_type = setting.label_type --文本类型
+    local end_title = setting.end_title or ""
+    local time_title = setting.time_title or ""
+    local outline
+    local time_color
+    local string_format = string.format
+    if label_type and label_type == CommonAlert.type.rich then
+        time_color = setting.time_color
+        outline=setting.outline or nil
+    end 
+
+    local _setTimeFormatString = function(time)
+        if tolua.isnull(label) then return end
+        if callback then
+            callback(time)
+            return 
+        end
+        if label_type and label_type == CommonAlert.type.rich and time_color then
+            if time > 0 then 
+                if outline then
+                    label:setString(string_format("%s <div fontcolor=%s outline=2,%s>%s</div>%s", time_title, time_color,outline,TimeTool.GetTimeForFunction(time), end_title ))
+                else
+                    label:setString(string_format("%s <div fontcolor=%s>%s</div>%s", time_title, time_color, TimeTool.GetTimeForFunction(time), end_title ))
+                end
+            else
+                doStopAllActions(label)
+                if outline then
+                    label:setString(string_format("%s <div fontcolor=%s outline=2,%s>00:00:00</div>%s", time_title, time_color,outline, end_title ))
+                else
+                    label:setString(string_format("%s <div fontcolor=%s>00:00:00</div>%s", time_title, time_color, end_title ))
+                end
+                if end_callback then
+                    end_callback(time)
+                end
+            end
+        else
+            if time > 0 then
+                label:setString(time_title .. TimeTool.GetTimeForFunction(time) .. end_title)
+            else
+                doStopAllActions(label)
+                label:setString(time_title .. "00:00:00" .. end_title)
+                if end_callback then
+                    end_callback(time)
+                end
+            end
+        end
+    end
+    doStopAllActions(label)
+    if less_time > 0 then
+        _setTimeFormatString(less_time)
+        label:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+             _setTimeFormatString(less_time)
+        end))))
+    else
+        _setTimeFormatString(less_time)
+    end
+end
+
+--******** 设置倒计时
+function setCountDownTime(node,less_time)
+    if tolua.isnull(node) then return end
+    doStopAllActions(node)
+
+    local setTimeFormatString = function(time)
+        if tolua.isnull(node) then return end
+        if time > 0 then
+            node:setString(TimeTool.GetTimeFormatDayII(time))
+        else
+            doStopAllActions(node)
+            node:setString("00:00:00")
+        end
+    end
+    if less_time > 0 then
+        setTimeFormatString(less_time)
+        node:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                doStopAllActions(node)
+                node:setString("00:00:00")
+            else
+                setTimeFormatString(less_time)
+            end
+        end))))
+    else
+        setTimeFormatString(less_time)
+    end
+end
+
+-- 给阵营图标加上数量标识
+--@dic_ext_icon  标识有额外的icon  dic_ext_icon[1] = num 中的 1 标识异能的 后面如果有是其他的..
+function addCountForCampIcon( node, halo_icon_config, dic_ext_icon)
+    if tolua_isnull(node) then return end
+    local num_data = nil
+    local six_num = 0
+    if halo_icon_config then
+        num_data = halo_icon_config.nums
+    end
+    if dic_ext_icon then
+        six_num = dic_ext_icon[1] or 0
+    end
+    num_data = num_data or {}
+    local top_num = num_data[1]
+    local bottom_num = num_data[2]
+    local bottom_num2 = num_data[3]
+    if top_num and top_num > 0 then
+        if not node.top_num_txt then
+            local node_size = node:getContentSize()
+            node.top_sp = createSprite(PathTool.getResFrame("common","common_90088"), node_size.width/2, node_size.height-15, node, cc.p(0.5, 0.5), nil, 1)
+            node.top_num_txt = createLabel(20, cc.c4b(255,249,242,255), nil, node_size.width/2-1, node_size.height-15, top_num, node, nil, cc.p(0.5, 0.5))
+            node.top_num_txt:setZOrder(1)
+        else
+            node.top_num_txt:setString(top_num)
+            node.top_num_txt:setVisible(true)
+            node.top_sp:setVisible(true)
+        end
+    elseif node.top_num_txt then
+        node.top_num_txt:setVisible(false)
+        node.top_sp:setVisible(false)
+    end
+    if bottom_num and bottom_num > 0 then
+        if not node.bottom_num_txt then
+            local node_size = node:getContentSize()
+            node.bottom_sp = createSprite(PathTool.getResFrame("common","common_90089"), node_size.width/2, 15, node, cc.p(0.5, 0.5), nil, 1)
+            node.bottom_num_txt = createLabel(20, cc.c4b(255,249,242,255), nil, node_size.width/2-1, 15, bottom_num, node, nil, cc.p(0.5, 0.5))
+            node.bottom_num_txt:setZOrder(1)
+        else
+            node.bottom_num_txt:setString(bottom_num)
+            node.bottom_num_txt:setVisible(true)
+            node.bottom_sp:setVisible(true)
+        end
+    elseif node.bottom_num_txt then
+        node.bottom_num_txt:setVisible(false)
+        node.bottom_sp:setVisible(false)
+    end
+
+    if bottom_num2 and bottom_num2 > 0 then
+        if not node.bottom_num_txt2 then
+            local node_size = node:getContentSize()
+            node.bottom_sp2 = createSprite(PathTool.getResFrame("common","common_90089"), 64, 22, node, cc.p(0.5, 0.5), nil ,1)
+            node.bottom_sp2:setRotation(-45)
+            node.bottom_num_txt2 = createLabel(20, cc.c4b(255,249,242,255), nil, 63, 21, bottom_num2, node, nil, cc.p(0.5, 0.5))
+            node.bottom_num_txt2:setZOrder(1)
+        else
+            node.bottom_num_txt2:setString(bottom_num2)
+            node.bottom_num_txt2:setVisible(true)
+            node.bottom_sp2:setVisible(true)
+        end
+        if node.bottom_num_txt then
+            local node_size = node:getContentSize()
+            node.bottom_sp:setRotation(45)
+            node.bottom_sp:setPosition(22, 22)
+            node.bottom_num_txt:setPosition(20, 21)
+        end
+
+    elseif node.bottom_num_txt2 then
+        node.bottom_num_txt2:setVisible(false)
+        node.bottom_sp2:setVisible(false)
+
+        if node.bottom_num_txt then
+            local node_size = node:getContentSize()
+            node.bottom_sp:setRotation(0)
+            node.bottom_sp:setPosition(node_size.width/2, 15)
+            node.bottom_num_txt:setPosition(node_size.width/2-1, 15)
+        end
+    end
+
+    if six_num > 0 then
+        if not node.ext_mark_sp then
+            local node_size = node:getContentSize()
+            node.ext_mark_sp = createSprite(PathTool.getResFrame("common","common_900890"), 40, 38, node, cc.p(0.5, 0.5))
+            local fadein = cc.FadeIn:create(0.8)
+            local fadeout = cc.FadeOut:create(0.8)
+            node.ext_mark_sp:runAction(cc.RepeatForever:create(cc.Sequence:create(fadein, fadeout)))
+        else
+            node.ext_mark_sp:setVisible(true)
+        end
+    elseif node.ext_mark_sp then
+        node.ext_mark_sp:setVisible(false)
+    end
+end
+
+--通用显示滚动字符串
+--使用方法..因为要切割..必须 父类 layout 选择裁剪区域. 子类是label 父类的宽度就是裁剪区域 参考 MallItem 下的self.name_panel
+--label -- label 对象
+--setting 配置
+--setting.content --显示文本的内容...如果有传就会设置 不传不会设置  
+--setting.max_width -- 显示文本的最大宽度 默认 100
+--setting.dir 位移方向  默认 1 (左边往右) -1 表示右往左 目前也只实现 1
+--setting.label_type  参考类型 CommonAlert.type.common
+--setting.start_x 初始位置 如果在scrollveiw会执行多次此方法的..一定要传
+function commonShowRollStr(label, setting)
+    if not label then return end
+    local setting   = setting or {}
+    local content   = setting.content
+    local max_width = setting.max_width or 100
+    local dir       =   setting.dir or 1
+    local label_type = setting.label_type or CommonAlert.type.common
+    --初始位置
+    local start_x = setting.start_x or label:getPositionX()
+
+    if content ~= nil and content ~= "" then
+        label:setString(content)
+    end
+
+    local size 
+    if label_type == CommonAlert.type.rich then
+        size = label:getSize()
+    else
+        size = label:getContentSize()
+    end
+    label:setPositionX(start_x)
+    doStopAllActions(label)
+    if size.width > max_width then
+        local x = (size.width - max_width) * dir
+        local time = x * 0.02 -- 每个长度时间 0.02秒
+        local delay_time = cc.DelayTime:create(2)
+        local call_func = cc.CallFunc:create(function() label:setPositionX(start_x)  end)
+        local move_by = cc.MoveBy:create(time, cc.p(-x, 0))
+        local delay_time_1 = cc.DelayTime:create(2)
+        label:runAction(cc.RepeatForever:create(cc.Sequence:create(delay_time, call_func, move_by, delay_time_1, call_func)))
+    end
+end
+
+-- 文本内容超过一定长度后显示为 ...
+function transformTextToShort( text, length )
+    if not text or not length then return "" end
+
+    if StringUtil.SubStringGetTotalIndex(text) > length then
+        text = StringUtil.SubStringUTF8(text, 1, length)
+        text = text.."..."
+    end
+
+    return text
+end
+
+-- 统一给文本设置内容
+-- root_node 为根节点（或者所有text共同的父节点）
+-- txt_list = {{text名称1，内容1},{text名称2，内容2}}}
+-- 注意，需要保证 text名称 的唯一性
+function setTextContentList(root_node, txt_list)
+    if tolua.isnull(root_node) then return end
+    if not txt_list or next(txt_list) == nil then return end
+	for k, info in pairs(txt_list) do
+		local txt_name = info[1]
+		local name_str = info[2] or ""
+		local txt_node = findNodeByName(root_node, txt_name)
+		if txt_node then
+			txt_node:setString(TI18N(name_str))
+		end
+	end
+end
+
+-- 属性变化飘字提示（固定为{"atk", "hp_max", "def", "speed"}四个属性）
+function showAttrChangeAni( parent_node, attr_data, zorder )
+    if not parent_node or tolua.isnull(parent_node) then return end
+
+    zorder = zorder or 2
+
+    if not parent_node.effect_widget then
+        parent_node.effect_widget = ccui.Widget:create()
+        parent_node.effect_widget:setCascadeOpacityEnabled(true)
+        parent_node.effect_widget:setAnchorPoint(0,0)
+        parent_node:addChild(parent_node.effect_widget, zorder)
+        parent_node.level_label_list = {}
+        local height = 25
+        local _y = 50
+        for i=1,4 do
+            local x, y = -40, _y - height * (i-1) - height * 0.5
+            local label = createLabel(20, cc.c3b(0x48,0xf4,0x50), cc.c3b(0x00,0x00,0x00), x, y, "", parent_node.effect_widget, 2, cc.p(0,0.5))
+            parent_node.level_label_list[i] = label
+        end
+    end
+
+    local key_list = {"atk", "hp_max", "def", "speed"}
+    for i,attr_str in ipairs(key_list) do
+        local value = attr_data[attr_str]
+        local name = Config.AttrData.data_key_to_name[attr_str]
+        if parent_node.level_label_list[i] then
+            parent_node.level_label_list[i]:setString(string.format("%s + %s", name, value))
+        end
+    end
+    parent_node.effect_widget:setVisible(true)
+    parent_node.effect_widget:stopAllActions()
+    parent_node.effect_widget:setPosition(-80,0)
+    parent_node.effect_widget:setOpacity(10)
+    local moveto = cc.MoveTo:create(0.2,cc.p(0,0))
+    local fadein = cc.FadeIn:create(0.2)
+
+    local movetoup = cc.EaseSineOut:create(cc.MoveTo:create(0.4,cc.p(0,10)))
+    local spawn = cc.Spawn:create(moveto, fadein)
+    parent_node.effect_widget:runAction(cc.Sequence:create(spawn,  movetoup ,cc.CallFunc:create( function() 
+        parent_node.effect_widget:setVisible(false)
+    end )))
+end
+
+--- 是否是马甲包,需要判断是否使用主包资源的
+function isVestPackage()
+    if IS_SPECIAL_UNION_CHANNEL == true then
+        return true
+    -- elseif IS_SY_UNION_SDK == true then
+    --     local channel = device.getChannel()
+    --     if channel == "46_1" or channel == "47_9" or channel == "16_30" or channel == "59_1" or channel == "60_1" or channel == "61_1" or channel == "63_1" then
+    --         return true
+    --     end
+    end
+    return false
+end
+
+--- 协议加检验 time == 当前服务端时间
+function signProto(time)
+    local str = string.format("sszg_key_%s", time)
+    return cc.CCGameLib:getInstance():logsign(str)
+end
+
+function getVersionDesc()
+    local ver1 = math.floor(MAIN_VERSION / 100)
+    local ver2 = math.floor((MAIN_VERSION - ver1 * 100) / 10)
+    return string.format("%s.%s", ver1, ver2)
+end
+
+-- 游戏最终版本号
+function getVersionFinalDesc()
+    local final = UPDATE_VERSION_MAX or 0
+    local ver1 = math.floor(MAIN_VERSION / 100)
+    local ver2 = math.floor((MAIN_VERSION - ver1 * 100) / 10)
+    return string.format("%s.%s.%s", ver1, ver2, final)
+end
+
+--检查是否显示用户协议
+--@ios_show_user_proto: ios 是否显示用户协议
+function checkUserProto(ios_show_user_proto)
+    if IS_IOS_PLATFORM then
+        if ios_show_user_proto then
+            return true --ios 显示用户协议
+        else
+            return false --ios 不显示用户协议
+        end
+    end
+    
+    --买量服、联运一、联运二都要显示  测试服服 和 稳定服 保留此界面测试
+    if PLATFORM_NAME == "symlf" or PLATFORM_NAME == "symix" or PLATFORM_NAME == "symix2" or PLATFORM_NAME == "demo" or PLATFORM_NAME == "release2" then
+        return true
+    end
+    return false
+end
+
+--打印配置信息
+function commonDumpConfigData(table_name, sheet_name)
+    table_name = "CombatHaloData"
+    local string_format = string.format
+    if Config[table_name] then
+        -- if sheet_name then
+
+        -- end
+        print("-------------打印表数据: Config."..table_name.."---------------------")
+        for key , val in pairs(Config[table_name]) do
+            if type(val) == "table" then
+                print(string_format("Config.%s.%s = {", table_name, key)) 
+                for id, data in pairs(val) do
+                    if type(data) ~= "table" then
+                        print(string_format("[%s] = %s"))
+                    else
+                        local is_table  = true
+                        for _,d in pairs(data) do
+                            if type(d) ~= "table" then
+                                is_table = false
+                                break
+                            end
+                        end
+                        if not is_table then
+                            local line_str = commonGetConfigLine(data)
+                            print(string_format("[%s] = %s", id, line_str))
+                        end
+                    end
+                end
+                print("}")
+            end
+        end
+    else
+        print("找不到配置名字: "..table_name)
+    end
+    -- body
+end
+
+function commonGetConfigLine(data)
+    local str = "{"
+    for k,v in pairs(data) do
+        if type(v) == "table" then
+            str = str..commonGetConfigLine(v)
+        else
+            str = str .. k.."="..v..", "
+        end
+    end
+    return str.."}"
+end
+
+-- 该玩家是否支持扫一扫
+function canAddScannig()
+    if CAN_ADD_SCANNING == true then
+        local login_data = LoginController:getInstance():getModel():getLoginData()
+        if login_data == nil or login_data.usrName == "" then return false end
+        local canshow = Config.QrcodeData.data_acc[login_data.usrName]
+        Debug.info(canshow)
+        return (canshow == TRUE)
+    else
+        return false
+    end
+end
+
+--是否清明屏蔽(因为国家要求某些活动需要而做的操作) --by lwc
+function isQingmingShield(is_in)
+    if is_qingming_shield then
+        if not is_in then
+            message(TI18N("语言_c_4275"))
+        end
+        return true
+    else
+        return false
+    end
+end
+
+function setQingmingShield(is_shield)
+    is_qingming_shield = is_shield
+end
+
+-- 4.4 哀悼日
+function needMourning()
+    -- local cur_time = os.time()
+    -- if cur_time >= 1585929600 and cur_time < 1586016000 then
+        return false
+    -- end
+    -- return false
+end
+
+-- 检测某一点的像素值
+function AlphaTouchCheck(image, pos)
+    local sprite = image
+    local oldPos = cc.p(sprite:getPosition())
+    local size = sprite:getContentSize()
+    local spriteTouchPos = sprite:convertToNodeSpace(pos)
+    local renderTexture1 = cc.RenderTexture:create(size.width, size.height, cc.TEXTURE2_D_PIXEL_FORMAT_RGB_A8888)
+    sprite:setPosition(cc.p(size.width/2, size.height/2))
+	renderTexture1:begin()
+	sprite:visit()
+	renderTexture1:endToLua()
+    cc.Director:getInstance():doOnceRender()
+    sprite:setPosition(oldPos)
+	local pos = pos  --点击到的坐标
+    local spriteBox = sprite:getBoundingBox()
+    local pImage = renderTexture1:newImage()
+	local i = spriteTouchPos.x
+    local j = spriteBox.height - spriteTouchPos.y  --坐标系原点转换
+    local rgba = pImage:getPixelColor(cc.p(i, j))
+    pImage:release()
+	if rgba.a ~= 0 then
+        --点击非透明区域
+        return true
+    end
+    return false
+end
+function moveTextBg3(text,bgimg,speedx,original)
+    if not text or not bgimg then return  end
+    local speedx = speedx or 0
+    local text_width = text:getContentSize().width
+    local bgimg_height = bgimg:getContentSize().height
+    local original = original or 0
+    bgimg:setContentSize(cc.size(text_width + speedx * 2,bgimg_height))
+end
+--文字背景自适应
+--文本在背景之上 文本，背景 , 一边留白宽度 , 原始宽度 
+function moveTextBg(text,bgimg,speedx,original)
+    if not text or not bgimg then return  end
+    local speedx = speedx or 0
+    local text_width = text:getContentSize().width
+    local bgimg_width = bgimg:getContentSize().width
+    local bgimg_height = bgimg:getContentSize().height
+    local original = original or bgimg:getContentSize().width
+    if bgimg_width / 2 - speedx < text_width / 2 then
+        bgimg:setContentSize(cc.size(text_width + speedx * 2,bgimg_height))
+    else
+        bgimg:setContentSize(cc.size(original,bgimg_height))
+    end
+end
+--文本在两张图片之间 文本与图片有单独的父级容器  父级容器 ， 文本，图片1 ， 图片2 , 一边留白宽度 
+function moveTextBg2(panel,text,bgimg1,bgimg2,speedx)
+    if not text or not text or not bgimg1 or not bgimg2 then return  end
+    local speedx = speedx or 0
+    local text_width = text:getContentSize().width
+    local text_height = text:getContentSize().height
+    local bgimg_width = bgimg1:getContentSize().width
+    local bgimg_height = bgimg1:getContentSize().height
+    if text_height > bgimg_height then
+        panel:setContentSize(cc.size(text_width + bgimg_width * 2 + speedx * 2 , text_height))
+    else
+        panel:setContentSize(cc.size(text_width + bgimg_width * 2 + speedx * 2 , bgimg_height))
+    end
+    text:setPositionX(bgimg_width + speedx + text_width / 2)
+    bgimg1:setPositionX(text_width / 2 + bgimg_width /2 + speedx)
+    bgimg2:setPositionX(text_width + speedx * 2 + bgimg_width)
+end
+-- 文本自适应  换行
+function setTextBg(text, bg, maxWidth, LineSpacing, maxheight)
+    local maxWidth = maxWidth or bg:getContentSize().width - 30
+    local maxheight = maxheight or 0
+    local LineSpacing = LineSpacing or 0
+    --最大宽度
+    text:ignoreContentAdaptWithSize(true)
+    text:setTextAreaSize(cc.size(maxWidth,maxheight))
+    --行间距
+    text:getVirtualRenderer():setLineSpacing(LineSpacing)
+    -- if text:getContentSize().height ~= text_height then
+    bg:setContentSize(cc.size(bg:getContentSize().width,text:getContentSize().height+10))
+    -- end
+end
+
+--设置文本最大宽度
+function setTextMaxWidth(text,maxWidth,lineSpace)
+    if text == nil then
+            return
+    end
+    text:ignoreContentAdaptWithSize(true)
+    text:setTextAreaSize(cc.size(maxWidth,0))
+    --行间距
+    local LineSpacing = lineSpace or -4
+    text:getVirtualRenderer():setLineSpacing(LineSpacing)
+end
+-- 统一设定Text字体行间距 space可以不设
+function setTextSpacing(txt,space)
+    local space = space or -4
+    if txt then
+        txt:getVirtualRenderer():setLineSpacing(space)
+    end
+end
+
+function IsServerCloseFun(isclose)
+    local bl = false
+    if isclose == true or isclose == 1 then 
+        bl = true
+    end
+    return bl
+end
+--设置两边带有装饰的文本自适应
+--text      文本
+--leftImg   左侧装饰图片
+--rightImg  右侧装饰图片
+--bgImg     文本底部背景图（可无）
+--space     两边预留间距
+--isTurn    右侧图片是否是通过翻转
+function setTextTweenBg(text,leftImg,rightImg,bgImg,space,isTurn)
+    if not text or not text or not leftImg or not rightImg then return  end
+    local space = space or 0
+    local isTurn = isTurn or false
+    text:setAnchorPoint(cc.p(0.5, 0.5))
+    leftImg:setAnchorPoint(cc.p(1, 0.5))
+    if isTurn then
+        rightImg:setAnchorPoint(cc.p(1, 0.5))
+    else
+        rightImg:setAnchorPoint(cc.p(0, 0.5))
+    end
+    local text_width = text:getContentSize().width
+    local text_x = text:getPositionX()
+    local text_y = text:getPositionY()
+    local text_half_width = text_width * 0.5
+    leftImg:setPositionY(text_y)
+    rightImg:setPositionY(text_y)
+    local leftImg_x = text_x - text_half_width - space
+    local rightImg_x = text_x + text_half_width + space
+    leftImg:setPositionX(leftImg_x)
+    rightImg:setPositionX(rightImg_x)
+    if bgImg then
+        local leftImg_width = leftImg:getContentSize().width
+        local rightImg_width = rightImg:getContentSize().width
+        local bgimg_height = bgImg:getContentSize().height
+        local bgimg_width = space * 2 +leftImg_width + rightImg_width + text_width
+        bgImg:setAnchorPoint(cc.p(0.5, 0.5))
+        bgImg:setContentSize(bgimg_width,bgimg_height)
+    end
+end
+
+--设置一个文本或图片一个跟着一个的布局，Y不改变
+--{oneitem,twoitem}   两个或多个
+--space     两边预留间距
+function setItemXOneByOne(itemarr,space)
+    space = space or 5
+    local len = #itemarr
+    local anchor_point
+    local anchorMW = 0
+    local itenW
+    if len > 1 then
+        local newX = nil
+        local item
+        for i=1,len,1 do
+            item = itemarr[i]
+            if newX then
+                item:setPositionX(newX)
+            end
+            itenW = item:getContentSize().width
+            anchor_point = item:getAnchorPoint()
+            if anchor_point and anchor_point.x then
+                anchorMW = itenW * (1 - anchor_point.x)
+            else 
+                anchorMW = itenW
+            end
+            newX = item:getPositionX() + anchorMW + space
+        end
+    end
+end
+
+-- 中间文本不变的情况下，左边图和右边图自动调整
+function setLeftRightImg(leftimg,txt,rightimge,space)
+    if not space then space = 0 end
+	local txtsize = txt:getContentSize()
+	local scaleX = math.abs(txt:getScaleX())
+	local leftsize = leftimg:getContentSize()
+	local rightsize = rightimge:getContentSize()
+    local leftS = leftimg:getAnchorPoint().x
+    local ritghtS = rightimge:getAnchorPoint().x
+    local txtS = txt:getAnchorPoint().x
+	local leftx = txt:getPositionX() - (txtsize.width*txtS * scaleX) - (leftsize.width*leftS)
+	local rightx = txt:getPositionX() + (txtsize.width*txtS * scaleX) + (rightsize.width*ritghtS)
+	leftimg:setPositionX(leftx-space)
+	rightimge:setPositionX(rightx+space)
+end
+
+--给文本添加点击事件，查看文本完整信息（文本点击后弹出TIPS）
+--target        添加事件的文本
+--str           文本完整信息
+--maxChar       文本超过最大字符后生效
+--tips_width    tips宽度
+--off_width     自定义背景框缩减宽度
+--off_height    自定义背景框缩减高度
+--is_new        是否自定义缩减背景框
+--add_widget    是否强制增加点击区域
+--备注：新增兼容类似createLabel创建出来的文本添加点击事件（在外部添加一个可点击容器）
+function addEvt2showAllTextTips(target,str,maxChar,tips_width,off_width,off_height,is_new,add_widget)
+    local maxChar = maxChar or 15
+    local tips_width = tips_width or 400
+    local off_width = off_width or 50
+    local off_height = off_height or 50
+    local is_new = is_new or true
+    local add_widget = add_widget or false
+    if target then
+        if target.addTouchEventListener and add_widget == false then
+            target:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    if StringUtil.SubStringGetTotalIndex(str) > maxChar then
+                        playButtonSound2()
+                        TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition(),nil,nil,tips_width,true,off_width,off_height,is_new)
+                    end
+                end
+            end)
+        else
+            local click_widget = ccui.Widget:create()
+            local click_width = target:getContentSize().width
+            local click_height = target:getContentSize().height
+            click_widget:setContentSize(click_width,click_height)
+		    click_widget:setAnchorPoint(target:getAnchorPoint())
+            target:getParent():addChild(click_widget)
+            click_widget:setPosition(target:getPosition())
+            click_widget:setTouchEnabled(true)
+            click_widget:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    if StringUtil.SubStringGetTotalIndex(str) > maxChar then
+                        playButtonSound2()
+                        TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition(),nil,nil,tips_width,true,off_width,off_height,is_new)
+                    end
+                end
+            end)
+        end
+    end
+end
+
+--不该底层的情况下 替换button 文本
+function replaceButtonLabel(button)
+    local label = button:getTitleRenderer()
+    -- local sprite = button:getRendererNormal():getSprite()
+    -- if sprite then
+    --     button:loadTexturePressed(sprite:getSpriteFrame()) --底层c++导出lua api参数定义错误
+    -- end
+    local new_label = createLabel(label:getSystemFontSize(), label:getTextColor(), label:getEffectColor(), label:getPositionX(), label:getPositionY(), label:getString(), button, label:getOutlineSize(), label:getAnchorPoint(), nil)
+    button:setTitleText("")
+    button:setZoomScale(0)
+    return new_label
+end
+
+-- 适配界面标题和图片
+function autoSizeTitleBg(titletxt,titlebg,spaceW,minWidth,maxWidth)
+    spaceW = spaceW or 120
+    minWidth = minWidth or 332
+    if titletxt and titlebg then
+        local bwidth = math.max(titletxt:getContentSize().width*titletxt:getScale() + spaceW, minWidth)
+        if maxWidth then
+            bwidth = math.min(bwidth,maxWidth)
+        end
+        local bheight = titlebg:getContentSize().height
+        titlebg:setContentSize(cc.size(bwidth,bheight))
+    end
+end
+
+-- 判断是否满足开服天数
+function checkSuficeDay(day)
+    local open_srv_day = RoleController:getInstance():getModel():getOpenSrvDay() --开服天数
+    return open_srv_day >= (day or 0)
+end
+
+-- 获取游戏展示画面高度
+function getGameShowHeigth()
+    local hnum = display.getTop() - display.getBottom()
+    return hnum
+end
+
+-- 转化地址,传进来如果是http就转https，如是https就转http
+-- time == 100 为必转
+function switchHttpUrl(url,time,bl_init)
+    local newurl = url
+    if url and time then 
+        local t_num = time-1
+        if bl_init then t_num = time end
+        local num = math.floor(t_num/2) % 2
+        if num == 1 or time == 100 then 
+            if string.find(url,"https://") then
+                newurl = string.gsub(url,"https://","http://")
+            else
+                newurl = string.gsub(url,"http://","https://")
+            end
+        end
+    end
+    return newurl
+end
+
+-- 获取失败时的情况
+function getLoadErrorLang(status)
+    local status_str = status
+    local status_key = "语言_load_error_code_".. status
+    if Lang and Lang[status_key] then
+        status_str = TI18N(status_key)
+    end
+    return status_str
+end
+
+--重写防止报错
+function overwrite_cocos_function()
+    if not first_overwrite_cocos_function then
+        game_print("overwrite_function")
+        first_overwrite_cocos_function = true
+        local Widget = ccui.Widget
+        local overwrite_function_names = {"setTouchEnabled"}
+        local function overwrite_widget_function(func_name)
+            if Widget[func_name] then
+                Widget["_" .. func_name] = Widget[func_name]
+                Widget[func_name] = function(self, ...)
+                    if tolua.isnull(self) then
+                        if not first_send_widget_setTouchEnabled then
+                            first_send_widget_setTouchEnabled = true
+                            send_error_to_pf(simpleTrace(debug.traceback()))
+                        end
+                        return
+                    end
+                    return Widget["_" .. func_name](self, ...)
+                end
+            end
+        end
+        for _, func_name in ipairs(overwrite_function_names) do
+            if not Widget["_" .. func_name] then
+                overwrite_widget_function(func_name)
+            end
+        end
+        local Node = cc.Node
+        local overwrite_function_names_node = {"setVisible","addChild"}
+        local function overwrite_node_function(func_name)
+            if Node[func_name] then
+                Node["_" .. func_name] = Node[func_name]
+                Node[func_name] = function(self, ...)
+                    if tolua.isnull(self) then
+                        if not first_send_node_setVisible then
+                            first_send_node_setVisible = true
+                            local error_str = simpleTrace(debug.traceback())
+                            if GAME_LOAD_ERROR_TRACE then
+                                error_str = GAME_LOAD_ERROR_TRACE .. "_____" .. func_name .. "|" .. error_str
+                            end
+                            send_error_to_pf(error_str)
+                        end
+                        return
+                    end
+                    return Node["_" .. func_name](self, ...)
+                end
+            end
+        end
+        for _, func_name in ipairs(overwrite_function_names_node) do
+            if not Node["_" .. func_name] then
+                overwrite_node_function(func_name)
+            end
+        end
+        local ImageView = ccui.ImageView
+        local overwrite_function_names = {"loadTexture"}
+        local function overwrite_widget_function(func_name)
+            if ImageView[func_name] then
+                ImageView["_" .. func_name] = ImageView[func_name]
+                ImageView[func_name] = function(self, ...)
+                    if tolua.isnull(self) then
+                        if not first_send_imageView_loadTexture then
+                            first_send_imageView_loadTexture = true
+                            local error_str = simpleTrace(debug.traceback())
+                            if GAME_LOAD_ERROR_TRACE then
+                                error_str = GAME_LOAD_ERROR_TRACE .. "_____" .. error_str
+                            end
+                            send_error_to_pf(error_str)
+                        end
+                        return
+                    end
+                    return ImageView["_" .. func_name](self, ...)
+                end
+            end
+        end
+        for _, func_name in ipairs(overwrite_function_names) do
+            if not ImageView["_" .. func_name] then
+                overwrite_widget_function(func_name)
+            end
+        end
+    end
+end
+
+
+--由于string_util被引入太晚，所以在这里也加一下
+function encodeBase64(source_str)
+    local b64chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    local s64 = ''
+    local str = source_str
+ 
+    while #str > 0 do
+        local bytes_num = 0
+        local buf = 0
+ 
+        for byte_cnt=1,3 do
+            buf = (buf * 256)
+            if #str > 0 then
+                buf = buf + string.byte(str, 1, 1)
+                str = string.sub(str, 2)
+                bytes_num = bytes_num + 1
+            end
+        end
+ 
+        for group_cnt=1,(bytes_num+1) do
+            local b64char = math.fmod(math.floor(buf/262144), 64) + 1
+            s64 = s64 .. string.sub(b64chars, b64char, b64char)
+            buf = buf * 64
+        end
+ 
+        for fill_cnt=1,(3-bytes_num) do
+            s64 = s64 .. '='
+        end
+    end
+    return s64
+end
+
+-- 下划线 _ 开头的被导出
+function getAllCsbExportChildren(parent, output, ignoreList)
+    if not output then
+        output = {}
+    end
+    local c = parent:getChildren()
+    local name
+    for k, v in ipairs(c) do
+        name = v:getName()
+        if string.byte(name, 1) == 95 then
+            if output[name] then
+                print("warn var already exist", name)
+            else
+                output[name] = v
+            end
+        end
+        if not (ignoreList and ignoreList[name]) then
+            getAllCsbExportChildren(v, output, ignoreList)
+        end
+    end
+    return output
+end
+-- 绑定类
+---@param node cc.Node
+---@param cls table @ lua class 类 
+function nativeBindClass(node, cls, ...)
+    local peer = tolua.getpeer(node)
+    if not peer then
+        peer = {}
+        tolua.setpeer(node, peer)
+    end
+    setmetatable(peer, { __index = cls })
+    if node.ctor then
+        node:ctor(...)
+    end
+    return node
+end
+-- 
+-- 获取children 添加到self
+-- 重复命名的只能有一个，后面会做同名的返回数组
+function loadCsbChildren(parent,node)
+    local c = node:getChildren()
+    for k, v in ipairs(c) do
+        local name = v:getName()  
+        -- 已存在就覆盖     
+        -- if not parent[name] then    
+            parent[name] = v
+            loadCsbChildren(parent,v)
+        -- end 
+    end     
+end 
+
+function updateLimitEffect(type, bid, parent, special_id, force_id, scale)
+    if not type or not bid or not parent then
+        return
+    end
+    parent:removeAllChildren()
+    local spine_id = 0
+    if type == 1 then
+        spine_id = Config.PartnerData.data_partner_base[bid].holiday_limit
+    elseif type == 2 then
+        if not next(spriteCfg) then
+            local config_list = deepCopy(Config.SpriteData.data_elfin_data_table)
+            for i,bid in pairs(config_list) do
+                local item_cfg = Config.SpriteData.data_elfin_data(i)
+                spriteCfg[item_cfg.id] = item_cfg
+            end
+        end
+        spine_id = spriteCfg[bid] and spriteCfg[bid].holiday_limit
+    elseif type == 3 then
+        spine_id = Config.ProhibitorData.data_get_prohibitor[bid].holiday_limit
+    end
+    --英雄碎片弹窗界面使用固定id
+    if spine_id ~= "0" and special_id then
+        spine_id = special_id
+    end
+    spine_id = force_id and force_id or spine_id    --快速测试用
+    if spine_id ~= "0" then
+        local spine = createEffectSpine(spine_id, cc.p(0, 0), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+        spine:setAnimation(0, PlayerAction.action_1, true)
+        parent:addChild(spine)
+        if scale then
+            spine:setScale(scale)
+        end
+    end
+end
+
+function doVerticalLayoutNode(nodes, params, anchorPoint)
+    if not params then
+        params = {}
+    end
+    local gap = params.gap or 0
+    local headGap = params.headGap or 0
+    local tailGap = params.tailGap or 0
+    local minHeight = params.minHeight or 0
+
+    local nodeNum = #nodes
+    local ht = {}
+    local totalHeight = headGap + tailGap
+    for i, child in ipairs(nodes) do
+        if child:isVisible() then
+            local size = child:getContentSize()
+            ht[i] = size.height
+            totalHeight = totalHeight + size.height + gap
+        end
+    end
+    
+    if anchorPoint then
+        for i, child in ipairs(nodes) do
+            child:setAnchorPoint(anchorPoint)
+        end
+    end
+
+    totalHeight = totalHeight - gap
+    if totalHeight < minHeight then
+        totalHeight = minHeight
+    end
+
+    local tempHeight = totalHeight - headGap
+    for i, child in ipairs(nodes) do
+        if child:isVisible() then
+            tempHeight = tempHeight - ht[i]
+            child:setPositionY(tempHeight)
+            tempHeight = tempHeight - gap
+        end
+    end
+    return totalHeight
+end
+
+function createStar(num, star_con, star_setting, star_width)
+    local num = num or 0
+    local star_setting = star_setting or {}
+    if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+
+    if star_setting.star_list2 == nil then
+        star_setting.star_list2 = {}
+    end
+
+    for i,v in pairs(star_setting.star_list) do
+        if v and not tolua.isnull(v) then
+            v:setVisible(false)
+        end
+    end
+    for i,v in pairs(star_setting.star_list2) do
+        if v and not tolua.isnull(v) then
+            v:setVisible(false)
+        end
+    end
+    if star_setting.star10 and not tolua.isnull(star_setting.star10) then
+        star_setting.star10:setVisible(false)
+    end
+
+    if star_setting.moon and not tolua.isnull(star_setting.moon) then
+        star_setting.moon:setVisible(false)
+    end
+
+    local width_s = star_width or (29 + 3)
+    local _cStar = function(star_count, res, star_list,moveW)
+        local width = star_width or (29 + 3)
+        local x = - star_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,star_count do
+            if not star_list[i] or tolua.isnull(star_list[i]) then 
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+    if num > 0 and num <= 5 then
+        local res = PathTool.getResFrame("common","common_90074")
+        _cStar(num, res, star_setting.star_list)
+    elseif num >= 6 and num <= 9 then
+        local res = PathTool.getResFrame("common","common_90074")
+        local moonres = PathTool.getResFrame("common","common_90075_1")
+        if star_setting.moon == nil or tolua.isnull(star_setting.moon) then 
+            local star = createImage(star_con,moonres,0, 0,cc.p(0.5,0.5),true,0,false)
+            star_setting.moon = star
+            star_setting.moon:setScale(1.2)
+        else
+            star_setting.moon:setVisible(true)
+        end
+        local count = num - 5
+        _cStar(count, res, star_setting.star_list,width_s*0.5)
+
+        local startmoon = - count * width_s * 0.5 + width_s * 0.5 -width_s*0.5
+        star_setting.moon:setPositionX(startmoon)
+    elseif num >= 10 then
+        local new_num  = num - 10
+        local res = PathTool.getResFrame("common","common_90073_1")
+        if star_setting.star10 == nil or tolua.isnull(star_setting.star10) then 
+            local star = createImage(star_con,res,0, 0,cc.p(0.5,0.5),true,0,false)
+            star:setScale(1.2)
+            star:setCascadeOpacityEnabled(true)
+            star_setting.star10 = star
+        else
+            star_setting.star10:setVisible(true)
+        end
+
+        local res = PathTool.getResFrame("common","common_90074")
+        _cStar(new_num, res, star_setting.star_list,width_s*0.5+4)
+        local startsun = - new_num * width_s * 0.5 + width_s * 0.5 -width_s*0.5
+        star_setting.star10:setPositionX(startsun)
+    end
+    return star_setting
+end
+
+-- 对子节点进行居中显示
+-- node 需要进行排序的父节点
+-- gap 子节点的间隔
+-- exceptNodes 需要忽略的节点
+-- direction 排序方向(1-横向 2-纵向)
+-- padding 左右/上下的内边距(左右的总边距)
+-- offset 子节点整体的偏移
+-- anchor 子节点对齐的方向(0, 1, 2 分别对应 左中右 或者 上中下)
+function autoPos(node, gap, exceptNodes, direction, padding, offset, anchor, childList, isAdapt)
+    gap = gap or 0
+    direction = direction or 1
+    offset = offset or 0
+    anchor = anchor or 1
+    local totalLength = 0
+    local willSort = childList or node:getChildren()
+    local index = 1
+
+    local function checkExisted(name)
+        if exceptNodes then
+            for _, value in ipairs(exceptNodes) do
+                if value == name then
+                    return true
+                end
+            end
+            return false
+        else
+            return false
+        end
+    end
+
+    while index <= #willSort do
+        willSort[index].idx = willSort[index].idx or -1
+        if willSort[index]:isVisible() and not checkExisted(willSort[index]:getName()) then
+            if direction == 1 then
+                totalLength = totalLength + willSort[index]:getContentSize().width * willSort[index]:getScaleX()
+            else
+                totalLength = totalLength + willSort[index]:getContentSize().height * willSort[index]:getScaleY()
+            end
+            totalLength = totalLength + gap
+
+            index = index + 1
+        else
+            table.remove(willSort, index)
+        end
+    end
+    --以水平为例，让应该在左侧的子节点可以后加入到父节点上
+    local needSort = false
+    for k, v in ipairs(willSort) do
+        if v.idx ~= -1 then
+            needSort = true
+            break
+        end
+    end
+    if needSort then
+        table.sort(willSort, function(a, b)
+            if a.idx ~= b.idx then
+                return a.idx < b.idx
+            end
+        end)
+    end
+    
+    totalLength = totalLength - gap
+    if padding then
+        if direction == 1 then
+            if totalLength + padding > node:getContentSize().width or isAdapt then
+                totalLength = totalLength + padding
+                offset = offset + padding / 2
+                node:setContentSize(cc.size(totalLength, node:getContentSize().height))
+            end
+        else
+            if totalLength + padding > node:getContentSize().height or isAdapt then
+                totalLength = totalLength + padding
+                offset = offset + padding / 2
+                node:setContentSize(cc.size(node:getContentSize().width, totalLength))
+            end
+        end
+    end
+
+    if direction == 1 then
+        local startX = node:getContentSize().width / 2 - totalLength / 2 + offset
+        if anchor == 0 then
+            startX = offset
+        elseif anchor == 2 then
+            startX = node:getContentSize().width - offset
+        end
+        for index, value in ipairs(willSort) do
+            local valueWidth = value:getContentSize().width * value:getScaleX() 
+            if anchor == 2 then
+                value:setPositionX(startX - valueWidth * value:getAnchorPoint().x)--这里锚点不要为0或1否则有问题，有空再改
+                startX = startX - valueWidth - gap
+            else
+                value:setPositionX(startX + valueWidth * value:getAnchorPoint().x)
+                startX = startX + valueWidth + gap
+            end
+        end
+    else
+        local startY = node:getContentSize().height / 2 - totalLength / 2 + offset
+        if anchor == 0 then
+            startY = node:getContentSize().height - offset
+        elseif anchor == 2 then
+            startY = offset
+        end
+        for index, value in ipairs(willSort) do
+            local valueWidth = value:getContentSize().height * value:getScaleY() 
+            if anchor == 2 then
+                value:setPositionY(startY - valueWidth * value:getAnchorPoint().y)
+                startY = startY - valueWidth - gap
+            else
+                value:setPositionY(startY + valueWidth * value:getAnchorPoint().y)
+                startY = startY + valueWidth + gap
+            end
+        end
+    end
+end
+--创建星星显示
+--@num 星星数量
+--@star_con 星星父类
+--@star_setting 星星设置结构
+--star_setting.star_list = {}  1到5星的星星对象集合
+--@star_width 星星位置宽度
+function createOnlyStar(num,parent,width_s,setting)
+    local star_node = cc.Node:create()
+    parent:addChild(star_node)
+	local num = num or 0
+    local width = width_s or 17
+    local star_setting = {}
+    local width_s = width_s or (29 + 3)
+    local _cStar = function(star_count, res, star_list, moveW)
+        local width = width_s
+        local x = - star_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,star_count do
+            if not star_list[i] or tolua.isnull(star_list[i]) then 
+                local star = createImage(star_node,res,0,0,cc.p(0.5,0.5),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+    local res = PathTool.getResFrame("common","common_90074")
+    if setting and setting.res then
+        res = setting.res
+    end
+    _cStar(num, res, star_setting)
+    return star_setting
+end
+-- 设置文本最大宽度， 超长裁剪 显示为 ...
+---@param labelNode Node cocos节点
+---@param text string 文本内容
+---@param maxWidth number 最大宽度
+---@return boolean 是否裁剪了
+function transformTextToShortByWidth(labelNode, text, maxWidth)
+    labelNode:setString(text)
+    local s = labelNode:getContentSize()
+    if s.width <= maxWidth then
+        return false
+    end
+    local stringLen = StringUtil.getStrLen(text)
+    local originLen = math.floor(stringLen * maxWidth/s.width)
+    local step = 1
+    local tempText = ""
+    local tempText2 = ""
+    local startLen = originLen
+    local s2
+
+    tempText = StringUtil.SubStringUTF8(text, 1, startLen) .. "..."
+    labelNode:setString(tempText)
+    s = labelNode:getContentSize()
+    if s.width <= maxWidth then
+        while true do
+            if startLen > stringLen then
+                labelNode:setString(text)
+                return false
+            end
+            tempText2 = StringUtil.SubStringUTF8(text, 1, startLen + 1) .. "..."
+            labelNode:setString(tempText2)
+            s2 = labelNode:getContentSize()
+            if s2.width > maxWidth then
+                labelNode:setString(tempText)
+                return true
+            end
+            tempText = tempText2
+            startLen = startLen + 1
+        end
+    else
+        while true do
+            if startLen < 0 then
+                return false
+            end
+            tempText2 = StringUtil.SubStringUTF8(text, 1, startLen - 1) .. "..."
+            labelNode:setString(tempText2)
+            s2 = labelNode:getContentSize()
+            if s2.width < maxWidth then
+                return true
+            end
+            startLen = startLen - 1
+        end
+    end
+    return true
+end
+-- 切换父节点
+---@param cobj cc.Node 子节点
+---@param newParent cc.Node 新的父节点
+---@param zOrder number|nil
+function switchParent(cobj, newParent, zOrder)
+    cobj:retain()
+    cobj:removeFromParent(false)
+    newParent:addChild(cobj, zOrder or 0)
+    cobj:release()
+end
+-- 下划线 _ 开头的被导出
+function getAllCsbExportChildren(parent, output, ignoreList)
+    if not output then
+        output = {}
+    end
+    local c = parent:getChildren()
+    local name
+    for k, v in ipairs(c) do
+        name = v:getName()
+        if string.byte(name, 1) == 95 then
+            if output[name] then
+                print("warn var already exist", name)
+            else
+                output[name] = v
+            end
+        end
+        if not (ignoreList and ignoreList[name]) then
+            getAllCsbExportChildren(v, output, ignoreList)
+        end
+    end
+    return output
+end
+--相对1280界面设计的高，游戏区域的变化值
+function getScreenAddHeight()
+    local height = (display.getTop() - display.getBottom()) - 1280
+    return height
+end
+-- math.min math.max
+---@param v number 值
+---@param min number 最小值
+---@param max number 最大值
+function MathRange(v, min, max)
+    if v < min then
+        return min
+    end
+
+    if v > max then
+        return max
+    end
+    return v
+end
+function labelAutoFixBgSize(label, str, offsetX, offsetY)
+    local  parentNode = label:getParent()
+    if not parentNode then
+        return
+    end
+    offsetX = offsetX or 10
+    offsetY = offsetY or 0
+    label:getVirtualRenderer():setChangeScaleOffWidth(-500)
+    label:setString(str)
+  
+    local pSize = parentNode:getContentSize()
+    local cSize = label:getContentSize()
+    local maxWidth = math.max(cSize.width + offsetX * 2, pSize.width)
+    local maxHeight =  math.max(cSize.height + offsetY * 2, pSize.height)
+
+    parentNode:setContentSize(cc.size(maxWidth, maxHeight))
+    label:setPosition(cc.p(maxWidth/2, maxHeight/2))
+end
+
+function createElfinStar(num, star_con, star_setting, star_width)
+    local num = num or 0
+    local star_setting = star_setting or {}
+    if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+    local size = star_con:getContentSize()
+    for i,v in pairs(star_setting.star_list) do
+        if v and not tolua.isnull(v) then
+            v:setVisible(false)
+        end
+    end
+
+    if star_setting.moon and not tolua.isnull(star_setting.moon) then
+        star_setting.moon:setVisible(false)
+    end
+    if star_setting.label and not tolua.isnull(star_setting.label) then
+        star_setting.label:setVisible(false)
+    end
+
+    local width_s = star_width or (29 + 3)
+    local _cStar = function(star_count, res, star_list,moveW)
+        local width = star_width or (29 + 3)
+        -- local x = - star_count * width * 0.5 + width * 0.5
+        local x = size.width * 0.5 - num * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,star_count do
+            if not star_list[i] or tolua.isnull(star_list[i]) then 
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+    if num > 0 and num <= 5 then
+        local res = PathTool.getResFrame("common","common_90032")
+        _cStar(num, res, star_setting.star_list)
+    elseif num >= 6 then
+
+        local moonres = PathTool.getResFrame("common_1","common_1_572")
+        if star_setting.moon == nil or tolua.isnull(star_setting.moon) then 
+            local star = createImage(star_con,moonres,size.width/2, 10,cc.p(0.5,0.5),true,0,false)
+            star:setScale(0.8)
+            star_setting.moon = star
+        else
+            star_setting.moon:setVisible(true)
+        end
+        if star_setting.label == nil then 
+            local label = createLabel(18, 1, cc.c3b(0x00, 0x00, 0x00), size.width/2-3, 7, "", star_con, 2, cc.p(0.5, 0.5))
+			label:setString(num)
+            star_setting.label = label
+        else
+            star_setting.label:setVisible(true)
+			star_setting.label:setString(num)
+        end
+    end
+    return star_setting
+end
+
+-- 生成一个用不重复的ID 字符串格式的数字
+function getUuid(randomLength)
+    return tostring(tonumber(string.sub(tostring(math.random()),3, randomLength))+os.time())
+end
+-- 权重
+function getRamdomDataByWeight(cfg,num)
+    -- 定义值和权重
+    local items = cfg
+    local id_list = {}
+    local index = 1
+    -- 计算权重总和
+    local totalWeight = 0
+    for _, item in ipairs(items) do
+        totalWeight = totalWeight + item.weight
+    end
+    local function selectItems(count)
+        local selectedItems = {}
+        local availableItems = {}
+        -- 初始化可用项
+        for _, item in ipairs(items) do
+            table.insert(availableItems, item)
+        end
+
+        for i = 1, count do
+            local randomValue = math.random(0, totalWeight - 1)-- 生成一个随机数
+            local cumulativeWeight = 0
+            for j = #availableItems, 1, -1 do
+                cumulativeWeight = cumulativeWeight + availableItems[j].weight
+                if randomValue < cumulativeWeight then
+                    -- 选择该项并从可用项中移除
+                    table.insert(selectedItems, availableItems[j].value)
+                    -- totalWeight = totalWeight - availableItems[j].weight  -- 更新总权重
+                    -- table.remove(availableItems, j)  -- 移除已选择的项
+                    break
+                end
+            end
+        end
+        return selectedItems
+    end
+
+    local result = selectItems(num)
+    return result
+end
+--检查两个数组是否一样
+function arraysEqual(arr1, arr2)
+    -- 首先检查两个数组的长度
+    if #arr1 ~= #arr2 then
+        return false
+    end
+    -- 遍历数组并比较每个元素
+    for i = 1, #arr1 do
+        local v1, v2 = arr1[i], arr2[i]
+        if type(v1) == "table" and type(v2) == "table" then
+            -- 如果元素都是表，则递归比较
+            if not arraysEqual(v1, v2) then
+                return false
+            end
+        elseif v1 ~= v2 then
+            -- 如果元素不相等且不是表，则返回 false
+            return false
+        end
+    end
+    return true
+end
+
+function loadCsbWithExportUI(csbPath)
+    local csloaderIns = cc.CSLoader:getInstance()
+    if csloaderIns.getCsbExtendInfo then
+        csloaderIns:setEnableRecordExtendInfo(true)
+        local node = cc.CSLoader:createNode(csbPath)
+        csloaderIns:setEnableRecordExtendInfo(false)
+        local extendInfo = csloaderIns:getCsbExtendInfo(csbPath)
+        csloaderIns:clearCsbExtendInfo()
+        return node, extendInfo.keyNodeMap
+    else
+        local node = cc.CSLoader:createNode(csbPath)
+        return node, getAllCsbExportChildren(node)
+    end
+end
+
+--为了按钮上的文字在变灰时，文字能变成比较显眼的颜色
+function setChildUnEnabledCopy(bool, parent)
+    setChildUnEnabled(bool, parent,cc.c4b(0x53,0x53,0x53,0xff))
+end
+-- 设置文本最大宽度， 超长自动缩放
+---@param labelNode Node cocos节点
+---@param maxWidth number 最大宽度
+---@param originScale number|nil 原始缩放
+---@return nil
+function adaptTextByMaxWidth(labelNode, maxWidth, originScale)
+    local s = labelNode:getContentSize()
+    if s.width > maxWidth then
+        local scale = maxWidth / s.width
+        if scale < 0.3 then
+            scale = 0.3
+        end
+        labelNode:setScale(scale * (originScale or 1))
+    else
+        labelNode:setScale(originScale or 1)
+    end
+end
+
+
+-- ljj test 卡顿优化
+-- 获取缓存数据逻辑 
+-- 1.controller类
+-- 2.send_data 发送函数数据 [1]函数名 [2]参数
+-- 3.get_data 获取函数数据  [1]函数名 [2]参数
+-- 4.refresh_func 刷新函数 
+-- 5.b_refresh_data 是否每次发送协议 
+function getDataForProtoId( controller, send_data,get_data,refresh_func, b_refresh_data)
+
+    if not controller then    
+        print("error controller is nil ") 
+        return 
+    end 
+
+    local model = controller:getModel()
+    if not model then    
+        print("error model is nil ") 
+        return  
+    end      
+
+    local data = nil
+
+    local function analysisFunc( analysis_data,parent )
+        if analysis_data and next(analysis_data) then
+            local func_name = analysis_data[1]
+            local parm = analysis_data[2]
+            if func_name and parent[func_name] then    
+                return parent[func_name](parent,parm)  
+            end
+        end
+        return nil
+    end
+
+    data = analysisFunc(get_data,model) 
+ 
+	if not data or b_refresh_data then
+        analysisFunc(send_data,controller)
+	end 
+
+    if data and refresh_func then 
+        refresh_func( data )   	    
+    end 
+
+	return data   
+end 
+-- proto_id  123456 
+-- 例 set123456Data()
+-- 例 get123456Data()
+-- proto_123456data
+function createSetGetProtoIdFunc( controller,proto_id,data )
+    local model = controller:getModel()
+    if not model then
+        print("error cant find model proto_id ",proto_id) 
+        return   
+    end 
+
+    local setFuncName = "set".. proto_id .. "Data"
+    if not model[setFuncName] then 
+        model[setFuncName] = function( data )
+            model["proto_" .. proto_id .." data "] = data
+        end     
+    end             
+    model[setFuncName](data)        
+ 
+    local getFuncName = "get".. proto_id .. "Data"
+    if not model[getFuncName] then  
+        model[getFuncName] = function( ) 
+            local data = model["proto_" .. proto_id .." data "]
+            return model["proto_" .. proto_id .." data "]
+        end
+    end          
+        
+end    
+-- math.min math.max
+---@param v number 值
+---@param min number 最小值
+---@param max number 最大值
+function MathRange(v, min, max)
+    if v < min then
+        return min
+    end
+
+    if v > max then
+        return max
+    end
+    return v
+end 
+function setChildrenOpacityEnable(parent, bool)
+    local cascadeOpacityEnabled, opacityEnabled
+
+    opacityEnabled = function(parent, bool)
+        local desc = parent:getDescription()
+        -- if string.find(desc, "Layout") or string.find(desc, "Widget") then
+            parent:setCascadeOpacityEnabled(bool)
+        -- end
+    end
+
+    cascadeOpacityEnabled =  function (parent, bool)
+        if parent:getChildrenCount() > 0 then
+            opacityEnabled(parent, bool)
+            local children = parent:getChildren()
+            for k, v in pairs(children) do
+                cascadeOpacityEnabled(v, bool)
+            end
+        else
+            opacityEnabled(parent, bool)
+        end
+    end
+    cascadeOpacityEnabled(parent, bool)
+end
+
+function createStar2(num, star_con, star_setting, star_width, step)
+    local num = num or 0
+    local star_setting = star_setting or {}
+    if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+
+    if star_setting.star_list2 == nil then
+        star_setting.star_list2 = {}
+    end
+
+    for i,v in pairs(star_setting.star_list) do
+        if v and not tolua.isnull(v) then
+            v:setVisible(false)
+        end
+    end
+    for i,v in pairs(star_setting.star_list2) do
+        if v and not tolua.isnull(v) then
+            v:setVisible(false)
+        end
+    end
+    if star_setting.star10 and not tolua.isnull(star_setting.star10) then
+        star_setting.star10:setVisible(false)
+    end
+
+    if star_setting.moon and not tolua.isnull(star_setting.moon) then
+        star_setting.moon:setVisible(false)
+    end
+
+    local width_s = star_width or (29 + 3)
+    local _cStar = function(star_count, res, star_list,moveW)
+        local width = star_width or (29 + 3)
+        local x = 0
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,star_count do
+            if not star_list[i] or tolua.isnull(star_list[i]) then 
+                local star = createImage(star_con,res,0,0,cc.p(0,0.5),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+    local _cStar2 = function(star_count, res, star_list,moveW,posy,scale)
+        local posy = posy or 0
+        local scale = scale or 1
+        local width = star_width or (29 + 3)
+        local x = 63 - star_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,star_count do
+            if not star_list[i] or tolua.isnull(star_list[i]) then 
+                local star = createImage(star_con,res,0,posy,cc.p(0.5,0.5),true,1,false)
+                star:setScale(scale)
+                star_list[i] = star
+            end
+            star_list[i]:loadTexture(res, LOADTEXT_TYPE_PLIST)
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+    if num > 0 and num <= 5 then
+        local res = PathTool.getResFrame("common","common_90074")
+        _cStar(num, res, star_setting.star_list)
+    elseif num >= 6 and num <= 9 then
+        local res = PathTool.getResFrame("common","common_90074")
+        local moonres = PathTool.getResFrame("common","common_90075_1")
+        if star_setting.moon == nil or tolua.isnull(star_setting.moon) then 
+            local star = createImage(star_con,moonres,0, 0,cc.p(0,0.5),true,0,false)
+            star_setting.moon = star
+            star_setting.moon:setScale(1.2)
+        else
+            star_setting.moon:setVisible(true)
+        end
+        local count = num - 5
+        _cStar(count, res, star_setting.star_list,width_s*0.5+15)
+    elseif num == 16 then
+        local res = PathTool.getResFrame("common_1","common_1_581")
+        if star_setting.star10 == nil or tolua.isnull(star_setting.star10) then 
+            local star = createImage(star_con,res,0, 0,cc.p(0,0.5),true,0,false)
+            star:setScale(1)
+            star:setCascadeOpacityEnabled(true)
+            star_setting.star10 = star
+        else
+            star_setting.star10:loadTexture(res, LOADTEXT_TYPE_PLIST)
+            star_setting.star10:setVisible(true)
+        end
+        local res = PathTool.getResFrame("common_1","common_1_580")
+        local step = step or 0
+        if step > 0 then
+            _cStar2(step, res, star_setting.star_list,0,-14,0.8)
+        end
+    elseif num >= 10 then
+        local new_num  = num - 10
+        local res = PathTool.getResFrame("common","common_90073_1")
+        if star_setting.star10 == nil or tolua.isnull(star_setting.star10) then 
+            local star = createImage(star_con,res,0, 0,cc.p(0,0.5),true,0,false)
+            star:setScale(1.2)
+            star:setCascadeOpacityEnabled(true)
+            star_setting.star10 = star
+        else
+            star_setting.star10:setVisible(true)
+        end
+
+        local res = PathTool.getResFrame("common","common_90074")
+        _cStar(new_num, res, star_setting.star_list,width_s*0.5+16)
+    end
+    return star_setting
+end
+--属性去重
+-- data = {{'atk',11},{'hp_max',174},{'atk',11},{'hp_max',174}}
+function getAttrRemovalOfDuplicatesList(data)
+	local attr_list = {}
+	local list = {}
+	if data and next(data) then
+		for k,v in pairs(data) do
+			if not list[v[1]] then
+				list[v[1]] = v[2]
+			else
+				list[v[1]] = list[v[1]] + v[2]
+			end
+		end
+	end
+	if list and next(list) then
+		for k,v in pairs(list) do
+			table.insert(attr_list,{k,v})
+		end
+	end
+	return attr_list
+end

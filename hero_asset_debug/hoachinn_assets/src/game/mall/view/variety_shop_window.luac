@@ -1,0 +1,399 @@
+VarietyShopWindow = VarietyShopWindow or BaseClass(BaseView)
+
+local table_sort = table.sort
+local table_insert = table.insert
+local table_remove = table.remove 
+local _controller = MallController:getInstance()
+local _model = _controller:getModel()
+
+function VarietyShopWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "mall/varietystore_shop_window"
+	self.select_item = {}
+    self.tab_list = {}
+    self.cur_tab_data = {}
+end
+
+function VarietyShopWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+	local win_title = container:getChildByName("win_title")
+    win_title:setString(TI18N("语言_c_6243"))
+    local image_title = container:getChildByName("image_title")
+    autoSizeTitleBg(win_title, image_title)
+
+	self.left_btn = container:getChildByName("left_btn")
+	self.left_btn:getChildByName("label"):setString(TI18N("语言_c_395"))
+	self.right_btn = container:getChildByName("right_btn")
+	self.right_btn:getChildByName("label"):setString(TI18N("语言_c_261"))
+	self.close_btn = container:getChildByName("close_btn")
+    self.rule_btn = container:getChildByName("rule_btn")
+
+	local desc_txt = container:getChildByName("desc_txt")
+    -- desc_txt:setString(TI18N("语言_c_6241"))
+    desc_txt:setTouchEnabled(true)
+    setTextMaxWidth(desc_txt, 160, -4)
+    desc_txt:setString(transformTextToShort(TI18N("语言_c_6241"),38))
+    addEvt2showAllTextTips(desc_txt,TI18N("语言_c_6241"),38,nil,nil,nil,true,true)
+    
+	self.hero_info_panel = container:getChildByName("hero_info_panel")
+    local tab_name_list = {
+        [1] = TI18N("语言_c_6244"),
+        [2] = TI18N("语言_c_6245"),
+    }
+    local tab_view = container:getChildByName("tab_view")
+    for i = 1, 2, 1 do
+        local tab_btn = {}
+        local tab = tab_view:getChildByName("tab_"..i)
+        tab_btn.btn = tab
+        tab_btn.select_bg = tab:getChildByName("select")
+        tab_btn.normal_bg = tab:getChildByName("normal")
+        tab_btn.name = tab:getChildByName("name")
+        tab_btn.name:setTextColor(cc.c3b(0xff, 0xff, 0xff))
+        if tab_name_list[i] then
+            tab_btn.name:setString(tab_name_list[i])
+        end
+        self.tab_list[i] = tab_btn
+    end
+	self:createItemScroller()
+end
+
+function VarietyShopWindow:register_event(  )	
+	registerButtonEventListener(self.right_btn, handler(self, self.onClickChooseBtn), true)
+
+	registerButtonEventListener(self.left_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	registerButtonEventListener(self.rule_btn, function (param, sender, event_type)
+		local config = Config.ExchangeData.data_shop_exchage_cost.mystery_store_rule
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition(),nil,nil,500)	
+        end
+	end, true, 2)
+
+	registerButtonEventListener(self.close_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	registerButtonEventListener(self.background, function ( )
+		self:onClickCloseBtn()
+	end, false, 2)
+
+	for index, tab_btn in pairs(self.tab_list) do
+        registerButtonEventListener(tab_btn.btn, function() self:changeTabType(index) end ,false, 1) 
+    end
+
+    if not self.reward_lists_event then
+        self.reward_lists_event = GlobalEvent:getInstance():Bind(MallEvent.Updta_Variety_Shop_Event,function(data)
+            self:updateVarietyData()
+        end)
+    end
+
+end
+
+function VarietyShopWindow:updateVarietyData()
+    self.item_scrollview:reloadData()
+end
+
+function VarietyShopWindow:onClickCloseBtn(  )
+    --比较一下前后端数据是否改变
+    local server_data = deepCopy(_model:getVarietShopData())
+    local ser_list = {}
+    local ser_num = 0
+    for k, v in pairs(server_data) do
+        ser_num = ser_num + 1
+    end
+    local client_data = _model:getClientSaveData()
+    local client_list = {}
+    local client_num = 0
+    for k, v in pairs(client_data) do
+        client_num = client_num + 1
+    end
+    if ser_num ~= client_num then
+        local str = TI18N("语言_c_6242")
+        local confim_call_back = function()
+            self:onClickChooseBtn()
+            _controller:openVarietyShopWindow(false)
+        end
+        local cancel_call_back = function()
+            _model:resetClientSaveData()
+            _controller:openVarietyShopWindow(false)
+        end
+        CommonAlert.show(str, TI18N("语言_c_3"), confim_call_back, TI18N("语言_c_62"), cancel_call_back, CommonAlert.type.common)
+    else
+        _controller:openVarietyShopWindow(false)
+    end
+end
+
+function VarietyShopWindow:changeTabType(index)
+	if self.cur_tab_index == index then return end
+
+    if self.cur_tab ~= nil then
+        self.cur_tab.select_bg:setVisible(false)
+        self.cur_tab.normal_bg:setVisible(true)   
+        self.cur_tab.name:setTextColor(cc.c3b(0xff, 0xff, 0xff))     
+    end
+    self.cur_tab_index = index
+    self.cur_tab = self.tab_list[self.cur_tab_index]
+    if self.cur_tab ~= nil then
+        self.cur_tab.select_bg:setVisible(true)
+        self.cur_tab.normal_bg:setVisible(false)
+        self.cur_tab.name:setTextColor(cc.c3b(0xf8, 0xef, 0x76))     
+    end
+    --数据处理
+    self.cur_tab_data = {}
+    if index == 1 then 
+        self.cur_tab_data = deepCopy(self.gold_list)
+    elseif index == 2 then
+        self.cur_tab_data = deepCopy(self.coin_list)
+    end
+	local function sortFunc( objA, objB )
+		return objA.id < objB.id
+	end
+	table.sort(self.cur_tab_data, sortFunc)
+	self.item_scrollview:reloadData()
+end
+
+function VarietyShopWindow:onClickChooseBtn(  )
+    local list = {}
+    local select_item = _model:getClientSaveData()
+    for k, v in pairs(select_item) do
+        if v then
+            local a = {}
+            a.trolley_group = v.trolley_group
+            table_insert(list,a)
+        end
+    end
+    _controller:sender13423(MallConst.MallType.VarietyShop,list)
+end
+
+function VarietyShopWindow:createItemScroller( )
+	local item_list = self.hero_info_panel
+    local bgSize = item_list:getContentSize()
+	local scroll_view_size = cc.size(bgSize.width, bgSize.height)
+    local setting = {
+        start_x = 23,                  -- 第一个单元的X起点
+        space_x = 30,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 25,                   -- y方向的间隔
+        item_width = 120,               -- 单元的尺寸width
+        item_height = 128,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 4,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewSingleLayout.new(item_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self._createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self._numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self._updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+end
+function VarietyShopWindow:_createNewCell(  )
+	local cell = VarietystoreSelectItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+
+function VarietyShopWindow:_numberOfCells(  )
+	if not self.cur_tab_data then return 0 end
+	return #self.cur_tab_data
+end
+
+function VarietyShopWindow:_updateCellByIndex( cell, index )
+	cell.index = index
+    local data = self.cur_tab_data[index]
+    if data then
+		cell:setData(data)
+		-- cell:showItemQualityName(true)
+    end
+end
+--
+function VarietyShopWindow:onCellTouched( cell )
+	local item_cfg = cell:getData()
+    local select_item = _model:getClientSaveData()
+	if item_cfg then
+		local trolley_group = item_cfg.trolley_group
+        local status = self:checkSeleStatus(trolley_group)
+        if status then
+            _model:setClientSaveData(trolley_group,nil)
+            cell:setSelected(false)
+        else
+            local a = {}
+            a.trolley_group = trolley_group
+            _model:setClientSaveData(trolley_group,a)
+            cell:setSelected(true)
+        end
+	end
+end
+function VarietyShopWindow:checkSeleStatus(id)
+    local select_item = _model:getClientSaveData()
+    for k, v in pairs(select_item) do
+        if id == v.trolley_group then
+            return true
+        end
+    end
+    return false
+end
+
+function VarietyShopWindow:openRootWnd()
+    _controller:sender13422(4)
+    self.gold_list = {}
+    self.coin_list = {}
+    if not Config.ExchangeData then
+        require "config.exchange_data"
+    end
+    if Config.ExchangeData then
+        local config_list = Config.ExchangeData.data_shop_trolley_group
+        for i,data in pairs(config_list) do
+            if data.pay_type == "gold" then
+                table_insert(self.gold_list,data)
+            elseif data.pay_type == "coin" then
+                table_insert(self.coin_list,data)
+            end
+        end
+    end
+	self:changeTabType(1)
+end
+
+function VarietyShopWindow:close_callback(  )
+	if self.hero_list_view then
+		self.hero_list_view:DeleteMe()
+		self.hero_list_view = nil
+	end
+    if self.reward_lists_event then
+        GlobalEvent:getInstance():UnBind(self.reward_lists_event)
+        self.reward_lists_event = nil
+    end
+	_controller:openVarietyShopWindow(false)
+end
+
+
+--------------------------@ item
+VarietystoreSelectItem = class("VarietystoreSelectItem", function()
+    return ccui.Widget:create()
+end)
+
+function VarietystoreSelectItem:ctor()
+	self.size = cc.size(120,120)
+	self:configUI(120, 120)
+	self:register_event()
+end
+
+function VarietystoreSelectItem:configUI( width, height )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("mall/varietystore_select_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:setContentSize(cc.size(width, height))
+	self:setTouchEnabled(false)
+    
+	self:addChild(self.root_wnd)
+	self.container = self.root_wnd:getChildByName("container")
+
+    self.item_node = BackPackItem.new(false, true, false, 1, nil, nil, false)
+    self.item_node:setPosition(cc.p(self:getContentSize().width*0.5, self:getContentSize().height*0.5))
+    self.container:addChild(self.item_node)
+end
+--==============================--
+--desc:设置选中状态
+--time:2017-07-03 09:07:12
+--@status:
+--@return 
+--==============================--
+function VarietystoreSelectItem:setSelected(status)
+    if status then
+        if self.lay_select == nil then
+            self.lay_select = ccui.Layout:create()
+            self.lay_select:setAnchorPoint(cc.p(0.5,0.5))
+            self.lay_select:setContentSize(self.size)
+            self.lay_select:setPosition(self.size.width/2, self.size.height/2) 
+            self.lay_select:setTouchEnabled(false)
+            showLayoutRect(self.lay_select, 150)
+            local res = PathTool.getResFrame("common","common_1043")
+            createImage(self.lay_select,res,self.size.width/2,self.size.height/2,cc.p(0.5,0.5),true,1,false)
+
+            self:addChild(self.lay_select, 3)
+        else
+            self.lay_select:setVisible(true)
+        end
+    else
+        if self.lay_select then
+            self.lay_select:setVisible(false)
+        end
+    end
+end
+
+function VarietystoreSelectItem:register_event(  )
+	self.item_node:addTouchEventListener(function (sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            self.long_touch = false
+            self.touch_began = sender:getTouchBeganPosition()
+            local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                TipsManager:getInstance():showGoodsTips(self.data.item[1])
+                self.long_touch = true
+            end))
+            self.sequence_action = self.item_node:runAction(action)
+            self.sequence_action:setTag(10016)
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click = math.abs(self.touch_end.x - self.touch_began.x) <= 20 and math.abs(self.touch_end.y - self.touch_began.y) <= 20 and not self.long_touch
+            end
+            if is_click then
+                self.callback()
+            end
+        end
+    end)
+end
+
+function VarietystoreSelectItem:clearTimeTicket()
+    if self.sequence_action then
+        self.item_node:stopActionByTag(10016)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+function VarietystoreSelectItem:addCallBack( callback )
+	self.callback = callback
+	if self.item_node then
+		self.item_node:addCallBack(callback)
+    end
+end
+
+function VarietystoreSelectItem:setData(data)
+    -- print(vardump(data))
+    self.data = data
+    local item_info = data.item
+    local item_config = Config.ItemData.data_get_data(item_info[1])
+	if self.item_node then
+		self.item_node:setBaseData(item_info[1],item_info[2])
+        -- self.item_node:setGoodsName(item_config.name,cc.p(BackPackItem.Width/2,-33),20,cc.c4b(0x7c, 0x55, 0x36, 0xff))   
+	end
+    local select_status = _model:checkVarietShopStatus(data.trolley_group)
+    self:setSelected(select_status)
+end
+
+function VarietystoreSelectItem:getData()
+   return self.data 
+end
+
+function VarietystoreSelectItem:DeleteMe()
+    self:clearTimeTicket()
+	if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+end

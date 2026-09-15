@@ -1,0 +1,865 @@
+-- --------------------------------------------------------------------
+-- @author: lwc@syg.com(必填, 创建模块的人员)
+-- @description:
+--      英雄图书馆  策划 晓勤
+-- <br/>Create: 2018年11月14日
+--
+-- --------------------------------------------------------------------
+HeroLibraryMainWindow = HeroLibraryMainWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+function HeroLibraryMainWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Full
+    self.layout_name = "hero/hero_library_main_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("herolibrary","herolibrary"), type = ResourcesType.plist },
+        -- { path = PathTool.getPlistImgForDownLoad("herolibrary","hero_library_24", fa), type = ResourcesType.plist },
+    }
+
+    --图书馆列表
+    self.hero_library_list = {}
+    --阵营
+    self.select_camp = 0
+
+
+    --scrollview列表参数
+    self.col = 3 --列数
+    self.item_width     = 220  --item的宽高
+    self.item_height    = 325 + 10
+    self.cacheList = {} --对象池
+    self.cacheMaxSize = 0 --最大池数
+
+    -- 到时间显示的索引
+    self.time_show_index = 0
+    self.first_title_height = 50 --第一个的高度
+    self.title_height = 80 --职业名字的高
+
+    --列表职业对应信息
+    self.career_info_list = {}
+end
+
+function HeroLibraryMainWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    -- self.background:loadTexture(PathTool.getPlistImgForDownLoad("herolibrary", "hero_library_24", false), LOADTEXT_TYPE_PLIST)
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 1)  
+
+    -- self.no_vedio_image = self.container:getChildByName("no_vedio_image")
+    -- self.no_vedio_label = self.container:getChildByName("no_vedio_label")
+    -- self.no_vedio_label:setString(TI18N("语言_c_3043"))
+    self.lay_scrollview = self.main_container:getChildByName("lay_scrollview")
+
+    self.centre_box_1 = self.main_container:getChildByName("centre_box_1")
+    self.border_left_box_2 = self.main_container:getChildByName("border_left_box_2")
+    self.border_right_box_2 = self.main_container:getChildByName("border_right_box_2")
+    self.top_box_4 = self.main_container:getChildByName("top_box_4")
+    self.title = self.top_box_4:getChildByName("title")
+    self.title:setString(TI18N("语言_c_1287"))
+    self.bottom_box_5 = self.top_box_4:getChildByName("bottom_box_5")
+
+    local camp_node = self.bottom_box_5:getChildByName("camp_node")
+    self.camp_btn_list = {}
+    self.camp_btn_list[0] = camp_node:getChildByName("camp_btn0")
+    self.camp_btn_list[1] = camp_node:getChildByName("camp_btn1")
+    self.camp_btn_list[2] = camp_node:getChildByName("camp_btn2")
+    self.camp_btn_list[3] = camp_node:getChildByName("camp_btn3")
+    self.camp_btn_list[4] = camp_node:getChildByName("camp_btn4")
+    self.camp_btn_list[5] = camp_node:getChildByName("camp_btn5")
+    self.camp_btn_list[7] = camp_node:getChildByName("camp_btn6")
+    self.img_select = camp_node:getChildByName("img_select")
+    local x, y = self.camp_btn_list[0]:getPosition()
+    self.img_select:setPosition(x - 0.5, y + 1)
+
+    self.camp_btn_list[HeroConst.CampType.eAlien]:setVisible(model:checkSoulHeroIsOpen())
+
+    local camp_node_2 = self.bottom_box_5:getChildByName("camp_node_2")
+    self.camp_btn_list2 = {}
+    self.camp_btn_list2[0] = camp_node_2:getChildByName("camp_btn0")
+    self.camp_btn_list2[1] = camp_node_2:getChildByName("camp_btn1")
+    self.img_select2 = camp_node_2:getChildByName("img_select")
+    local x, y = self.camp_btn_list2[0]:getPosition()
+    self.img_select2:setPosition(x - 0.5, y + 1)
+
+    self.bottom_bg = self.main_container:getChildByName("bottom_bg")
+    self.close_btn = self.bottom_bg:getChildByName("close_btn")
+    -- self:adaptationScreen()
+
+end
+
+--设置适配屏幕
+function HeroLibraryMainWindow:adaptationScreen()
+    --对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    local left_x = display.getLeft(self.main_container)
+    local right_x = display.getRight(self.main_container)
+
+    local main_container_size = self.main_container:getContentSize()
+
+    --下
+    local _, bottom_box_5_y = self.bottom_bg:getPosition()
+    local content_bottom = bottom_box_5_y + bottom_y
+    -- --上
+    local _, top_box_4_y = self.top_box_4:getPosition()
+    local content_top =  top_y - (main_container_size.height - top_box_4_y)
+    -- --左
+    local border_left_box_2_x = self.border_left_box_2:getPositionX()
+    local content_left = border_left_box_2_x + left_x
+    --右
+    local border_right_box_2_x = self.border_right_box_2:getPositionX()
+    local content_right = right_x - (main_container_size.width - border_right_box_2_x)
+    
+    local width = content_right - content_left
+    -- local height = content_top - content_bottom - 40
+    local height = content_top - 40
+
+    self.top_box_4:setPositionY(content_top)
+    self.bottom_bg:setPositionY(content_bottom)
+    -- self.border_left_box_2:setPosition(content_left, content_bottom + height * 0.5+2)
+    -- self.border_right_box_2:setPosition(content_right, content_bottom + height * 0.5+2)
+    self.border_left_box_2:setPosition(content_left, 2)
+    self.border_right_box_2:setPosition(content_right, 2)
+
+    self.top_box_4:setContentSize(cc.size(width, 50)) --省读取速度直接用数字.这个是固定的.
+    self.bottom_bg:setContentSize(cc.size(width, 202)) --省读取速度直接用数字.这个是固定的.
+    self.border_left_box_2:setContentSize(cc.size(8, height)) --省读取速度直接用数字.这个是固定的.
+    self.border_right_box_2:setContentSize(cc.size(8, height)) --省读取速度直接用数字.这个是固定的.
+
+    -- self.centre_box_1:setPosition(content_left, content_bottom+2)
+    self.centre_box_1:setPosition(content_left, 2)
+    self.centre_box_1:setContentSize(width, height)
+
+    -- local offset_x = 30 --上下左右都跟边框 是30的距离
+    local offset_y = 30 --上下左右都跟边框 是30的距离
+
+    -- self.lay_scrollview:setPosition(content_left, content_bottom + offset_y)
+    -- self.lay_scrollview:setContentSize(width, height - offset_y * 2)
+
+    -- --主菜单 顶部的高度
+    -- local top_height = MainuiController:getInstance():getMainUi():getTopViewHeight()
+    -- --主菜单 底部的高度
+    -- local bottom_height = MainuiController:getInstance():getMainUi():getTopViewHeight()
+end
+
+function HeroLibraryMainWindow:register_event()
+    registerButtonEventListener(self.close_btn, function() self:onClickBtnClose(false) end, true, 2)
+
+    --阵营按钮
+    for index, v in pairs(self.camp_btn_list) do
+        registerButtonEventListener(v, function() 
+            self:onClickBtnShowByIndex(index,self.select_camp2) 
+            self:updateCamplist_Red2()
+        end ,true, 2)
+    end
+    for index, v in pairs(self.camp_btn_list2) do
+        registerButtonEventListener(v, function() self:onClickBtnShowByIndex(self.select_camp,index) end ,true, 2)
+    end
+    self:addGlobalEvent(HeroEvent.Hero_Library_Event, function(data)
+        if data.result == 1 then
+            controller:sender11040()
+            -- self:updateCamplist_Red()
+        end
+    end)
+    self.updataRed = GlobalEvent:getInstance():Bind(HeroEvent.Get_Had_Hero_Star_Event, function(data) 
+        self:updateCamplist_Red()
+    end)
+end
+
+function HeroLibraryMainWindow:onClickBtnClose()
+    controller:openHeroLibraryMainWindow(false)
+end
+
+--显示根据类型 0表示全部
+function HeroLibraryMainWindow:onClickBtnShowByIndex(index,index_2, is_must_reset)
+    if self.img_select and self.camp_btn_list[index] then
+        local x, y = self.camp_btn_list[index]:getPosition()
+        self.img_select:setPosition(x - 0.5, y + 1)
+    end
+    if self.img_select2 and self.camp_btn_list2[index_2] then
+        local x, y = self.camp_btn_list2[index_2]:getPosition()
+        self.img_select2:setPosition(x - 0.5, y + 1)
+    end
+    self:updateHeroList(index,index_2, is_must_reset)
+end
+
+function HeroLibraryMainWindow:openRootWnd(bid)
+    -- local status = model:getHeroCampListHaveUr(0)
+    -- local index_2 = 0
+    -- if status then
+    --     index_2 = 1
+    -- end
+    -- self:onClickBtnShowByIndex(0,index_2, true)
+    self:onClickBtnShowByIndex(0,0, true)
+    self:updateCamplist_Red()
+end
+function HeroLibraryMainWindow:updateCamplist_Red()
+    for k, v in pairs(self.camp_btn_list) do
+        addRedPointToNodeByStatus(v,model:getHeroCampListRed(k),10,10)
+    end
+    self:updateCamplist_Red2()
+end
+function HeroLibraryMainWindow:updateCamplist_Red2()
+    -- addRedPointToNodeByStatus(self.camp_btn_list2[0],model:getHeroCampListRed(0),10,10)
+    addRedPointToNodeByStatus(self.camp_btn_list2[0],model:getHeroCampListRed(self.select_camp),10,10)
+end
+--更新职业的ui
+--title_pos_list 结构: title_pos_list[n] = {career_type = career_type, pos_y = xx}
+function HeroLibraryMainWindow:updateCareerUI(title_pos_list, container_height, start_x)
+    for i,career_info in ipairs(self.career_info_list) do
+        if career_info.desk then
+            career_info.desk:setVisible(false)
+        end
+        career_info.bg:setVisible(false)
+    end
+
+    local start_x  = start_x or 0
+    for i, info in ipairs(title_pos_list) do
+        local career_type = info.career_type or HeroConst.CareerName.eMagician
+        local pos_y = info.pos_y or 0
+        local name  = HeroConst.CareerName[career_type]
+        local desk_y = container_height - pos_y
+        local bg_y 
+        if i == 1 then
+            bg_y = container_height - pos_y
+        else
+            bg_y = container_height - (pos_y + 25)
+        end
+        if self.career_info_list[i] == nil then
+            --第一个位置不需要台子
+            local career_info = {}
+            if i ~= 1 then
+                local res = PathTool.getResFrame("herolibrary","hero_library_27")
+                career_info.desk = createImage(self.list_view, res, self.scrollview_size.width/2, desk_y-20, cc.p(0.5,0.5), true, 0, true)
+                career_info.desk:setContentSize(cc.size(self.scrollview_size.width , 42))
+                career_info.desk:setCapInsets(cc.rect(41, 0, 40, 0))
+            end
+            local res = PathTool.getResFrame("herolibrary","hero_library_18")
+            local bg_hegit = 48
+            career_info.bg = createImage(self.list_view, res, start_x, bg_y-10, cc.p(0, 1), true, 0, true)
+            career_info.bg:setContentSize(cc.size(232, bg_hegit))
+            career_info.bg:setCapInsets(cc.rect(42, 0, 2, 48))
+
+            local res = PathTool.getPartnerTypeIcon(career_type)
+            career_info.career_icon = createSprite(res, 39, bg_hegit * 0.5 - 3,  career_info.bg, cc.p(0, 0.5), LOADTEXT_TYPE_PLIST)
+            career_info.label = createLabel(24, cc.c4b(0xff,0xff,0xff,0xff), cc.c4b(0x5c,0x27,0x05,0xff), 81, bg_hegit * 0.5 - 3, name, career_info.bg, 2, cc.p(0,0.5))
+            self.career_info_list[i] = career_info
+        else
+            local career_info = self.career_info_list[i]
+            if career_info.desk then
+                career_info.desk:setVisible(true)
+                career_info.desk:setPositionY(desk_y - 20)
+            end
+            career_info.bg:setVisible(true)
+            career_info.bg:setPositionY(bg_y)
+
+            local res = PathTool.getPartnerTypeIcon(career_type)
+            loadSpriteTexture(career_info.career_icon, res, LOADTEXT_TYPE_PLIST)
+            career_info.label:setString(name)
+        end
+        local career_info = self.career_info_list[i]
+        local _w = math.max(240,career_info.label:getContentSize().width+90)
+        career_info.bg:setContentSize(cc.size(_w,career_info.bg:getContentSize().height))
+        if career_type == (HeroConst and HeroConst.CareerType and HeroConst.CareerType.eOther or 999) then
+            career_info.career_icon:setScale(0.6)
+        else
+            career_info.career_icon:setScale(1)
+        end
+    end
+end
+
+--创建英雄列表 
+-- @select_camp 选中阵营
+function HeroLibraryMainWindow:updateHeroList(select_camp,select_camp2, is_must_reset)
+    local select_camp = select_camp or 1
+    local select_camp2 = select_camp2 or 1
+    if not is_must_reset and select_camp == self.select_camp and select_camp2 == self.select_camp2 then 
+        return
+    end
+    if not self.list_view then
+        local size = self.lay_scrollview:getContentSize()
+        --方法里面定义了 self.list_view
+        self:createLibraryScrollView(size, size.width * 0.5, size.height * 0.5)
+    end
+    -- self:updateMove(cc.p(360,900))
+    self.select_camp = select_camp
+    self.select_camp2 = select_camp2
+    local config_list = Config.PartnerData.data_partner_base or {}
+    
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("partner_data")
+    local list = {}
+    local need_score = 0
+    if select_camp2 == 1 then
+        need_score = 10 --评分ur
+    elseif select_camp2 == 2 then
+        need_score = 11 --评分mr
+    end
+    for k, config in pairs(config_list) do
+        if select_camp == 0 or (select_camp == config.camp_type) then
+            if select_camp2 == 0 or (need_score == config.score) then
+                if config.isshow == 0 and not table.indexof(nohideIds,config.bid) then
+                    -- 后台配置屏蔽的
+                else
+                    if config.sp_move then
+                        if config.sp_move == 0 then
+                            config.sp_move_sort = 98
+                        elseif config.sp_move == 1 then
+                            config.sp_move_sort = 99
+                        elseif config.sp_move == 2 then
+                            config.sp_move_sort = config.sp_move + config.type
+                        end
+                    else
+                        config.sp_move_sort = 3
+                    end
+                    local bid = model.getSelfConvertStaBid and model:getSelfConvertStaBid(config.bid) or nil
+                    if bid and bid ~= config.bid then
+                        local transform_cfg = Config.PartnerData.data_partner_transform[bid]
+                        if not table.indexof(transform_cfg.transform_bid_list,config.bid) then
+                            table_insert(list, config)
+                        end
+                    else
+                        table_insert(list, config)
+                    end
+                end
+            end
+        end
+    end
+    -- local sort_func = SortTools.tableCommonSorter({{"type", false}, {"init_star", true}, {"camp_type", false}, {"sort_order", false}})
+    local sort_func = function(a, b)
+        if a == nil or b == nil then return false end
+        if a["type"] == nil or b["type"] == nil then 
+            return false 
+        end
+        if a["sp_move_sort"] == nil or b["sp_move_sort"] == nil then 
+            return false 
+        end
+        if a["sp_move_sort"] == b["sp_move_sort"] then
+            if a["type"] == b["type"] then
+                local a_lib_cfg = Config.PartnerData.data_partner_library(a.bid)
+                local b_lib_cfg = Config.PartnerData.data_partner_library(b.bid)
+                if a_lib_cfg == nil or b_lib_cfg == nil then return false end
+                if a_lib_cfg.order == nil or b_lib_cfg.order == nil then 
+                    return false 
+                end
+                return a_lib_cfg.order > b_lib_cfg.order
+            else
+                return a["type"] < b["type"]
+            end
+        else
+            return a["sp_move_sort"] < b["sp_move_sort"]
+        end
+        return false
+    end
+    table_sort(list, sort_func)
+
+    local content_y = 0 
+    local start_x = (self.scrollview_size.width - self.item_width * self.col) * 0.5 
+    --获取下一个位置根据当前数量
+    local function _getNextPositionBySize(size)
+        local count = size % self.col 
+        if count == 0 then
+            --换行
+            content_y = content_y + self.item_height
+        end
+        local x = start_x + self.item_width * count + self.item_width * 0.5
+        local y = content_y + self.item_height * 0.5 
+        return x, y
+    end
+
+    local title_pos_list = {}
+    local career_type = nil
+    self.hero_library_list = {}
+    for i,v in ipairs(list) do
+        local _type = v.type
+        if v.sp_move ~= 0 then
+            if v.sp_move == 1 then
+                _type = 999 --特殊显示 异界方可
+            else --特殊显示 ur
+                if v.score == 11 then
+                    _type = v.type + v.score + 9
+                end
+            end
+        end
+        if career_type == nil then
+            career_type = _type
+            --(之所以减一个高度是因为下面计算第一次时会加一个高度)
+            content_y = self.first_title_height - self.item_height 
+            table_insert(title_pos_list , {career_type = career_type, pos_y = 0})
+        end
+        if career_type ~= _type then
+            --算出多出的空位置 用{}去填补
+            local count = self.col - #self.hero_library_list % self.col
+            if count < self.col and count ~= 0 then
+                for i=1,count do
+                    local x, y = _getNextPositionBySize(#self.hero_library_list)
+                    table_insert(self.hero_library_list, {x = x, y = y}) 
+                end
+            end
+            career_type = _type
+            table_insert(title_pos_list ,{career_type = career_type, pos_y = content_y + self.item_height})
+            --遇到新职业..加title高度
+            content_y = content_y + self.title_height
+        end    
+        local x, y = _getNextPositionBySize(#self.hero_library_list)
+        table_insert(self.hero_library_list, {config = v, x = x, y = y})
+    end
+    --内容的高度
+    local container_height 
+    if #self.hero_library_list > 0 then
+        container_height  = content_y + self.item_height
+    else
+        container_height = 0
+    end
+    self.list_view:stopAutoScroll()
+    container_height = math.max(container_height,self.lay_scrollview:getContentSize().height)
+    self:updateCareerUI(title_pos_list, container_height, start_x)
+    self:reloadData(container_height)
+    self:checkOverShowByVertical()
+end
+--获取数据数量
+function HeroLibraryMainWindow:numberOfCells()
+    return #self.hero_library_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroLibraryMainWindow:updateCellByIndex(cell, index)
+    local model = controller:getModel()
+    local hero_bag_list = model:getAllHeroArray()
+    cell.index = index
+    local cell_data = self.hero_library_list[index]
+    for i=1,#hero_bag_list.items do
+        if cell_data.config and hero_bag_list.items[i] then
+            if hero_bag_list.items[i].bid == cell_data.config.bid and not model:checkIsTryout(hero_bag_list.items[i].partner_id) then
+                -- cfg = hero_bag_list[i]
+                cell_data.config.isHave = 0
+                break
+            end
+        end
+    end
+    if cell_data.config then
+        cell:setVisible(true)
+        cell:setData(cell_data.config)
+    else
+        cell:setVisible(false)
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function HeroLibraryMainWindow:onCellTouched(cell)
+    local index = cell.index
+    local cell_data = self.hero_library_list[index]
+    if cell_data and cell_data.config then
+        -- local a_lib_cfg = Config.PartnerData.data_partner_library(cell_data.config.bid)
+        -- print("------------------onCellTouched    ", cell_data.config.bid, a_lib_cfg.order)
+        local draw_res = cell_data.config.draw_res
+        local library_config = Config.PartnerData.data_partner_library(cell_data.config.bid)
+        if draw_res and library_config and draw_res ~= "" then
+            --有立绘的 并且有配置图书馆的
+            controller:openHeroLibraryInfoWindow(true, cell_data.config.bid)
+        else
+            message(TI18N("语言_c_4384"))
+             --没有立绘的 英雄详情
+            local pokedex_config = Config.PartnerData.data_partner_pokedex[cell_data.config.bid]
+            if pokedex_config and pokedex_config[1] then
+                local star = pokedex_config[1].star or 1
+                controller:openHeroInfoWindowByBidStar(cell_data.config.bid, star)
+            end
+        end
+    end
+end
+
+--------------------------------开始-------------------------  
+--内内部写一个无限的scrollview 
+function HeroLibraryMainWindow:createLibraryScrollView(size, x, y)
+    self.scrollview_size = size
+    self.list_view = createScrollView(size.width, size.height, x, y, self.lay_scrollview, ScrollViewDir.vertical) 
+    self.list_view:setAnchorPoint(cc.p(0.5, 0.5))
+    self.scrollview_container = self.list_view:getInnerContainer() 
+
+    self.cacheMaxSize = (math.ceil(size.height / self.item_height) + 1) * self.col
+    self.list_view:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            self:checkOverShowByVertical()
+        end
+    end)
+end
+
+--==============================--
+--desc:竖直方向的监测判断
+--time:2018-07-20 03:11:13
+--@return 
+--==============================--
+function HeroLibraryMainWindow:checkOverShowByVertical()
+    if not self.cellList then return end
+    local container_y = self.scrollview_container:getPositionY()
+    --计算 视图的上部分和下部分在self.container 的位置
+    local bot = -container_y
+    local top = self.scrollview_size.height + bot
+    local col_count = math.ceil(#self.cellList/self.col)
+    --下面因为 self.cellList 是一维数组 所以要换成二维来算
+    --活跃cell开始行数
+    local activeCellStartRow = 1
+    for i=1, col_count do
+        local index = 1 + (i-1)* self.col
+        local cell = self.cellList[index]
+        activeCellStartRow = i
+        if cell and cell.y - self.item_height * 0.5 <= top then
+            break
+        end
+    end
+    --活跃cell结束行数
+    local activeCellEndRow = col_count
+    if bot > 0 then
+        for i = activeCellStartRow, col_count do
+            local index = 1 + (i-1)* self.col
+            local cell = self.cellList[index]
+            if cell and cell.y + self.item_height * 0.5 < bot then
+                activeCellEndRow = i - 1
+                break
+            end
+        end
+    end
+    -- print("@保留--> top --> :"..top .." self.col:"..self.col)
+    -- print("@保留--> bot --> :"..bot )
+    -- print("@保留--> 开始行: "..activeCellStartRow.."@结束行: "..activeCellEndRow)
+    local max_count = self:numberOfCells()
+    for i=1, col_count do
+        if i >= activeCellStartRow and i <= activeCellEndRow then
+            for k=1, self.col do
+                local index = (i-1) * self.col + k
+                if not self.activeCellIdx[index] then
+                    if index <= max_count then
+                        self:updateCellAtIndex(index)
+                        self.activeCellIdx[index] = true
+                    end
+                end    
+            end
+        else
+            for k=1, self.col do
+                local index = (i-1) * self.col + k
+                if index <= max_count then
+                    self.activeCellIdx[index] = false
+                end
+            end
+        end
+    end
+end
+
+function HeroLibraryMainWindow:reloadData(container_height)
+    self.cellList = {}
+    self.activeCellIdx = {}
+    for k, v in ipairs(self.cacheList) do
+        --相当于隐藏
+        v:setPositionX(-10000)
+    end
+    
+    local container_height = math.max(container_height, self.scrollview_size.height)
+    self.container_size = cc.size(self.scrollview_size.width, container_height)
+    self.list_view:setInnerContainerSize(self.container_size)
+    -- self.list_view:jumpToTop()
+    -- self.list_view:jumpToPercentVertical(50)
+
+    local number = self:numberOfCells()
+    local setting = {
+        text=TI18N("语言_c_6217"),
+        pos=cc.p(330,530),
+    }
+    commonShowEmptyIcon(self.lay_scrollview,number == 0,setting)
+    if number == 0 then
+        return
+    end
+
+    for i = 1, number do
+        local data = self.hero_library_list[i]
+        if data ~= nil then
+            local cell = nil 
+            if i <= self.time_show_index then
+                cell = self:getCacheCellByIndex(i)
+            end
+            local count = #self.cellList
+            local x = data.x
+            local y = container_height - data.y
+            local cellData = {cell = cell, x = x, y = y}
+            table_insert(self.cellList, cellData)
+        end
+    end
+    
+    -- if self.is_first_init then
+    --     self:startTimeTicket()
+    -- else
+    --     --如果时间显示索引小于总数 应该显示继续当前定时器 让下面的能显示出来
+    --     if self.time_show_index <= number then
+    --         self:startTimeTicket()
+    --     end
+    -- end
+    -- if select_index == nil then
+        local maxRefreshNum = self.cacheMaxSize - self.col
+        local refreshNum = number < maxRefreshNum and number or maxRefreshNum
+
+        for i = 1, refreshNum do
+            local index = i
+            delayRun(self.list_view,index / display.DEFAULT_FPS,function ()
+                if self.time_show_index < index then
+                    self.time_show_index = index
+                end
+                self:updateCellAtIndex(index)
+                if self.time_show_index == refreshNum then
+                    self.time_show_index = 9999
+                end
+            end)
+            self.activeCellIdx[i] = true
+        end
+    -- else
+    --     self:selectCellByIndex(select_index)
+    -- end   
+
+     
+end
+
+--获得格子下标对应的缓存itemCell
+function HeroLibraryMainWindow:getCacheCellByIndex(index)
+    local cacheIndex = (index - 1) % self.cacheMaxSize + 1
+    if not self.cacheList[cacheIndex] then
+        local newCell = HeroLibraryMainItem.new()
+        newCell:addCallBack(function() self:onCellTouched(newCell) end)
+        newCell:setAnchorPoint(cc.p(0.5, 0.5))
+        newCell:setPositionX(-10000)--隐藏
+        self.cacheList[cacheIndex] = newCell
+        self.list_view:addChild(newCell, 2)
+        return newCell
+    else
+        return self.cacheList[cacheIndex]
+    end
+end
+
+--更新格子，并记为活跃
+function HeroLibraryMainWindow:updateCellAtIndex(index)
+    if index > self.time_show_index then
+        return
+    end
+    if not self.cellList[index] then return end
+    local cellData = self.cellList[index]
+    if cellData.cell == nil then
+        cellData.cell = self:getCacheCellByIndex(index)
+    end
+    cellData.cell:setPosition(cellData.x, cellData.y)
+    self:updateCellByIndex(cellData.cell, index)
+end
+
+
+--------------------------scrollview结束-------------------------
+
+function HeroLibraryMainWindow:close_callback()
+    doStopAllActions(self.list_view)
+    -- if self.list_view then
+    --     self.list_view:DeleteMe()
+    --     self.list_view = nil
+    -- end
+    for k, item in ipairs(self.cacheList) do
+        if item.DeleteMe then
+            item:DeleteMe()
+        end
+    end
+    controller:openHeroLibraryMainWindow(false)
+    
+    if self.updataRed then
+        GlobalEvent:getInstance():UnBind(self.updataRed)
+        self.updataRed = nil
+    end
+end
+
+
+-- 图书馆item--------------------------------------------------------------------------------------------
+HeroLibraryMainItem = class("HeroLibraryMainItem", function() 
+    return ccui.Layout:create()
+end)
+
+function HeroLibraryMainItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_library_main_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setTouchEnabled(true)
+    self:setAnchorPoint(0,0)
+    self:setContentSize(self.size)
+    self.root_wnd:setPosition(0, 0)
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.hero_icon = self.main_panel:getChildByName("hero_icon")
+    self.camp_icon = self.main_panel:getChildByName("camp_icon")
+    self.profession_icon = self.main_panel:getChildByName("profession_icon")
+    self.MaskImg = self.main_panel:getChildByName("MaskImg")
+    self.MaskTxt = self.main_panel:getChildByName("MaskTxt")
+    self.MaskTxt:setString(TI18N("语言_c_3540"))
+    self.limit_icon = self.main_panel:getChildByName("limit_icon")
+    self.limit_icon:setVisible(false)
+
+    self.name = self.main_panel:getChildByName("name_bg"):getChildByName("name")
+    self.bg = self.main_panel:getChildByName("bg")
+    self.other_tip_bg = self.main_panel:getChildByName("other_tip_bg")
+    self.other_tip = self.main_panel:getChildByName("other_tip")
+    self.other_tip:setVisible(false)
+    self.other_tip_bg:setVisible(false)
+
+    self:registerEvent()
+end
+
+function HeroLibraryMainItem:registerEvent()
+    self:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:clickFun()
+        end
+    end)
+    self.updataRed = GlobalEvent:getInstance():Bind(HeroEvent.Get_Had_Hero_Star_Event, function(data) 
+        addRedPointToNodeByStatus(self,model:getHeroLibRed(self.bid),8,8)
+    end)
+end
+
+function HeroLibraryMainItem:addCallBack(callback)
+    self.callback = callback
+end
+function HeroLibraryMainItem:clickFun()
+    if self.callback then
+        self:callback()
+    end
+end
+
+--@config 结构是 Config.PartnerData.data_partner_base
+function HeroLibraryMainItem:setData(config)
+    if not config then return end
+    self.config = config
+    if self.config.isHave == 0 or model:getHeroLib(config.bid) then
+        self.MaskTxt:setVisible(false)
+        self.MaskImg:setVisible(false)
+        -- print("@已经获得",config.bid)
+    else
+        self.MaskTxt:setVisible(true)
+        self.MaskImg:setVisible(true)
+    end
+    --heroicon
+    local res_id = PathTool.getPlistImgForDownLoad("bigbg/partnercard_library", "partnercard_library_" .. self.config.bid)
+    if cc.FileUtils:getInstance():isFileExist(res_id) then
+        if self.record_res_id == nil or self.record_res_id ~= res_id then
+            self.record_res_id = res_id
+            self.item_load = loadImageTextureFromCDN(self.hero_icon, res_id, ResourcesType.single, self.item_load, 60)
+        end
+    else
+        if self.record_res_id == nil or self.record_res_id ~= res_id then
+            self.record_res_id = res_id
+            self.hero_icon:stopAllActions()
+            local init_id = PathTool.getPlistImgForDownLoad("bigbg/partnercard_library", "partnercard_library_0")
+            self.item_load = loadImageTextureFromCDN(self.hero_icon, init_id, ResourcesType.single, self.item_load, 60)
+            self.hero_icon:runAction(cc.Sequence:create(cc.DelayTime:create(0.1), cc.CallFunc:create(function()
+                self.item_load = loadImageTextureFromCDN(self.hero_icon, res_id, ResourcesType.single, self.item_load, 60)
+            end)))
+        end
+    end
+    --阵营
+    if self.sp then
+        self.sp:setVisible(false)
+    end
+    if self.sp_icon then
+        self.sp_icon:setVisible(false)
+    end
+    local camp_res = PathTool.getHeroCampTypeIcon(self.config.camp_type)
+    if self.record_camp_res == nil or self.record_camp_res ~= camp_res then
+        self.record_camp_res = camp_res 
+        self.camp_icon:loadTexture(camp_res,LOADTEXT_TYPE_PLIST)
+        -- loadSpriteTexture(self.camp_icon, camp_res, LOADTEXT_TYPE_PLIST)
+    end
+    local score = HeroController:getInstance():getModel():heroBidScore(self.config.bid)
+    if score == 9 or score == 10 or score == 11 then
+        if not self.sp then
+            self.sp = createSprite("",self.camp_icon:getContentSize().width*0.5,self.camp_icon:getContentSize().height*0.5, self.camp_icon, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 3)
+            self.sp:setScale(0.5)
+        end
+        self.sp:setVisible(true)
+        if not self.sp_icon then
+            self.sp_icon = createSprite("",175,305, self.main_panel, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 3)
+            self.sp_icon:setScale(0.3)
+        end
+        self.sp_icon:setVisible(true)
+        if score == 10 then
+            loadSpriteTexture(self.sp, PathTool.getResFrame("hero/ultra_hero","ultra_hero_4"), LOADTEXT_TYPE_PLIST)
+            loadSpriteTexture(self.sp_icon, PathTool.getResFrame("partnersummon","partner_rarity_10"), LOADTEXT_TYPE_PLIST)
+        elseif score == 11 then
+            loadSpriteTexture(self.sp, PathTool.getResFrame("hero/mystery_hero","mystery_hero_1"), LOADTEXT_TYPE_PLIST)
+            loadSpriteTexture(self.sp_icon, PathTool.getResFrame("partnersummon","partner_rarity_11"), LOADTEXT_TYPE_PLIST)
+        else
+            loadSpriteTexture(self.sp, PathTool.getResFrame("hero/special_hero","special_hero_006"), LOADTEXT_TYPE_PLIST)
+            loadSpriteTexture(self.sp_icon, PathTool.getResFrame("partnersummon","partner_rarity_9"), LOADTEXT_TYPE_PLIST)
+        end
+    end
+
+    --职业
+    local hero_type = self.config.type or 4
+    local res = PathTool.getPartnerTypeIcon(hero_type)
+    if self.record_type_res == nil or  self.record_type_res ~= res then
+        self.record_type_res = res
+        self.profession_icon:loadTexture(res,LOADTEXT_TYPE_PLIST)
+        -- loadSpriteTexture(self.profession_icon, res, LOADTEXT_TYPE_PLIST)
+    end
+
+
+    self.name:setString(self.config.name)
+
+    -- local icon_size = self.profession_icon:getContentSize()
+    -- local name_size = self.name:getContentSize()
+
+    -- local offset = 5
+    -- total_width = icon_size.width + offset + name_size.width
+    -- local x = (self.size.width - total_width) * 0.5 
+
+    -- self.profession_icon:setPositionX(x +  icon_size.width * 0.5)
+    -- self.name:setPositionX(x +  icon_size.width + offset + name_size.width * 0.5)
+    if config.bid then
+        self.bid = config.bid
+        local bid = config.bid
+        addRedPointToNodeByStatus(self,model:getHeroLibRed(bid),8,8)
+    end
+    if config.sp_move == 1 then
+        self.other_tip:setVisible(true)        
+        self.other_tip_bg:setVisible(true)
+    else
+        self.other_tip:setVisible(false)
+        self.other_tip_bg:setVisible(false)
+    end
+    
+    local partner_cfg = Config.PartnerData.data_partner_const
+    local partner_buffed = partner_cfg["sp_limited"].val
+    if partner_buffed and next(partner_buffed) and table.indexof(partner_buffed, config.bid) then
+        self.limit_icon:setVisible(true)
+        local SP_limited_icon = partner_cfg["sp_limited_icon"].val
+        local res = string_format("resource/hero/%s.png", SP_limited_icon)
+        loadSpriteTexture(self.limit_icon, res, LOADTEXT_TYPE)
+    else
+        self.limit_icon:setVisible(false)
+    end
+end
+
+function HeroLibraryMainItem:DeleteMe()
+    if self.hero_icon then
+        self.hero_icon:stopAllActions()
+    end
+    if self.item_load then 
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    if self.updataRed then
+        GlobalEvent:getInstance():UnBind(self.updataRed)
+        self.updataRed = nil
+    end
+
+    self:removeAllChildren()
+    self:removeFromParent()
+end

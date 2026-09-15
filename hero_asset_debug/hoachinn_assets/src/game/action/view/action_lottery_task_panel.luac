@@ -1,0 +1,226 @@
+--******** 文件说明 ********
+-- 
+-- @description: 忍界珍宝任务
+-- @DateTime:    2020-02-20
+-- *******************************
+ActionLotteryTaskPanel = ActionLotteryTaskPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local config = Config.HolidayGetninjaData
+function ActionLotteryTaskPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "action/action_lottery_task_panel"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("hero", "hero"), type = ResourcesType.plist}
+    }
+end
+
+function ActionLotteryTaskPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_container , 2) 
+    self.Image_1 = main_container:getChildByName("Image_1")
+    self.Text_1 = main_container:getChildByName("Text_1")
+    self.Text_1:setString((TI18N("情报之书")))
+    autoSizeTitleBg(self.Text_1,self.Image_1,120)
+    self.title_bg = main_container:getChildByName("title_bg")
+    self.task_panel = main_container:getChildByName("task_panel")
+    local scroll_view_size = self.task_panel:getContentSize()
+    local setting = {
+        item_class = ActionLotteryTaskItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 607,               -- 单元的尺寸width
+        item_height = 123,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.task_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+    self.btn_close = main_container:getChildByName("btn_close")
+
+end
+
+function ActionLotteryTaskPanel:register_event()
+    registerButtonEventListener(
+        self.background,
+        function()
+            controller:openActionLotteryTaskPanel(false)
+        end,
+        false,
+        2
+    )
+    registerButtonEventListener(
+        self.btn_close,
+        function()
+            controller:openActionLotteryTaskPanel(false)
+        end,
+        true,
+        2
+    )
+end
+
+function ActionLotteryTaskPanel:openRootWnd(bid)
+    self.config = Config.HolidaySkinDrawData.data_quest_list[bid]
+    self.item_scrollview:setData(self.config)
+    local res = PathTool.getTargetRes("bigbg/action",self.config[1].banner,false,false)
+    loadSpriteTexture(self.title_bg,res,LOADTEXT_TYPE)
+end
+function ActionLotteryTaskPanel:close_callback()
+    
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    controller:openActionLotteryTaskPanel(false)
+end
+
+
+
+--子项
+ActionLotteryTaskItem = class("ActionLotteryTaskItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionLotteryTaskItem:ctor()
+    self.touch_buy_month = true
+	self:configUI()
+	self:register_event()
+end
+
+function ActionLotteryTaskItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_lottery_task_item"))
+    self:addChild(self.root_wnd)
+    self:setContentSize(cc.size(607,123))
+    self:setAnchorPoint(0,0)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.name = main_container:getChildByName("name")
+    self.item_scroll = main_container:getChildByName("item_scroll")
+    self.bar = main_container:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.bar:setPercent(0)
+    self.bar_txt = main_container:getChildByName("bar_txt")
+    self.lock = main_container:getChildByName("lock")
+    self.lock_txt = main_container:getChildByName("lock_txt")
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.txt_get = self.btn_get:getChildByName("label")
+    self.txt_get:setString(TI18N("语言_c_8"))
+    self.btn_go = main_container:getChildByName("btn_go")
+    self.txt_go = self.btn_go:getChildByName("label")
+    self.txt_go:setString(TI18N("语言_c_7"))
+    self.finish_img = main_container:getChildByName("finish_img")
+    self.lock:setVisible(false)
+    self.lock_txt:setVisible(false)
+    self.btn_get:setVisible(false)
+    self.btn_go:setVisible(false)
+    self.finish_img:setVisible(false)
+end
+function ActionLotteryTaskItem:register_event()
+    if not self.updateEvent then
+        self.updateEvent = GlobalEvent:getInstance():Bind(ActionEvent.ACTION_LOTTERY2_TASK_UPDATE ,function()
+                local data = model:getLotteryTaskDataForId(self.data.goal_id) 
+                if data and next(data) then
+                    self:setData()
+                end
+            end
+        )
+    end
+    registerButtonEventListener(
+        self.btn_go,
+        function()
+            local jump_id = self.data.id
+            local config = Config.SourceData.data_source_data[jump_id]
+            if config then
+                controller:openActionMainPanel(false)
+                BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+            end
+        end,
+        false,
+        2
+    )
+    registerButtonEventListener(
+        self.btn_get,
+        function()
+            controller:sender26617(self.data.goal_id)
+        end,
+        false,
+        2
+    )
+end
+function ActionLotteryTaskItem:getData()
+    return self.data
+end
+function ActionLotteryTaskItem:setData(data)
+    if data then
+        self.data = data
+    end
+    local desclist ={}
+    for i=1,tableLen(self.data.progress) do
+        if self.data.progress[i].target ~= 0 then
+            table.insert(desclist,1,self.data.progress[i].target_val)
+        end
+        if self.data.progress[i].param then
+            for j=1,tableLen(self.data.progress[i].param) do
+                local _str =  ActivityTaskDescription(self.data.progress[i].param[j])
+                for key, value in pairs(_str) do
+                    table.insert(desclist,1,value)
+                end
+            end
+        end
+    end
+    local str = LangStringFormat(self.data.desc,desclist)    
+    setTextMaxWidth(self.name,250)
+    self.name:setString(str)
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 2
+    setting.max_count = 1
+    setting.is_center = true
+    self.item_list1 = commonShowSingleRowItemList(self.item_scroll, self.item_list1, self.data.award, setting)
+    local task_data = model:getLotteryTaskDataForId(self.data.goal_id)
+    if task_data and next(task_data) then
+        self.bar:setPercent(task_data.value/task_data.target_val*100)
+        local strings = task_data.value.."/"..task_data.target_val
+        self.bar_txt:setString(strings)
+        if model:getLotteryTaskLoginNum() < self.data.day then --未解锁
+            self.lock:setVisible(true)
+            self.lock_txt:setVisible(true)
+            setTextMaxWidth(self.lock_txt,180)
+            self.lock_txt:setString(string.format(TI18N("语言_c_6703"),self.data.day))
+            self.btn_get:setVisible(false)
+            self.btn_go:setVisible(false)
+            self.finish_img:setVisible(false)
+        else
+            self.lock:setVisible(false)
+            self.lock_txt:setVisible(false)
+            if task_data.finish == 0 then
+                self.btn_get:setVisible(false)
+                self.btn_go:setVisible(true)
+                self.finish_img:setVisible(false)
+            elseif task_data.finish == 1 then
+                self.btn_get:setVisible(true)
+                self.btn_go:setVisible(false)
+                self.finish_img:setVisible(false)
+            elseif task_data.finish == 2 then
+                self.btn_get:setVisible(false)
+                self.btn_go:setVisible(false)
+                self.finish_img:setVisible(true)
+            end
+        end
+    end
+end
+function ActionLotteryTaskItem:DeleteMe()
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

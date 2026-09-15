@@ -1,0 +1,496 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-02-19 15:36:39
+-- @description    : 
+		-- 个人信息阵容
+---------------------------------
+FriendCheckLineUpPanel = class("FriendCheckLineUpPanel",function()
+    return ccui.Layout:create()
+end)
+
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _table_sort = table.sort
+local _string_format = string.format
+
+function FriendCheckLineUpPanel:ctor(data,type)
+    self.data = data
+    self.type = type
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("friend/friend_check_line_up_panel"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+
+    -- 资源加载
+    local res_list = {}
+    _table_insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    _table_insert(res_list, {path = PathTool.getPlistImgForDownLoad("form", "form"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function FriendCheckLineUpPanel:loadResListCompleted()
+	self:initView()
+    self:registerEvent()
+    self:updatePage()
+end
+
+
+
+-- 初始化数据
+function FriendCheckLineUpPanel:initElfinData(  )
+    
+
+    self.egg_list = {} --灵窝列表
+
+end
+
+-- 初始化界面
+function FriendCheckLineUpPanel:initView(  )
+	self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.select_lay = self.main_panel:getChildByName("select_lay")
+    self.open_btn = self.select_lay:getChildByName("open_btn")
+    self.close_btn = self.select_lay:getChildByName("close_btn")
+    self.close_btn:setVisible(false)
+    self.choose_txt = self.select_lay:getChildByName("choose_txt")
+    self.scroll = self.select_lay:getChildByName("scroll")
+    self.scroll:setVisible(false)
+    self.item_panel = self.main_panel:getChildByName("item_panel")
+end
+
+function FriendCheckLineUpPanel:registerEvent(  )
+    self.open_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(true)
+        end
+    end)
+    self.close_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(false)
+        end
+    end)
+    --接受数据
+	if self.updateEvent == nil then
+		self.updateEvent = GlobalEvent:getInstance():Bind(RoleEvent.DISPATCH_PLAYER_LineUp_VO_EVENT,function ( data )
+            if data and data.show_type == 2 then
+                if self.clickChooseBtn then
+                    self:clickChooseBtn(false)
+                    self:setLineUp(self:setMiscCfgItem(data.type),data)
+                end
+            end
+		end)
+	end
+end
+
+function FriendCheckLineUpPanel:setChooseTxt(index,data)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0.5, 0))
+    item:setContentSize(cc.size(210, 30))
+    local res = PathTool.getResFrame("common","common_90101")
+    local bg = createImage(item,res,0,0,cc.p(0,0),true,1,true)
+    bg:setContentSize(cc.size(210,30))
+    bg:setTouchEnabled(true)
+    bg:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type and self.data and data then
+            RoleController:getInstance():send16815(self.data.rid,self.data.srv_id,data.type,2)
+        end
+    end)
+    local label = createLabel(22,cc.c3b(0x00,0x00,0x00),nil,105,15,data.formation_name,item,nil,cc.p(0.5,0.5))
+    label:setZOrder(2)
+    commonShowRollStr(label,{max_width=190,start_x=label:getContentSize().width*0.5 + 10})
+    return item
+end
+function FriendCheckLineUpPanel:setLineUp(list,list_data)
+    local data = list_data.formations
+    if self.data then
+        for key, value in pairs(data) do
+            value.rid = self.data.rid
+            value.srv_id = self.data.srv_id
+        end
+    end
+    self.choose_txt:setString(list.formation_name)
+    self.scroll:setInnerContainerSize(cc.size(210,tableLen(self.misc_cfg) * 35))
+    self.scroll:setContentSize(cc.size(210,math.min(100,tableLen(self.misc_cfg) * 35)))
+    for key, value in pairs(self.misc_cfg) do
+        local item = self:setChooseTxt(key,value)
+        self.scroll:addChild(item)
+        item:setPosition(cc.p(105,self.scroll:getInnerContainerSize().height - key * 35))
+    end
+    if self.item_view == nil then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            item_class = FriendCheckLineUpItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 627,               -- 单元的尺寸width
+            item_height = 160,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.item_view = CommonScrollViewLayout.new(self.item_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    self.item_view:setData(data,nil,nil,list_data.type)
+end
+
+function FriendCheckLineUpPanel:clickChooseBtn(status)
+    if status then
+        self.open_btn:setVisible(false)
+        self.close_btn:setVisible(true)
+        self.scroll:setVisible(true)
+    else
+        self.open_btn:setVisible(true)
+        self.close_btn:setVisible(false)
+        self.scroll:setVisible(false)
+    end
+end
+
+function FriendCheckLineUpPanel:updatePage()
+    self:setMiscCfg()
+    if self.data then
+        if self.type then
+            RoleController:getInstance():send16815(self.data.rid,self.data.srv_id,self.type,2)
+        else
+            RoleController:getInstance():send16815(self.data.rid,self.data.srv_id,self.misc_cfg[1].type,2)
+        end
+    end
+end
+function FriendCheckLineUpPanel:setMiscCfg()
+    self.misc_cfg = {}
+    local cfg = deepCopy(Config.MiscData.data_formation_info[2])
+    for key, value in pairs(cfg) do
+        value.type = key
+        table.insert(self.misc_cfg,value)
+    end
+    table.sort(self.misc_cfg,function(a,b) return a.num < b.num end)
+end
+function FriendCheckLineUpPanel:setMiscCfgItem(type)
+    for key, value in pairs(self.misc_cfg) do
+        if value.type == type then
+            return value
+        end
+    end
+    return nil
+end
+
+function FriendCheckLineUpPanel:DeleteMe(  )
+    
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      精灵孵化item
+-- Create: 2020-02-19
+-- --------------------------------------------------------------------
+FriendCheckLineUpItem = class("FriendCheckLineUpItem", function()
+    return ccui.Widget:create()
+end)
+
+function FriendCheckLineUpItem:ctor()
+	self.ctrl = ActionController:getInstance()
+	self.model = self.ctrl:getModel()
+    self.hero_list = {}
+
+	self:configUI()
+	self:register_event()
+end
+
+function FriendCheckLineUpItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("friend/friend_check_line_up_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(627,160))
+    self:setAnchorPoint(0,0)
+
+    self.team_panel = self.root_wnd:getChildByName("team_panel")
+    self.halo_btn = self.team_panel:getChildByName("halo_btn")
+    self.form_kuang = self.team_panel:getChildByName("form_kuang")
+    self.form_icon = self.team_panel:getChildByName("form_icon")
+    self.sp_btn = self.team_panel:getChildByName("sp_btn")
+    self.sp_skill = self.sp_btn:getChildByName("sp_skill")
+    self.sp_btn:setVisible(false)
+    self.num_bg = self.team_panel:getChildByName("num_bg")
+    self.team_name = self.team_panel:getChildByName("team_name")
+    self.power_txt = self.team_panel:getChildByName("power_txt")
+    self.power_txt:setString(TI18N("???"))
+    self.pvp_txt = self.team_panel:getChildByName("pvp_txt")
+    self.pvp_txt:setString(TI18N("语言_c_449"))
+    self.up_icon = self.team_panel:getChildByName("up_icon")
+end
+
+function FriendCheckLineUpItem:register_event(  )
+	
+end
+
+function FriendCheckLineUpItem:setExtendData(type)
+    self.type = type
+end
+function FriendCheckLineUpItem:setData(data)
+    data.sp_skill_bid = 0
+    if data.sprites and next(data.sprites) then
+        if tableLen(data.sprites) > 2 then
+            table.sort(data.sprites,function(a,b) return a.pos < b.pos end)
+        end
+        for i = 1, tableLen(data.sprites), 1 do
+            data.sp_skill_bid = data.sprites[i].sp_skill_bid
+        end
+    end
+    if next(self.hero_list) then
+        for key, value in pairs(self.hero_list) do
+            value:removeFromParent()
+            value = nil
+        end
+    end
+    self.hero_list = {}
+    if not next(self.hero_list) then
+        local width = 119*0.8
+        local height = 119*0.8
+        local start_x = 10
+        local num = 5
+        if PartnerConst.Fun_FormToBattle_Type[self.type] then
+            num = 6
+        else
+            num = 5
+        end
+        for i=1,num do
+            if self.hero_list[i] == nil then 
+                local partner_item = HeroExhibitionItem.new(0.8, true)
+                partner_item:setPosition(start_x + width * 0.5 + (i-1) * width, height * 0.5 + 15)
+                self.team_panel:addChild(partner_item)
+                self.hero_list[i] = partner_item
+                partner_item:addCallBack(function(item)
+                    local vo = item:getData()
+                    if vo and next(vo) ~=nil then 
+                        local partner_id = vo.partner_id
+                        if partner_id == 0 then
+                            partner_id = vo.id
+                        end
+                        if self.data then
+                            local rid = self.data.rid
+                            local srv_id = self.data.srv_id 
+                            LookController:getInstance():sender11061(rid,srv_id,partner_id)
+                        end
+                    end
+                end)
+            end
+        end
+    end
+	self.data = data
+    self.team_name:setString(string.format(TI18N("语言_c_2023"),data.order))
+    self.num_bg:setContentSize(cc.size(self.team_name:getContentSize().width+30,self.num_bg:getContentSize().height))
+    if data.power ~= 0 then
+        self.power_txt:setString(MoneyTool.moneyFormat(data.power + data.pvp_add))
+    else
+        self.power_txt:setString(MoneyTool.moneyFormat(data.power))
+    end
+    self.pvp_txt:setPositionX(self.power_txt:getPositionX() + self.power_txt:getContentSize().width + 5)
+    if data.pvp_add and data.pvp_add ~= 0 and data.power ~= 0 then
+        self.pvp_txt:setVisible(true)
+        self.up_icon:setVisible(true)
+    else
+        self.pvp_txt:setVisible(false)
+        self.up_icon:setVisible(false)
+    end
+    self:setHeroList()
+    --神器
+    if not self.artifact_icon then
+        self.artifact_icon = BackPackItem.new(false, true,nil,0.8,true,true)
+        self.team_panel:addChild(self.artifact_icon)
+    end
+    if PartnerConst.Fun_FormToBattle_Type[self.type] then
+        self.artifact_icon:setScale(0.35)
+        if data.sp_skill_bid and data.sp_skill_bid ~= 0 then
+            self.artifact_icon:setPosition(cc.p(300, 133))
+        else
+            self.artifact_icon:setPosition(cc.p(257, 133))
+        end
+        self.artifact_icon:setVisible(false)
+    else
+        self.artifact_icon:setScale(0.8)
+        self.artifact_icon:setPosition(cc.p(550, 63))
+        self.artifact_icon:setVisible(true)
+    end
+    self.artifact_icon:setBaseData()
+    if data.look_id and data.look_id ~= 0 then
+        local magic_cfg = Config.HallowsData.data_magic[data.look_id]
+        if magic_cfg then
+            self.artifact_icon:setBaseData(magic_cfg.item_id)
+            self.artifact_icon:setMagicIcon(true)
+            self.artifact_icon:setVisible(true)
+        end
+    else
+        local config = Config.HallowsData.data_base[data.hallows_id]
+        if config then
+            self.artifact_icon:setBaseData(config.item_id)
+            self.artifact_icon:setMagicIcon(false)
+            self.artifact_icon:setVisible(true)
+        end
+    end
+    registerButtonEventListener(self.artifact_icon, function()
+        self:clickHallows(self.data)
+    end,false, 1,nil,0.8)
+    local _type = data.formation_type
+    if _type and _type ~= 0 then
+        if PartnerConst.Fun_FormToBattle_Type[self.type] then
+            _type = data.formation_type + 7
+        end
+        local res = PathTool.getResFrame("form", "form_icon_".._type)
+        loadSpriteTexture(self.form_icon, res, LOADTEXT_TYPE_PLIST)
+        self.form_icon:setVisible(true)
+    else
+        self.form_icon:setVisible(false)
+    end
+    if self.type == PartnerConst.Fun_Form.ArenapeakchampionDef and data._index == 3 or data.is_hidden == 1 then
+        data.sp_skill_bid = 0
+        self.power_txt:setString(TI18N("???"))
+        self.halo_btn:setVisible(false)
+        self.form_icon:setVisible(false)
+        self.form_kuang:setVisible(false)
+        self.artifact_icon:setBaseData()
+        self.artifact_icon:showUnknownIcon(true)
+        if PartnerConst.Fun_FormToBattle_Type[self.type] then
+            self.artifact_icon:setVisible(false)
+        end
+        self.pvp_txt:setVisible(false)
+        self.up_icon:setVisible(false)
+    else
+        if data.power ~= 0 then
+            self.power_txt:setString(MoneyTool.moneyFormat(data.power + data.pvp_add))
+        else
+            self.power_txt:setString(MoneyTool.moneyFormat(data.power))
+        end
+        self.halo_btn:setVisible(true)
+        self.form_icon:setVisible(true)
+        self.form_kuang:setVisible(true)
+        self.artifact_icon:showUnknownIcon(false)
+    end
+    if data.sp_skill_bid and data.sp_skill_bid ~= 0 then
+        self.sp_btn:setVisible(true)
+        if not self.mask then
+            self.mask = createSprite(PathTool.getResFrame("form", "form_1002"), 40, 40, nil, cc.p(0.5, 0.5))--模板
+            self.mask:setScale(self.mask_scale or 1)
+        end
+        if not self.clipNode then
+            self.clipNode = cc.ClippingNode:create(self.mask)
+            self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+            self.clipNode:setContentSize(cc.size(80,80))
+            self.clipNode:setCascadeOpacityEnabled(true)
+            self.clipNode:setPosition(40,40)
+            self.clipNode:setAlphaThreshold(0)
+            self.sp_skill:addChild(self.clipNode,2)
+        end
+        if not self.sp_icon then
+            self.sp_icon = ccui.ImageView:create()
+            self.sp_icon:setCascadeOpacityEnabled(true)
+            self.sp_icon:setAnchorPoint(0.5,0.5)
+            self.sp_icon:setPosition(40,40)--底板
+            self.clipNode:addChild(self.sp_icon,1)
+            -- self.sp_icon:setScale(0.75)
+        end
+        local skill_config = Config.SkillData.data_get_skill(data.sp_skill_bid)
+        if skill_config then
+            local skill_icon = PathTool.getSkillRes(skill_config.icon, false)
+            self.sp_icon:loadTexture(skill_icon, LOADTEXT_TYPE)
+            self.sp_btn:setVisible(true)
+        else
+            self.sp_btn:setVisible(false)
+        end
+    else
+        self.sp_btn:setVisible(false)
+    end
+    self:setHeroListType()
+end
+function FriendCheckLineUpItem:clickHallows(data)
+    if data.hallows_id ~= 0 then
+        local config = Config.HallowsData.data_base[data.hallows_id]
+        if config then
+            HallowsController:getInstance():send24136(self.data.rid,self.data.srv_id,self.type,data.hallows_id)
+        end
+    end
+end
+function FriendCheckLineUpItem:getHeroList(index)
+    for key, value in pairs(self.data.partner_list) do
+        if value.pos == index then
+            return value
+        end
+    end
+    return nil
+end
+function FriendCheckLineUpItem:setHeroList()
+    local num = 5
+    if PartnerConst.Fun_FormToBattle_Type[self.type] then
+        num = 6
+    else
+        num = 5
+    end
+    for i=1,num do
+        local list = self:getHeroList(i)
+        local item = self.hero_list[i]
+        item:setData(nil)
+        if self.type == PartnerConst.Fun_Form.ArenapeakchampionDef and self.data._index == 3 or self.data.is_hidden == 1 then
+            item:showUnknownIcon(true)
+        else
+            item:showUnknownIcon(false)
+            if list and item then
+                local hero_vo = HeroVo.New()
+                hero_vo:updateHeroVo(list)
+                item:setData(hero_vo)
+            end
+        end
+    end
+end
+function FriendCheckLineUpItem:setHeroListType()
+    local list = {}
+    for key, value in pairs(self.data.partner_list) do
+        local cfg = Config.PartnerData.data_partner_base[value.bid]
+        table.insert(list,cfg)
+    end
+    local dic_camp = {}
+    for i,v in pairs(list) do
+        if v.camp_type ~= nil then
+            if dic_camp[v.camp_type] == nil then
+                dic_camp[v.camp_type] = 1
+            else
+                dic_camp[v.camp_type] = dic_camp[v.camp_type] + 1
+            end
+        end
+    end
+    local halo_form_id_list = BattleController:getInstance():getModel():getFormIdListByCamp(dic_camp,PartnerConst.Fun_FormToBattle_Type[self.fun_form_type])
+    local halo_icon_config, alien_effect = BattleController:getInstance():getModel():getCampIconConfigByIds(clone(halo_form_id_list))
+    if halo_icon_config then
+        local halo_res = PathTool.getCampGroupIcon(halo_icon_config.icon)
+        self.halo_icon_load = loadImageTextureFromCDN(self.halo_btn, halo_res, ResourcesType.single, self.halo_icon_load)
+        addCountForCampIcon(self.halo_btn, halo_icon_config.nums)
+    else
+        local halo_res = PathTool.getCampGroupIcon(1000)
+        self.halo_icon_load = loadImageTextureFromCDN(self.halo_btn, halo_res, ResourcesType.single, self.halo_icon_load)
+        addCountForCampIcon(self.halo_btn)
+    end
+end
+function FriendCheckLineUpItem:DeleteMe()
+end

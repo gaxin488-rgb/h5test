@@ -1,0 +1,263 @@
+ -- ArtifactRecastSelectItem
+-- --------------------------------------------------------------------
+-- @author: lwc@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      神器保底技能选择界面
+-- <br/> 2020年5月16日
+-- --------------------------------------------------------------------
+ArtifactRecastSelectPanel = ArtifactRecastSelectPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+function ArtifactRecastSelectPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/artifact_recast_select_panel"
+
+    self.empty_res = PathTool.getPlistImgForDownLoad("bigbg","bigbg_3")
+    self.res_list = {
+        { path = self.empty_res, type = ResourcesType.single }
+    }
+end
+
+function ArtifactRecastSelectPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.title = self.main_panel:getChildByName("win_title")
+    self.title:setString(TI18N("自选技能"))
+
+    self.tips = createRichLabel(22, cc.c4b(0x64,0x32,0x23,0xff), cc.p(0.5, 0.5), cc.p(350,474),nil,nil,600)
+    self.main_container:addChild(self.tips)
+    self.tips:setString(TI18N("本次重铸必出<div fontcolor=#249003>你选择的</div>稀有或强力技能"))
+    self.scroll_view = self.main_container:getChildByName("scroll_view")
+end
+
+function ArtifactRecastSelectPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose) ,true, 2)
+
+    self:addGlobalEvent(HeroEvent.Artifact_Recast_Event, function (  )
+        self:_onClickBtnClose()
+    end)
+    
+end
+
+--关闭
+function ArtifactRecastSelectPanel:_onClickBtnClose()
+    controller:openArtifactRecastSelectPanel(false)
+end
+
+
+function ArtifactRecastSelectPanel:openRootWnd(data, partner_id)
+    if not data then return end
+    self.data = data
+    self.item_config = data.config
+    self.partner_id = partner_id
+
+    local random_id = nil
+    if self.item_config.id == BackPackConst.Artifact.artifact_id_3 then --超级符文
+        self.tips:setString(TI18N("本次重铸必出<div fontcolor=#249003>你选择的</div>超稀有或超强力技能"))
+        local config = Config.PartnerArtifactData.data_artifact_const.starshine_skill_random_id
+        if config then
+            random_id = config.val
+        end
+    elseif self.item_config.id == BackPackConst.Artifact.artifact_id_1 then -- 彩虹符文
+        local config = Config.PartnerArtifactData.data_artifact_const.twinkle_skill_random_id
+        if config then
+            random_id = config.val
+        end
+    elseif self.item_config.id == BackPackConst.Artifact.artifact_id_2 then -- 闪烁符文
+        local config = Config.PartnerArtifactData.data_artifact_const.rainbow_skill_random_id
+        if config then
+            random_id = config.val
+        end
+    end
+    if not random_id then
+        return
+    end
+
+    self.skill_list = Config.PartnerArtifactData.data_artifact_random[random_id]
+    table.insert( self.skill_list, 0 )
+    self:updateList()
+end
+
+function ArtifactRecastSelectPanel:updateList()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.scroll_view:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 160,                -- 单元的尺寸width
+            item_height = 410,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.scroll_view, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.item_scrollview:setClickEnabled(false)
+    end
+    self.item_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ArtifactRecastSelectPanel:createNewCell(width, height)
+   local cell = ArtifactRecastSelectItem.new(width, height, self)
+    -- cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function ArtifactRecastSelectPanel:numberOfCells()
+    if not self.skill_list then return 0 end
+    return #self.skill_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function ArtifactRecastSelectPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.skill_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function ArtifactRecastSelectPanel:close_callback()
+    if self.item_scrollview then 
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    controller:openArtifactRecastSelectPanel(false)
+end
+
+
+------------------------------------------
+-- 子项
+ArtifactRecastSelectItem = class("ArtifactRecastSelectItem", function()
+    return ccui.Widget:create()
+end)
+
+function ArtifactRecastSelectItem:ctor(width, height, parent)
+    self.parent = parent
+
+    self.item_list = {}
+    self:configUI(width, height)
+    self:register_event()
+end
+
+function ArtifactRecastSelectItem:configUI(width, height)
+    self.size = cc.size(width, height)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("hero/artifact_recast_select_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    local root_size = self.root_wnd:getContentSize()
+    self.root_wnd:setPosition((width - root_size.width) * 0.5 , 0)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+
+    self.skill_node = main_container:getChildByName("skill_node")
+    self.skill_item = SkillItem.new(true,true,true,0.9)
+    self.skill_node:addChild(self.skill_item)
+
+    self.skil_name = main_container:getChildByName("skil_name")
+    self.skil_name:setFontSize(20)
+    self.desc = createRichLabel(20,cc.c3b(0x68,0x45,0x2a),cc.p(0.5,1),cc.p(80, 232),0,nil,135)
+    main_container:addChild(self.desc)
+
+    self.comfirm_btn = main_container:getChildByName("comfirm_btn")
+    self.comfirm_btn_lable = self.comfirm_btn:getChildByName("label")
+    self.comfirm_btn_lable:setString(TI18N("选择"))
+end
+
+function ArtifactRecastSelectItem:register_event( )
+    registerButtonEventListener(self.comfirm_btn, function() self:onComfirmBtn() end,true, 1)
+end
+
+function ArtifactRecastSelectItem:onComfirmBtn()
+    if not self.parent then return end
+    if self.index and self.index == 4 and self.skill_id and self.skill_id<=0 then
+        controller:sender11033(self.parent.partner_id, self.parent.data.id, {{skill_id = 0}},0)
+    elseif self.skill_config then
+        controller:sender11033(self.parent.partner_id, self.parent.data.id, {{skill_id = self.skill_config.bid}},0)
+    end
+
+end
+
+function ArtifactRecastSelectItem:setData( skill_id )
+    if not skill_id then
+        return
+    end
+    self.skill_id = skill_id
+    if self.index and self.index == 4 and skill_id<=0 then
+        self.skill_item:setData(nil)
+        self.skil_name:setString(transformTextToShort(TI18N("随机强力技能"), 10))
+
+        if self.parent and self.parent.item_config and self.parent.item_config.id == BackPackConst.Artifact.artifact_id_3 then --超级符文
+            self.skill_item:showUnknownIcon(true,PathTool.getPlistImgForDownLoad("artifact", "artifact_icon_2"))
+            self.skil_name:setTextColor(cc.c3b(162,15,0))
+            self.skill_item:showUnusualIcon(true,4)
+            self.desc:setString(transformTextToShort(TI18N("获得一个随机强力超级技能"), 36))
+        else
+            self.skill_item:showUnknownIcon(true)
+            self.skil_name:setTextColor(cc.c3b(179,88,0))
+            self.skill_item:showUnusualIcon(true,2)
+            self.desc:setString(transformTextToShort(TI18N("获得一个随机强力高级技能"), 36))
+        end
+    else
+        self.skill_config = Config.SkillData.data_get_skill(skill_id)
+        if not self.skill_config then return end
+
+        local temp_lev = self.skill_config.level
+        if self.skill_config.client_lev and self.skill_config.client_lev>0 then
+            temp_lev = self.skill_config.client_lev
+        end
+
+        local name_color = PartnerConst.SkillColor[temp_lev]
+        name_color = name_color or cc.c3b(104,69,42)
+        self.skil_name:setTextColor(name_color)
+        self.skil_name:setString(transformTextToShort(self.skill_config.name, 10))
+        self.skill_item:setData(self.skill_config)
+
+        self.desc:setString(transformTextToShort(self.skill_config.des, 36))
+
+        if model:checkIsUnusualSkillById(self.skill_config.bid) then -- 稀有
+            self.skill_item:showUnusualIcon(true,1)
+        elseif model:checkIsUnusualSkillById2(self.skill_config.bid) then --强力
+            self.skill_item:showUnusualIcon(true,1)
+        elseif model:checkIsUnusualSkillById3(self.skill_config.bid) then --超级稀有
+            self.skill_item:showUnusualIcon(true,3)
+        elseif model:checkIsUnusualSkillById4(self.skill_config.bid) then --超级强力
+            self.skill_item:showUnusualIcon(true,3)
+        end
+        self.skill_item:showUnknownIcon(false)
+    end
+
+end
+
+function ArtifactRecastSelectItem:DeleteMe( )
+    if self.skill_item then
+        self.skill_item:DeleteMe()
+    end
+    self.skill_item = nil
+    self:removeAllChildren()
+    self:removeFromParent()
+end

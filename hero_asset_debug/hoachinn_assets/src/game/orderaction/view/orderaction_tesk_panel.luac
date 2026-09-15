@@ -1,0 +1,267 @@
+--******** 文件说明 ********
+-- @Author:      hyxing 
+-- @description: 任务界面
+-- @DateTime:    2019-04-19 16:38:31
+-- *******************************
+OrderActionTeskPanel = class("OrderActionTeskPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = OrderActionController:getInstance()
+local controll_action = ActionController:getInstance()
+local table_insert = table.insert
+local string_format = string.format
+function OrderActionTeskPanel:ctor(period)
+    self.period = period or 1
+    self.cur_task_index = nil
+
+    self:layoutUI()
+    self:registerEvents()
+end
+function OrderActionTeskPanel:layoutUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("orderaction/tesk_panel"))
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(656,562))
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+
+    self.time_desc = createRichLabel(22, OrderActionConstants.ColorConst[9], cc.p(0,0.5), cc.p(25,-45), nil, nil, 400)
+    main_container:addChild(self.time_desc)
+
+    self.tab_view_list = {}
+    local name_str = TI18N("终极试炼")
+    if self.period == 2 then
+        name_str = TI18N("终极冒险")
+    end
+    local name = {TI18N("每日任务"),TI18N("每周挑战"),name_str}
+    self.title_name_list = name
+    for i=1,3 do
+        local tab = {}
+        tab.btn_view = main_container:getChildByName("tab_view_"..i)
+        tab.normal = tab.btn_view:getChildByName("normal")
+        tab.select = tab.btn_view:getChildByName("select")
+        tab.select:setVisible(false)
+        tab.name = tab.btn_view:getChildByName("name")
+        tab.name:setString(name[i])
+        tab.redpoint = tab.btn_view:getChildByName("redpoint")
+        tab.redpoint:setVisible(false)
+        self.tab_view_list[i] = tab
+    end
+
+    local item_goods = main_container:getChildByName("item_goods")
+    local scroll_view_size = item_goods:getContentSize()
+    local setting = {
+        item_class = OrderActionTeskItem,
+        start_x = 0,
+        space_x = 0,
+        start_y = 0,
+        space_y = 5,
+        item_width = 508,
+        item_height = 99,
+        row = 0,
+        col = 1,
+        need_dynamic = true
+    }
+    self.child_scrollview = CommonScrollViewLayout.new(item_goods, cc.p(0,0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.child_scrollview:setSwallowTouches(false)
+    self:setTabRedPoint()
+    self:tabChargeTaskView(1)
+end
+function OrderActionTeskPanel:tabChargeTaskView(index)
+    index = index or 1
+    if self.cur_task_index == index then return end
+    if self.cur_tab_view ~= nil then
+        self.cur_tab_view.select:setVisible(false)
+        self.cur_tab_view.name:setTextColor(OrderActionConstants.ColorConst[10])
+    end
+    self.cur_task_index = index
+    self.cur_tab_view = self.tab_view_list[index]
+    if self.cur_tab_view ~= nil then
+        self.cur_tab_view.select:setVisible(true)
+        self.cur_tab_view.name:setTextColor(OrderActionConstants.ColorConst[9])
+    end
+    self:setTaskGetStatus()
+end
+function OrderActionTeskPanel:setTaskGetStatus()
+    local cur_day = controller:getModel():getCurDay()
+    local data_list = self:setTaskData(self.period,cur_day,self.cur_task_index)
+    local time = 0
+    if data_list then
+        local list = {}
+        for i,v in pairs(data_list) do
+            local task_list = controller:getModel():getInitTaskData(v.goal_id)
+            if task_list then
+                v.status = task_list.finish
+                v.value = task_list.value
+                v.target_val = task_list.target_val
+                if time == 0 then
+                    time = task_list.end_time - GameNet:getInstance():getTime()
+                end
+            end
+            table_insert(list,v)
+        end
+        controller:getModel():sortTeskItemList(list)
+        self.child_scrollview:setData(list)
+    end
+
+    local name = self.title_name_list[self.cur_task_index] or ""
+    local setting = {}
+    setting.label_type = CommonAlert.type.rich
+    setting.time_title = name..TI18N("刷新:")
+    setting.time_color = "#249003"
+
+    local pos_y = -45
+    if self.period == 2 then
+        pos_y = -18
+    end
+    self.time_desc:setPositionY(pos_y)
+    commonCountDownTime(self.time_desc, time, setting)
+end
+--红点
+function OrderActionTeskPanel:setTabRedPoint()
+    local cur_day = controller:getModel():getCurDay()
+    for i=1,3 do
+        local data_list = self:setTaskData(self.period,cur_day,i)
+        if data_list then
+            local status = false
+            for i,v in pairs(data_list) do
+                local task_list = controller:getModel():getInitTaskData(v.goal_id)
+                if task_list then
+                    if task_list.finish == 1 then
+                        status = true
+                        break
+                    end
+                end
+            end
+            self.tab_view_list[i].redpoint:setVisible(status)
+        end
+    end
+end
+
+function OrderActionTeskPanel:setTaskData(period,day,index)
+    index = index or 1
+    local sort_list = nil
+    local tesk_list = controller:getModel():getTaskInduct(index)
+    if tesk_list then
+        sort_list = tesk_list
+    else
+        controller:getModel():setTaskInduct(period,day,index)
+        local data = controller:getModel():getTaskInduct(index)
+        if data then
+            sort_list = data
+        end
+    end
+    return sort_list
+end
+function OrderActionTeskPanel:registerEvents()
+    if not self.update_taskget_event then
+        self.update_taskget_event = GlobalEvent:getInstance():Bind(OrderActionEvent.OrderAction_TaskGet_Event,function()
+            self:setTaskGetStatus()
+            self:setTabRedPoint()
+        end)
+    end
+
+    for i,v in pairs(self.tab_view_list) do
+        registerButtonEventListener(v.btn_view, function()
+            self:tabChargeTaskView(i)
+        end,false, 1)
+    end
+end
+function OrderActionTeskPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+function OrderActionTeskPanel:DeleteMe()
+    doStopAllActions(self.time_desc)
+    if self.update_taskget_event then
+        GlobalEvent:getInstance():UnBind(self.update_taskget_event)
+        self.update_taskget_event = nil
+    end
+
+    if self.child_scrollview then
+        self.child_scrollview:DeleteMe()
+        self.child_scrollview = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+------------------------------------------
+-- 子项
+OrderActionTeskItem = class("OrderActionTeskItem", function()
+    return ccui.Widget:create()
+end)
+
+function OrderActionTeskItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function OrderActionTeskItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("orderaction/tesk_item"))
+    self:setContentSize(cc.size(507,99))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.btn_goto = main_container:getChildByName("btn_goto")
+    self.btn_goto:getChildByName("Text_3"):setString(TI18N("前往"))
+    self.btn_goto:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_get:getChildByName("Text_3"):setString(TI18N("领取"))
+    self.btn_get:setVisible(false)
+    self.spr_get = main_container:getChildByName("spr_get")
+    self.spr_get:setVisible(false)
+
+    self.big_title = main_container:getChildByName("big_title")
+    self.big_title:setString("")
+    self.small_title = main_container:getChildByName("small_title")
+    self.small_title:setString("")
+
+    if not self.task_reward then
+        self.task_reward = BackPackItem.new(nil,true,nil,0.6)
+        main_container:addChild(self.task_reward)
+        self.task_reward:setPosition(cc.p(59, 48))
+        self.task_reward:setDefaultTip()
+    end
+end
+function OrderActionTeskItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        if self.data and self.data.goal_id then
+            controller:send25302(self.data.goal_id)
+        end
+    end ,true, 1)
+    registerButtonEventListener(self.btn_goto, function()
+        if self.data and self.data.show_icon ~= "" then
+            StrongerController:getInstance():clickCallBack(self.data.show_icon)
+        end
+    end ,true, 1)
+end
+
+function OrderActionTeskItem:setData(data)
+    if not data then return end
+    self.data = data
+    if self.task_reward and data.award[1] and data.award[1][1] and data.award[1][2] then
+        self.task_reward:setBaseData(data.award[1][1],data.award[1][2])
+    end
+    self.big_title:setString(data.title or "")
+    local desc = data.desc or ""
+    local value = MoneyTool.GetMoneyString(data.value or 0)
+    local target_val = MoneyTool.GetMoneyString(data.target_val or 0)
+    local str = string_format("%s (%s/%s)",desc,value,target_val)
+    self.small_title:setString(str)
+
+    self.btn_goto:setVisible(data.status == 0)
+    self.btn_get:setVisible(data.status == 1)
+    self.spr_get:setVisible(data.status == 2)
+end
+
+function OrderActionTeskItem:DeleteMe()
+    if self.task_reward then 
+       self.task_reward:DeleteMe()
+       self.task_reward = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

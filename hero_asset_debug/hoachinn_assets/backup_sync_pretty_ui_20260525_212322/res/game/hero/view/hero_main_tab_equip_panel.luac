@@ -1,0 +1,553 @@
+-- --------------------------------------------------------------------
+-- @author: lwc@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      竖版伙伴装备信息面板
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+HeroMainTabEquipPanel = class("HeroMainTabEquipPanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local role_vo = RoleController:getInstance():getRoleVo()
+
+--@power_click 那边传过来的战力node
+function HeroMainTabEquipPanel:ctor(power_click)  
+    self:config()
+    self:layoutUI(power_click)
+    self:registerEvents()
+end
+function HeroMainTabEquipPanel:config()
+    --装备item 列表
+    self.equip_item_list = {}
+
+    self.equip_type_list = {}
+    local base_equip_type_list = HeroConst.EquipPosList or {1, 2, 3, 4}
+    for _, equip_type in ipairs(base_equip_type_list) do
+        table_insert(self.equip_type_list, equip_type)
+    end
+    for equip_type = 1, 6 do
+        local has_type = false
+        for _, old_type in ipairs(self.equip_type_list) do
+            if old_type == equip_type then
+                has_type = true
+                break
+            end
+        end
+        if not has_type then
+            table_insert(self.equip_type_list, equip_type)
+        end
+    end
+
+    self.equip_icon_name_list = {
+        [BackPackConst.item_type.WEAPON] = "hero_info_7",  --武器icon
+        [BackPackConst.item_type.SHOE] = "hero_info_10",  --鞋子icon
+        [BackPackConst.item_type.CLOTHES] = "hero_info_9",  --衣服icon 
+        [BackPackConst.item_type.HAT] = "hero_info_8",  --裤子icon
+        [5] = "hero_info_11", --武器icon--神器
+        [6] = "hero_info_11", --武器icon
+        -- 额外扩展的神器槽位（7、8），UI/服务端支持时可用
+        [7] = "hero_info_11",
+        [8] = "hero_info_11",
+    }   
+
+    --神器解锁条件
+    self.artifact_lock_list = model.artifact_lock_list
+end
+
+function HeroMainTabEquipPanel:layoutUI(power_click)
+    local csbPath = PathTool.getTargetCSB("hero/hero_main_tab_equip_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+    --那边传过来的战力node()
+    -- self.power_click = power_click
+    self.tab_panel = self.root_wnd:getChildByName("tab_panel")
+
+    self.equip_node_list = {}
+    self.artifact_item_list = {}
+    self.is_new_equip_csb = self.tab_panel:getChildByName("equip_node9") ~= nil
+    if self.is_new_equip_csb then
+        self.equip_node_index_list = {1, 3, 2, 4, 7, 8}
+        self.artifact_node_index_list = {5, 9, 6, 10, 11, 12}
+        self.hero_slot_node_scale = 0.88
+        self.hero_slot_item_scale = 0.76
+        self.hero_slot_icon_size = 56
+        self.hero_lock_scale = 0.72
+        self.hero_artifact_bg_scale = 0.82
+    else
+        self.equip_node_index_list = {1, 2, 3, 4}
+        self.artifact_node_index_list = {5, 6}
+        self.hero_slot_node_scale = 1
+        self.hero_slot_item_scale = 0.8
+        self.hero_slot_icon_size = 60
+        self.hero_lock_scale = 0.8
+        self.hero_artifact_bg_scale = 0.9
+    end
+
+    for slot=1,#self.equip_node_index_list do
+        local node_index = self.equip_node_index_list[slot]
+        local equip_type = self.equip_type_list[slot] or slot
+        self.equip_node_list[slot] = self.tab_panel:getChildByName("equip_node"..node_index)
+
+        if self.equip_node_list[slot] then
+            self.equip_node_list[slot]:setScale(self.hero_slot_node_scale)
+            local item = BackPackItem.new(false,true,nil,self.hero_slot_item_scale,false)
+            item:setName("guidesign_equip_item_"..node_index)
+            self.equip_node_list[slot]:addChild(item,1)
+            item:setPosition(cc.p(0,0))
+            item:addCallBack(function() self:selectEquipByType(equip_type) end)
+            local icon_name = self.equip_icon_name_list[equip_type] or "hero_info_7"
+            local res= PathTool.getResFrame("hero", icon_name)
+            local empty_icon = createImage(item:getRoot(), res,self.hero_slot_icon_size,self.hero_slot_icon_size, cc.p(0.5,0.5), true, 10, false)
+            item.empty_icon = empty_icon
+            self.equip_item_list[equip_type] = item
+        end
+    end
+    self.img_lock = {}
+    self.lab_lock = {}
+    self.img_box = {}
+    self.img_bg = {}
+
+    self.artifact_slot_count = #self.artifact_node_index_list
+    for i=1,self.artifact_slot_count do
+        local ui_pos = self.artifact_node_index_list[i]
+        self.img_lock[i] = self.tab_panel:getChildByName("img_lock"..ui_pos)
+        if self.img_lock[i] then self.img_lock[i]:setScale(self.hero_lock_scale) end
+        self.lab_lock[i] = self.tab_panel:getChildByName("lab_lock"..ui_pos)
+        if self.lab_lock[i] then self.lab_lock[i]:setScale(self.hero_lock_scale) end
+        self.img_box[i]  = self.tab_panel:getChildByName("artifacts_bg_"..i)
+        if self.img_box[i] then self.img_box[i]:setScale(self.hero_artifact_bg_scale) end
+        local equip_node = self.tab_panel:getChildByName("equip_node"..ui_pos)
+        self.img_bg[i]  = equip_node and equip_node:getChildByName("box_34") or nil
+        if self.img_bg[i] then self.img_bg[i]:setScale(self.hero_artifact_bg_scale) end
+        if equip_node then
+            equip_node:setScale(self.hero_slot_node_scale)
+            local item = BackPackItem.new(false,true,nil,self.hero_slot_item_scale,false)
+            item:setName("guidesign_equip_item_"..ui_pos)
+            equip_node:addChild(item,1)
+            item:setPosition(cc.p(0,0))
+            item:addCallBack(function() self:selectArtifactByPos(i) end)
+            local res= PathTool.getResFrame("hero", self.equip_icon_name_list[5] or "hero_info_11")
+            local empty_icon = createImage(item:getRoot(), res,self.hero_slot_icon_size,self.hero_slot_icon_size, cc.p(0.5,0.5), true, 10, false)
+            item.empty_icon = empty_icon
+            item:setBackgroundOpacity(0)
+            self.artifact_item_list[i] = item
+        end
+    end
+
+    self.key_up_btn = self.tab_panel:getChildByName("key_up_btn")
+    self.key_up_btn:getChildByName("label"):setString("Mặc nhanh")
+    -- self.key_up_btn:setPosition(cc.p(158,355))
+    self.discharge_btn = self.tab_panel:getChildByName("discharge_btn")
+    self.discharge_btn:getChildByName("label"):setString("Tháo nhanh")
+    -- self.discharge_btn:setVisible(false)
+end
+
+--事件
+function HeroMainTabEquipPanel:registerEvents()
+    registerButtonEventListener(self.key_up_btn, function() self:onClickKeyUpBtn()  end ,true)
+    registerButtonEventListener(self.discharge_btn, function() self:onClickDischargeBtn()  end ,true)
+
+    if self.hero_data_update_event == nil then
+        self.hero_data_update_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Update, function(hero_vo)
+            if not hero_vo or not self.hero_vo then return end
+            if hero_vo.partner_id == self.hero_vo.partner_id then
+                self:updateArtifactInfo(self.hero_vo)
+            end
+        end)
+    end
+
+    --英雄信息更新
+    if self.hero_equip_update_event == nil then
+        self.hero_equip_update_event = GlobalEvent:getInstance():Bind(HeroEvent.Equip_Update_Event, function()
+            if not self.hero_vo then return end
+            self:updateInfo(self.hero_vo)
+            self:updateOneKeyBtnStatus()
+        end)
+    end
+    --红点更新事件..英雄信息更新和 背包的信息更新 才能判断红点
+    if self.hero_equip_redpoint_event == nil then
+        self.hero_equip_redpoint_event = GlobalEvent:getInstance():Bind(HeroEvent.Equip_RedPoint_Event, function()
+            if not self.hero_vo then return end
+            self:updateRedPoint()
+            self:updateOneKeyBtnStatus()
+        end)
+    end
+
+    --神器信息
+    if not self.update_artifact_event then 
+        self.update_artifact_event = GlobalEvent:getInstance():Bind(HeroEvent.Artifact_Update_Event, function(vo)
+            if not self.hero_vo then return end
+            self:updateArtifactInfo(self.hero_vo)
+        end)
+    end
+end
+
+-- 更新一键穿戴/卸下按钮显示
+function HeroMainTabEquipPanel:updateOneKeyBtnStatus(  )
+    if self.hero_vo and self.hero_vo.eqm_list then
+        -- 装备有红点时，或者没穿戴任何装备时，显示一键穿戴，否则显示一键卸下
+        -- if self.is_btn_redpoint or tableLen(self.hero_vo.eqm_list) <= 0 then
+        --     self.key_up_btn:setVisible(true)
+        --     -- self.discharge_btn:setVisible(false)
+        --     self.discharge_btn:setVisible(true)
+        -- else
+        --     -- self.key_up_btn:setVisible(false)
+            self.key_up_btn:setVisible(true)
+            self.discharge_btn:setVisible(true)
+        -- end
+    else
+        self.key_up_btn:setVisible(false)
+        self.discharge_btn:setVisible(false)
+    end
+end
+
+--一键穿戴
+function HeroMainTabEquipPanel:onClickKeyUpBtn()
+    if not self.hero_vo then return end
+    controller:sender11010(self.hero_vo.partner_id, 0)
+end
+
+-- 一键卸下
+function HeroMainTabEquipPanel:onClickDischargeBtn(  )
+    if not self.hero_vo then return end
+    controller:sender11011(self.hero_vo.partner_id, 0)
+end
+
+--@ index 索引  如果是装备可以是装备类型 equip_type
+function HeroMainTabEquipPanel:selectEquipByIndex(index)
+    if self.artifact_node_index_list then
+        for pos, node_index in ipairs(self.artifact_node_index_list) do
+            if index == node_index then
+                self:selectArtifactByPos(pos)
+                return
+            end
+        end
+    end
+    self:selectEquipByType(index)
+end
+
+function HeroMainTabEquipPanel:selectArtifactByPos(pos)
+    if not self.hero_vo then return end
+    local equip_vo = self.artifact_display_list and self.artifact_display_list[pos] or (self.hero_vo.artifact_list and self.hero_vo.artifact_list[pos] or nil)
+    if equip_vo == nil then
+        local artifact_lock = self.artifact_lock_list[pos]
+        if artifact_lock then
+            if artifact_lock[1] == 'lev' then
+                if self.hero_vo.lev < artifact_lock[2] then
+                    message(string_format( TI18N("语言_c_3034"),artifact_lock[2]))
+                    return
+                end
+            elseif artifact_lock[1] == 'star' then
+                if self.hero_vo.star < artifact_lock[2] then
+                    message(string_format( TI18N("语言_c_3035"),artifact_lock[2]))
+                    return
+                end
+            end
+        end
+    end
+
+    if equip_vo and next(equip_vo) ~=nil then
+        controller:openArtifactTipsWindow(true, equip_vo, PartnerConst.ArtifactTips.partner, self.hero_vo.partner_id, pos, self.lock_list and self.lock_list[pos])
+    else
+        controller:openArtifactListWindow(true, pos, self.hero_vo.partner_id)
+    end
+end
+
+function HeroMainTabEquipPanel:selectEquipByType(equip_type)
+    if not self.hero_vo then return end
+    local equip_list = model:getHeroEquipList(self.hero_vo.partner_id)
+    local equip_vo = self.slot_equip_vo_list and self.slot_equip_vo_list[equip_type] or equip_list[equip_type]
+    if equip_vo ~= nil then
+        controller:openEquipTips(true, equip_vo, PartnerConst.EqmTips.partner, self.hero_vo)
+    else
+        controller:openEquipPanel(true,equip_type,self.hero_vo.partner_id)
+    end
+end
+
+
+function HeroMainTabEquipPanel:setData(hero_vo)
+    if not hero_vo then return end
+    self.hero_vo = hero_vo
+    self:updateInfo(hero_vo)
+    self:updateRedPoint()
+    self:updateOneKeyBtnStatus()
+end
+
+function HeroMainTabEquipPanel:updateRedPoint()
+    --按钮的红点
+    local is_btn_redpoint = false
+    --装备红点
+    for i,equip_type in ipairs(self.equip_type_list) do
+        local is_redpoint = self:updateEachEquipRedPoint(equip_type)
+        if not is_btn_redpoint then
+            is_btn_redpoint = is_redpoint
+        end
+    end
+
+    addRedPointToNodeByStatus(self.key_up_btn, is_btn_redpoint, 5, 5)
+    -- if is_btn_redpoint then
+    --     -- self.key_up_btn:setVisible(true)
+    --     addRedPointToNodeByStatus(self.key_up_btn, is_btn_redpoint, 5, 5)
+    --     -- if self.power_click then
+    --     --     self.power_click:setVisible(false)
+    --     -- end
+    -- else
+    --     addRedPointToNodeByStatus(self.key_up_btn, is_btn_redpoint, 5, 5)
+    --     -- if self.power_click then
+    --     --     self.power_click:setVisible(true)
+    --     -- end
+    --     -- self.key_up_btn:setVisible(false)
+    -- end
+    self.is_btn_redpoint = is_btn_redpoint
+end
+
+--更新圣器的红点
+function HeroMainTabEquipPanel:updateArtifactRedPoint()
+    --符文(神器) 红点
+    if self.lock_list then
+        local slot_num = self.artifact_slot_count or math.max(2, #self.artifact_lock_list)
+        for i=1,slot_num do
+            if self.img_box[i] then
+                if not self.lock_list[i] then
+                    local equip_vo = self.artifact_display_list and self.artifact_display_list[i] or (self.hero_vo.artifact_list and self.hero_vo.artifact_list[i] or nil)
+                    local is_redpoint = HeroCalculate.checkSingleArtifactRedPoint(equip_vo)
+                    -- item:showRedPoint(is_redpoint)
+                    addRedPointToNodeByStatus(self.img_box[i], is_redpoint, -1, -10)
+                    if self.img_box[i].red_point then
+                        self.img_box[i].red_point:setScale(0.7)
+                    end
+                else
+                    addRedPointToNodeByStatus(self.img_box[i], false)
+                end
+            end
+        end
+    end
+end
+
+--更新每一个装备红点
+function HeroMainTabEquipPanel:updateEachEquipRedPoint(equip_type)
+    if not self.hero_vo then return false end
+    local equip_list = model:getHeroEquipList(self.hero_vo.partner_id)
+    local item = self.equip_item_list[equip_type]
+    if not item then return false end
+    local is_redpoint = HeroCalculate.checkSingleHeroEachPosEquipRedPoint(equip_type, equip_list[equip_type])
+    item:showRedPoint(is_redpoint)
+    return is_redpoint
+end
+
+function HeroMainTabEquipPanel:updateInfo(hero_vo)
+    if not hero_vo then return end
+    local equip_list = model:getHeroEquipList(hero_vo.partner_id)
+    self.slot_equip_vo_list = {}
+    local used_key_list = {}
+
+    for _,_type in ipairs(self.equip_type_list) do
+        if equip_list[_type] then
+            self.slot_equip_vo_list[_type] = equip_list[_type]
+            used_key_list[_type] = true
+        end
+    end
+
+    for key,equip_vo in pairs(equip_list) do
+        local equip_type = equip_vo and (equip_vo.type or (equip_vo.config and equip_vo.config.type)) or nil
+        if equip_type and self.equip_item_list[equip_type] and self.slot_equip_vo_list[equip_type] == nil then
+            self.slot_equip_vo_list[equip_type] = equip_vo
+            used_key_list[key] = true
+        end
+    end
+
+    if self.is_new_equip_csb then
+        for key,equip_vo in pairs(equip_list) do
+            if not used_key_list[key] and equip_vo then
+                local equip_type = equip_vo.type or (equip_vo.config and equip_vo.config.type) or key
+                if equip_type ~= BackPackConst.item_type.WEAPON and equip_type ~= BackPackConst.item_type.SHOE and
+                   equip_type ~= BackPackConst.item_type.CLOTHES and equip_type ~= BackPackConst.item_type.HAT then
+                    for ext_type=5,6 do
+                        if self.equip_item_list[ext_type] and self.slot_equip_vo_list[ext_type] == nil then
+                            self.slot_equip_vo_list[ext_type] = equip_vo
+                            used_key_list[key] = true
+                            break
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    for i,_type in ipairs(self.equip_type_list) do
+        local equip_vo = self.slot_equip_vo_list[_type]
+        local item = self.equip_item_list[_type]
+        if item then
+            if equip_vo then
+                item:setData(equip_vo)
+                if item.empty_icon then item.empty_icon:setVisible(false) end
+                item.equip_vo = equip_vo
+            else
+                item:setData()
+                if item.empty_icon then item.empty_icon:setVisible(true) end
+                item.equip_vo = nil
+                item:setBackgroundRes(PathTool.getResFrame("hero", "hero_info_32"))
+            end
+        end
+    end
+    self:updateArtifactInfo(hero_vo)
+end
+
+--神器信息
+function HeroMainTabEquipPanel:updateArtifactInfo( hero_vo )
+    --解锁信息
+    self.lock_list = {}
+    self.artifact_display_list = {}
+    local used_artifact_key_list = {}
+    if hero_vo.artifact_list then
+        for i=1,(self.artifact_slot_count or 4) do
+            if hero_vo.artifact_list[i] then
+                self.artifact_display_list[i] = hero_vo.artifact_list[i]
+                used_artifact_key_list[i] = true
+            end
+        end
+        for key,equip_vo in pairs(hero_vo.artifact_list) do
+            if not used_artifact_key_list[key] and equip_vo then
+                for i=1,(self.artifact_slot_count or 4) do
+                    if self.artifact_display_list[i] == nil then
+                        self.artifact_display_list[i] = equip_vo
+                        used_artifact_key_list[key] = true
+                        break
+                    end
+                end
+            end
+        end
+    end
+    -- 默认按 4 个神器槽位处理；若没有配置则视为已解锁
+    local slot_num = self.artifact_slot_count or 4
+    for i=1,slot_num do
+        local v = self.artifact_lock_list[i] or {'star', 0}
+        if self.img_lock[i] then self.img_lock[i]:setVisible(false) end
+        if self.lab_lock[i] then
+            self.lab_lock[i]:setVisible(true)
+            self.lab_lock[i]:setString("")
+        end
+        local is_lock = true
+        local item = self.artifact_item_list and self.artifact_item_list[i] or nil
+        if v[1] == 'lev' then
+            if hero_vo.lev >= v[2]  then
+                --已解锁
+                is_lock = false
+                if self.img_box[i] then self.img_box[i]:setVisible(true) end
+                if self.img_bg[i] then self.img_bg[i]:setVisible(true) end
+                if item then
+                    item:setVisible(true)
+                end
+            else
+                local max_lev = Config.PartnerData.data_partner_max_lev[self.hero_vo.bid]
+                if max_lev and max_lev >= v[2] then
+                    if self.img_lock[i] then self.img_lock[i]:setVisible(true) end
+                    if self.img_box[i] then self.img_box[i]:setVisible(true) end
+                    if self.img_bg[i] then self.img_bg[i]:setVisible(true) end
+                    if item then
+                        item:setVisible(true)
+                    end
+                    
+                    if self.lab_lock[i] then self.lab_lock[i]:setString(string.format(TI18N("语言_c_2867"),v[2])) end
+                else
+                    if self.img_box[i] then self.img_box[i]:setVisible(false) end
+                    if self.img_bg[i] then self.img_bg[i]:setVisible(false) end
+                    if item then
+                        item:setVisible(false)
+                    end
+                end
+            end
+        elseif v[1] == 'star' then
+            local max_star = Config.PartnerData.data_partner_max_star[self.hero_vo.bid]
+            if max_star and max_star < v[2] then
+                --策划要求不满星级的要隐藏
+                if self.img_box[i] then self.img_box[i]:setVisible(false) end
+                if self.img_bg[i] then self.img_bg[i]:setVisible(false) end
+                if item then
+                    item:setVisible(false)
+                end
+            else
+                if self.img_box[i] then
+                    self.img_box[i]:setVisible(true)
+                    if self.img_box[i].red_point then
+                        self.img_box[i].red_point:setVisible(false)
+                    end
+                end
+                if self.img_bg[i] then self.img_bg[i]:setVisible(true) end
+                if item then
+                    item:setVisible(true)
+                end
+                if hero_vo.star >= v[2] then
+                    is_lock = false
+                else
+                    if self.img_lock[i] then self.img_lock[i]:setVisible(true) end
+                    if self.lab_lock[i] then self.lab_lock[i]:setString(string.format(TI18N("语言_c_4742"),v[2])) end
+                end
+            end
+        end
+        self.lock_list[i] = is_lock
+    end
+    --self.artifact_item_list 是神器信息
+    if hero_vo.artifact_list then
+        local slot_num2 = self.artifact_slot_count or 4
+        for i=1,slot_num2 do
+            local item = self.artifact_item_list and self.artifact_item_list[i] or nil
+            local equip_vo = self.artifact_display_list and self.artifact_display_list[i] or hero_vo.artifact_list[i]
+            -- if not self.lock_list[i] and equip_vo then
+            --策划要求 原本 6星解锁 改成 7星解锁 .原本6星的已有数据的保留
+            if item and equip_vo then
+                item:setData(equip_vo)
+                if item.empty_icon then 
+                    item.empty_icon:setVisible(false)
+                end
+                item.equip_vo = equip_vo
+                if self.img_lock[i] then self.img_lock[i]:setVisible(false) end
+                if self.lab_lock[i] then self.lab_lock[i]:setVisible(false) end
+                item:setBackgroundOpacity(255)
+            elseif item then
+                item:setData()
+                if item.empty_icon then 
+                    item.empty_icon:setVisible(true)
+                end
+                item:setBackgroundOpacity(0)
+                item.equip_vo = nil
+            end
+        end
+    end
+
+    self:updateArtifactRedPoint()
+end
+
+function HeroMainTabEquipPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+
+--移除
+function HeroMainTabEquipPanel:DeleteMe()
+    if self.hero_data_update_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_update_event)
+        self.hero_data_update_event = nil
+    end
+    if self.hero_equip_update_event then
+        GlobalEvent:getInstance():UnBind(self.hero_equip_update_event)
+        self.hero_equip_update_event = nil
+    end
+    if self.hero_equip_redpoint_event then
+        GlobalEvent:getInstance():UnBind(self.hero_equip_redpoint_event)
+        self.hero_equip_redpoint_event = nil
+    end
+    if self.update_artifact_event then
+        GlobalEvent:getInstance():UnBind(self.update_artifact_event)
+        self.update_artifact_event = nil
+    end
+end

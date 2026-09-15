@@ -1,0 +1,284 @@
+local _controller = MallController:getInstance()
+local _model = _controller:getModel()
+--子项
+GiftShopItem = class("GiftShopItem", function()
+    return ccui.Widget:create()
+end)
+
+function GiftShopItem:ctor()
+    --增加一个购买间隔判断
+    self.touch_buying = false
+    --还可以买多少个
+    self.can_buy_num = 0 
+	self:configUI()
+	self:register_event()
+end
+
+function GiftShopItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("mall/gift_shop_item"))
+    self:addChild(self.root_wnd)
+    self:setContentSize(cc.size(622,156))
+    self:setAnchorPoint(0,0)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.has_get = main_container:getChildByName("has_get")
+    self.has_get:setVisible(false)
+    self.btn_charge = main_container:getChildByName("btn_charge")
+    self.charge_price = self.btn_charge:getChildByName("charge_price_label")
+    self.tip_txt = main_container:getChildByName("tip_txt")   
+    self.small_title =  main_container:getChildByName("small_title")   
+
+    -- local pos_x,pos_y = self.tip_txt:getPosition()
+    -- self.discount_label = createRichLabel(20,58,cc.p(0.5,0.5),cc.p(pos_x,pos_y),FONT_COMMON_LINE_SPACE,nil,177)
+	-- self.discount_label:setString("")
+	-- main_container:addChild(self.discount_label)
+	-- self.discount_label:setVisible(false)
+
+    local btn_size = self.btn_charge:getContentSize()
+    self.btn_charge_label = createRichLabel(26, cc.c3b(0xf8,0xef,0x76), cc.p(0.5, 0.5), cc.p(btn_size.width / 2, btn_size.height / 2))
+    self.btn_charge:addChild(self.btn_charge_label)
+
+    self.good_cons = main_container:getChildByName("good_cons")
+    local scroll_view_size = self.good_cons:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 5,                    -- x方向的间隔
+        start_y = 3,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.8,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.8,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.7,
+        is_backpack_item = true
+    }
+    self.good_scrollview = CommonScrollViewLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.good_scrollview:setSwallowTouches(false)
+end
+function GiftShopItem:register_event()
+	registerButtonEventListener(self.btn_charge, function()
+        if self.touch_buying then return end
+        _model.pay_click = true
+        if self.buy_month_ticket == nil then
+            self.buy_month_ticket = GlobalTimeTicket:getInstance():add(function()
+                self.touch_buying = false
+                if self.buy_month_ticket ~= nil then
+                    GlobalTimeTicket:getInstance():remove(self.buy_month_ticket)
+                    self.buy_month_ticket = nil
+                end
+            end,2)
+        end
+        if self.data and self.data.charge_id and self.can_buy_num > 0 then
+            self.touch_buying = true
+            if self.callback then
+                self:callback()
+            end
+            if self.data.charge_id and self.data.charge_id ~= 0 then
+                local charge_config = Config.ChargeData.data_charge_data[self.data.charge_id]
+                if charge_config then
+                    sdkOnPay(charge_config.val, 1, charge_config.id, charge_config.name, charge_config.name)
+                end
+                -- ActionController:getInstance():sender21016(self.data.charge_id)
+            else
+                local id = self.data.id
+                local num = 1
+                MallController:getInstance():sender13432(id,num)
+            end
+        else
+            message(TI18N("语言_c_1684"))
+        end
+	end, true, 1)
+    --除神秘商城以外的购买成功
+	if not self.buy_success_event then
+		self.buy_success_event = GlobalEvent:getInstance():Bind(MallEvent.COMMON_GIFT_SHOP_BUY_COMPLETE ,function ( data )
+			if not data or not self.data then return end
+            local id = self.data.id
+			if id and data.eid == id and next(data.ext or {}) ~= nil then
+				self.data.has_buy = data.ext[1].val
+                self:setData(self.data)
+			end
+		end)
+	end
+end
+function GiftShopItem:getData()
+    return self.data
+end
+function GiftShopItem:addCallBack(value)
+    self.callback =  value
+end
+--红点显示，免费的没领显示红点
+function GiftShopItem:updateRed()
+    if self.data.pay_type == MallConst.gift_shop_pay_type.free and self.data.has_buy <= 0 then
+        addRedPointToNodeByStatus(self.btn_charge,true,10,10)
+    else
+        addRedPointToNodeByStatus(self.btn_charge,false)
+    end
+end
+function GiftShopItem:setData(data)
+	self.data = data
+    self.small_title:setString(data.gift_name or "")
+    self:showPriceBtn(data)
+    self:updateRed()
+    self:showCount(data)
+    self:showItemList(data)
+end
+
+--展示购买按钮状态
+function GiftShopItem:showPriceBtn(data)
+    local pay_type = data and data.pay_type or 0
+    local has_buy = data and data.has_buy or 0
+    self.charge_str = ""
+    if pay_type == MallConst.gift_shop_pay_type.free then
+        self.charge_str = string.format(TI18N("语言_c_4440"),"0")
+    elseif pay_type == MallConst.gift_shop_pay_type.item then
+        if data.expend and data.expend[1] and data.expend[1][1] then
+            local id = data.expend[1][1]
+            local cost = data.expend[1][2]
+            self.charge_str = string.format("<img src='%s' scale=0.35 />%d",PathTool.getItemRes(id), cost)
+        end
+    elseif pay_type == MallConst.gift_shop_pay_type.charge then
+        if data.charge_id and data.charge_id ~= 0 then
+            local pay_value = GetMoneyNumForSDK("val",data.charge_id)
+            self.charge_str = pay_value
+            self.btn_charge_label:setString(string.format("<div outline=2,#5c2705>%s</div>",pay_value))
+        end
+    end
+    if self.charge_str then
+        self.btn_charge_label:setString(string.format("<div outline=2,#5c2705>%s</div>",self.charge_str))
+    end
+    local res_path = data.val == 0 and PathTool.getResFrame("common","common_d_1001") or PathTool.getResFrame("common","common_1027")
+    self.btn_charge:loadTexture(res_path, LOADTEXT_TYPE_PLIST)
+end
+
+--展示可购买提示
+function GiftShopItem:showCount(data)
+    local limit_num = 0
+    local is_show_limit_label = false
+    local has_buy = data.has_buy or 0 --已购买数量
+    if data["limit_count"] and data.limit_count>0 then
+        self.str = TI18N("语言_c_2036")
+        limit_num = data.limit_count
+        is_show_limit_label = true
+    elseif data["limit_this"] and data.limit_this>0 then
+        self.str = TI18N("语言_c_359")
+        limit_num = data.limit_this
+        is_show_limit_label = true
+    elseif data["limit_month"] and data.limit_month>0 then
+        self.str = TI18N("语言_c_2037")
+        limit_num = data.limit_month
+        is_show_limit_label = true
+    elseif data["limit_week"] and data.limit_week>0 then
+        self.str = TI18N("语言_c_1801")
+        limit_num = data.limit_week
+        is_show_limit_label = true
+    elseif data["limit_day"] and data.limit_day>0 then
+        self.str = TI18N("语言_c_1800")
+        limit_num = data.limit_day
+        is_show_limit_label = true
+    else
+        -- limit_num = 1
+        -- is_show_limit_label = false
+    end
+    if limit_num>0 and is_show_limit_label then
+		self.tip_txt:setVisible(true)
+		self.tip_txt:setString(string.format("%s:%s/%s",self.str,has_buy,limit_num))
+        self.can_buy_num = limit_num - has_buy
+		if has_buy >= limit_num then
+			self:setSellAll( true )
+		else
+			self:setSellAll( false )
+		end
+    else
+		self.tip_txt:setVisible(false)
+        self.can_buy_num = 1 - has_buy
+		if has_buy==1 then
+			self:setSellAll( true )
+		else
+			self:setSellAll( false )
+		end
+    end
+end
+
+--是否已买完
+function GiftShopItem:setSellAll( bool )
+	self.sell_all = bool
+    setChildUnEnabledCopy(bool,self.btn_charge)
+	self.btn_charge:setTouchEnabled(not bool)
+    if self.charge_str then
+        if bool then
+            self.btn_charge_label:setString(string.format("<div outline=2,#5c2705>%s</div>",TI18N("语言_c_210")))
+        else
+            self.btn_charge_label:setString(string.format("<div outline=2,#5c2705>%s</div>",self.charge_str))
+        end
+    end
+end
+
+--展示购买的物品获得
+function GiftShopItem:showItemList(data)
+    local list = {}
+    local reward = data.gift_items or data.reward or {}
+    for k, v in pairs(reward) do
+        local vo = {}
+        if v[1] and v[2] then
+            vo.bid = v[1]
+            vo.quantity = v[2]
+        end
+        table.insert(list, vo)
+    end
+    if #list > 4 then
+        self.good_scrollview:setClickEnabled(true)
+    else
+        self.good_scrollview:setClickEnabled(false)
+    end
+    self.good_scrollview:setData(list)
+    self.list = list
+    self.good_scrollview:addEndCallBack(function()
+        local list = self.good_scrollview:getItemList()
+        for k,v in pairs(list) do
+            if v.data and v.data.bid then
+                v:setDefaultTip()
+                v:setSwallowTouches(false)
+                v:showAddIcon(false)
+                v:showChooseIcon(false)
+            else
+                v:showAddIcon(true)
+                v:showChooseIcon(false)
+            end
+        end
+    end)
+    if tableLen(self.good_scrollview:getItemList()) == 0 then
+        delayOnce(function() 
+            if self and self.good_scrollview then
+                local list = self.good_scrollview:getItemList()
+                if list then
+                    for key, value in pairs(list) do
+                        if value and value.data and value.data.bid then
+                            local cfg = Config.ItemData.data_get_data(value.data.bid)
+                            if cfg and cfg.type and cfg.type == BackPackConst.item_type.HERO_HUN then
+                                value:initCamp(cfg.camp_type)
+                            end
+                        end
+                    end
+                end
+            end
+        end, 0.1)
+    end
+end
+
+function GiftShopItem:DeleteMe()
+	if self.buy_success_event then 
+        GlobalEvent:getInstance():UnBind(self.buy_success_event)
+        self.buy_success_event = nil
+    end
+	if self.buy_month_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.buy_month_ticket)
+        self.buy_month_ticket = nil
+    end
+	if self.good_scrollview then
+        self.good_scrollview:DeleteMe()
+        self.good_scrollview = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

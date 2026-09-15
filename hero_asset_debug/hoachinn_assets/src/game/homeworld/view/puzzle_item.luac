@@ -1,0 +1,193 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-06-24 15:18:54
+-- @description    : 
+		-- 拼图图鉴单个拼图
+---------------------------------
+local _controller = HomeworldController:getInstance()
+local _model = _controller:getModel()
+
+PuzzleItem = class("PuzzleItem", function()
+    return ccui.Widget:create()
+end)
+
+function PuzzleItem:ctor()
+	self:configUI()
+	self:registerEvent()
+end
+
+function PuzzleItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("homeworld/puzzle_item"))
+	if not self.root_wnd then return end
+    self.size = self.root_wnd:getContentSize()
+    -- self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+	self:setCascadeOpacityEnabled(true)
+
+	-- self.root_wnd:setAnchorPoint(0.5, 0.5)
+	-- self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+	self._ui = getAllCsbExportChildren(self.root_wnd)
+
+end
+
+function PuzzleItem:registerEvent(  )
+end
+
+function PuzzleItem:setData(book_id,is_can_click)
+	self.book_id = book_id
+	self.is_can_click = is_can_click
+	self.book_cfg = Config.PuzzleBookData.data_puzzle[self.book_id]
+	self.puzzle_cfg = Config.PuzzleBookData.data_block[self.book_id]
+	local res_end = ""
+	if is_can_click then
+		res_end = "_big"
+	end
+	local res = PathTool.getPlistImgForDownLoad("puzzle", self.book_cfg.img..res_end)
+	loadSpriteTexture(self._ui._icon_img, res, LOADTEXT_TYPE)
+
+	self.data = _model:getOnePuzzleData(self.book_id)
+	local num = self.book_cfg.total_num
+	if not self.black_list then
+		self.black_list = {}
+	end
+	if self.black_list and next(self.black_list) then
+		for k, v in pairs(self.black_list) do
+			v:setVisible(false)
+			if v.act_effect then
+				v.act_effect:setVisible(false)
+			end
+		end
+	end
+	local res = PathTool.getResFrame("puzzle", "puzzle_1")
+	local _w = self._ui._icon_img:getContentSize().width*0.5+2
+	local _h = self._ui._icon_img:getContentSize().height/(num*0.5)+2
+	for i=1,num do
+		local _x = (i-1)%2*(_w-2) + (_w-2)*0.5
+		local _y = self._ui._icon_img:getContentSize().height - math.floor((i-1)/2)*(_h-2) - (_h-2)*0.5
+		if not self.black_list[i] then
+			local item = createImage(self._ui._icon_img,res,_x,_y,cc.p(0.5,0.5),true,false,true)
+			item.index = i
+			self.black_list[i] = item
+		end
+		local item = self.black_list[i]
+		item:setContentSize(cc.size(_w,_h))
+		item:setPosition(cc.p(_x,_y))
+		item:setTouchEnabled(self.is_can_click)
+		item:addTouchEventListener(function(sender, event_type)
+			if self.is_can_click then
+				if event_type == ccui.TouchEventType.began then
+					item:setOpacity(178)
+				elseif event_type == ccui.TouchEventType.ended  then
+					item:setOpacity(255)
+					local status = _model:getOnePuzzleIsInAct(self.book_id)
+					if status then
+						local item_id = self.book_cfg.item_id
+						local item_cfg = Config.ItemData.data_get_data(item_id)
+						if item_cfg then
+							BackpackController:getInstance():openTipsSource(true, item_cfg)
+						end
+					else
+						local _txt = TI18N("语言_c_7642")
+						if self.puzzle_cfg[tableLen(self.data)+1] then
+							local item_data = self.puzzle_cfg[tableLen(self.data)+1].general_cost[1]
+							if item_data and next(item_data) then
+								local item_id = item_data[1]
+								local item_num = item_data[2]
+								local item_cfg = Config.ItemData.data_get_data(item_id)
+								if item_cfg then
+									local res = PathTool.getItemRes(item_cfg.icon)
+									local str = LangStringFormat(_txt,res,item_num)
+									CommonAlert.show( str, TI18N("语言_c_63"), function()
+										_controller:sender26025(self.puzzle_cfg[item.index].block_id)
+									end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_154"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+								end
+							end
+						end
+					end
+				elseif event_type == ccui.TouchEventType.canceled then
+					item:setOpacity(255)
+				end
+			end
+		end)
+		-- registerButtonEventListener(item,function()
+		-- 	if self.is_can_click then
+		-- 		local status = _model:getOnePuzzleIsInAct(self.book_id)
+		-- 		if status then
+		-- 			local item_id = self.book_cfg.item_id
+		-- 			local item_cfg = Config.ItemData.data_get_data(item_id)
+		-- 			if item_cfg then
+		-- 				BackpackController:getInstance():openTipsSource(true, item_cfg)
+		-- 			end
+		-- 		else
+		-- 			local _txt = TI18N("语言_c_7642")
+		-- 			if self.puzzle_cfg[tableLen(self.data)+1] then
+		-- 				local item_data = self.puzzle_cfg[tableLen(self.data)+1].general_cost[1]
+		-- 				if item_data and next(item_data) then
+		-- 					local item_id = item_data[1]
+		-- 					local item_num = item_data[2]
+		-- 					local item_cfg = Config.ItemData.data_get_data(item_id)
+		-- 					if item_cfg then
+		-- 						local res = PathTool.getItemRes(item_cfg.icon)
+		-- 						local str = LangStringFormat(_txt,res,item_num)
+		-- 						CommonAlert.show( str, TI18N("语言_c_63"), function()
+		-- 							_controller:sender26025(self.puzzle_cfg[item.index].block_id)
+		-- 						end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_154"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+		-- 					end
+		-- 				end
+		-- 			end
+		-- 		end
+		-- 	end
+		-- end,true,2)
+		item:setVisible(not self.data[item.index])
+	end
+end
+--设置激活spine
+function PuzzleItem:setActSpineData()
+	local data = _model:getPuzzleActData(self.book_id)
+	if data and next(data) then
+		local num = self.book_cfg.total_num
+		local action = PlayerAction.action_1
+		if num == 4 then
+			action = PlayerAction.action_1
+		else
+			action = PlayerAction.action_2
+		end
+		for k, v in pairs(self.black_list) do
+			local puzzle_id = v.index
+			if data and data[puzzle_id] then
+				if not v.act_effect then
+					local size = v:getContentSize()
+					v.act_effect = createEffectSpine("E50231", cc.p(size.width/2,size.height/2), cc.p(0.5, 0.5), false, action)
+					self._ui._icon_img:addChild(v.act_effect, 1)
+					v.act_effect:setPosition(cc.p(v:getPositionX(),v:getPositionY()))
+				end
+				v.act_effect:setVisible(true)
+				v.act_effect:setAnimation(0, action, false)
+				local function animationEventFunc(event)
+					if event.animation == PlayerAction.action_1 or event.animation == PlayerAction.action_2 then
+						v.act_effect:setVisible(false)
+					end
+				end
+				v.act_effect:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_COMPLETE)
+			end
+		end
+	end
+end
+
+function PuzzleItem:DeleteMe(  )
+	if self.black_list and next(self.black_list) then
+		for k, v in pairs(self.black_list) do
+			if v.act_effect then 
+				v.act_effect:setVisible(false)
+				v.act_effect:removeFromParent()
+				v.act_effect = nil
+			end
+			v:removeFromParent()
+			v=nil
+		end
+	end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

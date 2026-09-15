@@ -1,0 +1,560 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- 
+-- 
+-- @description:
+--      龙地洞
+-- <br/>Create: 2019-04-10
+-- --------------------------------------------------------------------
+HeavenHighController = HeavenHighController or BaseClass(BaseController)
+
+function HeavenHighController:config()
+    self.model = HeavenHighModel.New(self)
+    self.dispather = GlobalEvent:getInstance()
+end
+
+function HeavenHighController:getModel()
+    return self.model
+end
+
+function HeavenHighController:registerEvents()
+	-- 断线重连时需要清掉缓存数据
+    if self.re_link_game_event == nil then
+        self.re_link_game_event = GlobalEvent:getInstance():Bind(LoginEvent.RE_LINK_GAME, function()
+        	self.model:clearData()
+        	self:sender25234()
+        end)
+    end
+end
+
+-------------------@ c2s
+-- 请求天界基础数据
+function HeavenHighController:sender25234(  )
+	self:SendProtocal(25234, {})
+end
+
+-- 请求天界某一章节数据
+function HeavenHighController:sender25235( id )
+	local protocal = {}
+	protocal.id = id
+    self:SendProtocal(25235, protocal)
+end
+
+-- 请求挑战副本
+function HeavenHighController:sender25238( id, order_id )
+	local protocal = {}
+	protocal.id = id
+	protocal.order_id = order_id
+    self:SendProtocal(25238, protocal)
+end
+
+-- 请求天界副本阵法数据
+function HeavenHighController:sender25247(num)
+	if num then
+		self.team_num = num
+	end
+	local protocal = {}
+    self:SendProtocal(25247, protocal)
+end
+
+-- 设置天界副本阵法数据
+function HeavenHighController:sender25246( formations )
+	local protocal = {}
+	protocal.formations = formations
+    self:SendProtocal(25246, protocal)
+end
+
+-- 请求领取章节星级奖励
+function HeavenHighController:sender25244( id, award_id )
+	local protocal = {}
+	protocal.id = id
+	protocal.award_id = award_id
+    self:SendProtocal(25244, protocal)
+end
+
+function HeavenHighController:printData(id,data)
+	-- print("龙地洞协议返回",id,vardump(data))
+end
+
+------------------@ s2c
+function HeavenHighController:registerProtocals()
+	self:RegisterProtocal(25234, "handle25234")     -- 天界基础数据  25200
+	self:RegisterProtocal(25235, "handle25235")     -- 天界某一章节数据  25201
+	self:RegisterProtocal(25236, "handle25236")     -- 天界基础数据更新   25203
+	self:RegisterProtocal(25237, "handle25237")     -- 天界某一章数据更新  25204
+	self:RegisterProtocal(25238, "handle25238")     -- 天界挑战关卡  25205
+	self:RegisterProtocal(25239, "handle25239")     -- 天界挑战结算  25206
+	self:RegisterProtocal(25244, "handle25244")     -- 领取章节奖励返回  25215
+	self:RegisterProtocal(25245, "handle25245")     -- 当前是否还有未完成的战斗  25216
+	self:RegisterProtocal(25246, "handle25246")     -- 设置阵法数据返回  25211
+	self:RegisterProtocal(25247, "handle25247")     -- 天界副本阵法数据  25210
+	self:RegisterProtocal(25248, "handle25248")     -- 每日奖励  25233
+	self:RegisterProtocal(25249, "handle25249")     -- 领取钥匙
+	self:RegisterProtocal(25250, "handle25250")     -- 龙地洞进阶开启
+	self:RegisterProtocal(25251, "handle25251")     -- 战斗中星级条件刷新
+	self:RegisterProtocal(25254, "handle25254")     -- 战令基本信息
+	self:RegisterProtocal(25255, "handle25255")     -- 战令一键领取
+	self:RegisterProtocal(25256, "handle25256")     -- 战令任务基本信息
+	self:RegisterProtocal(25257, "handle25257")     -- 战令任务领取
+
+	self:RegisterProtocal(25242, "handle25242")     -- 龙地洞登录红点
+end
+
+-- 天界基础数据
+function HeavenHighController:handle25234( data )
+	self:printData(25234,data)
+	if data then
+		if data.count then
+			self.model:setLeftChallengeCount(data.count)
+		end
+		if data.buy_count then
+			self.model:setTodayBuyCount(data.buy_count)
+		end
+		if data.max_dun_id then
+			self.model:setMaxDunId(data.max_dun_id)
+		end
+		if data.chapter_info then
+			self.model:setChapterData(data.chapter_info)
+		end
+		if data.open then
+			self.model:setHeavenHighOpen(data.open)
+		end
+		if data.daily_reward then
+			self.model:setDailyReward(data)
+		end
+		GlobalEvent:getInstance():Fire(HeavenHighEvent.Get_Chapter_Data_Event)
+		GlobalEvent:getInstance():Fire(HeavenHighEvent.Update_Chapter_Basedata_Event)
+	end
+end
+
+-- 天界某一章节数据
+function HeavenHighController:handle25235( data )
+	self:printData(25235,data)
+	if data then
+		if data.dun_info then
+			self.model:setCustomsData(data.dun_info, data.id)
+		end
+		GlobalEvent:getInstance():Fire(HeavenHighEvent.Update_Chapter_Basedata_Event)
+	end
+end
+
+-- 天界基础数据更新
+function HeavenHighController:handle25236( data )
+	self:printData(25236,data)
+	if data then
+		if data.count then
+			self.model:setLeftChallengeCount(data.count)
+		end
+		if data.buy_count then
+			self.model:setTodayBuyCount(data.buy_count)
+		end
+		if data.max_dun_id then
+			self.model:setMaxDunId(data.max_dun_id)
+		end
+		if data.chapter_info then
+			self.model:updateChapterData(data.chapter_info)
+		end
+		GlobalEvent:getInstance():Fire(HeavenHighEvent.Update_Chapter_Count_Event)
+	end
+end
+
+-- 天界某一章数据更新
+function HeavenHighController:handle25237( data )
+	self:printData(25237,data)
+	if data then
+		if data.dun_info then
+			self.model:updateCustomsData(data.dun_info, data.id)
+			GlobalEvent:getInstance():Fire(HeavenHighEvent.Update_Chapter_Basedata_Event)
+		end
+	end
+end
+
+-- 挑战关卡
+function HeavenHighController:handle25238( data )
+	self:printData(25238,data)
+	if data then
+		message(data.msg)
+	end
+end
+
+-- 挑战结算
+function HeavenHighController:handle25239( data )
+	self:printData(25239,data)
+	if data then
+		BattleController:getInstance():openFinishView(true, BattleConst.Fight_Type.HeavenHighWar, data)
+	end
+end
+
+-- 天界副本阵法数据
+function HeavenHighController:handle25247( data )
+	self:printData(25247,data)
+	for key, value in pairs(data.formations) do
+		if value.order > self.team_num then
+			value.pos_info = {}
+		end
+	end
+	self.model:setBossForm(data,self.team_num)
+end
+
+-- 设置阵法数据返回
+function HeavenHighController:handle25246( data )
+	self:printData(25246,data)
+	if data then
+		if data.code == 1 then
+			message(TI18N("语言_c_5804"))
+		else
+			message(data.msg)
+		end
+		GlobalEvent:getInstance():Fire(HeavenHighEvent.Save_Heaven_Fun_Form, data)
+		MainuiController:getInstance():getMainUi():setDialRed()
+	end
+end
+
+-- 领取章节奖励返回
+function HeavenHighController:handle25244( data )
+	self:printData(25244,data)
+	if data then
+		message(data.msg)
+		local temp_data = {}
+		temp_data.award_info = data.award_info
+		self.model:updateOneChapterDataById(data.id, temp_data)
+		GlobalEvent:getInstance():Fire(HeavenHighEvent.Get_Chapter_Award_Event)
+	end
+end
+
+-- 是否还有未完成的战斗
+function HeavenHighController:handle25245( data )
+	self:printData(25245,data)
+	if data then
+		BattleController:getInstance():getModel():setUnfinishedWarStatus(data.combat_type, data.flag)
+		if data.flag == 0 then -- 服务端可能会先告知客户端有战斗，再结算，再告知无战斗
+			MainuiController:getInstance():openRelevanceWindowAtOnce(data.combat_type)
+		end
+	end
+end
+
+-- 请求领取每日奖励
+function HeavenHighController:sender25248( )
+	local protocal = {}
+    self:SendProtocal(25248, protocal)
+end
+-- 请求领取每日奖励
+function HeavenHighController:handle25248( data )
+	self:printData(25248,data)
+	if data then
+		if data.flag == 0 then
+			message(data.msg)
+		end
+	end
+end
+-- 领取钥匙
+function HeavenHighController:sender25249( )
+	local protocal = {}
+    self:SendProtocal(25249, protocal)
+end
+function HeavenHighController:handle25249( data )
+	self:printData(25249,data)
+	if data.result == 1 then
+		self:openHeavenHighUnlockKeyPanel(true)
+	else
+		message(data.msg)
+	end
+end
+
+-- 龙地洞进阶开启
+function HeavenHighController:sender25250( )
+	local protocal = {}
+    self:SendProtocal(25250, protocal)
+end
+function HeavenHighController:handle25250( data )
+	self:printData(25250,data)
+	if data.result == 1 then
+		self:openHeavenMainWindow(true, self.relevance_params,nil,true,true)
+		-- AdventureActivityController:getInstance():onClickGotoAdvenTureAcivity(AdventureActivityConst.Ground_Type.heaven_high)
+	end
+	message(data.msg)
+end
+
+-- 战斗中星级条件刷新
+function HeavenHighController:sender25251( )
+	local protocal = {}
+    self:SendProtocal(25251, protocal)
+end
+function HeavenHighController:handle25251( data )
+	self:printData(25251,data)
+	if data then
+		BattleController:getInstance():getCtrlBattleScene():updateHeavenHighStarInfo(data)
+	end
+end
+
+-- 战令基本信息
+function HeavenHighController:sender25254( )
+	local protocal = {}
+    self:SendProtocal(25254, protocal)
+end
+function HeavenHighController:handle25254( data )
+	self:printData(25254,data)
+	if data then
+		self.model:setOrderData(data)
+	end
+end
+
+-- 战令一键领取
+function HeavenHighController:sender25255( )
+	local protocal = {}
+    self:SendProtocal(25255, protocal)
+end
+function HeavenHighController:handle25255( data )
+	self:printData(25255,data)
+	if data then
+	end
+end
+
+-- 战令任务基本信息
+function HeavenHighController:sender25256( )
+	local protocal = {}
+    self:SendProtocal(25256, protocal)
+end
+function HeavenHighController:handle25256( data )
+	self:printData(25256,data)
+	if data then
+		self.model:setTaskData(data)
+	end
+end
+
+-- 战令任务领取
+function HeavenHighController:sender25257(id)
+	local protocal = {}
+	protocal.id = id
+    self:SendProtocal(25257, protocal)
+end
+function HeavenHighController:handle25257( data )
+	self:printData(25257,data)
+	message(data.msg)
+end
+
+-- 龙地洞登录红点
+function HeavenHighController:sender25242( )
+	local protocal = {}
+    self:SendProtocal(25242, protocal)
+end
+function HeavenHighController:handle25242( data )
+	local status = false
+    for k, v in pairs(data.red_point_list) do
+        status = status or v.code == 1
+        if status then
+            break
+        end
+    end
+
+    self.model:setHeavenHighLoginRed(status)
+end
+
+-- 检测挑战次数并且进入战斗
+function HeavenHighController:checkJoinHeavenBattle(formations )
+	self:sender25246(formations)
+end
+
+--领取每日奖励
+function HeavenHighController:getkDailyReward(  )
+	self:sender25248()
+end
+
+-----------------------@ 界面相关
+-- 打开天界副本主界面 chapter_id:强制打开某一章节
+function HeavenHighController:openHeavenMainWindow( status, chapter_id,group_id,is_open_chapter,is_first)
+	if status == true then
+		-- 判断是否开启
+		if not self.model:checkHeavenIsOpen() then
+			return
+		end
+		
+		if not self.heaven_main_wnd then
+			self.heaven_main_wnd = HeavenHighChapterWindow.New()
+			self:sender25234()
+		end
+		
+		if self.heaven_main_wnd:isOpen() == false then
+			local list = {group_id = group_id,is_open_chapter = is_open_chapter,chapter_id = chapter_id}
+			self.heaven_main_wnd:open(list,is_first)
+		end		
+	else
+		if self.heaven_main_wnd then
+			self.heaven_main_wnd:close()
+			self.heaven_main_wnd = nil
+		end
+	end
+end
+-- 打开天界章节界面
+function HeavenHighController:openHeavenHighChapterWindow( status, chapter_id ,is_first)
+	if status == true then
+		if not self.heaven_chapter_wnd then
+			self.heaven_chapter_wnd = HeavenHighChapterWindow.New()
+			self:sender25234()
+		end
+		if self.heaven_chapter_wnd:isOpen() == false then
+			self.heaven_chapter_wnd:open(chapter_id,is_first)
+		end
+	else
+		if self.heaven_chapter_wnd then
+			self.heaven_chapter_wnd:close()
+			self.heaven_chapter_wnd = nil
+		end
+	end
+end
+-- 是否打开天界章节界面
+function HeavenHighController:getHeavenHighChapterWindowIsOpen()
+	if self.heaven_main_wnd then
+		return self.heaven_main_wnd:isOpen()
+	end
+end
+-- 打开天界排行榜
+function HeavenHighController:openHeavenHighRankWindow( status )
+	if status == true then
+		if not self.heaven_rank_wnd then
+			self.heaven_rank_wnd = HeavenHighRankWindow.New()
+		end
+		if self.heaven_rank_wnd:isOpen() == false then
+			self.heaven_rank_wnd:open()
+		end
+	else
+		if self.heaven_rank_wnd then
+			self.heaven_rank_wnd:close()
+			self.heaven_rank_wnd = nil
+		end
+	end
+end
+
+-- 星数奖励界面
+function HeavenHighController:openHeavenHighStarAwardWindow( status, chapter_id )
+	if status == true then
+		if not self.star_award_wnd then
+			self.star_award_wnd = HeavenHighStarAwardWindow.New()
+		end
+		if self.star_award_wnd:isOpen() == false then
+			self.star_award_wnd:open(chapter_id)
+		end
+	else
+		if self.star_award_wnd then
+			self.star_award_wnd:close()
+			self.star_award_wnd = nil
+		end
+	end
+end
+
+-- 战斗胜利结算界面
+function HeavenHighController:openHeavenHighBattleWinView( status, data )
+	if status == true then
+		if not self.battle_win_view then
+			self.battle_win_view = HeavenHighBattleWinView.New()
+		end
+		if self.battle_win_view:isOpen() == false then
+			self.battle_win_view:open(data)
+		end
+	else
+		if self.battle_win_view then
+			self.battle_win_view:close()
+			self.battle_win_view = nil
+		end
+	end
+end
+
+-- 天界副本界面
+function HeavenHighController:getHeavenMainWindowRoot(  )
+    if self.heaven_main_wnd ~= nil then
+        return self.heaven_main_wnd.root_wnd
+    end
+end
+-- 打开查找章节页面
+function HeavenHighController:openFindHighWindow( status )
+	if status == true then
+		if self.heaven_find_wnd == nil then
+            self.heaven_find_wnd = FindHighWindow.New()
+		end
+		if self.heaven_find_wnd:isOpen() == false then
+            self.heaven_find_wnd:open()
+        end
+    else
+        if self.heaven_find_wnd then
+            self.heaven_find_wnd:close()
+            self.heaven_find_wnd = nil
+        end
+    end
+end
+
+-- 龙地洞阵容设置界面
+function HeavenHighController:openHeavenHighDunGoFightPanel( status ,data)
+	if status == true then
+		if self.heaven_high_dun_go_fight_panel == nil then
+            self.heaven_high_dun_go_fight_panel = HeavenHighDunGoFightPanel.New()
+		end
+		if self.heaven_high_dun_go_fight_panel:isOpen() == false then
+            self.heaven_high_dun_go_fight_panel:open(data)
+        end
+    else
+        if self.heaven_high_dun_go_fight_panel then
+            self.heaven_high_dun_go_fight_panel:close()
+            self.heaven_high_dun_go_fight_panel = nil
+        end
+    end
+end
+
+-- 龙地洞阵容详情界面
+function HeavenHighController:openHeavenHighDunFightInfo( status ,data)
+	if status == true then
+		if self.heaven_high_dun_fight_info == nil then
+            self.heaven_high_dun_fight_info = HeavenHighDunFightInfo.New()
+		end
+		if self.heaven_high_dun_fight_info:isOpen() == false then
+            self.heaven_high_dun_fight_info:open(data)
+        end
+    else
+        if self.heaven_high_dun_fight_info then
+            self.heaven_high_dun_fight_info:close()
+            self.heaven_high_dun_fight_info = nil
+        end
+    end
+end
+
+-- 龙地洞获得钥匙
+function HeavenHighController:openHeavenHighUnlockKeyPanel( status)
+	if status == true then
+		if self.heaven_high_unlock_key_panel == nil then
+            self.heaven_high_unlock_key_panel = HeavenHighUnlockKeyPanel.New()
+		end
+		if self.heaven_high_unlock_key_panel:isOpen() == false then
+            self.heaven_high_unlock_key_panel:open()
+        end
+    else
+        if self.heaven_high_unlock_key_panel then
+            self.heaven_high_unlock_key_panel:close()
+            self.heaven_high_unlock_key_panel = nil
+        end
+    end
+end
+
+-- 龙地洞战令
+function HeavenHighController:openHeavenHighOrderWindow(status,index)
+	if status == true then
+		if self.heaven_high_order_window == nil then
+            self.heaven_high_order_window = HeavenHighOrderWindow.New()
+		end
+		if self.heaven_high_order_window:isOpen() == false then
+            self.heaven_high_order_window:open(index)
+        end
+    else
+        if self.heaven_high_order_window then
+            self.heaven_high_order_window:close()
+            self.heaven_high_order_window = nil
+        end
+    end
+end
+
+
+function HeavenHighController:__delete()
+    if self.model ~= nil then
+        self.model:DeleteMe()
+        self.model = nil
+    end
+end

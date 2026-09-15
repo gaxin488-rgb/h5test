@@ -1,0 +1,216 @@
+
+
+DungeonAbyssChallengeRecordItem = class("DungeonAbyssChallengeRecordItem", function()
+    return ccui.Widget:create()
+end)
+
+function DungeonAbyssChallengeRecordItem:ctor()
+    self.item_list = {}
+
+    self:configUI()
+    self:register_event()
+end
+
+function DungeonAbyssChallengeRecordItem:configUI(  )
+    self.size = cc.size(616,300)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("dungeon_abyss/dungeon_abyss_challenge_record_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.container = self.root_wnd:getChildByName("container")
+
+    self.name_label = self.container:getChildByName("name_label")
+    self.time_label = self.container:getChildByName("time_label")
+    self.attk_label = self.container:getChildByName("attk_label")
+    self.magic_label = self.container:getChildByName("magic_label")
+    local result_node = self.container:getChildByName("result_node")
+    -- self.result_label = createRichLabel(22, 1, cc.p(1,0.5), cc.p(0,0))
+    -- result_node:addChild(self.result_label)
+    
+    self.vedio_btn = self.container:getChildByName("vedio_btn")
+    self.vedio_btn:setVisible(false)
+    self.role_list = self.container:getChildByName("role_list")
+    self.role_list:setTouchEnabled(false)
+
+    local scrollCon_size = self.role_list:getContentSize()
+    self.scroll_view_size = cc.size(scrollCon_size.width - 10, scrollCon_size.height)
+    self.scroll_view = createScrollView(self.scroll_view_size.width,self.scroll_view_size.height,8,0,self.role_list,ccui.ScrollViewDir.horizontal)
+    self.scroll_view:setSwallowTouches(false)
+
+    self.dunlist={}
+    self.top_panel = self.container:getChildByName("top_panel")
+    self.top_panel:setScrollBarEnabled(false)
+    self.line=self.top_panel:getChildByName("bottom_bg")
+    self.linWid=self.line:getContentSize().width 
+    self.orginx=self.top_panel:getPositionX()
+end
+
+function DungeonAbyssChallengeRecordItem:register_event(  )
+    self.vedio_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            if self.data and self.data.replay_id then
+                BattleController:getInstance():csRecordBattle(self.data.replay_id,self.data.srv_id)
+            end
+            if self.data.partner_list and tableLen(self.data.partner_list) > 0 then
+                local list = {}
+                for i=1,tableLen(self.data.partner_list) do
+                    local hero_list = {}
+                    hero_list.pos = i
+                    hero_list.herobid = self.data.partner_list[i].bid
+                    table.insert(list,hero_list)
+                end
+                PrimusController:getInstance():sender21706(self.type,list)
+            end
+        end
+    end)
+end
+
+function DungeonAbyssChallengeRecordItem:getConfig()
+    local _config = nil
+    local group_id = DungeonAbyssController:getInstance():getModel():getAdvanceGroupId()
+    local diff_id = DungeonAbyssController:getInstance():getModel():getAdvanceDiff()
+    _config = Config.DungeonAbyssCircleData.data_dif_challenge_data[group_id][diff_id]
+    return _config[self.info.lev]
+end
+
+function DungeonAbyssChallengeRecordItem:CreateDunBtn()
+    if #self.dunlist>0 then return end
+    self.dunlist={}
+    local info = self.data.partner_list
+    local len=#info
+    local startX=80
+    local wid= self.linWid-(5-len)*100    --self.linWid*((len-1)/4)
+    local offx = 0
+    if wid < self.linWid then
+        offx = (self.linWid - wid)/2
+    end
+    for i=1,len do
+        local btn=DungeonAbyssFightTeamTab.new()
+        btn:setAnchorPoint(cc.p(0.5,0.5))
+        self.top_panel:addChild(btn)
+        btn:setPosition(offx + startX+(i-1)*100,30)
+        registerButtonEventListener(btn.container, function()
+            self:onClickDunBtn(i)
+        end ,true, 2, nil, nil, nil, true)
+        btn.container:setSwallowTouches(false)
+        local list= self.data.partner_list[self.team_index].list_info
+        local num=0
+        for k,v in pairs(list) do
+            num=num+1
+        end
+        btn:setData(i,num)
+        self.dunlist[i]=btn
+    end
+    self.line:setContentSize(cc.size(wid,self.line:getContentSize().height))
+    self.line:setPositionX(offx)
+    -- self.top_panel:setPositionX(self.orginx+(5-len)*50)
+    if wid < self.linWid then
+        wid = self.linWid
+    end
+    self.top_panel:setInnerContainerSize(cc.size(wid,self.top_panel:getContentSize().height))
+end
+
+function DungeonAbyssChallengeRecordItem:onClickDunBtn(index)
+    for i=1,#self.dunlist do
+        self.dunlist[i]:setStatus(i==index)
+    end
+    self.team_index = index
+    self:updateFormaton()
+end
+
+function DungeonAbyssChallengeRecordItem:setData( data)
+    self.team_index = 1
+    self.data = data
+    self.name_label:setString(string.format(TI18N("语言_c_2545"), data.name))
+    self.attk_label:setString(string.format(TI18N("语言_c_2546"), MoneyTool.moneyFormat(data.power)))
+    self.time_label:setString(TimeTool.getYMDHMS(data.time))
+
+    local form_data = Config.FormationData.data_form_data[data.formation_type]
+    if form_data then
+        self.magic_label:setString(form_data.name)
+    end
+    local num = data.num or 0
+    -- self.result_label:setString(string.format(TI18N("语言_c_2547"), data.num))
+    self:CreateDunBtn()
+    -- 阵容
+    local temp_partner_vo = {}
+    if data.partner_list[self.team_index] then
+        for k,v in pairs(data.partner_list[self.team_index].list_info) do
+            local vo = HeroVo.New()
+            vo:updateHeroVo(v)
+            table.insert(temp_partner_vo,vo)
+        end
+    end
+    local scale = 0.8
+    local width = HeroExhibitionItem.Width
+    local p_list_size = #temp_partner_vo
+    local total_width = p_list_size * width*scale + (p_list_size - 1) * 6
+    local start_x = 0
+    local max_width = math.max(total_width,self.scroll_view_size.width) 
+    self.scroll_view:setInnerContainerSize(cc.size(max_width,self.scroll_view_size.height))
+    if self.item_list then
+        for k,v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = {}
+    end
+    for i,v in ipairs(temp_partner_vo) do
+        -- delayRun(self.container, i*4/60, function() 
+            local partner_item = HeroExhibitionItem.new(scale, false)
+            partner_item:setPosition(start_x+width*scale*0.5+(i-1)*(width*scale+6), self.scroll_view_size.height*0.5)
+            partner_item:setData(v,nil,is_spec)
+            self.scroll_view:addChild(partner_item)
+            table.insert(self.item_list, partner_item)
+        -- end)
+    end
+    self:onClickDunBtn(self.team_index)
+end
+function DungeonAbyssChallengeRecordItem:updateFormaton()
+    local data = self.data
+    local temp_partner_vo = {}
+    for k,v in pairs(data.partner_list[self.team_index].list_info) do
+        local vo = HeroVo.New()
+        vo:updateHeroVo(v)
+        table.insert(temp_partner_vo,vo)
+    end
+
+    local scale = 0.8
+    local width = HeroExhibitionItem.Width
+    local p_list_size = #temp_partner_vo
+    local total_width = p_list_size * width*scale + (p_list_size - 1) * 6
+    local start_x = 0
+    local max_width = math.max(total_width,self.scroll_view_size.width) 
+    self.scroll_view:setInnerContainerSize(cc.size(max_width,self.scroll_view_size.height))
+    if self.item_list then
+        for k,v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = {}
+    end
+    for i,v in ipairs(temp_partner_vo) do
+        -- delayRun(self.container, i*4/60, function() 
+            local partner_item = HeroExhibitionItem.new(scale, false)
+            partner_item:setPosition(start_x+width*scale*0.5+(i-1)*(width*scale+6), self.scroll_view_size.height*0.5)
+            partner_item:setData(v,nil,is_spec)
+            self.scroll_view:addChild(partner_item)
+            table.insert(self.item_list, partner_item)
+        -- end)
+    end
+end
+
+function DungeonAbyssChallengeRecordItem:setExtendData(type)
+    self.type = type
+end
+function DungeonAbyssChallengeRecordItem:DeleteMe(  )
+    doStopAllActions(self.container)
+    if self.item_list then
+        for k,v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+end

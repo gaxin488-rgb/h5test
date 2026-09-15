@@ -1,0 +1,137 @@
+--**********文件说明************
+ -- @Author:      hyx 
+ -- @description: 关注送礼
+ -- @DateTime:    2019-11-04 20:09:32
+ --*****************************
+
+local controller = WelfareController:getInstance()
+local gift_items = Config.MiscData.data_follows_items
+CommentGiftPanel = class("CommentGiftPanel", function()
+	return ccui.Widget:create()
+end)
+
+function CommentGiftPanel:ctor()
+    self:createRootWnd()
+end
+
+function CommentGiftPanel:createRootWnd()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("welfare/comment_gift_panel"))
+	self:addChild(self.root_wnd)
+	self:setPosition(-40, -80)
+	self:setAnchorPoint(0, 0)
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	local res = PathTool.getPlistImgForDownLoad("welfare/welfare_banner","txt_cn_welfare_banner1001")
+	local banner = main_container:getChildByName("banner")
+	if not self.load_banner then
+		self.load_banner = loadSpriteTextureFromCDN(banner, res, ResourcesType.single, self.load_banner)
+	end
+	
+	local goods_con = main_container:getChildByName("goods_con")
+	local view_size = goods_con:getContentSize()
+    local setting = {
+        start_x = 8,
+        space_x = 0,
+        start_y = 5,
+        space_y = 5,
+        item_width = 700,
+        item_height = 220,
+        row = 1,
+        col = 1,
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewSingleLayout.new(goods_con,cc.p(0, 0),ScrollViewDir.vertical,ScrollViewStartPos.top,view_size,setting)
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createTotalNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberTotalOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateTotalCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+	
+	self:setItemData()
+end
+function CommentGiftPanel:setItemData()
+	if gift_items then
+		local list = {}
+		for i,v in pairs(gift_items) do
+			table.insert(list,v)
+		end
+		table.sort(list,function(a,b) return a.sort < b.sort end)
+		self.gift_item = list
+		self.item_scrollview:reloadData()
+	end	
+end
+function CommentGiftPanel:createTotalNewCell()
+	local cell = CommentGiftItem.new()
+    return cell
+end
+function CommentGiftPanel:numberTotalOfCells()
+	if not self.gift_item then return 0 end
+    return #self.gift_item
+end
+function CommentGiftPanel:updateTotalCellByIndex(cell, index)
+	cell.index = index
+    local gift_data = self.gift_item[index]
+    if not gift_data then return end
+    cell:setData(gift_data)
+
+end
+function CommentGiftPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool)
+end
+
+function CommentGiftPanel:DeleteMe()
+	if self.load_banner then
+        self.load_banner:DeleteMe()
+        self.load_banner = nil
+    end
+    if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+end
+
+--**********************
+CommentGiftItem = class("CommentGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function CommentGiftItem:ctor()
+    self:configUI()
+end
+
+function CommentGiftItem:configUI()
+    self.rootWnd = createCSBNote(PathTool.getTargetCSB("welfare/comment_gift_item"))
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:addChild(self.rootWnd)
+    self:setContentSize(cc.size(700,220))
+
+    local main_container = self.rootWnd:getChildByName("main_container")
+    self.scroll_view = main_container:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.scroll_view:setPositionX(140)
+    self.icon = main_container:getChildByName("icon")
+    self.icon:setPositionX(67)
+    self.desc = createRichLabel(24,cc.c3b(0x64,0x32,0x23),cc.p(0,1),cc.p(138,197),nil,nil,550)
+    main_container:addChild(self.desc)
+end
+function CommentGiftItem:setData(data)
+
+	self.desc:setString(data.desc)
+	local res = PathTool.getResFrame("welfare", "welfare_gift_" .. data.sort)
+	loadSpriteTexture(self.icon, res, LOADTEXT_TYPE_PLIST)
+
+	local setting = {}
+    setting.scale = 0.8
+    setting.max_count = 4
+    setting.space_x = 15
+    self.item_list = commonShowSingleRowItemList(self.scroll_view, self.item_list, data.reward, setting)
+end
+
+function CommentGiftItem:DeleteMe()
+	if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

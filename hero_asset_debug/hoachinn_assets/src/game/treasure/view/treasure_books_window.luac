@@ -1,0 +1,378 @@
+--******** 文件说明 ********
+-- 
+-- @description: 编年史图鉴
+-- @DateTime:    2019-04-22 16:56:26
+-- *******************************
+
+TreasureBooksWindow = TreasureBooksWindow or BaseClass(BaseView)
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+local star_data = deepCopy(Config.NinjaTreasureData.data_star_info)
+local base_data = deepCopy(Config.NinjaTreasureData.data_base_info)
+local txt_list = deepCopy(Config.NinjaTreasureData.data_constant["rarity_key"].val)
+
+function TreasureBooksWindow:__init()
+    self.win_type = WinType.Big      
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG    
+    self.layout_name = "treasure/treasure_books_window"
+	self.books_list = {}--图鉴数据列表
+    self.type_num = tableLen(txt_list) --秘宝有几种品质
+    self.tab_list = {} -- 图鉴品质按钮列表
+    self.item_list = {} -- 图鉴全部页签列表
+    self.col = 2 --列数
+    self.item_width     = 302  --item的宽高
+    self.item_height    = 157
+    self.cacheList = {} --对象池
+    self.cacheMaxSize = 0 --最大池数
+
+    -- 到时间显示的索引
+    self.time_show_index = 0
+    self.first_title_height = 50 --第一个的高度
+    self.title_height = 30 --职业名字的高
+    --列表职业对应信息
+    self.career_info_list = {}
+    self._type = 0
+end
+
+function TreasureBooksWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.container = self.root_wnd:getChildByName("main_container")
+    self.title_bg = self.container:getChildByName("title_bg")
+    self.close_btn = self.container:getChildByName("close_btn")
+    self.title_label = self.container:getChildByName("title_label")
+    self.title_label:setString(TI18N("语言_c_6234"))
+    self.left_line = self.container:getChildByName("left_line")
+    self.tip = self.container:getChildByName("tip")
+    self.right_line = self.container:getChildByName("right_line")
+    self.tip:setString(TI18N("语言_c_6064"))
+    self.left_line:setPositionX(self.tip:getPositionX() - self.tip:getContentSize().width/2 - 100)
+    self.right_line:setPositionX(self.tip:getPositionX() + self.tip:getContentSize().width/2 + 100)
+    self.title_bg:setContentSize(cc.size(math.max(self.title_label:getContentSize().width+120,332), 63))
+    self.item_panel = self.container:getChildByName("item_panel")
+    self.tab_view = self.container:getChildByName("tab_view")
+    self.tab_view:setScrollBarEnabled(false)
+    self.no_img = self.container:getChildByName("no_img")
+    self.no_tip = self.container:getChildByName("no_tip")
+    self.no_tip:setString(TI18N("语言_c_6221"))
+end
+function TreasureBooksWindow:register_event()
+	registerButtonEventListener(self.background, function()
+        controller:openTreasureBooksWindow(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openTreasureBooksWindow(false)
+    end,false, 2)
+end
+function TreasureBooksWindow:openRootWnd()
+    self:setDataList()
+    self:setTabView()
+    self:clickTabItem(1)
+end
+
+function TreasureBooksWindow:setDataList()
+    for i=1,self.type_num do
+        self.books_list[i] = {}
+    end
+    --单个魔导器屏蔽
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("ninja_treasure_data")
+    for key, value in pairs(star_data) do
+        for k, v in pairs(value) do
+            if v.show == 1 then
+                local data = base_data[v.id]
+                if data then
+                    if (data.open == 0 and table.indexof(nohideIds,data.id)) or data.open == 1 then
+                        local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+                        if (next(data.show_limit) and tree_lev >= data.show_limit[1][2]) or not next(data.show_limit) then
+                            table.insert(self.books_list[self.type_num-data.quality+1],v)
+                            local sort_func = SortTools.tableCommonSorter({{"picture_sort", false}})
+                            table.sort(self.books_list[self.type_num-data.quality+1],sort_func)
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+function TreasureBooksWindow:getClickList(num)
+    if num == 0 then
+        return self.books_list
+    else
+        return self.books_list[num] or {}
+    end
+    return {}
+end
+function TreasureBooksWindow:setTabViewItem(type,txt)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0, 0.5))
+    item:setContentSize(cc.size(120, 50))
+    item:setTouchEnabled(true)
+    local res1 = ""
+    local res2 = ""
+    if type == 2 then
+        res1 = PathTool.getResFrame("common","common_2024")
+        res2 = PathTool.getResFrame("common","common_2022")
+    else
+        res1 = PathTool.getResFrame("common","common_2021")
+        res2 = PathTool.getResFrame("common","common_2023")
+    end
+    item.select = createImage(item,res1,60,25,cc.p(0.5,0.5),true,nil,true)
+    item.select:setContentSize(cc.size(120,50))
+    item.select:setCapInsets(cc.rect(3,19,1,1))
+    item.normal = createImage(item,res2,60,25,cc.p(0.5,0.5),true,nil,true)
+    item.normal:setContentSize(cc.size(120,50))
+    item.normal:setCapInsets(cc.rect(3,19,1,1))
+    if type == 1 then
+        item.select:setScaleX(-1)
+        item.normal:setScaleX(-1)
+    end
+    item.name = createLabel(24,cc.c3b(0xff,0xff,0xff),cc.c3b(0x00,0x00,0x00),60,25,"",item,2,cc.p(0.5,0.5))
+    item.name:setChangeScaleOffWidth(20)
+    item.name:setString(txt)
+    return item
+end
+function TreasureBooksWindow:setTabView()
+    -- local txt_list = {"传奇","稀有","高级","普通"}
+    for i=1,self.type_num do
+        if not self.tab_list[i] then
+            if i == 1 then
+                self.tab_list[i] = self:setTabViewItem(1,txt_list[i][2])
+            elseif i == self.type_num then
+                self.tab_list[i] = self:setTabViewItem(3,txt_list[i][2])
+            else
+                self.tab_list[i] = self:setTabViewItem(2,txt_list[i][2])
+            end
+        end
+    end
+    self.tab_view:setInnerContainerSize(cc.size(tableLen(self.tab_list)*120, self.tab_view:getContentSize().height))
+    for key, value in pairs(self.tab_list) do
+        self.tab_view:addChild(value)
+        value:setPosition(cc.p((key-1)*120,self.tab_view:getContentSize().height/2))
+        value:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                self:clickTabItem(key)
+            end
+        end)
+    end
+end
+function TreasureBooksWindow:clickTabItem(i)
+    if self._type == i then return end
+    self._type = i
+    for key, value in pairs(self.tab_list) do
+        if key == i then
+            value.select:setVisible(true)
+            value.normal:setVisible(false)
+            value.name:setTextColor(cc.c4b(0xf8,0xbef,0x76,0xff))
+            value.name:enableOutline(cc.c4b(0x5c,0x27,0x05,0xff),2)
+        else
+            value.select:setVisible(false)
+            value.normal:setVisible(true)
+            value.name:setTextColor(cc.c4b(0xff,0xff,0xff,0xff))
+            value.name:enableOutline(cc.c4b(0x18,0x31,0x5c,0xff),2)
+        end
+    end
+    local list = self:getClickList(i)
+    if self.item_view then
+        self.item_view:DeleteMe()
+        self.item_view = nil
+    end
+    if self.item_view == nil then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            item_class = TreasureBooksItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 10,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 292,               -- 单元的尺寸width
+            item_height = 147,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 2,            
+            -- need_dynamic = true,
+            delay = 0.3,
+        }
+        self.item_view = CommonScrollViewLayout.new(self.item_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    self.item_view:setData(list)
+    self.item_view:setVisible(true)
+    if tableLen(list) > 0 then
+        self.no_img:setVisible(false)
+        self.no_tip:setVisible(false)
+    else
+        self.no_img:setVisible(true)
+        self.no_tip:setVisible(true)
+    end
+end
+--获取数据数量
+function TreasureBooksWindow:numberOfCells()
+    return #self.hero_library_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function TreasureBooksWindow:updateCellByIndex(cell, index)
+    -- local model = controller:getModel()
+    -- local hero_bag_list = model:getAllHeroArray()
+    cell.index = index
+    local cell_data = self.hero_library_list[index]
+    -- for i=1,#hero_bag_list.items do
+    --     if cell_data.config and hero_bag_list.items[i] then
+    --         if hero_bag_list.items[i].bid == cell_data.config.bid then
+    --             -- cfg = hero_bag_list[i]
+    --             cell_data.config.isHave = 0
+    --             break
+    --         end
+    --     end
+    -- end
+    if cell_data.config then
+        cell:setVisible(true)
+        cell:setData(cell_data.config)
+    else
+        cell:setVisible(false)
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function TreasureBooksWindow:onCellTouched(cell)
+    local index = cell.index
+    local cell_data = self.hero_library_list[index]
+    if cell_data and cell_data.config then
+        -- local a_lib_cfg = Config.PartnerData.data_partner_library(cell_data.config.bid)
+        -- print("------------------onCellTouched    ", cell_data.config.bid, a_lib_cfg.order)
+        local draw_res = cell_data.config.draw_res
+        local library_config = Config.PartnerData.data_partner_library(cell_data.config.bid)
+        if draw_res and library_config and draw_res ~= "" then
+            --有立绘的 并且有配置图书馆的
+            controller:openHeroLibraryInfoWindow(true, cell_data.config.bid)
+        else
+            message(TI18N("语言_c_4384"))
+             --没有立绘的 英雄详情
+            local pokedex_config = Config.PartnerData.data_partner_pokedex[cell_data.config.bid]
+            if pokedex_config and pokedex_config[1] then
+                local star = pokedex_config[1].star or 1
+                controller:openHeroInfoWindowByBidStar(cell_data.config.bid, star)
+            end
+        end
+    end
+end
+
+function TreasureBooksWindow:close_callback()
+    if self.item_view then
+        self.item_view:DeleteMe()
+        self.item_view = nil
+    end
+	controller:openTreasureBooksWindow(false)
+	
+end
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      寻访item
+-- Create: 2020-02-19
+-- --------------------------------------------------------------------
+TreasureBooksItem = class("TreasureBooksItem", function()
+    return ccui.Widget:create()
+end)
+
+function TreasureBooksItem:ctor()
+	self.ctrl = ActionController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+end
+
+function TreasureBooksItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("treasure/treasure_books_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(292,147))
+    self:setAnchorPoint(0,0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.name = self.main_container:getChildByName("name")
+    self.max_lev = self.main_container:getChildByName("max_lev")
+    self.item_panel = self.main_container:getChildByName("item_panel")
+    self.only_panel = self.main_container:getChildByName("only_panel")
+    self.hero_icon = self.only_panel:getChildByName("hero_icon")
+    -- self.bg = self.item_panel:getChildByName("bg")
+    -- self.icon = self.item_panel:getChildByName("icon")
+end
+
+function TreasureBooksItem:register_event(  )
+    -- registerButtonEventListener(self.item_panel, handler(self, self._onClickItem) ,false, 2)
+    registerButtonEventListener(self.only_panel, handler(self, self.clickOnlyPanel) ,false, 2,nil,nil,nil,true)
+end
+
+function TreasureBooksItem:clickOnlyPanel()
+    local list = {}
+    list.is_book = false
+    list.is_btn = false
+    local vo = TreasureVo.New()
+    vo:updataData(self.data.id,self.data.star)
+    TreasureController:getInstance():openTreasureOnlyTips(true, vo, list)
+    GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Click_Event,self:getPositionY())
+end
+function TreasureBooksItem:setData(data)
+    self.data = data
+    self.cfg = deepCopy(Config.NinjaTreasureData.data_base_info[data.id])
+    self.name:setString(self.cfg.name)
+    setTextMaxWidth(self.eqm_name,145,-4)
+    self.lev_cfg = deepCopy(Config.NinjaTreasureData.data_lv_info[self.cfg.quality])
+    self.max_lev:setString(string.format(TI18N("语言_c_5398"),self.lev_cfg[tableLen(self.lev_cfg)].lv))
+    local list = {}
+    list.is_book = true
+    list.is_btn = false
+    local vo = TreasureVo.New()
+    vo:updataData(self.data.id,self.data.star)
+    if not self.item then
+        self.item = TreasureItem.new(true,1,true,true,false,list)
+        self.item_panel:addChild(self.item)
+        self.item:setPosition(cc.p(self.item_panel:getContentSize().width/2,self.item_panel:getContentSize().height/2))
+    end
+    self.item:setData(vo)
+    self:setHeadIcon()
+end
+
+function TreasureBooksItem:setHeadIcon()
+    local data = base_data[self.data.id]
+    if data.hero_id and data.hero_id ~= 0 then
+        if not self.head_panel then
+            local vSize = cc.size(40,40)
+            local mask_res = PathTool.getResFrame("ninja_treasure","ninja_treasure_66",false,"ninja_treasure")
+            self.head_panel = ccui.Widget:create()
+            self.head_panel:setAnchorPoint(cc.p(0.5,0.5))
+            self.head_panel:setContentSize(vSize)
+            self.head_panel:setTouchEnabled(false)
+            -- self.head_panel:setPosition(vSize.width/2, vSize.height/2)
+            self.head_panel:setCascadeOpacityEnabled(true)
+            self.hero_icon:addChild(self.head_panel)
+            self.mark_bg = createSprite(mask_res, vSize.width/2, vSize.height/2, self.head_panel, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 1)
+            self.mask = createSprite(mask_res, vSize.width/2, vSize.height/2, nil, cc.p(0.5, 0.5))--模板
+            self.clipNode = cc.ClippingNode:create(self.mask)
+            self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+            self.clipNode:setContentSize(vSize)
+            self.clipNode:setCascadeOpacityEnabled(true)
+            self.clipNode:setPosition(vSize.width/2,vSize.height/2)
+            self.clipNode:setAlphaThreshold(0)
+            self.head_panel:addChild(self.clipNode,2)
+
+            self.only_icon = ccui.ImageView:create()
+            self.only_icon:setCascadeOpacityEnabled(true)
+            self.only_icon:setAnchorPoint(0.5,0.5)
+            self.only_icon:setPosition(vSize.width/2,vSize.height/2+2)--底板
+            self.only_icon:setScale(0.6)
+            self.clipNode:addChild(self.only_icon,3)
+        end
+        self.only_icon:loadTexture(PathTool.getHeadIcon(data.hero_id), LOADTEXT_TYPE)
+        self.only_panel:setVisible(true)
+    else
+        self.only_panel:setVisible(false)
+    end
+end
+function TreasureBooksItem:DeleteMe()
+end

@@ -1,0 +1,509 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      潜能任务
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+PotentialRankWindow = PotentialRankWindow or BaseClass(BaseView)
+local controller = PotentialController:getInstance()
+local model = controller:getModel()
+function PotentialRankWindow:__init()
+    self.is_full_screen = true
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.layout_name = "potential/potential_rank_window"
+    self.dic_limit_list = {}
+    self.data_list = {}
+end
+
+function PotentialRankWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+	local main_panel = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_panel, 1)
+    local up_panel = main_panel:getChildByName("up_panel")
+    self.close_btn = main_panel:getChildByName("close_btn")
+	local scroll_list = main_panel:getChildByName("scroll_container")
+	local scroll_view_size = scroll_list:getContentSize()
+    local setting = {
+        start_x = 0,
+        space_x = 0,
+        start_y = 0,
+        space_y = 23,
+        item_width = 625,
+        item_height = 157,
+        row = 0,
+        col = 1,
+        need_dynamic = true,
+    }
+    self.item_scrollview = CommonScrollViewSingleLayout.new(scroll_list, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+    self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+end
+-- 奖励列表
+function PotentialRankWindow:createTaskCell()
+    local cell = PotentialRankItem.new()
+    return cell
+end
+
+function PotentialRankWindow:numberOfTaskCells()
+    if not self.data_list then
+        return 0
+    end
+    return #self.data_list
+end
+
+function PotentialRankWindow:updateTaskCellByIndex(cell, index)
+    if not self.data_list then
+        return
+    end
+    local cell_data = self.data_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+function PotentialRankWindow:openRootWnd()
+    self:setData()
+end
+function PotentialRankWindow:setData()
+    if self.item_scrollview then
+        local data = model:getTaskInfoData()
+        self.data_list = {}
+        self.dic_limit_list = {}
+        local adventure_data = deepCopy(Config.PotentialData.data_get_potential_quest)
+        for k, v in ipairs(data) do
+            local config = adventure_data[v.id]
+            if config then
+                local task = self.dic_limit_list[config.f_id] --父类id
+                if task == nil then
+                    task = {}
+                    self.dic_limit_list[config.f_id] = task
+                    table.insert(self.data_list, task)
+                end
+                local status = controller:getModel():getOneTaskStatus(config.id)
+                local task_list = model:getOneTaskInfo(config.id)
+                
+                local is_chang = true
+                if task and next(task) and task.config then
+                    if config.s_id > task.config.s_id then
+                        --当前 序号比记录大 那么如果记录 未领取奖励 不能替换 
+                        if status ~= 2 then
+                            is_chang = false
+                        end
+                    elseif config.s_id < task.config.s_id then
+                        --当前 序号比记录小  如果 当前已领取奖励 不能替换
+                        if status == 2  then
+                            is_chang = false
+                        end 
+                    end
+                end
+                if is_chang then
+                    config.status = status
+                    task.config = config
+                    task.id = v.id
+                    task.sort_id = config.sort_id
+                    if status == 1 then
+                        task.sort = 0
+                    elseif status == 0 then
+                        task.sort = 1
+                    else
+                        task.sort = status
+                    end
+                end
+            end
+        end
+        local sort_func = SortTools.tableCommonSorter({{"sort", false}, {"sort_id", false}, {"id", false}})
+        table.sort(self.data_list, sort_func)
+        self.item_scrollview:reloadData(nil,nil,true)
+    end
+
+
+end
+
+function PotentialRankWindow:register_event()
+	registerButtonEventListener(self.background, function ()
+		controller:openPotentialRankWindow(false)
+	end,false)
+    
+	registerButtonEventListener(self.close_btn, function ()
+		controller:openPotentialRankWindow(false)
+	end,false)
+
+    if self.update_event == nil then
+    	self.update_event = GlobalEvent:getInstance():Bind(PotentialEvent.Potential_Task_Event, function ()
+            self:setData()
+        end)
+    end
+end
+
+function PotentialRankWindow:close_callback()
+    if self.update_event then
+        GlobalEvent:getInstance():UnBind(self.update_event)
+        self.update_event = nil
+    end
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+	controller:openPotentialRankWindow(false)
+end
+
+---------------------------------
+--子项
+---------------------------------
+PotentialRankItem = class("PotentialRankItem", function()
+    return ccui.Widget:create()
+end)
+
+function PotentialRankItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function PotentialRankItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("potential/potential_rank_item"))
+    self:setContentSize(cc.size(625, 157))
+    self:addChild(self.root_wnd)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.title_txt:setChangeScaleOffWidth(24)
+    self.list = self.main_container:getChildByName("list")
+    self.item_srcoller = self.main_container:getChildByName("ScrollView_1")
+    self.item_srcoller:setSwallowTouches(false)
+    self.item_srcoller:setScrollBarEnabled(false)
+    self.bar_bg = self.main_container:getChildByName("Image_1_0")
+    self.bar = self.main_container:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.bar_txt = self.main_container:getChildByName("bar_txt")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.get_label = self.btn_get:getChildByName("label")
+    self.submit_tip = createRichLabel(24,cc.c3b(0x5c,0x27,0x05),cc.p(0.5,0.5),cc.p(524,97),nil,nil,300)
+    self.main_container:addChild(self.submit_tip)
+    self.btn_submit = self.main_container:getChildByName("btn_submit")
+    self.submit_label = self.btn_submit:getChildByName("label")
+    self.submit_label:setString(TI18N("语言_c_279"))
+    self.bar_bg:setVisible(false)
+    self.bar:setVisible(false)
+    self.bar_txt:setVisible(false)
+    self.btn_get:setVisible(false)
+    self.btn_submit:setVisible(false)
+    self.submit_tip:setVisible(false)
+end
+
+function PotentialRankItem:register_event()
+    registerButtonEventListener(self.btn_get, function ()
+        if self.data.status == 0 then
+            local jump_id = self.data.source_id
+            controller:openPotentialRankWindow(false)
+            controller:openPotentialMainWindow(false)
+            local config = Config.SourceData.data_source_data[jump_id]
+            if config then
+                BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+            end
+        else
+            controller:sender11607(self.data.id)
+        end
+	end,true)
+    registerButtonEventListener(self.btn_submit, function ()
+        if self.data.progress[1].cli_label == "evt_submit_item" then --道具
+            local str = ""
+            local num = 0
+            local id = 0
+            for j=1,tableLen(self.data.progress[1].param) do
+                local list = self.data.progress[1].param[j]
+                if list and next(list) and list[1] == "submit_itemid" then
+                    id = list[2][1]
+                    num = list[2][2]
+                end
+            end
+            local cfg = Config.ItemData.data_get_data(id)
+            if cfg then
+                str = string.format(TI18N("语言_c_7068"),PathTool.getItemRes(cfg.icon),MoneyTool.GetMoneyString(num))
+                CommonAlert.show( str, TI18N("语言_c_63"), function()
+                    local have_num = BackpackController:getInstance():getModel():getItemNumByBid(id)
+                    if have_num >= num then
+                        controller:sender11610(self.data.id,{},{})
+                    else
+                        message(TI18N("语言_c_6351"))
+                    end
+                end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 0, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+            end
+        elseif self.data.progress[1].cli_label == "evt_submit_partner" then --忍者
+            if not self.hero_item_data_list then return end
+            --标志点击了那个
+            self.hero_item_data_list.is_select = true
+            --被其他人选择的列表 [id] = hero_vo 模式
+            local dic_other_selected = {}
+            --把自己也过滤
+            for i,item in ipairs(self.hero_item_data_list) do
+                for k,v in pairs(item.dic_select_list) do
+                    dic_other_selected[k] = v
+                end
+            end
+
+            local setting = {
+                potential_rank_id = self.data.id
+            }
+
+            HeroController:getInstance():openHeroUpgradeStarSelectPanel(true, self.hero_item_data_list, dic_other_selected, HeroConst.SelectHeroType.ePotentialSubmit, setting)
+        end
+    end,true)
+
+    --添加英雄选择返回事件
+    if self.upgrade_star_select_event == nil then
+        self.upgrade_star_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function(data,setting)
+            if setting and setting.potential_rank_id and self.data and self.data.id then
+                if setting.potential_rank_id ~= self.data.id then return end
+                self:updateHeroItemInfo()
+            end
+        end)
+    end
+end
+
+--更新选中英雄信息
+function PotentialRankItem:updateHeroItemInfo()
+    if not self.hero_item_data_list then return end
+    for i,v in ipairs(self.hero_item_data_list) do
+        if v.is_select then
+            v.is_select = false
+            local count = 0
+            v.lev = string_format("%s/%s", count, v.count)
+        end
+    end
+
+    if self.hero_item_data_list and next(self.hero_item_data_list) ~= nil then
+        local hero_list = {}
+        local random_list = {}
+        local dic_item_expend = {}
+        local count = 0
+        for k,v in pairs(self.hero_item_data_list.dic_select_list) do
+            count = count + 1
+        end
+        if count < self.hero_item_data_list.count then
+            message(TI18N("语言_c_3021"))
+            return
+        end
+        for k,v in pairs(self.hero_item_data_list.dic_select_list) do
+            if v.is_hero_hun then --是否英魂 参考 HeroUpgradeStarSelectPanel:initHeroList(dic_other_selected) 里面的定义
+                if v.good_vo then
+                    if dic_item_expend[v.good_vo.base_id] == nil then
+                        dic_item_expend[v.good_vo.base_id] = 1
+                    else
+                        dic_item_expend[v.good_vo.base_id] = dic_item_expend[v.good_vo.base_id] + 1
+                    end
+                end
+            else
+                local data = {}
+                data.id = k
+                -- if self.hero_item_data_list.bid == 0 then
+                --     --随机卡
+                --     table.insert(random_list, data)
+                -- else
+                --     --指定卡
+                    table.insert(hero_list, data)
+                -- end
+            end
+        end
+        
+        local item_list = {}
+        for item_id, num in pairs(dic_item_expend) do
+            local data = {}
+            data.item_id = item_id
+            data.num = num
+            table.insert(item_list, data)
+        end
+        controller:sender11610(self.data.id,hero_list,item_list)
+    end
+end
+function PotentialRankItem:setData(list)
+	if not list then return end
+    local data = list.config
+    self.data = data
+    self.task_list = model:getOneTaskInfo(data.id)
+    local desclist ={}
+    for i=1,tableLen(data.progress) do
+        if data.progress[i].cli_label ~= "evt_submit_item" and data.progress[i].cli_label ~= "evt_submit_partner" then
+            self.btn_get:setVisible(true)
+            self.btn_submit:setVisible(false)
+            self.bar_bg:setVisible(true)
+            self.bar:setVisible(true)
+            self.bar_txt:setVisible(true)
+            self.submit_tip:setVisible(false)
+        else
+            self.btn_get:setVisible(false)
+            self.btn_submit:setVisible(true)
+            self.bar_bg:setVisible(false)
+            self.bar:setVisible(false)
+            self.bar_txt:setVisible(false)
+            self.submit_tip:setVisible(true)
+            local txt = ""
+            if data.progress[i].cli_label == "evt_submit_item" then --道具
+                local num = 0
+                local id = 0
+                for j=1,tableLen(data.progress[i].param) do
+                    local list = data.progress[i].param[j]
+                    if list and next(list) and list[1] == "submit_itemid" then
+                        id = list[2][1]
+                        num = MoneyTool.GetMoneyString(list[2][2])
+                    end
+                end
+                local str = "<img src=\'%s\' scale=0.5 />x%s"
+                local cfg = Config.ItemData.data_get_data(id)
+                if cfg then
+                    txt = string.format(str,PathTool.getItemRes(cfg.icon),num)
+                end
+            elseif data.progress[i].cli_label == "evt_submit_partner" then --忍者
+                local hero_id = 0
+                local camp_type = 0
+                local star = 0
+                local num = 0
+                for j=1,tableLen(data.progress[i].param) do
+                    local list = data.progress[i].param[j]
+                    if list and next(list) then
+                        if list[1] == "num" then
+                            num = list[2]
+                        elseif list[1] == "heroid" then
+                            if type(list[2]) == "table" then
+                                if list[2][1] then
+                                    hero_id = list[2][1]
+                                end
+                            else
+                                hero_id = list[2]
+                            end
+                        elseif list[1] == "camp_type" then
+                            camp_type = list[2]
+                        elseif list[1] == "star" then
+                            star = list[2]
+                        end
+                    end
+                end
+                local str = "<img src=\'%s\' scale=0.5 />x%s"
+                txt = string.format(str,PathTool.getItemRes(29999),num)
+
+                self.hero_item_data_list = {}
+                if hero_id ~= 0 then
+                    --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+                    self.hero_item_data_list = self:getHeroData(hero_id, star, num)
+                else
+                    --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+                    self.hero_item_data_list = self:getHeroData(nil, star, num,camp_type)
+                end
+            end
+            self.submit_tip:setString(txt)
+        end
+        if data.progress[i].target ~= 0 then
+            table.insert(desclist,1,data.progress[i].target_val)
+        end
+        if data.progress[i].param and next(data.progress[i].param) then
+            for j=1,tableLen(data.progress[i].param) do
+                local _str =  ActivityTaskDescription(data.progress[i].param[j])
+                for key, value in pairs(_str) do
+                    table.insert(desclist,1,value)
+                end
+            end
+        end
+    end
+    local str = LangStringFormat(data.desc,desclist)
+    self.title_txt:setString(str)
+    local now_val = self.task_list.value or 0
+    local task_target = self.task_list.target_val or 1
+    self.bar:setPercent(now_val/task_target*100)
+    self.bar_txt:setString(now_val.."/"..task_target)
+    if now_val > task_target then
+        self.bar_txt:setString(task_target.."/"..task_target)
+    end
+    local list = data.award
+    local setting = {}
+    setting.start_x = 5
+    setting.scale = 0.7
+    self.item_list = commonShowSingleRowItemList(self.item_srcoller, self.item_list, list, setting)
+    self:setGetBtnStatus()
+end
+
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function PotentialRankItem:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+
+function PotentialRankItem:setGetBtnStatus()
+    -- local status = controller:getModel():getAoyiTaskStatusById(self.data.id)
+    if self.data.status == 0 then
+        self.get_label:setString(TI18N("语言_c_108"))
+        self.btn_get:setTouchEnabled(true)
+        setChildUnEnabled(false, self.btn_get)
+        addRedPointToNodeByStatus(self.btn_get,false)
+        self.btn_submit:loadTexture(PathTool.getResFrame("common", "common_1098"), LOADTEXT_TYPE_PLIST)
+        self.submit_label:setString(TI18N("语言_c_279"))
+        self.btn_submit:setTouchEnabled(true)
+        setChildUnEnabled(false, self.btn_submit)
+        addRedPointToNodeByStatus(self.btn_submit,false)
+    elseif self.data.status == 1 then
+        self.get_label:setString(TI18N("语言_c_8"))
+        self.btn_get:setTouchEnabled(true)
+        setChildUnEnabled(false, self.btn_get)
+        addRedPointToNodeByStatus(self.btn_get,true,10,10)
+        self.btn_submit:loadTexture(PathTool.getResFrame("common", "common_1098"), LOADTEXT_TYPE_PLIST)
+        self.submit_label:setString(TI18N("语言_c_279"))
+        self.btn_submit:setTouchEnabled(true)
+        setChildUnEnabled(false, self.btn_submit)
+        addRedPointToNodeByStatus(self.btn_submit,false)
+    elseif self.data.status == 2 then
+        self.get_label:setString(TI18N("语言_c_15"))
+        self.btn_get:setTouchEnabled(false)
+        setChildUnEnabled(true, self.btn_get)
+        addRedPointToNodeByStatus(self.btn_get,false)
+        self.btn_submit:loadTexture(PathTool.getResFrame("common", "common_1046"), LOADTEXT_TYPE_PLIST)
+        self.submit_label:setString(TI18N("语言_c_15"))
+        self.btn_submit:setTouchEnabled(false)
+        setChildUnEnabled(true, self.btn_submit)
+        addRedPointToNodeByStatus(self.btn_submit,false)
+    end
+end
+
+function PotentialRankItem:DeleteMe()
+    if self.bg_load then
+        self.bg_load:DeleteMe()
+        self.bg_load = nil
+    end
+	if self.lock_bg_load then
+		self.lock_bg_load:DeleteMe()
+		self.lock_bg_load = nil
+	end
+    if self.upgrade_star_select_event then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

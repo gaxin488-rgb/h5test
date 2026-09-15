@@ -1,0 +1,156 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-01-17 11:58:06
+-- @description    : 
+		-- 跨服传奇忍者查看战区
+---------------------------------
+ViewTheaterPanel = ViewTheaterPanel or BaseClass(BaseView)
+
+local controller = PrimusController:getInstance()
+local _model = controller:getModel()
+
+function ViewTheaterPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "primus/view_theater_panel"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("artifact", "artifact"), type = ResourcesType.plist},
+	}
+end
+
+function ViewTheaterPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(main_container, 1)
+
+    self.panel_1 = self.main_container:getChildByName("panel_1")
+    self.image_title = self.main_container:getChildByName("image_title")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_5432"))
+    self.image_title:setContentSize(cc.size(self.win_title:getContentSize().width + 100,self.image_title:getContentSize().height))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.top_title = self.main_container:getChildByName("top_title")
+    self.top_title:setString(TI18N("语言_c_5433"))
+    self.list_bg = self.main_container:getChildByName("list_bg")
+    self.reward_scroll = self.main_container:getChildByName("reward_scroll")
+end
+
+function ViewTheaterPanel:register_event(  )
+    registerButtonEventListener(self.background, function ( )
+		controller:openViewTheaterPanel(false)
+    end)
+    registerButtonEventListener(self.close_btn, function ( )
+		controller:openViewTheaterPanel(false)
+    end)
+    self:addGlobalEvent(PrimusEvent.Updata_Primus_WarZone,function(data)
+        self:setData(data)
+    end)
+end
+function ViewTheaterPanel:openRootWnd()
+    controller:sender21811()
+end
+function ViewTheaterPanel:setData(data)
+    self.data = data
+    local scroll_view_size = self.reward_scroll:getContentSize()
+
+    local setting = {
+        item_class = ViewTheaterItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 10,                    -- y方向的间隔
+        item_width = 580,               -- 单元的尺寸width
+        item_height = 100,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        delay = 4
+    }
+    self.itemScrollview = CommonScrollViewLayout.new(self.reward_scroll, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.theater_data = deepCopy(Config.ArenaEliteData.data_zone)
+    local list = {}
+    for key, value in pairs(self.data.infos) do
+        if value.server_id == self.data.my_server_id then
+            self.theater_data[key].isself = true
+        else
+            self.theater_data[key].isself = false    
+        end
+        self.theater_data[key].server_id = value.server_id
+        table.insert(list, key, self.theater_data[key])
+    end
+    self.list = list
+    self.itemScrollview:setData(self.list,function(cell)
+        -- controller:switchEcersiceActivityView(cell:getData().goto_id)
+    end)
+end
+function ViewTheaterPanel:close_callback(  )
+    controller:openViewTheaterPanel(false)
+end
+
+--=========================
+ViewTheaterItem = class("ViewTheaterItem", function()
+    return ccui.Widget:create()
+end)
+
+function ViewTheaterItem:ctor()
+    self.listReward = {}
+    self.panel_list = {}
+    self:createRootWnd()
+    self:registerEvent()
+end
+function ViewTheaterItem:createRootWnd()
+    self.rootWnd = createCSBNote(PathTool.getTargetCSB("primus/view_theater_item"))
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:addChild(self.rootWnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(580, 100))
+
+    self.list_panel = self.rootWnd:getChildByName("list_panel")
+    self.theater_bg = self.list_panel:getChildByName("theater_bg")
+    self.theater_map = self.list_panel:getChildByName("theater_map")
+    self.theater_name = self.list_panel:getChildByName("theater_name")
+    self.theater_self = self.list_panel:getChildByName("theater_self")
+    self.check_btn = self.list_panel:getChildByName("check_btn")
+    self.check_txt = self.check_btn:getChildByName("check_txt")
+    self.check_txt:setString(TI18N("语言_c_7"))
+end
+function ViewTheaterItem:setData(data)
+    self.escesiceData = data
+    self.theater_name:setString(TI18N(data.name))
+    local res = PathTool.getPlistImgForDownLoad("elitematch/elitematch_zone_icon",data.icon, false)
+    loadSpriteTexture(self.theater_map,res,LOADTEXT_TYPE)
+    if data.isself == true then
+        self.theater_self:setVisible(true)
+    else
+        self.theater_self:setVisible(false)
+    end
+end
+
+function ViewTheaterItem:getData()
+    return self.escesiceData
+end
+function ViewTheaterItem:addCallBack( value )
+    self.callback =  value
+end
+
+function ViewTheaterItem:registerEvent()
+    registerButtonEventListener(self.check_btn, function(param,sender, event_type)
+        local myseasonnum = _model:getCrossServerPrimusFitNum()
+        local myround = _model:getCrossServerPrimusRound()
+        controller:sender21812(self.escesiceData.server_id,myseasonnum,myround)
+    end ,false, 1)
+end
+
+function ViewTheaterItem:openRewardWindow(index)
+end
+
+
+function ViewTheaterItem:DeleteMe()
+end

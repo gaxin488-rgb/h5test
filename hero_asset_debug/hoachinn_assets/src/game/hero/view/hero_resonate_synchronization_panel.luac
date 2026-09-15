@@ -1,0 +1,382 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      共鸣水晶同步进度
+-- <br/> 2020年3月6日
+-- --------------------------------------------------------------------
+HeroResonateSynchronizationPanel = HeroResonateSynchronizationPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+
+function HeroResonateSynchronizationPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big
+    self.camp_btn_list = {}
+    self.is_full_screen = false
+    self.click_index = -1
+    self.click_sort = 1 -- 1大-小 2 小-大
+    self.layout_name = "hero/hero_resonate_synchronization_panel"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist }
+    }
+    
+end
+
+function HeroResonateSynchronizationPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title = self.main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_c_6497"))
+    local _w = math.max(self.title:getContentSize().width+120,self.title_bg:getContentSize().width)
+    self.title_bg:setContentSize(cc.size(_w, self.title_bg:getContentSize().height))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.hero_bg = self.main_container:getChildByName("hero_bg")
+    self.rule_btn = self.main_container:getChildByName("rule_btn")
+    self.item_scroll = self.main_container:getChildByName("item_scroll")
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.bar = self.top_panel:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.bar_txt = self.top_panel:getChildByName("bar_txt")
+    self.lev_txt = self.top_panel:getChildByName("lev_txt")
+    self.lev_tip = self.top_panel:getChildByName("lev_tip")
+    self.lev_tip:setString(TI18N("语言_c_6498"))
+    self.look_more = self.top_panel:getChildByName("look_more")
+    self.look_more:setString(TI18N("语言_c_6499"))
+    self.need_txt = self.top_panel:getChildByName("need_txt")
+    self.reward_node = self.top_panel:getChildByName("reward_node")
+    self.mid_panel = self.main_container:getChildByName("mid_panel")
+    self.get_txt = self.mid_panel:getChildByName("get_txt")
+    self.get_txt:setString(TI18N("语言_c_6500"))
+    self.get_val = self.mid_panel:getChildByName("get_val")
+    self.get_val:setPositionX(self.get_txt:getPositionX() + self.get_txt:getContentSize().width)
+    self.sort_bg = self.mid_panel:getChildByName("sort_bg")
+    self.sort_btn = self.mid_panel:getChildByName("sort_btn")
+    self.sort_txt = self.mid_panel:getChildByName("sort_txt")
+    self.sort_txt:setString(TI18N("语言_c_6501"))
+    self.sort_bg:setContentSize(cc.size(self.sort_txt:getContentSize().width + 50,self.sort_bg:getContentSize().height))
+    self.camp_btn_circle = self.mid_panel:getChildByName("camp_btn_circle")
+    for i = 0, 5 do
+        self.camp_btn_list[i] = self.mid_panel:getChildByName("camp_btn_"..i)
+        self.camp_btn_list[i].index = i
+    end
+end
+
+function HeroResonateSynchronizationPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.reward_node, handler(self, self.onClickRewardNode) ,false, 2)
+    registerButtonEventListener(self.rule_btn, function(param, sender, event_type)
+        TipsManager:getInstance():showCommonTips(Config.ResonateData.data_const["sec_phase_rule"].desc, sender:getTouchBeganPosition(),nil,nil,600)
+    end ,false, 2)
+    for i = 0, 5 do
+        registerButtonEventListener(self.camp_btn_list[i], function()
+            self:onClickCampBtn(i,self.click_sort)
+        end ,false, 2)
+    end
+    registerButtonEventListener(self.sort_bg, function()
+        local num = 0
+        if self.click_sort == 1 then
+            num = 2
+            self.sort_btn:setScaleY(-1)
+        else
+            num = 1
+            self.sort_btn:setScaleY(1)
+        end
+        self:onClickCampBtn(self.click_index,num)
+    end ,false, 2)
+    --更新
+    if self.hero_resonate_update_sync_event == nil then
+        self.hero_resonate_update_sync_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Resonate_Update_Sync_Event, function(data)
+            self:setData()
+        end)
+    end  
+end
+
+--关闭
+function HeroResonateSynchronizationPanel:onClickBtnClose()
+    controller:openHeroResonateSynchronizationPanel(false)
+end
+function HeroResonateSynchronizationPanel:openRootWnd()
+    if model:getIsLookSpeed() then
+        ActionController:getInstance():sender16809(ActionStorageBool.ResonateHigh,1,"")
+    end
+    self:setData()
+end
+function HeroResonateSynchronizationPanel:setData()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.item_scroll:getContentSize()
+        self.setting = {
+            start_x = 20,                     -- 第一个单元的X起点
+            space_x = 20,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 10,                     -- y方向的间隔
+            item_width = 125,                -- 单元的尺寸width
+            item_height = 145,               -- 单元的尺寸height
+            -- row = 1,                         -- 行数，作用于水平滚动类型
+            col = 4,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.item_scroll, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, self.setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    local cfg = Config.ResonateData.data_crystal_sync_exp
+    local hero_cfg = Config.PartnerData.data_partner_base
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("partner_data")
+    self.hero_list = {[0] = {}}
+    for k, v in pairs(cfg) do
+        local list = hero_cfg[k]
+        if list.isshow == 0 and not table.indexof(nohideIds,list.bid) then
+        else
+            local camp_id = list.camp_type
+            if not self.hero_list[camp_id] then
+                self.hero_list[camp_id] = {}
+            end
+            local hero_vo = model:getResonateDetailsForBid(k)
+            local data_partner_base = Config.PartnerData.data_partner_base[k]
+            if hero_vo then
+                v[hero_vo.star].sort_id = data_partner_base.camp_type
+                v[hero_vo.star].is_have = 2
+                table.insert(self.hero_list[camp_id],v[hero_vo.star])
+                table.insert(self.hero_list[0],v[hero_vo.star])
+            else
+                v[5].sort_id = data_partner_base.camp_type
+                v[5].is_have = 1
+                table.insert(self.hero_list[camp_id],v[5])
+                table.insert(self.hero_list[0],v[5])
+            end
+        end
+    end
+    self:onClickCampBtn(0,self.click_sort)
+    local sync_details = model:getSyncDetails()
+    self.get_val:setString(string.format("%s/%s", tableLen(sync_details),tableLen(self.hero_list[0])))
+    self.resonate_details_data = model:getResonateDetailsData()
+    if next(self.resonate_details_data) then
+        self.lev_txt:setString(self.resonate_details_data.lev_reward)
+        local sync_cfg = Config.ResonateData.data_crystal_sync
+        local max_num = 0
+        max_num = sync_cfg[self.resonate_details_data.lev_reward].exp_tol
+        self.bar_txt:setString(string.format("%s/%s", self.resonate_details_data.exp,max_num))
+        self.bar:setPercent(self.resonate_details_data.exp*100/max_num)
+    end
+    if not self.reward_item then
+        self.reward_item = createEffectSpine("E51087", cc.p(22,0), cc.p(0.5, 0.5), true, PlayerAction.action)
+        self.reward_node:addChild(self.reward_item)
+    end
+    local lev = 0
+    if self.resonate_details_data.lev_reward and Config.ResonateData.data_crystal_sync[self.resonate_details_data.lev_reward + 1] and Config.ResonateData.data_crystal_sync[self.resonate_details_data.lev_reward + 1].reward_limit then
+        lev = Config.ResonateData.data_crystal_sync[self.resonate_details_data.lev_reward + 1].reward_limit
+    end
+    local action = PlayerAction.action_1
+    if (self.resonate_details_data.lev_reward or 0) >= tableLen(Config.ResonateData.data_crystal_sync or {}) then
+        action = PlayerAction.action_3
+    else
+        if self.resonate_details_data and self.resonate_details_data.lev_reward and self.resonate_details_data.lev then
+            if self.resonate_details_data.lev_reward < self.resonate_details_data.lev and model:checkEnoughResLev(lev) then
+                action = PlayerAction.action_2
+            else
+                action = PlayerAction.action_1
+            end
+        else
+            action = PlayerAction.action_1
+        end
+    end
+    self.reward_item:setAnimation(0, action, true)
+    if not model:checkEnoughResLev(lev) then
+        self.need_txt:setString(string.format(TI18N("语言_c_6515"),lev))
+        self.need_txt:setVisible(true)
+    else
+        self.need_txt:setVisible(false)
+    end
+end
+
+function HeroResonateSynchronizationPanel:onClickRewardNode()
+    if self.resonate_details_data and self.resonate_details_data.lev_reward then
+        local lev = Config.ResonateData.data_crystal_sync[self.resonate_details_data.lev_reward + 1] and Config.ResonateData.data_crystal_sync[self.resonate_details_data.lev_reward + 1].reward_limit or 0
+        if self.resonate_details_data.lev_reward < self.resonate_details_data.lev and model:checkEnoughResLev(lev) then
+            controller:sender26435()
+        else
+            controller:openHeroResonateRewardPanel(true)
+        end
+    end
+end
+function HeroResonateSynchronizationPanel:onClickCampBtn(index,sort_index)
+    if self.click_index == index and self.click_sort == sort_index then return end
+    self.click_index = index
+    self.click_sort = sort_index
+    self.camp_btn_circle:setPositionX(self.camp_btn_list[index]:getPositionX())
+    self.list_data = self.hero_list[index]
+    if sort_index == 1 then
+        local sort_func = SortTools.tableCommonSorter({{"star", true},{"sort_id", true},{"is_have", true},{"bid", true}})
+	 	table.sort(self.list_data, sort_func)
+    else
+        local sort_func = SortTools.tableCommonSorter({{"star", false},{"sort_id", true},{"is_have", true},{"bid", true}})
+	 	table.sort(self.list_data, sort_func)
+    end
+    self.child_scrollview:reloadData()
+end
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroResonateSynchronizationPanel:createNewCell(width, height)
+    local cell = HeroResonateSynchronizationItem.new()
+	return cell
+end
+
+--获取数据数量
+function HeroResonateSynchronizationPanel:numberOfCells()
+    if not self.list_data then return 0 end
+    return #self.list_data
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroResonateSynchronizationPanel:updateCellByIndex(cell, index)
+    if not self.list_data then return end
+    cell.index = index
+    local cell_data = self.list_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+function HeroResonateSynchronizationPanel:close_callback()
+    if self.hero_resonate_update_sync_event then
+        GlobalEvent:getInstance():UnBind(self.hero_resonate_update_sync_event)
+        self.hero_resonate_update_sync_event = nil
+    end
+    self:onClickBtnClose()
+end
+
+
+
+--子项
+HeroResonateSynchronizationItem = class("HeroResonateSynchronizationItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeroResonateSynchronizationItem:ctor()
+    self.node_list = {}
+    self.cost_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function HeroResonateSynchronizationItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_resonate_synchronization_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(125,145))
+	self:setTouchEnabled(true)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+    self.head_panel = self.main_container:getChildByName("head_panel")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.star_txt = self.main_container:getChildByName("star_txt")
+    self.star_img = self.main_container:getChildByName("star_img")
+    self.bar_node = self.main_container:getChildByName("bar_node")
+    self.score_img = self.main_container:getChildByName("score_img")
+end
+
+function HeroResonateSynchronizationItem:setData( data )
+    self.data = data
+    if not self.mask then
+        self.mask = createSprite(PathTool.getResFrame("sync","sync_b"), 45, 45, nil, cc.p(0.5, 0.5),LOADTEXT_TYPE_PLIST)--模板
+        self.mask:setScale(1)
+    end
+    if not self.clipNode then
+        self.clipNode = cc.ClippingNode:create(self.mask)
+        self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+        self.clipNode:setContentSize(self.mask:getContentSize())
+        self.clipNode:setCascadeOpacityEnabled(true)
+        self.clipNode:setPosition(67,96)
+        self.clipNode:setAlphaThreshold(0)
+        self.head_panel:addChild(self.clipNode,2)
+    end
+    if not self.icon then
+        self.icon = ccui.ImageView:create()
+        self.icon:setCascadeOpacityEnabled(true)
+        self.icon:setAnchorPoint(0.5,0.5)
+        self.icon:setPosition(45,45)--底板
+        self.icon:setScale(0.9)
+        self.clipNode:addChild(self.icon,3)
+    end
+    self.icon:loadTexture(PathTool.getHeadIcon(data.show_face), LOADTEXT_TYPE)
+    
+    local score = model:heroBidScore(data.bid)
+    local path = string.format("partner_rarity_%s", score)
+    local src =  PathTool.getResFrame('partnersummon', path,false)
+    loadSpriteTexture(self.score_img,src,LOADTEXT_TYPE_PLIST)
+    local cfg = Config.PartnerData.data_partner_base[data.bid]
+    local res = PathTool.getResFrame("sync", "sync_r_"..cfg.camp_type)
+    local sprite = createSprite(res, 0, 0, nil, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    if not self.progress then
+        self.progress = cc.ProgressTimer:create(sprite)
+        self.progress:setType(cc.PROGRESS_TIMER_TYPE_RADIAL)
+        self.bar_node:addChild(self.progress)
+        self.bar_node:setScale(-1, -1)
+    end
+    self.progress:setSprite(sprite)
+    local hero_cfg = Config.ResonateData.data_crystal_sync_exp[data.bid]
+    local max_star = 0
+    for k, v in pairs(hero_cfg) do
+        max_star = math.max(max_star,v.star)
+    end
+    local per = data.star*100 / max_star
+    if model:getResonateDetailsForBid(self.data.bid) then
+        self.star_txt:setString(data.star)
+        self.star_txt:setPositionX(41)
+        self.star_img:setVisible(true)
+        setChildUnEnabled(false,self.icon)
+        self.progress:setPercentage(per)
+        self.title_bg:setContentSize(cc.size(85,27))
+    else
+        self.star_txt:setString(TI18N("语言_c_6496"))
+        self.star_txt:setPositionX(62)
+        self.star_img:setVisible(false)
+        setChildUnEnabled(true,self.icon)
+        self.progress:setPercentage(0)
+        local _w = math.max(self.star_txt:getContentSize().width+20,self.title_bg:getContentSize().width)
+        self.title_bg:setContentSize(cc.size(_w, self.title_bg:getContentSize().height))
+    end
+end
+function HeroResonateSynchronizationItem:register_event( )
+    self.main_container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click = math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                self:onClickSelf()
+            end
+        elseif event_type == ccui.TouchEventType.moved then
+        elseif event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+        elseif event_type == ccui.TouchEventType.canceled then
+        end
+    end)
+    -- registerButtonEventListener(self.main_container, handler(self, self.onClickSelf) ,false, 2)
+end
+function HeroResonateSynchronizationItem:onClickSelf()
+    controller:openHeroResonateSynchronizationDetailsPanel(true,self.data.bid)
+end
+function HeroResonateSynchronizationItem:DeleteMe()
+end

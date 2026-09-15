@@ -1,0 +1,139 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 勇者之路 奖励预览
+--------------------------------- 
+local _controller = BraveRoadController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+BraveRoadRewardWindow = BraveRoadRewardWindow or BaseClass(BaseView)
+
+function BraveRoadRewardWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "braveroad/brave_road_reward_window"
+
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.show_list = {}
+end
+
+function BraveRoadRewardWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+	self.container = container
+    self:playEnterAnimatianByObj(container, 2)
+    local image_2 = container:getChildByName("image_2")
+	local win_title = container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_5080"))
+    moveTextBg(win_title,image_2,60,image_2:getContentSize().width)
+    self.close_btn = container:getChildByName("close_btn")
+    
+    local image_top = container:getChildByName("image_top")
+    self.label_des_1 = image_top:getChildByName("label_des_1")
+    self.label_des_1:setString(TI18N("语言_c_1080"))
+    self.label_des_2 = image_top:getChildByName("label_des_2")
+    self.label_des_2:setString(TI18N("语言_c_5081"))
+
+	self.list_panel = container:getChildByName("list_panel")
+	self.res_label = container:getChildByName("res_label")
+
+	local scroll_view_size = self.list_panel:getContentSize()
+    local setting = {
+        item_class = BraveRoadRewardItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 4,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 610,               -- 单元的尺寸width
+        item_height = 130,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic   = true            -- 是否需要动态创建的 
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.list_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+    self.item_scrollview:setBounceEnabled(false)
+    
+    self.label_diff = container:getChildByName("label_diff")
+    self.label_diff:setVisible(false)
+    self.label_diff:setString(TI18N("语言_c_5082"))
+    self.label_diff.label_value = self.label_diff:getChildByName("label_value")
+    ccui.Helper:doLayout(self.label_diff)
+    self.label_pass_value = container:getChildByName("label_pass_value")
+    self.label_pass_value.label_pass_des = self.label_pass_value:getChildByName("label_pass_des")
+    self.label_pass_value.label_pass_des:setString(TI18N("语言_c_5083"))
+end
+
+function BraveRoadRewardWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, function (  )
+		_controller:openBraveRoadRewardWindow(false)
+	end, true, 2)
+
+	registerButtonEventListener(self.background, function (  )
+		_controller:openBraveRoadRewardWindow(false)
+	end, false, 2)
+end
+
+function BraveRoadRewardWindow:generateListData()
+    local configs = Config.LimitTrainingData.data_dungeon_boss
+    local reward_list = {}
+    for i, v in ipairs(configs) do
+        --首通
+        local i_data = {}
+        i_data.title = string.format(TI18N("语言_c_34"), StringUtil.numToChinese(i))
+        i_data.name = TI18N("语言_c_5359")
+        i_data.awards = v.f_award
+        reward_list[#reward_list + 1] = i_data
+        --1 星
+        local i_data = {}
+        i_data.title = string.format(TI18N("语言_c_34"), StringUtil.numToChinese(i))
+        i_data.name = string.format(TI18N("语言_c_5360"), 1)
+        local dif_value = _model:getMonthDiffVal()
+        local awards = clone(v.t_award)
+        for p, q in ipairs(awards) do
+            q[2] = math.floor(q[2]*dif_value*1)
+        end
+        i_data.awards = awards
+        reward_list[#reward_list + 1] = i_data
+        --max 星
+        local i_data = {}
+        local max_star = v.tips_num*3
+        i_data.title = string.format(TI18N("语言_c_34"), StringUtil.numToChinese(i))
+        i_data.name = string.format(TI18N("语言_c_5360"), max_star)
+        local dif_value = _model:getMonthDiffVal()
+        local awards = clone(v.t_award)
+        for p, q in ipairs(awards) do
+            q[2] = math.floor(q[2]*dif_value*max_star)
+        end
+        i_data.awards = awards
+        reward_list[#reward_list + 1] = i_data
+    end
+    return reward_list
+end
+
+function BraveRoadRewardWindow:openRootWnd(  )
+    self.item_scrollview:setData(self:generateListData())
+    local diff = _model:getMonthDiff()
+    local config = Config.LimitTrainingData.data_diff[diff]
+    local num = 0
+    if config then
+        num = string.format("%0.2f", config.diff/1000)
+    end
+    self.label_diff.label_value:setString(num)
+    local cid, dun_id = _model:getMaxCidAndDunId()
+    self.label_pass_value:setString(cid.."-"..dun_id)
+    ccui.Helper:doLayout(self.label_pass_value)
+end
+
+function BraveRoadRewardWindow:close_callback(  )
+    self.item_scrollview:DeleteMe()
+	_controller:openBraveRoadRewardWindow(false)
+end

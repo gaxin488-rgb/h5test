@@ -1,0 +1,221 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      经验赛奖励预览
+-- <br/> 2019年3月1日
+-- --------------------------------------------------------------------
+ShinobiAwardPanel = ShinobiAwardPanel or BaseClass(BaseView)
+
+local controller = ShinobiController:getInstance()
+local _model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+
+function ShinobiAwardPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "shinobi/shinobi_reward_panel"
+
+    self.res_list = {
+     -- { path = PathTool.getPlistImgForDownLoad("form","form"), type = ResourcesType.plist },
+    }
+
+    --奖励
+    self.dic_reward_list = {}
+    self.show_list = {}
+end
+
+function ShinobiAwardPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.title = self.main_panel:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_728"))
+    local Image_2 = self.main_panel:getChildByName("Image_2")
+    autoSizeTitleBg(self.title,Image_2)
+    local col_name_list = {
+        TI18N("语言_c_1199"), TI18N("语言_c_282"),TI18N("语言_c_6040")
+    }
+    for i=1,3 do
+        self.main_panel:getChildByName("col_name"..i):setString(col_name_list[i])
+    end
+    self.main_panel:getChildByName("col_name3"):setTouchEnabled(true)
+    self.main_panel:getChildByName("col_name3"):setString(transformTextToShort(TI18N("语言_c_6040"),15))
+    addEvt2showAllTextTips(self.main_panel:getChildByName("col_name3"),TI18N("语言_c_6040"),15)
+
+    self.scroll_container = self.main_panel:getChildByName("scroll_container")
+    self.close_btn = self.main_panel:getChildByName("close_btn") 
+    setTextMaxWidth(self.main_panel:getChildByName("bottom_label"),620)
+    -- self.main_panel:getChildByName("bottom_label"):setString(TI18N("语言_c_6030"))
+    self.main_panel:getChildByName("bottom_label"):setString(transformTextToShort(TI18N("语言_c_6030"),110))
+    addEvt2showAllTextTips(self.main_panel:getChildByName("bottom_label"),TI18N("语言_c_6030"),110)
+end
+
+function ShinobiAwardPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+
+end
+
+--关闭
+function ShinobiAwardPanel:onClickBtnClose()
+    controller:openShinobiAwardWindow(false)
+end
+
+--@level_id 段位
+--@rank 名次
+function ShinobiAwardPanel:openRootWnd()
+    self:updateList()
+end
+
+function ShinobiAwardPanel:updateList()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.scroll_container:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 628,                -- 单元的尺寸width
+            item_height = 138,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.scroll_container, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    local list=deepCopy(Config.ArenaShinobiData.data_shinobi_level)    
+    table_sort(list,function(a,b) return a.id>b.id end)
+    self.show_list = list
+    self.item_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ShinobiAwardPanel:createNewCell(width, height)
+   local cell = ShinobiAwardItem.new()
+    return cell
+end
+--获取数据数量
+function ShinobiAwardPanel:numberOfCells()
+    if not self.show_list then return 0 end
+    return #self.show_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function ShinobiAwardPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.show_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function ShinobiAwardPanel:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+    end
+    self.item_scrollview = nil
+    controller:openShinobiAwardWindow(false)
+end
+
+------------------------------------------
+-- 子项
+ShinobiAwardItem = class("ShinobiAwardItem", function()
+    return ccui.Widget:create()
+end)
+
+function ShinobiAwardItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ShinobiAwardItem:configUI(  )
+    self.size = cc.size(628,138)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("shinobi/shinobi_danreward_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    self.icon = container:getChildByName("icon")
+    self.level_tip1 = container:getChildByName("level_tip1")
+    self.level_tip2 = container:getChildByName("level_tip2")
+    setTextMaxWidth(self.level_tip2,170)
+    self.level_name = container:getChildByName("level_name")
+    setTextMaxWidth(self.level_name,130)
+    setTextSpacing(self.level_name,-10)
+    self.item_scrollview = container:getChildByName("item_scrollview")
+    self.item_scrollview:setScrollBarEnabled(false)
+    self.item_scrollview:setSwallowTouches(false)
+    self.cur=container:getChildByName("cur")
+    self.cur:getChildByName("label"):setString(TI18N("语言_c_1294"))
+    self.setting = {}
+    self.setting.scale = 0.6
+    -- self.setting.max_count = 6
+end
+
+function ShinobiAwardItem:register_event( )
+   
+end
+
+function ShinobiAwardItem:setData(data)
+    if not data then return end
+    self.data = data
+    --段位
+    if data then
+        self.level_name:setString(data.name)
+        self.icon:setVisible(true)
+        local name = data.little_ico
+        if name == nil or name == "" then
+            name = "icon_iron"
+        end
+        local bg_res = PathTool.getPlistImgForDownLoad("shinobi/shinobi_icon",name, false)
+        self.item_load = loadSpriteTextureFromCDN(self.icon , bg_res, ResourcesType.single, self.item_load)
+    end
+    local reward =  data.award
+    self.item_list = commonShowSingleRowItemList(self.item_scrollview, self.item_list, reward, self.setting)
+    if data.need_rank>0 then
+        self.level_tip2:setVisible(true)
+        self.level_tip2:setString(string_format(TI18N("语言_c_5996"),data.need_rank))
+    else
+        self.level_tip2:setVisible(false)
+    end
+    local _str = string_format(TI18N("语言_c_5997"),data.all_exp)
+    -- self.level_tip1:setString(string_format(TI18N("语言_c_5997"),data.all_exp))
+
+    self.level_tip1:setTouchEnabled(true)
+    self.level_tip1:setString(_str)
+    
+
+    local baseinfo=_model:getShinobiMyBaseInfo()
+    self.cur:setVisible(baseinfo.cur_dan==data.id)
+end
+
+function ShinobiAwardItem:DeleteMe( )
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    if self.item_load then
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

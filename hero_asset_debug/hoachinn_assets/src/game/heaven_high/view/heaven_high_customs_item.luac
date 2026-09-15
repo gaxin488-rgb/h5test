@@ -1,0 +1,200 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-04-12 16:19:06
+-- @description    : 
+		-- 龙地洞关卡 item
+--------------------------------- 
+local _controller = HeavenHighController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+local pos = {
+	[1] = {cc.p(60,165)},
+	[2] = {cc.p(47,164),cc.p(75,164)},
+	[3] = {cc.p(31,161),cc.p(60,165),cc.p(89,161)},
+	[4] = {cc.p(21,155),cc.p(47,164),cc.p(75,164),cc.p(101,155)},
+	[5] = {cc.p(6,150),cc.p(31,161),cc.p(60,165),cc.p(89,161),cc.p(114,150)},
+}
+
+HeavenHighCustomsItem = class("HeavenHighCustomsItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeavenHighCustomsItem:ctor(call_back)
+	self.call_back = call_back
+	self.star_list = {}
+	self.gary_star_list = {}
+
+	self:configUI()
+	self:register_event()
+end
+
+function HeavenHighCustomsItem:configUI( )
+	self.size = cc.size(120, 180)
+	self:setTouchEnabled(false)
+	self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("heaven_high/heaven_high_customs_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    self.container = container
+
+    self.customs_icon = container:getChildByName("customs_icon")
+    self.customs_icon:ignoreContentAdaptWithSize(true)
+    self.customs_num = self.root_wnd:getChildByName("customs_num")
+    self.boss_sp = self.root_wnd:getChildByName("boss_sp")
+    self.boss_sp:setVisible(false)
+    self.arrow_sp = container:getChildByName("arrow_sp")
+    self.arrow_sp:setVisible(false)
+    
+    for i=1,5 do
+		local gary_star = container:getChildByName("gary_star_" .. i)
+    	if gary_star then
+    		_table_insert(self.gary_star_list, gary_star)
+    	end
+    	local star = container:getChildByName("star_" .. i)
+    	if star then
+    		_table_insert(self.star_list, star)
+			star:setVisible(false)
+    	end
+    end
+
+    local act_1 = cc.MoveBy:create(1, cc.p(0, 8))
+    local act_2 = cc.MoveBy:create(1, cc.p(0, -8))
+    container:runAction(cc.RepeatForever:create(cc.Sequence:create(act_1, act_2)))
+end
+
+function HeavenHighCustomsItem:register_event(  )
+	registerButtonEventListener(self.container, function (  )
+		if self.select_status and self.customs_vo then
+			if self.customs_vo and self.customs_vo.star == tableLen(self.customs_vo.star_info) then
+				message(TI18N("语言_c_3686"))
+			elseif self.cfg_data then
+				_controller:openHeavenHighDunFightInfo(true,self.cfg_data)
+			end
+		elseif self.call_back then
+			self.call_back(self)
+		end
+	end)
+end
+
+function HeavenHighCustomsItem:setData( customs_vo, cfg_data)
+	if not customs_vo or not cfg_data then return end
+
+	if self.customs_vo ~= nil then
+        if self.update_self_event ~= nil then
+            self.customs_vo:UnBind(self.update_self_event)
+            self.update_self_event = nil
+        end
+    end
+	
+	self.cfg_data = cfg_data
+	self.customs_vo = customs_vo
+	if self.customs_vo then
+		if self.update_self_event == nil then
+            self.update_self_event = self.customs_vo:Bind(HeavenHighEvent.Update_Customs_Vo_Event, function()
+                self:updateStarInfo()
+            end)
+        end
+	end
+	for i = 1, 5 do
+		if i > tableLen(self.cfg_data.unit_id) then
+			self.star_list[i]:setVisible(false)
+			self.gary_star_list[i]:setVisible(false)
+		else
+			self.star_list[i]:setPosition(pos[tableLen(self.cfg_data.unit_id)][i])
+			self.gary_star_list[i]:setPosition(pos[tableLen(self.cfg_data.unit_id)][i])
+			self.gary_star_list[i]:setVisible(true)
+		end
+	end
+	self:updateCustomsItem()
+end
+
+function HeavenHighCustomsItem:updateCustomsItem(  )
+	if not self.cfg_data then return end
+	
+	-- 关卡图标
+	if not self.icon_res_id or self.icon_res_id ~= self.cfg_data.res_id then
+		self.icon_res_id = self.cfg_data.res_id
+		local res_path = PathTool.getHeavenCustomsIconRes( self.cfg_data.res_id )
+		self.res_load = loadImageTextureFromCDN(self.customs_icon, res_path, ResourcesType.single, self.res_load)
+	end
+
+	-- 关卡章节
+	if self.cfg_data.type == 1 then  -- boss关卡
+		self.customs_num:setVisible(false)
+		self.boss_sp:setVisible(true)
+	else
+		self.boss_sp:setVisible(false)
+		self.customs_num:setVisible(true)
+		self.customs_num:setString(self.cfg_data.id .. "-" .. self.cfg_data.order_id)
+	end
+
+	-- 星数
+	self:updateStarInfo()
+end
+
+function HeavenHighCustomsItem:updateStarInfo( )
+	local pass_star = {}
+	if self.customs_vo then
+		pass_star = self.customs_vo.star_info
+	end
+	for i,star in ipairs(self.star_list) do
+		for key, value in pairs(pass_star) do
+			if value.order_id == i then
+				local num = 0
+				for k, v in pairs(value.info_list) do
+					if v.flag == 1 then
+						num = num + 1
+					end
+				end
+				star:setVisible(num > 0)
+				local res = PathTool.getResFrame("heaven_ad","heavenad_10"..27+num)
+				loadSpriteTexture(star, res, LOADTEXT_TYPE_PLIST)
+			end
+		end
+	end
+		
+end
+
+function HeavenHighCustomsItem:setSelected( status )
+	if status == true then
+		self.container:setScale(1.1)
+		self.arrow_sp:setVisible(true)
+		self:setLocalZOrder(99)
+	else
+		self.container:setScale(1.0)
+		self.arrow_sp:setVisible(false)
+		self:setLocalZOrder(1)
+	end
+	self.select_status = status
+end
+
+function HeavenHighCustomsItem:getData(  )
+	return self.cfg_data
+end
+
+function HeavenHighCustomsItem:getCustomsId(  )
+	if self.cfg_data then
+		return self.cfg_data.order_id
+	end
+end
+
+function HeavenHighCustomsItem:DeleteMe(  )
+	if self.res_load then
+		self.res_load:DeleteMe()
+		self.res_load = nil
+	end
+	if self.customs_vo ~= nil then
+        if self.update_self_event ~= nil then
+            self.customs_vo:UnBind(self.update_self_event)
+            self.update_self_event = nil
+        end
+    end
+	self:removeAllChildren()
+    self:removeFromParent()
+end

@@ -1,0 +1,348 @@
+
+ElfinAttachWindow = ElfinAttachWindow or BaseClass(BaseView)
+-- desc: 
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+
+function ElfinAttachWindow:__init()
+	self.is_full_screen = true
+	self.layout_name = "elfin/elfin_attach_window"
+	self.res_list = {
+		{ path = PathTool.getPlistImgForDownLoad("elfin","elfin_soul_bg"), type = ResourcesType.single },
+	}
+
+	self.win_type = WinType.Full
+    self.view_tag = ViewMgrTag.TOP_TAG
+
+	self.creat_close_btn_type = 1
+
+	self.elfin_step_list = {}
+	self.elfin_step_list.star_list = {}
+end
+-- desc: 
+function ElfinAttachWindow:open_callback()
+	self._ui = self
+
+	self._root = self.root_wnd:getChildByName("_root")
+	self.bottom_bg = self.root_wnd:getChildByName("bottom_bg")
+	self.btn_close = self.root_wnd:getChildByName("btn_close")
+	self.background = self.root_wnd:getChildByName("background")
+	self.background:setScale(display.getMaxScale())
+
+	self._bg = self._root:getChildByName("_bg")
+	self._stageSpineNode = self._root:getChildByName("_stageSpineNode")
+	self._mainElfinNode = self._root:getChildByName("_mainElfinNode")
+	self._attachElfinNode = self._root:getChildByName("_attachElfinNode")
+	self._effectSpineNode = self._root:getChildByName("_effectSpineNode")
+	self._limitParent = self._root:getChildByName("_limitParent")
+	self._topPanel = self._root:getChildByName("_topPanel")
+	self.line = self._topPanel:getChildByName("line")
+	self._name = self._topPanel:getChildByName("_name")
+	self.pre_btn = self._root:getChildByName("pre_btn")
+    self.pre_btn_txt = self.pre_btn:getChildByName("pre_btn_txt")
+    setTextMaxWidth(self.pre_btn_txt, 90, -4)
+    self.pre_btn_txt:setChangeScaleOffWidth(-1000)
+    self.pre_btn_txt:setString(TI18N("语言_c_7534"))
+
+	self._startGroup = self._topPanel:getChildByName("_startGroup")
+	self._touchArea = self._root:getChildByName("_touchArea")
+	self._addIcon = self._root:getChildByName("_addIcon")
+	self._attachBtn = self._root:getChildByName("_attachBtn")
+	self._attachBtnLabel = self._attachBtn:getChildByName("_attachBtnLabel")
+	self._bottomPanel = self._root:getChildByName("_bottomPanel")
+	self._line = self._bottomPanel:getChildByName("_line")
+	self._emptyPanel = self._bottomPanel:getChildByName("_emptyPanel")
+	self._emptyLabel = self._emptyPanel:getChildByName("_emptyLabel")
+	setTextMaxWidth(self._emptyLabel, 250, -4)
+	self._talkBg = self._emptyPanel:getChildByName("_talkBg")
+	self._emptyLabel2 = self._emptyPanel:getChildByName("_emptyLabel2")
+	self._attachTipLabel = self._bottomPanel:getChildByName("_attachTipLabel")
+	self._attachInfo = self._bottomPanel:getChildByName("_attachInfo")
+	self._skillItemNode = self._attachInfo:getChildByName("_skillItemNode")
+	self._skillName = self._attachInfo:getChildByName("_skillName")
+	setTextMaxWidth(self._skillName, 565, -4)
+	self._skilllType = self._attachInfo:getChildByName("_skilllType")
+	self._skillDescBg = self._attachInfo:getChildByName("_skillDescBg")
+	self._descScrollView = self._skillDescBg:getChildByName("_descScrollView")
+
+
+	local ui = self
+	ui._topPanel:setPositionY(display.getTop())
+	ui._bottomPanel:setPositionY(display.getBottom())
+	ui._attachTipLabel:setString(TI18N("语言_c_d_243"))
+
+	ui._emptyLabel:setString(TI18N("语言_c_d_244"))
+	local s = ui._emptyLabel:getContentSize()
+	if s.height > 75 then
+		local oldSize = ui._talkBg:getContentSize()
+		-- 底图旋转了 所以改宽度
+		ui._talkBg:setContentSize(cc.size(s.height + 30, oldSize.height))
+	end
+
+	ui._emptyLabel2:setString(TI18N("语言_c_3068"))
+
+	ui._descScrollView:setScrollBarEnabled(false)
+
+	local stageEffect2 = createSpineByName("E99914")
+	ui._effectSpineNode:addChild(stageEffect2)
+	stageEffect2:setAnimation(0, PlayerAction.action_2, true)
+	self.stageEffect2 = stageEffect2
+	self.stageEffect2:setVisible(false)
+
+	local _mainElfinNode = createSpineByName("E99914")
+	ui._stageSpineNode:addChild(_mainElfinNode)
+	_mainElfinNode:setAnimation(0, PlayerAction.action_1, true)
+
+
+	self:scheduleChipItemPos()
+	-- followSpineMove(ui._mainElfinNode, stageEffect2, "pingtai1")
+	-- followSpineMove(ui._attachElfinNode, stageEffect2, "pingtai2")
+
+	self.player_info_panel = PlayerInfoPanel.new()
+   	self._root:addChild(self.player_info_panel)
+    local top_y = display.getTop(self._root)
+    self.player_info_panel:setPositionY(top_y)
+	self:adaptationScreen()
+end
+--设置适配屏幕
+function ElfinAttachWindow:adaptationScreen()
+    local top_y = display.getTop(self._root)
+    local bottom_y = display.getBottom(self._root)
+    local left_x = display.getLeft(self._root)
+    local right_x = display.getRight(self._root)
+	self._bg:setPositionY(bottom_y)
+	self.bottom_bg:setPositionY(bottom_y-61)
+	self.btn_close:setPositionY(bottom_y+87)
+end
+
+-- desc: 
+function ElfinAttachWindow:register_event()
+	local ui = self._ui
+	registerButtonEventListener(ui._attachBtn, handler(self, self._onClickAttachBtn), true)
+	registerButtonEventListener(ui._addIcon, handler(self, self._onClickAttachBtn), true)
+	registerButtonEventListener(ui._touchArea, handler(self, self._onClickAttachBtn), true)
+	registerButtonEventListener(ui.btn_close, handler(self, self._onClickCloseBtn), true)
+	registerButtonEventListener(self.pre_btn, function ()
+		ElfinController:getInstance():openElfinAttachBookWindow(true)
+	end, true, 1)
+	self:addGlobalEvent(ElfinEvent.Get_Elfin_Tree_Data_Event, function ()
+		self:refresh()
+	end)
+end
+function ElfinAttachWindow:_onClickCloseBtn()
+	_controller:openElfinAttachWindow(false)
+end
+-- desc:
+function ElfinAttachWindow:close_callback()
+	doStopAllActions(self._mainElfinNode)
+	doStopAllActions(self._attachElfinNode)
+
+	if self.player_info_panel then
+		self.player_info_panel:DeleteMe()
+		self.player_info_panel = nil
+	end
+	ElfinController:getInstance():openElfinAttachWindow(false)
+end
+-- desc:
+function ElfinAttachWindow:openRootWnd(elfinId)
+	self._elfinId = elfinId
+	local elfin_cfg = Config.SpriteData.data_elfin_data(elfinId)
+	self._elfinCfg = elfin_cfg
+	self:refresh()
+end
+
+
+function ElfinAttachWindow:refresh()
+	if not self._elfinCfg then
+		return
+	end
+	local ui = self
+	local attachId = _model:getAttachElfinById(self._elfinId)
+	if attachId then
+		local attachCfg = Config.SpriteData.data_elfin_data(attachId)
+		if attachCfg then
+			if ui._attachElfinSpine then
+				ui._attachElfinSpine:removeFromParent()
+				ui._attachElfinSpine = nil
+			end
+			local scale = 0.5
+			local zoom = attachCfg.zoom or {}
+			if next(zoom) then
+				local z = zoom[1]
+				scale = z[2]
+			end
+			local offset_y = tonumber(attachCfg.offset_y) or 0
+			ui._attachElfinSpine = createEffectSpine(attachCfg.effect_id, cc.p(0, 0), cc.p(0.5, 0), true, PlayerAction.stand)
+			ui._attachElfinNode:addChild(ui._attachElfinSpine)
+			ui._attachElfinSpine:setScale(scale)
+			ui._emptyPanel:setVisible(false)
+			ui._addIcon:setVisible(false)
+			ui._attachInfo:setVisible(true)
+
+			if not ui._skillItem then
+				ui._skillItem = SkillItem.new(true, true, true, 1, true)
+				ui._skillItemNode:addChild(ui._skillItem)
+			end
+
+			local skillCfg = Config.SkillData.data_get_skill(attachCfg.soul_skill)
+			if skillCfg then
+				ui._skillName:setString(skillCfg.name)
+				ui._skillItem:showLevel(true, -15)
+				ui._skillItem:setData(skillCfg)
+				ui._skilllType:setString(TI18N("语言_c_d_277"))
+				local nameposy = ui._skillName:getPositionY()
+				local namesize = ui._skillName:getContentSize()
+				local type_poy = nameposy - namesize.height - 7
+				ui._skilllType:setPositionY(type_poy)
+
+				if not ui._descTxt then
+					ui._descTxt = createRichLabel(22, cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 1), cc.p(10, 0), 5, nil, 670)
+				
+					ui._descScrollView:addChild(ui._descTxt)
+				end
+				local newDes = string.gsub(skillCfg.des, "([%d%.]+%%)", "<div fontcolor=009f00 >%1</div>")
+				local desc_str = string.format("%s",newDes)
+				ui._descTxt:setString(desc_str)
+				local desc_size = ui._descTxt:getSize()
+				local s = ui._descScrollView:getContentSize()
+				local targetHeight = desc_size.height + 20
+				if targetHeight > s.height then
+					ui._descTxt:setPositionY(targetHeight - 10)
+					ui._descScrollView:setInnerContainerSize(cc.size(s.width, targetHeight))
+				else
+					ui._descTxt:setPositionY(s.height - 10)
+					ui._descScrollView:setInnerContainerSize(cc.size(s.width, s.height))
+				end
+
+				--查看预览
+				if not ui._previewBtn then
+					local y = ui._skillDescBg:getPositionY() + 35
+					ui._previewBtn = createRichLabel(22,cc.c3b(0x79,0xff,0x7c),cc.p(1,0.5),cc.p(710,y))
+					ui._attachInfo:addChild(ui._previewBtn)
+
+					local res = PathTool.getResFrame("common","common_1093")
+					ui._previewBtn:setString(string.format(TI18N("<div fontcolor=#0ea80e href=xxx ><img src=%s visible=true />%s</div>"),res,TI18N("语言_c_6364")))
+					ui._previewBtn:addTouchLinkListener(function()
+						local tAttachId = _model:getAttachElfinById(self._elfinId)
+						_controller:openElfinAttachSkillPop(true, tAttachId)
+					end, { "click", "href" }, true)
+				end
+
+				ui._attachBtnLabel:setString(TI18N("语言_c_d_242"))
+				--
+				-- if not ui._attachEffect then
+				-- 	ui._attachEffect = createSpineByName("E99914")
+				-- 	ui._effectSpineNode:addChild(ui._attachEffect)
+				-- 	ui._attachEffect:setAnimation(0, PlayerAction.action_3, true)
+				-- end
+				-- ui._attachEffect:setVisible(true)
+			end
+
+			-- ui.stageEffect2:setAnimation(0, PlayerAction.action_2, true)
+			ui.stageEffect2:setVisible(true)
+		end
+
+	else
+		if ui._attachEffect then
+			ui._attachEffect:setVisible(false)
+		end
+
+		if ui._attachElfinSpine then
+			ui._attachElfinSpine:removeFromParent()
+			ui._attachElfinSpine = nil
+		end
+		ui._emptyPanel:setVisible(true)
+		ui._addIcon:setVisible(true)
+		ui._attachInfo:setVisible(false)
+		ui._attachBtnLabel:setString(TI18N("语言_c_d_240"))
+		ui.stageEffect2:setVisible(false)
+		-- ui.stageEffect2:setAnimation(0, PlayerAction.action_1, true)
+	end
+
+	if not ui._elfinSpine then
+		local scale = 0.8
+		local zoom = self._elfinCfg.zoom or {}
+		if next(zoom) then
+			local z = zoom[1]
+			scale = z[1]
+		end
+		local offset_y = tonumber(self._elfinCfg.offset_y) or 0
+		ui._elfinSpine = createEffectSpine( self._elfinCfg.effect_id, cc.p(0, 0), cc.p(0.5, 0), true, PlayerAction.stand )
+		ui._elfinSpine:setScale(scale)
+		-- updateLimitEffect(2, self._elfinId, ui._limitParent)
+		ui._mainElfinNode:addChild(ui._elfinSpine )
+	end
+
+	self:showElfinStep(self._elfinCfg.step)
+
+	local item_config = Config.ItemData.data_get_data(self._elfinId)
+	if item_config then
+		ui._name:setString(item_config.name)
+	end
+end
+
+function ElfinAttachWindow:showElfinStep(num,star_width)
+	local width_s = star_width or 22
+    local _cStar = function(star_count, res, star_list,moveW)
+        local width = width_s
+        local x = (120-star_count*width)/2 + width * 0.5
+        for i=1,star_count do
+            if not star_list[i] then 
+                local star = createImage(self._ui._startGroup,res,0,0,cc.p(0.5,0),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+    if num > 0 and num <= 5 then
+        local res = PathTool.getResFrame("common","common_90032")
+        _cStar(num, res, self.elfin_step_list.star_list,60)
+	elseif num >= 6 then
+		local res = PathTool.getResFrame("common_1","common_1_572")
+		if self.elfin_step_list.moon == nil then 
+            local star = createImage(self._ui._startGroup,res,60, 0,cc.p(0.5,0.5),true,0,false)
+            self.elfin_step_list.moon = star
+        else
+            self.elfin_step_list.moon:setVisible(true)
+        end
+		if self.elfin_step_list.label == nil then 
+            local label = createLabel(18, 1, cc.c3b(0x00, 0x00, 0x00), 58, -4, "", self._ui._startGroup, 2, cc.p(0.5, 0.5))
+			label:setString(num)
+            self.elfin_step_list.label = label
+        else
+            self.elfin_step_list.label:setVisible(true)
+			self.elfin_step_list.label:setString(num)
+        end
+    end
+end
+
+function ElfinAttachWindow:scheduleChipItemPos()
+	doStopAllActions(self._mainElfinNode)
+    self._mainElfinNode:runAction(cc.RepeatForever:create(cc.Sequence:create(
+        cc.MoveTo:create(0.6, cc.p(187, 773)),
+		cc.DelayTime:create(0.2),
+		cc.MoveTo:create(0.6, cc.p(187, 766)),
+        cc.MoveTo:create(0.6, cc.p(187, 759)),
+		cc.DelayTime:create(0.2),
+        cc.MoveTo:create(0.6, cc.p(187, 766))
+    )))
+
+	doStopAllActions(self._attachElfinNode)
+    self._attachElfinNode:runAction(cc.RepeatForever:create(cc.Sequence:create(
+        cc.MoveTo:create(0.6, cc.p(548, 792)),
+		cc.DelayTime:create(0.2),
+		cc.MoveTo:create(0.6, cc.p(548, 785)),
+        cc.MoveTo:create(0.6, cc.p(548, 778)),
+		cc.DelayTime:create(0.2),
+        cc.MoveTo:create(0.6, cc.p(548, 785))
+    )))
+end
+-- desc:
+function ElfinAttachWindow:_onClickAttachBtn(param, sender, event_type)
+	if self._elfinId then
+		_controller:openElfinAttachSelectPop(true, self._elfinId)
+	end
+
+end

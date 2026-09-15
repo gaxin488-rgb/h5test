@@ -1,0 +1,269 @@
+--------------------------------------------
+-- 
+-- @Date    : 2019-4-26
+-- @description    : 
+        -- 单个类型的排行榜
+---------------------------------
+Actionyearmonster2RankMainWindow = Actionyearmonster2RankMainWindow or BaseClass(BaseView)
+
+local _controller = Actionyearmonster2Controller:getInstance()
+local _model = _controller:getModel()
+local string_format = string.format
+
+function Actionyearmonster2RankMainWindow:__init(title_name, background_path, rank_type)
+    self.win_type = WinType.Full
+    self.is_full_screen = true
+    self.title_str = title_name or TI18N("语言_c_271")
+    self.rank_type = rank_type or RankConstant.RankType.sandybeach_boss_fight
+    self.background_path = background_path or PathTool.getPlistImgForDownLoad("bigbg/element","element_main_bg", true)
+    self.res_list = {
+        {path = self.background_path, type = ResourcesType.single },
+    }
+
+    self.tab_info_list = {
+        {label = TI18N("语言_c_271"), index = RankConstant.Rank_Type.Rank , status = true},
+        {label = TI18N("语言_c_1069"),index = RankConstant.Rank_Type.Award, status = true},
+    }
+    self.selected_tab = nil -- 当前选中的标签
+    self.tab_list = {}
+    self.panel_list = {}
+    self.curIndex=0
+end
+
+function Actionyearmonster2RankMainWindow:open_callback(  )
+    self.main_panel:setPositionY(-50)
+    local y=self.container:getPositionY()
+    self.container:setPositionY(y+80)
+    local tab_container =self.main_panel:getChildByName("tab_container")
+    tab_container:setPositionY(30)
+end
+
+function Actionyearmonster2RankMainWindow:register_event(  )
+    for k, tab_btn in pairs(self.tab_list) do
+        tab_btn:addTouchEventListener(
+            function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    self:changeSelectedTab(sender.index)
+                end
+            end
+        )
+    end
+
+    registerButtonEventListener(self.background, function (  )
+        _controller:openRankMainWindow(false)
+    end, false, 2)
+
+    registerButtonEventListener(self.close_btn, function (  )
+        _controller:openRankMainWindow(false)
+    end, true, 2)
+end
+
+--setting
+--setting.show_tips  是否显示右下角 tips说明
+--setting.only_show_rank 是否仅显示排行榜 不显示奖励
+function Actionyearmonster2RankMainWindow:openRootWnd( setting, view_type ) --sandybeach_boss_fight
+    self.setting = setting or {}
+    self.show_tips = setting.show_tips or ""
+    self.only_show_rank = setting.only_show_rank or false
+
+    local view_type = view_type or RankConstant.Rank_Type.Rank
+    if self.only_show_rank then
+        view_type = RankConstant.Rank_Type.Rank
+        self.tab_info_list[2] = nil
+        if self.tab_btn_list and self.tab_btn_list[2] then
+            self.tab_btn_list[2]:setVisible(false)
+        end
+    end
+    self:inittips()
+    self:setSelecteTab(view_type)
+    self:createTab()
+    self.tab_panel:changeSelectedTab(1)
+end
+
+function Actionyearmonster2RankMainWindow:createTab()
+    self.tab_panel = Actionyearmonster2tabPanel.new(self)
+    self.main_panel:addChild(self.tab_panel)
+    self.tab_panel:setPosition(cc.p(self.main_panel:getContentSize().width/2,self.main_panel:getContentSize().height+50))
+end
+
+function Actionyearmonster2RankMainWindow:ChangeTabType(type)
+    if type==1 then
+        self.setting.rank_type=RankConstant.RankType.year_monster2
+        self.setting.islocal=1
+        self.cur_panel:clearData()
+    else
+        self.setting.rank_type=RankConstant.RankType.year_monster2
+        self.setting.islocal=2
+        self.cur_panel:clearData()
+    end
+    if self.curIndex==2 then
+        self:changeSelectedTab(1)
+    end
+    self.cur_panel:addToParent(self.setting)
+
+end
+
+function Actionyearmonster2RankMainWindow:inittips()
+     if self.container then
+        local con_size = self.container:getContentSize()
+        if not self.tips_txt then
+            self.tips_txt = createLabel(20, cc.c3b(100,50,35), nil, con_size.width-10, -10, self.show_tips, self.container, nil, cc.p(1, 0))
+        end
+    end
+end
+
+function Actionyearmonster2RankMainWindow:selectedTabCallBack( index )
+    self:changeSelectedTab(index)
+end
+
+function Actionyearmonster2RankMainWindow:changeSelectedTab( index )
+    -- if self.selected_tab ~= nil then
+    --     if self.selected_tab.index == index then
+    --         return
+    --     end
+    -- end
+    -- if self.selected_tab then
+    --     self.selected_tab.label:setTextColor(cc.c4b(249, 238, 208, 255))
+    --     self.selected_tab:setBright(false)
+    --     self.selected_tab.select_bg:setVisible(false)
+    --     self.selected_tab = nil
+    -- end
+    -- self.selected_tab = self.tab_btn_list[index]
+    -- if self.selected_tab then
+    --     self.selected_tab.label:setTextColor(cc.c4b(248, 239, 118, 255))
+    --     self.selected_tab:setBright(true)
+    --     self.selected_tab.select_bg:setVisible(true)
+    -- end
+    self:setSelecteTab(index)
+    if self.cur_panel ~= nil then
+        self.cur_panel:setNodeVisible(false)
+        self.cur_panel = nil
+    end
+    self.cur_panel = self.panel_list[index]
+    if self.cur_panel == nil then
+        if index == RankConstant.Rank_Type.Rank then
+            self.cur_panel = SingleRankPanel.new()
+        elseif index == RankConstant.Rank_Type.Award then
+            self.cur_panel = SingleAwardPanel.new()
+        end
+        self.panel_list[index] = self.cur_panel
+        self.container:addChild(self.cur_panel)
+        if index==RankConstant.Rank_Type.Award then
+            self.cur_panel:setPositionY(self.cur_panel:getPositionY()+50)
+        end
+        if self.cur_panel.addToParent then
+            self.cur_panel:addToParent(self.setting)
+        end
+    else
+        if self.setting.islocal~=self.cur_panel:getlocalType() then
+           self.cur_panel:clearData()
+           self.cur_panel:addToParent(self.setting)
+        end
+    end
+    self.curIndex=index
+    self.cur_panel:setNodeVisible(true)
+end
+
+function Actionyearmonster2RankMainWindow:close_callback(  )
+    for k, panel in pairs(self.panel_list) do
+        panel:DeleteMe()
+    end
+    self.panel_list = {}
+    if self.bg_load then
+        self.bg_load:DeleteMe()
+        self.bg_load = nil
+    end
+    _controller:openRankMainWindow(false)
+end
+
+------------------------------@tab_btn
+Actionyearmonster2tabPanel = class("Actionyearmonster2tabPanel",function()
+    return ccui.Layout:create()
+end)
+
+function Actionyearmonster2tabPanel:ctor(super_panel)
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("actionyearmonster/actionyearmonster_tab_panel"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+    self.super_panel=super_panel
+    self.tab_list = {}
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+    local tab_container = self.root_wnd:getChildByName("tab_container")
+	for i=1,2 do
+		local tab_btn = tab_container:getChildByName("tab_btn_" .. i)
+		if tab_btn then
+			local object = {}
+            object.select_bg = tab_btn:getChildByName('select_bg')
+            object.select_bg:setVisible(true)
+            object.unselect_bg = tab_btn:getChildByName('unselect_bg')
+			object.text = tab_btn:getChildByName('text')
+            object.tab_btn = tab_btn
+            object.index = i
+            self.tab_list[i] = object
+		end
+	end
+    setTextMaxWidth(self.tab_list[1].text,120)
+    setTextMaxWidth(self.tab_list[2].text,120)
+    setTextSpacing(self.tab_list[1].text,-15)
+	setTextSpacing(self.tab_list[2].text,-15)
+	self.tab_list[1].text:setString(TI18N("语言_c_5911"))
+	self.tab_list[2].text:setString(TI18N("语言_c_5912"))
+
+    self:registerEvent()
+end
+
+function Actionyearmonster2tabPanel:registerEvent()
+    -- tab按钮
+	for k, object in pairs(self.tab_list) do
+        if object.tab_btn then
+            object.tab_btn:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    self:changeSelectedTab(object.index)
+                end
+            end)
+        end
+    end
+end
+
+-- 切换标签页
+function Actionyearmonster2tabPanel:changeSelectedTab( index )
+	if self.tab_object ~= nil and self.tab_object.index == index then return end
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(true)
+        self.tab_object = nil
+    end
+    self.tab_object = self.tab_list[index]
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(false)
+    end
+    
+    if index==1 then
+        self.super_panel:ChangeTabType(1)
+    else
+        self.super_panel:ChangeTabType(2)
+    end
+end
+
+function Actionyearmonster2tabPanel:addCallBack(call_back)
+    self.call_back = call_back
+end
+
+function Actionyearmonster2tabPanel:onClickOneBtn()
+    -- if not self.data then return end
+    -- if self.rank_type == RankConstant.RankType.arena_peak_champion then --巅峰冠军赛
+    --     RoleController:getInstance():requestWorshipRole(self.data.rid, self.data.srv_id, self.data.rank, WorshipType.peakchampion)
+    -- else
+
+    -- end
+    -- -- body
+end
+
+function Actionyearmonster2tabPanel:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

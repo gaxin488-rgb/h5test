@@ -1,0 +1,1207 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      第二魂器 禁术
+-- <br/>Create: 2018年11月14日
+--
+-- --------------------------------------------------------------------
+HeroProsMainWindow = class("HeroProsMainWindow",function()
+    return ccui.Layout:create()
+end)
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+--禁术等级icon位置
+local pos_list = {
+    [1] = {244,242,0.64},
+    [2] = {157,210,0.7},
+    [3] = {112,164,0.77},
+    [4] = {157,120,0.85},
+    [5] = {245,93,0.92},
+    [6] = {358,86,1},
+    [7] = {474,98,0.92},
+    [8] = {572,123,0.85},
+    [9] = {608,163,0.77},
+    [10] = {554,210,0.7},
+    [11] = {454,242,0.64},
+}
+
+function HeroProsMainWindow:ctor(data,type)
+    self.data = data
+    self.hero_vo = data.hero_vo or {}
+    self.type = type
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_pros_main_window"))
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    -- 资源加载
+    local res_list = {
+        { path = PathTool.getPlistImgForDownLoad("herolibrary","herolibrary"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("proscription","proscription"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("proscription","proscription_bg"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("proscription","soul"), type = ResourcesType.single },
+    }
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+function HeroProsMainWindow:loadResListCompleted()
+    if not self.rule_btn then
+        self.lev_list = {}
+        self.lev_icon_list = {}
+        self.next_attr_list = {}
+        self.now_attr_list = {}
+        self.hero_item_list = {}
+        self.cost_item_list = {}
+        self.icon_4_tip_list = {}
+        self.icon_4_tip_lock_list = {}
+        self.pros_list = {}
+        self.pros_lock_list = {}
+        self.click_type = 1
+        self.red_list = {}
+    end
+    self:initView()
+    self:registerEvent()
+    self:openRootWnd()
+end
+function HeroProsMainWindow:initView()
+    if self.rule_btn then return end
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.spine_panel = self.root_wnd:getChildByName("spine_panel")
+    self.background_1 = self.root_wnd:getChildByName("background_1")
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.name_bg = self.top_panel:getChildByName("name_bg")
+    self.name = self.top_panel:getChildByName("name")
+    self.rebirth_btn = self.top_panel:getChildByName("rebirth_btn")
+    self.rebirth_txt = self.rebirth_btn:getChildByName("label")
+    self.rebirth_txt:setString(TI18N("语言_c_6528"))
+    self.details_btn = self.top_panel:getChildByName("details_btn")
+    self.details_txt = self.details_btn:getChildByName("label")
+    self.details_txt:setChangeScaleOffWidth(-9999)
+    setTextMaxWidth(self.details_txt,100)
+    self.details_txt:setString(TI18N("语言_c_6529"))
+    self.next_bg = self.top_panel:getChildByName("next_bg")
+    self.next_txt = self.next_bg:getChildByName("next_txt")
+    setTextMaxWidth(self.next_txt,120,-10)
+    self.next_txt:setString(TI18N("语言_c_6530"))
+    self.icon_panel = self.top_panel:getChildByName("icon_panel")
+    self.choose_panel = self.top_panel:getChildByName("choose_panel")
+    self.icon_tip = self.choose_panel:getChildByName("icon_tip")
+    self.icon_4 = self.choose_panel:getChildByName("icon_4")
+    self.icon_4:ignoreContentAdaptWithSize(true)
+    for i=1,3 do
+        self.icon_4_tip_list[i] = self.choose_panel:getChildByName("icon_4_tip_"..i)
+        self.icon_4_tip_list[i]:setVisible(false)
+        self.icon_4_tip_lock_list[i] = self.choose_panel:getChildByName("icon_4_tip_lock_"..i)
+        self.icon_4_tip_lock_list[i]:setVisible(false)
+    end
+    self.click_img_4 = self.choose_panel:getChildByName("click_img_4")
+    for i=1,3 do
+        self.pros_list[i] = self.choose_panel:getChildByName("icon_"..i)
+        self.pros_lock_list[i] = self.choose_panel:getChildByName("lock_"..i)
+        self.pros_list[i]:ignoreContentAdaptWithSize(true)
+    end
+    self.lock = self.choose_panel:getChildByName("lock")
+    self.click_img = self.choose_panel:getChildByName("click_img")
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.base_panel = self.bottom_panel:getChildByName("base_panel")
+    self.base_txt = self.base_panel:getChildByName("base_txt")
+    self.base_txt:setString(TI18N("语言_c_6531"))
+    self.no_skill_panel = self.bottom_panel:getChildByName("no_skill_panel")
+    self.no_skill_txt = self.no_skill_panel:getChildByName("no_skill_txt")
+    self.no_skill_txt:setString(TI18N("语言_c_6532").."("..TI18N("语言_c_273")..")")
+    self.no_skill_panel:setVisible(false)
+    self.skill_panel = self.bottom_panel:getChildByName("skill_panel")
+    self.skill_txt = self.skill_panel:getChildByName("skill_txt")
+    self.skill_txt:setString(TI18N("语言_c_6532"))
+    self.skill_tip = createRichLabel(24,cc.c3b(0x0e, 0xa8, 0x0e),cc.p(0,0.5),cc.p(self.skill_txt:getPositionX()+self.skill_txt:getContentSize().width+10,self.skill_txt:getPositionY()),nil,nil,500)
+    self.skill_panel:addChild(self.skill_tip)
+    self.skill_icon = self.skill_panel:getChildByName("skill_icon")
+    self.skill_lock_tip = self.skill_panel:getChildByName("skill_lock_tip")
+    setTextMaxWidth(self.skill_lock_tip,480,-10)
+    self.skill_desc_scroll = self.skill_panel:getChildByName("skill_desc_scroll")
+    self.skill_desc_scroll:setScrollBarEnabled(false)
+    self.skill_desc = createRichLabel(22,cc.c3b(0x7c,0x55,0x36),cc.p(0,1),cc.p(0,0),-6,nil,450)
+    self.skill_desc_scroll:addChild(self.skill_desc)
+    self.cost_tip = self.bottom_panel:getChildByName("cost_tip")
+    self.cost_tip:setString(TI18N("语言_c_6533"))
+    self.cost_tip:setVisible(false)
+    self.cost_panel = self.bottom_panel:getChildByName("cost_panel")
+    self.cost_txt = self.cost_panel:getChildByName("cost_txt")
+    self.cost_txt:setString(TI18N("语言_c_6534"))
+    self.up_btn = self.cost_panel:getChildByName("up_btn")
+    self.up_txt = self.up_btn:getChildByName("label")
+    self.up_txt:setString(TI18N("语言_c_6535"))
+    self.item_node = self.cost_panel:getChildByName("item_node")
+    self.rule_btn = self.bottom_panel:getChildByName("rule_btn")
+    self:adaptationScreen()
+    self:updateSpine()
+end
+function HeroProsMainWindow:addToParent( status )
+	status = status or false
+    self:setVisible(status)
+    self:loadResListCompleted()
+    -- self.h_status = model:getProsIsOpen(self.hero_vo) --忍具条件是否满足
+    -- self:updateProsRes()
+    -- self:setClickPros(self.click_type)
+    -- self:updateIconLock()
+end
+--设置适配屏幕
+function HeroProsMainWindow:adaptationScreen()
+    --对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    local left_x = display.getLeft(self.main_container)
+    local right_x = display.getRight(self.main_container)
+
+
+    local container_size = self.main_container:getContentSize()
+    local tab_y = self.spine_panel:getPositionY()
+    self.spine_panel:setPositionY(top_y - (container_size.height - tab_y))
+    local tab_y = self.background_1:getPositionY()
+    self.background_1:setPositionY(top_y - (container_size.height - tab_y))
+    
+end
+function HeroProsMainWindow:updateSpine()
+    self.spine_list = {}
+    local pos_list = {
+        [1]={139,446,45},
+        [2]={139,446,140},
+        [3]={126,704,140},
+        [4]={493,606,35},
+        [5]={681,642,55},
+        [6]={660,355,127},
+    }
+    for i=1,6 do
+        self.spine_list[i] = createEffectSpine("E29002", cc.p(pos_list[i][1], pos_list[i][2]), cc.p(0.5, 0.5), true, PlayerAction.action)
+        self.spine_panel:addChild(self.spine_list[i])
+        self.spine_list[i]:setRotation(pos_list[i][3])
+    end
+end
+function HeroProsMainWindow:registerEvent()
+    registerButtonEventListener(self.rebirth_btn, function() 
+        if self.hero_vo:isLockByLocktype(HeroConst.LockType.eHeroConvertLock) then
+            message(TI18N("语言_c_3287"))
+            return
+        elseif self.hero_vo:isLockByLocktype(HeroConst.LockType.eHeroLock) then
+            message(TI18N("语言_c_3286"))
+            return
+        end
+        local num = 0
+        for k, v in pairs(self.hero_vo.proscription) do
+            num = num + v.p_lev
+        end
+        if num > 0 then
+            controller:openHeroProsRebirthPanel(true,self.data) 
+        else
+            message(TI18N("语言_s_1155"))
+        end
+    end, true, 2)
+    registerButtonEventListener(self.details_btn, function()
+        if self.h_status then
+            controller:openHeroProsDetailsPanel(true,self.data) 
+        else
+            message(TI18N("语言_c_6675"))
+        end
+    end, true, 2)
+    registerButtonEventListener(self.up_btn, function() self:onClickBtnUp() end, true, 2)
+    
+    registerButtonEventListener(self.rule_btn, function(param, sender, event_type)
+        local config = Config.PartnerProscriptionData.data_constant["game_rule1"]
+        TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+    end ,true, 2)
+
+    for k, v in pairs(self.pros_list) do
+        registerButtonEventListener(v, function() self:setClickPros(k) end, false, 2)
+    end
+    registerButtonEventListener(self.icon_4, function() self:setClickPros(4) end, false, 2)
+    if self.hero_pros_updata_event == nil then
+        self.hero_pros_updata_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Pros_Updata_Event,function(data)
+            if not data or not self.hero_vo then return end
+            if data.partner_id == self.hero_vo.partner_id then
+                self.hero_vo = model.hero_list[data.partner_id]
+                self:updateProsRes()
+                self:setClickPros(self.click_type)
+                self:updateIconLock()
+                -- self:updateIcon4()
+                self:iconAction()
+                if self:isVisible() then
+                    GlobalEvent:getInstance():Fire(HeroEvent.Hero_Pros_Switch_Back_Event,MainuiConst.pros_type.pros)
+                end
+            end
+        end)
+    end
+    --添加英雄选择返回事件
+    if self.upgrade_star_select_event == nil then
+        self.upgrade_star_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function()
+            self:updateHeroItemInfo()
+        end)
+    end
+    
+    --添加英雄选择返回事件
+    if self.hero_pros_reset_event == nil then
+        self.hero_pros_reset_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Pros_Reset_Event, function()
+            self.click_type = 1
+            self:setClickPros(self.click_type)
+        end)
+    end
+end
+function HeroProsMainWindow:onClickBtnUp()
+    if self.click_type == 4 and not self:getIsCanClickFour() then
+        message(TI18N("语言_c_6536"))
+        return
+    end
+    local lv_order = Config.PartnerProscriptionData.data_constant["lv_order"].val
+    local num = tableLen(self.hero_vo.proscription)
+    local status = true
+    local data = {}
+    for k, v in pairs(self.hero_vo.proscription) do
+        if self.click_type == v.p_type then
+            status = false
+            data = v
+        end
+    end
+    if status then
+        num = num + 1
+    end
+    if lv_order[num] then
+        if self.hero_vo.h_lev < lv_order[num] then
+            message(string.format(TI18N("语言_c_6538"),lv_order[num]))
+            return
+        end
+    end
+    
+    local backpack = function()
+        local list = {}
+        for k, v in pairs(self.dic_other_selected) do
+            if v.partner_id ~= self.hero_vo.partner_id then
+                local _list = {}
+                _list.partner_id = v.partner_id
+                table.insert(list,_list)
+            end
+        end
+        local cfg = Config.PartnerProscriptionData.data_lv_info[self.proscription_id][self.click_type][self.now_lev+1]
+        if cfg and cfg.expend1 and cfg.expend1[1] and cfg.expend1[1][3] then
+            if tableLen(list) < cfg.expend1[1][3] then
+                message(TI18N("语言_c_2126"))
+                return
+            end
+        end
+        controller:sender11424(self.hero_vo.partner_id,self.click_type,list)
+    end
+    local lv_cfg = Config.PartnerProscriptionData.data_lv_info[self.proscription_id][self.click_type]
+    if self.hero_vo.h_lev < lv_cfg[tableLen(lv_cfg)].lv_limit and not next(self.pro_data) then
+        local str = TI18N("语言_c_6539")
+        CommonAlert.show( str, TI18N("语言_c_63"), function()
+            backpack() 
+        end, TI18N("语言_c_62"),nil,nil,nil,{timer=3, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+    else
+        backpack()
+    end
+end
+
+function HeroProsMainWindow:setSkillIcon()
+    local cfg = Config.PartnerProscriptionData.data_base_info[self.proscription_id]
+    for k, v in pairs(self.pros_list) do
+        v:loadTexture(PathTool.getPlistImgForDownLoad("proscription/proscription_skill",cfg[k].show),LOADTEXT_TYPE)
+    end
+    self.icon_4:loadTexture(PathTool.getPlistImgForDownLoad("proscription/proscription_skill",cfg[4].show),LOADTEXT_TYPE)
+
+end
+
+function HeroProsMainWindow:openRootWnd()
+    self.h_status = model:getProsIsOpen(self.hero_vo) --忍具条件是否满足
+    self.proscription_id = Config.PartnerData.data_partner_base[self.hero_vo.bid].proscription_id
+    self.click_type = self.type or self:getClickType()
+    if self.click_type == 4 and not model:getOneProsSkillIsShield(self.hero_vo) then
+        self.click_type = 1
+    end
+    self:setSkillIcon()
+    self:updateProsRes()
+    self:setClickPros(self.click_type)
+    self:updateIconLock()
+    -- self:updateIcon4()
+end
+function HeroProsMainWindow:getClickType()
+    local cfg = Config.PartnerProscriptionData.data_lv_info[self.proscription_id]
+    for k, v in pairs(self.hero_vo.proscription) do
+        if v.p_lev < tableLen(cfg[v.p_type]) then
+            return v.p_type
+        end
+    end
+    for i=1,4 do
+        local status = true
+        for k, v in pairs(self.hero_vo.proscription) do
+            if v.p_type == i then
+                status = false
+            end
+        end
+        if status then
+            return i
+        end
+    end
+    return 4
+end
+function HeroProsMainWindow:getClickProsData(index)
+    if next(self.hero_vo.proscription) then
+        for k, v in pairs(self.hero_vo.proscription) do
+            if v.p_type == index then
+                return v
+            end
+        end
+    end
+    return {}
+end
+function HeroProsMainWindow:getIsCanClickFour()
+    return tableLen(self.hero_vo.proscription) >= 3
+end
+function HeroProsMainWindow:updateIconLock()
+    for i=1,3 do
+        local status = true
+        for k,v in ipairs(self.hero_vo.proscription) do
+            if v.p_type == i then
+                status = false
+            end
+        end
+        self.pros_lock_list[i]:setVisible(status)
+        if not status then
+            setChildUnEnabled(not self.h_status,self.pros_list[i])
+        end
+    end
+    for i = 1, tableLen(self.icon_4_tip_list) do
+        local status = true
+        for k,v in ipairs(self.hero_vo.proscription) do
+            if v.p_type == i then
+                status = false
+            end
+        end
+        if status then
+            self.icon_4_tip_list[i]:setVisible(false)
+            self.icon_4_tip_lock_list[i]:setVisible(true)
+        else
+            self.icon_4_tip_list[i]:setVisible(true)
+            self.icon_4_tip_lock_list[i]:setVisible(false)
+        end
+    end
+    local iscan = self:getIsCanClickFour()
+    if iscan then
+        self.lock:setVisible(false)
+        setChildUnEnabled(false,self.icon_4)
+        setChildUnEnabled(false,self.icon_tip)
+    else
+        self.lock:setVisible(true)
+        addRedPointToNodeByStatus(self.icon_4,false)
+        setChildUnEnabled(true,self.icon_4)
+        setChildUnEnabled(true,self.icon_tip)
+    end
+end
+
+function HeroProsMainWindow:setClickPros(index)
+    if index == 4 and not model:getOneProsSkillIsShield(self.hero_vo) then
+        message(TI18N("语言_c_6217"))
+        return
+    end
+    if index <= 3 then
+        self.click_img_4:setVisible(false)
+        self.click_img:setVisible(true)
+        self.click_img:setPosition(self.pros_list[index]:getPosition())
+    else
+        -- if not self:getIsCanClickFour() then
+        --     message(TI18N("先完成其他的"))
+        --     return
+        -- end
+        self.click_img_4:setVisible(true)
+        self.click_img:setVisible(false)
+    end
+    for i=1,3 do
+        addRedPointToNodeByStatus(self.pros_list[i],self.red_list[i] and index ~= i)
+    end
+    addRedPointToNodeByStatus(self.icon_4,self.red_list[4] and index ~= 4 and self:getIsCanClickFour())
+    -- if index <= 3 then
+    --     addRedPointToNodeByStatus(self.pros_list[index],false)
+    -- else
+    --     addRedPointToNodeByStatus(self.icon_4,false)
+    -- end
+    self.click_type = index
+    self.pro_data = self:getClickProsData(index)
+    self.now_lev = self.pro_data.p_lev or 0
+    self.base_cfg = Config.PartnerProscriptionData.data_base_info[self.proscription_id][index]
+    local name_str = ""
+    if self.base_cfg and self.base_cfg.name then
+        name_str = self.base_cfg.name.."+"..self.now_lev
+    end
+    self.name:setString(name_str)
+    if self.name:getContentSize().width > 550 then
+        setTextMaxWidth(self.name,550)
+    end
+    local _w = math.max(self.name_bg:getContentSize().width,self.name:getContentSize().width+50)
+    self.name_bg:setContentSize(cc.size(_w,self.name_bg:getContentSize().height))
+    self.lv_cfg = Config.PartnerProscriptionData.data_lv_info[self.proscription_id][index]
+    self:setLevIcon()
+    if self.now_lev < tableLen(self.lv_cfg) then
+        self.next_bg:setVisible(true)
+        self:setNextBasePanel()
+    else
+        self.next_bg:setVisible(false)
+    end
+    self:setNowBasePanel()
+    self:setSkillPanel()
+    self:setCostPanel()
+    local status = false
+    for k, v in pairs(self.hero_vo.proscription) do
+        if v.p_type == self.click_type then
+            status = true
+        end
+    end
+    if status then
+        self.up_txt:setString(TI18N("语言_c_6535"))
+    else
+        self.up_txt:setString(TI18N("语言_c_6305"))
+    end
+    setChildUnEnabled(not self.h_status,self.up_btn)
+    self.up_btn:setTouchEnabled(self.h_status)
+    addRedPointToNodeByStatus(self.up_btn,self.red_list[self.click_type],10,10)
+end
+
+function HeroProsMainWindow:updateProsRes()
+    for i=1,3 do
+        local status = model:getProsRedForType(self.hero_vo,i)
+        self.red_list[i] = status
+        -- addRedPointToNodeByStatus(self.pros_list[i],status,5,5)
+    end
+    local iscan = self:getIsCanClickFour()
+    if iscan then
+        local status = model:getProsRedForType(self.hero_vo,4)
+        self.red_list[4] = status
+        -- addRedPointToNodeByStatus(self.icon_4,status,10,10)
+    end
+end
+
+function HeroProsMainWindow:setLevIcon()
+    self.lev_list = {}
+    local lev = self.now_lev
+    if lev == 0 then
+        lev = 1
+    end
+    local first_num = 6
+    self.lev_list[first_num] = self.lv_cfg[lev]
+    if tableLen(self.lv_cfg) >= 5 then
+        local status = tableLen(self.lv_cfg) >= 10
+        local icon_num = 1
+        for i=1,5 do
+            local num = first_num+i
+            local num_lev = 0
+            if lev+icon_num <= tableLen(self.lv_cfg) then
+                num_lev = lev+icon_num
+            else
+                num_lev = lev+icon_num - tableLen(self.lv_cfg)
+            end
+            if status then
+                self.lev_list[num] = self.lv_cfg[num_lev]
+                icon_num = icon_num + 1
+            else
+                if i%2 == 0 then
+                    self.lev_list[num] = self.lv_cfg[num_lev]
+                    icon_num = icon_num + 1
+                else
+                    self.lev_list[num] = {}
+                end
+            end
+        end
+        
+        local icon_num = 1
+        for i=1,5 do
+            local num = first_num-i
+            local num_lev = 0
+            if lev-icon_num >= 1 then
+                num_lev = lev-icon_num
+            else
+                num_lev = tableLen(self.lv_cfg) - (icon_num- lev)
+            end
+            if status then
+                self.lev_list[num] = self.lv_cfg[num_lev]
+                icon_num = icon_num + 1
+            else
+                if i%2 == 0 then
+                    self.lev_list[num] = self.lv_cfg[num_lev]
+                    icon_num = icon_num + 1
+                else
+                    self.lev_list[num] = {}
+                end
+            end
+        end
+    else
+        for i=1,tableLen(pos_list) do
+            if not self.lev_list[i] then
+                self.lev_list[i] = {}
+            end
+        end
+    end
+    for k,v in ipairs(self.lev_list) do
+        if next(v) then 
+            local num = 0
+            if v.lv == self.now_lev then
+                num = 3
+            elseif v.lv < self.now_lev then
+                num = 2
+            else
+                num = 1
+            end
+            if not self.lev_icon_list[k] then
+                self.lev_icon_list[k] = createSprite(PathTool.getResFrame("proscription",v.icon.."_"..num), pos_list[k][1], pos_list[k][2], self.icon_panel, cc.p(0.5, 0.5))
+            else
+                loadSpriteTexture(self.lev_icon_list[k], PathTool.getResFrame("proscription",v.icon.."_"..num), LOADTEXT_TYPE_PLIST)
+                self.lev_icon_list[k]:setPosition(cc.p(pos_list[k][1], pos_list[k][2]))
+            end
+            self.lev_icon_list[k]:setVisible(true)
+            self.lev_icon_list[k]:setScale(pos_list[k][3])
+        else
+            if self.lev_icon_list[k] then
+                self.lev_icon_list[k]:setVisible(false)
+            end
+        end
+    end
+end
+function HeroProsMainWindow:iconAction()
+    if self.now_lev >= tableLen(self.lv_cfg) or self.now_lev == 0 then return end
+    local status = tableLen(self.lv_cfg) >= 10
+
+    if status then
+        for k,v in ipairs(self.lev_icon_list) do
+            doStopAllActions(v)
+            if pos_list[k-1] then
+                local action = cc.Sequence:create(cc.MoveTo:create(0.1, cc.p(pos_list[k-1][1], pos_list[k-1][2])))
+                v:runAction(action)
+                local action = cc.Sequence:create(cc.ScaleTo:create(0.1, pos_list[k-1][3]))
+                v:runAction(action)
+            end
+        end
+    else
+        for k,v in pairs(self.lev_icon_list) do
+            doStopAllActions(v)
+            if pos_list[k-1] then
+                local action = cc.Sequence:create(cc.MoveTo:create(0.1, cc.p(pos_list[k-1][1], pos_list[k-1][2])))
+                v:runAction(action)
+                local action = cc.Sequence:create(cc.ScaleTo:create(0.1, pos_list[k-1][3]))
+                v:runAction(action)
+            end
+            if pos_list[k-2] then
+                local action = cc.Sequence:create(cc.DelayTime:create(0.1),cc.MoveTo:create(0.1, cc.p(pos_list[k-2][1], pos_list[k-2][2])))
+                v:runAction(action)
+                local action = cc.Sequence:create(cc.DelayTime:create(0.1),cc.ScaleTo:create(0.1, pos_list[k-2][3]))
+                v:runAction(action)
+            elseif pos_list[k+8] then
+                local action = cc.Sequence:create(cc.DelayTime:create(0.1),cc.MoveTo:create(0.1, cc.p(pos_list[k+8][1], pos_list[k+8][2])))
+                v:runAction(action)
+                local action = cc.Sequence:create(cc.DelayTime:create(0.1),cc.ScaleTo:create(0.1, pos_list[k+8][3]))
+                v:runAction(action)
+            end
+        end
+    end 
+end
+function HeroProsMainWindow:setNextBasePanel()
+    local skill_desc = ""
+    local skill_id = 0
+    -- if self.click_type == 4 then
+        for i = 1, tableLen(self.lv_cfg) do
+            if self.hero_vo.h_lev < self.lv_cfg[i].lv_limit then
+                skill_id = self.lv_cfg[i].unlock[1]
+                skill_desc = self.lv_cfg[i].desc
+                break
+            else
+                if i == tableLen(self.lv_cfg) then
+                    skill_id = self.lv_cfg[i].unlock[1]
+                    skill_desc = self.lv_cfg[i].desc
+                else
+                    if i > self.now_lev and self.lv_cfg[i].desc ~= "" then
+                        skill_id = self.lv_cfg[i].unlock[1]
+                        skill_desc = self.lv_cfg[i].desc
+                        break
+                    end
+                end
+            end
+        end
+    -- end
+    if not skill_id then
+        skill_id = 0
+    end
+    -- if self.click_type == 4 and skill_id ~= 0 then
+    if skill_id ~= 0 then
+        self.next_bg:setContentSize(cc.size(self.next_bg:getContentSize().width,80))
+    else
+        self.next_bg:setContentSize(cc.size(self.next_bg:getContentSize().width,40))
+    end
+    self.next_txt:setPositionY(self.next_bg:getContentSize().height*0.5)
+    local attr_list = {}
+    if self.now_lev > 0 then
+        if self.now_lev < tableLen(self.lv_cfg) then
+            local now_cfg = self.lv_cfg[self.now_lev].attr
+            local next_cfg = self.lv_cfg[self.now_lev+1].attr
+            for key, value in pairs(now_cfg) do
+                for k, v in pairs(next_cfg) do
+                    if v[1] == value[1] and v[2] > value[2] then
+                        local list = {}
+                        list[1] = v[1]
+                        list[2] = v[2] - value[2]
+                        table.insert(attr_list,list)
+                    end
+                end
+            end
+        else
+            attr_list = {}
+        end
+    else
+        attr_list = self.lv_cfg[1].attr
+    end
+    for k, v in pairs(self.next_attr_list) do
+        v:removeFromParent()
+        v = nil
+    end
+    self.next_attr_list = {}
+    local _x = 150
+    for k, v in pairs(attr_list) do
+        local item = ccui.Layout:create()
+        item:setContentSize(cc.size(100, self.next_bg:getContentSize().height))
+        item:setAnchorPoint(cc.p(0,0.5))
+        -- local num = self.click_type == 4 and skill_id ~= 0 and 0.75 or 0.5
+        local num = skill_id ~= 0 and 0.75 or 0.5
+        item.label = createRichLabel(22,cc.c4b(104,69,42,255), cc.p(0, 0.5), cc.p(0, item:getContentSize().height*num), nil, nil, 380)
+        item:addChild(item.label)
+        local attr_val = v[2]
+        local icon = PathTool.getAttrIconByStr(v[1])
+        local is_per = PartnerCalculate.isShowPerByStr(v[1])
+        if is_per == true then
+            attr_val = (attr_val/10).."%"
+        end
+        local attr_str = string_format("<img src='%s' scale=1 /><div fontcolor=#009300>+%s</div>", PathTool.getResFrame("common", icon), attr_val)
+        item.label:setString(attr_str)
+        item:setContentSize(cc.size(item.label:getContentSize().width, self.next_bg:getContentSize().height))
+        item:setPosition(cc.p(_x,self.next_bg:getContentSize().height*0.5))
+        _x = _x + item:getContentSize().width + 20
+        table.insert(self.next_attr_list,item)
+        self.next_bg:addChild(item)
+    end
+    if not self.next_skill_panel then
+        self.next_skill_panel = ccui.Layout:create()
+        self.next_skill_panel:setContentSize(cc.size(350, 40))
+        self.next_skill_panel:setAnchorPoint(cc.p(0,0.5))
+        -- self.next_skill_panel:setPosition(cc.p(150,self.next_bg:getContentSize().height*0.25+1))
+        self.next_skill_panel:setPosition(cc.p(150,20))
+        self.next_skill_panel:setTouchEnabled(true)
+        self.next_bg:addChild(self.next_skill_panel)
+    end
+    if not self.next_skill then
+        self.next_skill = SkillItem.new(true,false,true,0.3,nil,false)
+        self.next_skill:setPosition(cc.p(0,self.next_skill_panel:getContentSize().height*0.5))
+        self.next_skill:setAnchorPoint(0,0.5)
+        self.next_skill_panel:addChild(self.next_skill)
+    end
+    if not self.next_skill_desc then
+        self.next_skill_desc = createLabel(20,cc.c3b(0x00,0x93,0x00),nil,40,self.next_skill_panel:getContentSize().height*0.5,"",self.next_skill_panel,nil,cc.p(0,0.5))
+    end
+    if skill_id ~= 0 then
+        self.next_skill_panel:setVisible(true)
+        local skill_cfg = Config.SkillData.data_get_skill(skill_id)
+        if skill_cfg then
+            self.next_skill:setData(skill_cfg)
+            local level = skill_cfg.level or 1
+            if skill_cfg.client_lev and skill_cfg.client_lev>0 then
+                level = skill_cfg.client_lev
+            end
+            local num = 30
+            if judgingLanguage() then
+                num = 18
+            end
+            self.next_skill_desc:setString(transformTextToShort(skill_cfg.name,num))
+            addEvt2showAllTextTips(self.next_skill_desc,skill_cfg.name,num,nil,nil,nil,true)
+            if self.click_type == 4 then
+                self.next_skill_panel:setTouchEnabled(true)
+                registerButtonEventListener(self.next_skill_panel, function() 
+                    TipsManager:getInstance():showSkillTips(skill_cfg)
+                end, true, 2)
+            else
+                self.next_skill_panel:setTouchEnabled(false)
+            end
+        end
+    else
+        self.next_skill_panel:setVisible(false)
+    end
+end
+function HeroProsMainWindow:setNowBasePanel()
+    for k, v in pairs(self.now_attr_list) do
+        v:removeFromParent()
+        v = nil
+    end
+    self.now_attr_list = {}
+    if self.pro_data.p_attr and next(self.pro_data.p_attr) then
+        for k, v in pairs(self.pro_data.p_attr or {}) do
+            local _x = 100 + math.floor((k-1)%3) * 200
+            local _y = 90 - math.floor((k-1)/3) * 80
+            local item = ccui.Layout:create()
+            item:setContentSize(cc.size(100, 80))
+            item:setAnchorPoint(cc.p(0,1))
+            item.label = createRichLabel(26,cc.c4b(104,69,42,255), cc.p(0, 0.5), cc.p(0, item:getContentSize().height*0.5), nil, nil, 380)
+            item:addChild(item.label)
+            local attr_val = v.attr_val
+            local attr_name = Config.AttrData.data_id_to_name[v.attr_id]
+            local id = Config.AttrData.data_id_to_key[v.attr_id]
+            local icon = PathTool.getAttrIconByStr(id)
+            local is_per = PartnerCalculate.isShowPerByStr(id)
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+            local attr_str = string_format("<img src='%s' scale=1 /><div fontcolor=#5c2705>%s: </div><div fontcolor=#009300>%s</div>", PathTool.getResFrame("common", icon),attr_name, attr_val)
+            item.label:setString(attr_str)
+            item:setContentSize(cc.size(item.label:getContentSize().width, item:getContentSize().height))
+            item:setPosition(cc.p(_x,_y))
+            table.insert(self.now_attr_list,item)
+            self.base_panel:addChild(item)
+        end
+    else
+        local attr_list = self.lv_cfg[self.now_lev+1].attr
+        for k, v in pairs(attr_list or {}) do
+            local _x = 100 + math.floor((k-1)%3) * 200
+            local _y = 90 - math.floor((k-1)/3) * 80
+            local item = ccui.Layout:create()
+            item:setContentSize(cc.size(100, 80))
+            item:setAnchorPoint(cc.p(0,1))
+            item.label = createRichLabel(26,cc.c4b(104,69,42,255), cc.p(0, 0.5), cc.p(0, item:getContentSize().height*0.5), nil, nil, 380)
+            item:addChild(item.label)
+            local attr_val = "0"
+            local attr_name = Config.AttrData.data_key_to_name[v[1]]
+            local icon = PathTool.getAttrIconByStr(v[1])
+            local is_per = PartnerCalculate.isShowPerByStr(v[1])
+            if is_per == true then
+                attr_val = "0%"
+            end
+            local attr_str = string_format("<img src='%s' scale=1 /><div fontcolor=#5c2705>%s: </div><div fontcolor=#009300>%s</div>", PathTool.getResFrame("common", icon),attr_name, attr_val)
+            item.label:setString(attr_str)
+            item:setContentSize(cc.size(item.label:getContentSize().width, item:getContentSize().height))
+            item:setPosition(cc.p(_x,_y))
+            table.insert(self.now_attr_list,item)
+            self.base_panel:addChild(item)
+        end
+    end
+    if not self.h_status then
+        if not self.base_tip then
+            self.base_tip = createRichLabel(24,cc.c3b(0x0e, 0xa8, 0x0e),cc.p(0,0.5),cc.p(self.base_txt:getPositionX()+self.base_txt:getContentSize().width+10,self.base_txt:getPositionY()),nil,nil,500)
+            self.base_tip:setString(TI18N("语言_c_7182"))
+            self.base_panel:addChild(self.base_tip)
+        end
+        -- self.base_tip:setPositionX(self.base_txt:getPositionX() + self.base_txt:getContentSize().width+10)
+        self.base_tip:setVisible(true)
+    else
+        if self.base_tip then
+            self.base_tip:setVisible(false)
+        end
+    end
+end
+function HeroProsMainWindow:setSkillPanel()
+    local cfg = self.lv_cfg[1]
+    for i = 1, tableLen(self.lv_cfg) do
+        if self.lv_cfg[i].desc ~= "" then
+            cfg = self.lv_cfg[i]
+            break
+        end
+    end
+    for i = tableLen(self.lv_cfg),1,-1 do
+        if self.hero_vo.h_lev >= self.lv_cfg[i].lv_limit and self.now_lev >= self.lv_cfg[i].lv and self.lv_cfg[i].desc ~= "" then
+            cfg = self.lv_cfg[i]
+            break
+        end
+    end
+    if not cfg.unlock[1] then
+        self.skill_panel:setVisible(false)
+        self.no_skill_panel:setVisible(true)
+    else
+        self.skill_panel:setVisible(true)
+        self.no_skill_panel:setVisible(false)
+    end
+    local status = false
+    if self.pro_data and self.pro_data.p_extra then
+        for k, v in pairs(self.pro_data.p_extra) do
+            if cfg.unlock[1] == v.extra_v then
+                status = true
+            end
+        end
+    end
+    if status then
+        if not self.h_status then
+            self.skill_tip:setString(TI18N("语言_c_7182"))
+        else
+            self.skill_tip:setString(TI18N("语言_c_6552"))
+        end
+        self.skill_lock_tip:setVisible(false)
+    else
+        self.skill_tip:setString(TI18N("语言_c_6553"))
+        if cfg.lv and cfg.lv ~= 0 then
+            if cfg.lv == 1 then
+                self.skill_lock_tip:setString(TI18N("语言_c_6831"))
+            else
+                self.skill_lock_tip:setString(LangStringFormat(TI18N("语言_c_6527"),cfg.lv))
+            end
+        end
+        self.skill_lock_tip:setVisible(true)
+    end
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true, true, true,0.7)
+        self.skill_icon:addChild(self.skill_item)
+    end
+    if self.click_type == 4 then
+        self.skill_item:setTouchEnabled(true)
+    else
+        self.skill_item:setTouchEnabled(false)
+    end
+    local skill_cfg = Config.SkillData.data_get_skill(cfg.unlock[1])
+    if skill_cfg then
+        self.skill_item:setData(skill_cfg)
+    end
+    self.skill_desc:setString(cfg.desc)
+    if self.skill_lock_tip:isVisible() then
+        self.skill_desc_scroll:setContentSize(cc.size(self.skill_desc_scroll:getContentSize().width,60))
+        self.skill_desc_scroll:setPositionY(50)
+    else
+        self.skill_desc_scroll:setContentSize(cc.size(self.skill_desc_scroll:getContentSize().width,85))
+        self.skill_desc_scroll:setPositionY(25)
+    end
+    local _h = math.max(self.skill_desc:getContentSize().height,self.skill_desc_scroll:getContentSize().height)
+    self.skill_desc_scroll:setInnerContainerSize(cc.size(self.skill_desc_scroll:getContentSize().width,_h))
+    self.skill_desc:setPositionY(_h)
+    if _h > 60 then
+        self.skill_desc_scroll:setTouchEnabled(true)
+    else
+        self.skill_desc_scroll:setTouchEnabled(false)
+    end
+end
+function HeroProsMainWindow:setCostPanel()
+    
+    self.hero_item_data_list = {}
+    --红点条件list
+    local conditions_list = {}
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    local index = 1
+
+    if self.lv_cfg[self.now_lev+1] then
+        self.cost_tip:setVisible(false)
+        self.cost_panel:setVisible(true)
+        
+        for k,item in pairs(self.hero_item_list) do
+            item:setVisible(false)
+        end
+        for i,expend in ipairs(self.lv_cfg[self.now_lev+1].expend1) do
+            self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3])
+            conditions_list[index] = {}
+            conditions_list[index][expend[1]] = {}
+            conditions_list[index][expend[1]][expend[2]] = expend[3]
+            index = index + 1
+        end
+        for i,hero_vo in ipairs(self.hero_item_data_list) do
+            if self.hero_item_list[i] == nil then
+                self.hero_item_list[i] = HeroExhibitionItem.new(0.7, true)
+                self.hero_item_list[i]:setPosition( (i-1) * (HeroExhibitionItem.Width * 1 + 10) , 0)
+                self.hero_item_list[i]:addCallBack(function() self:_onClickItemData(i) end)
+                self.item_node:addChild(self.hero_item_list[i])
+            end
+            self.hero_item_list[i]:setVisible(true)
+            if hero_vo.bid == 0 then
+                --随机卡的头像id
+                local default_head_id = model:getRandomHeroHeadByQuality(hero_vo.star)
+                self.hero_item_list[i]:setData(hero_vo)
+                self.hero_item_list[i]:setDefaultHead(default_head_id)
+            else
+                self.hero_item_list[i]:setData(hero_vo)
+            end        
+            self.hero_item_list[i]:setHeadUnEnabled(true)
+        end
+        self:initHeroListByMatchInfo(conditions_list)
+        -- 额外材料
+        for k,item in pairs(self.cost_item_list) do
+            item:setVisible(false)
+        end
+        local upgrade_star_cost = {} --消耗材料
+        local start_index = #self.hero_item_data_list
+        local item_list = {}
+
+        local num = tableLen(self.hero_vo.proscription)
+        local status = true
+        for k, v in pairs(self.hero_vo.proscription) do
+            if self.click_type == v.p_type then
+                status = false
+            end
+        end
+        if status and Config.PartnerProscriptionData.data_constant["consumption_order"].val[num+1] then
+            num = num + 1
+        end
+        local list = self.lv_cfg[self.now_lev+1].cost_num
+        for i=1,tableLen(list) do
+            local bid = list[i][1]
+            local need_num = list[i][2]
+            local item = self.cost_item_list[1]
+            if not item then
+                item = BackPackItem.new(false, true, false, 0.7)
+                self.item_node:addChild(item)
+                self.cost_item_list[1] = item
+            end
+            item:setPosition( start_index * (BackPackItem.Width * 1 + 10) , 0)
+            local have_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(bid)
+            item:setBaseData(bid)
+            item:setNeedNum(need_num, have_num, 1, true, 2)
+            if need_num > have_num then
+                item:setDefaultTip(true, true)
+            else
+                item:setDefaultTip()
+            end
+            item:setVisible(true)
+        end
+    else
+        self.cost_tip:setVisible(true)
+        self.cost_panel:setVisible(false)
+    end
+
+end
+
+
+--初始化英雄列表匹配信息
+function HeroProsMainWindow:initHeroListByMatchInfo(conditions_list)
+    local hero_list = model:getHeroList()
+
+    self.conditions_hero_list = {}
+    for k,hero in pairs(hero_list) do
+        for i,conditions in ipairs(conditions_list) do
+            if self.conditions_hero_list[i] == nil then
+                self.conditions_hero_list[i] = {}
+            end
+
+            if self.hero_item_data_list[i].bid == 0 then
+                --表示随机卡 0表示全部阵营
+                if conditions[0] then
+                    if conditions[0][hero.star] then
+                        table_insert(self.conditions_hero_list[i], hero)
+                    end
+                else
+                    if conditions[hero.camp_type] and conditions[hero.camp_type][hero.star] ~= nil then
+                        table_insert(self.conditions_hero_list[i], hero)
+                    end
+                end
+            else
+                --指定卡
+                if conditions[hero.bid] and conditions[hero.bid][hero.star] then   -- 指定卡要剔除自己
+                    if self.hero_vo and self.hero_vo.partner_id ~= hero.partner_id then
+                        table_insert(self.conditions_hero_list[i], hero)
+                    end
+                end
+            end
+        end
+    end
+    
+    --新加需求.自动填满指定定的位置的英雄
+    -- if self.hero_vo and self.hero_vo.red_point[HeroConst.RedPointType.eRPStar] then
+        self.dic_other_selected = {}
+        if self.hero_vo then
+            self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+        end
+        for i,v in ipairs(self.hero_item_data_list) do
+            --策划要求指定才需要填充 
+            if v.bid ~= 0 then
+                if self.conditions_hero_list[i] and #self.conditions_hero_list[i] > 0 then
+                    local sort_func = SortTools.tableCommonSorter({{"lev", false}, {"id", true}}) 
+                    table_sort(self.conditions_hero_list[i], sort_func)
+                    local count = 0
+                    for _,hero_vo in ipairs(self.conditions_hero_list[i]) do
+                        if self.dic_other_selected[hero_vo.id] == nil and not hero_vo:checkHeroLockTips(true, nil, true) then
+                            v.dic_select_list[hero_vo.id] = hero_vo
+                            count = count + 1
+                            if count >= v.count then
+                                break
+                            end
+                        end
+                    end
+                    if count < v.count then
+                        --说明不够..就不显示了
+                        v.dic_select_list = {}
+                    else
+                        for k,v in pairs(v.dic_select_list) do
+                            self.dic_other_selected[k] = v
+                        end
+                        v.lev = string_format("%s/%s", count, v.count)
+                        if self.hero_item_list[i] then
+                            self.hero_item_list[i].num_label:setString(v.lev)
+                            if count > 0 then
+                                self.hero_item_list[i]:setHeadUnEnabled(false)
+                            else
+                                self.hero_item_list[i]:setHeadUnEnabled(true)
+                            end
+                        end      
+                    end
+                end
+            end
+        end
+    -- end
+
+
+    local list = BackpackController:getInstance():getModel():getHeroHunList()
+    for k, good_vo in pairs(list) do
+        if good_vo.config then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+                if self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    local camp_type = good_vo.config.camp_type
+                    local star = good_vo.config.eqm_jie
+                    if conditions[camp_type] and conditions[camp_type][star] ~= nil then
+                        for j=1,good_vo.quantity do
+                            local data = {}
+                            data.id = -(j + camp_type * 10)
+                            data.partner_id = data.id
+                            data.good_vo = good_vo
+                            table_insert(self.conditions_hero_list[i], data)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+--点击材料数据
+function HeroProsMainWindow:_onClickItemData(index)
+    if not self.hero_item_data_list[index] then return end
+    if not self.hero_vo then return end
+    --标志点击了那个
+    self.hero_item_data_list[index].is_select = true
+    --被其他人选择的列表 [id] = hero_vo 模式
+    local dic_other_selected = {}
+    --把自己也过滤
+    dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    for i,item in ipairs(self.hero_item_data_list) do
+        if i ~= index then
+            for k,v in pairs(item.dic_select_list) do
+                dic_other_selected[k] = v
+            end
+        end
+    end
+
+    local setting = {}
+    if self.hero_item_data_list[index].bid == 0 and self.hero_item_data_list[index].star == 5 then
+        -- 表示随机卡
+        setting.self_mark_bid = self.hero_vo.bid
+    end
+
+    controller:openHeroUpgradeStarSelectPanel(true, self.hero_item_data_list[index], dic_other_selected, HeroConst.SelectHeroType.eUpgradeStar, setting)
+end
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function HeroProsMainWindow:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+
+--更新选中英雄信息
+function HeroProsMainWindow:updateHeroItemInfo()
+    if not self.hero_item_data_list then return end
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    for i,v in ipairs(self.hero_item_data_list) do
+        if v.is_select then
+            v.is_select = false
+            local count = 0
+            for k,vo in pairs(v.dic_select_list) do
+                count = count + 1
+                self.dic_other_selected[k] = vo
+            end
+            v.lev = string_format("%s/%s", count, v.count)
+            if self.hero_item_list[i] then
+                self.hero_item_list[i].num_label:setString(v.lev)
+                if count > 0 then
+                    self.hero_item_list[i]:setHeadUnEnabled(false)
+                else
+                    self.hero_item_list[i]:setHeadUnEnabled(true)
+                end
+            end
+        else
+            for k,vo in pairs(v.dic_select_list) do
+                self.dic_other_selected[k] = vo
+            end
+        end
+    end
+    -- self:updateCentreHeroItemRedPoint()
+end
+
+function HeroProsMainWindow:DeleteMe()
+    for k,v in ipairs(self.spine_list) do
+        if v then
+            v:clearTracks()
+            v:removeFromParent()
+            v = nil
+        end
+    end
+    for i=1,3 do
+        doStopAllActions(self.pros_list[i])
+    end
+    for k, v in pairs(self.next_attr_list) do
+        v:removeFromParent()
+        v = nil
+    end
+    for k, v in pairs(self.now_attr_list) do
+        v:removeFromParent()
+        v = nil
+    end
+    if self.hero_pros_updata_event then
+        GlobalEvent:getInstance():UnBind(self.hero_pros_updata_event)
+        self.hero_pros_updata_event = nil
+    end
+    if self.upgrade_star_select_event then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+    if self.hero_pros_reset_event then
+        GlobalEvent:getInstance():UnBind(self.hero_pros_reset_event)
+        self.hero_pros_reset_event = nil
+    end
+    -- controller:openHeroProsMainWindow(false)
+end

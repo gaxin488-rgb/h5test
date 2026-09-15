@@ -1,0 +1,397 @@
+-- --------------------------------------------------------------------
+-- 魔导器的对象数据
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      魔导器的对象数据     
+-- <br/>Create: 2018年11月14日
+-- --------------------------------------------------------------------
+TreasureVo = TreasureVo or BaseClass(EventDispatcher)
+
+function TreasureVo:__init()
+    self.id                 = 0   --  id
+    self.name               = ""  --  名称
+    self.quality            = 0   --  品质
+    self.lev                = 0   --  等级
+    self.star               = 0   --  星级
+    self.max_star           = 0   --  满星星级
+    self.is_wakeup          = 0   --  是否觉醒 0未觉醒 1觉醒
+    self.is_speed           = 0   --  速度是否生效 0生效 1未生效
+    self.config             = 0   --  基础表
+    self.hero_id            = 0   --  专属忍者id
+    --属性部分
+    self.attr               = nil  -- 基础属性
+    self.only_attr          = nil  -- 专属基础属性
+    self.node_effect        = nil  -- 节点效果
+    self.exclusive_effect   = nil  -- 专属效果
+    self.only_exclusive_effect= nil  -- 专属专属效果
+    self.wakeup_effect      = nil  -- 觉醒效果
+
+end
+--设置数据  
+--star有值且不为0表示是图鉴过来的数据
+function TreasureVo:updataData(data,star)
+    if star and star ~= 0 then  --表示图鉴中
+        self:setBookData(data,star)
+    else
+        if type(data) == "table" then --已激活
+            for key, value in pairs(data) do
+                if self[key] ~= value then
+                    self[key] = value
+                end
+            end
+        elseif type(data) == "number" then --未激活
+            self:setInactivatedData(data)
+        end
+    end
+end
+function TreasureVo:setUpData(data)
+    self.lev = data.lv or data.lev
+    self.star = data.star
+    self.is_wakeup = data["break"] or data.is_wakeup
+    self.is_speed = data.close_speed or data.is_speed
+    self:setActivatedData(data)
+end
+--设置未激活数据
+function TreasureVo:setInactivatedData(data)
+    local base_data = deepCopy(Config.NinjaTreasureData.data_base_info[data])
+    local star_cfg = deepCopy(Config.NinjaTreasureData.data_star_info[data])
+    self.id = base_data.id
+    self.name = base_data.name
+    self.quality = base_data.quality
+    self.max_star = tableLen(star_cfg)
+    self.hero_id = base_data.hero_id
+    self.lev = 0
+    self.star = 1
+    self.is_wakeup = 0
+    self.is_speed = 1
+    self.config = base_data
+    self.node_effect = self:getNodeEffect(false)
+    self.attr = self:getAttr()
+    self.only_attr = self:getOnlyAttr()
+    self.exclusive_effect = self:getExclusiveEffect(false)
+    self.only_exclusive_effect = self:getOnlyExclusiveEffect(false)
+    self.wakeup_effect = self:getWakeupEffect()
+end
+--设置已激活数据
+function TreasureVo:setActivatedData(data)
+    local base_data = deepCopy(Config.NinjaTreasureData.data_base_info[data.id or data.item_bid])
+    local star_cfg = deepCopy(Config.NinjaTreasureData.data_star_info[data.id or data.item_bid])
+    self.id = base_data.id
+    self.name = base_data.name
+    self.quality = base_data.quality
+    self.max_star = tableLen(star_cfg)
+    self.hero_id = base_data.hero_id
+    self.config = base_data
+    self.node_effect = self:getNodeEffect(true)
+    self.attr = self:getAttr()
+    self.only_attr = self:getOnlyAttr()
+    self.exclusive_effect = self:getExclusiveEffect(true)
+    self.only_exclusive_effect = self:getOnlyExclusiveEffect(true)
+    self.wakeup_effect = self:getWakeupEffect()
+end
+--设置图鉴数据
+function TreasureVo:setBookData(data,star)
+    if type(data) == "number" then
+        local base_data = deepCopy(Config.NinjaTreasureData.data_base_info[data])
+        self.id = base_data.id
+        self.name = base_data.name
+        self.quality = base_data.quality
+        self.lev = tableLen(deepCopy(Config.NinjaTreasureData.data_lv_info[self.quality]))
+        self.hero_id = base_data.hero_id
+        self.star = star
+        self.is_wakeup = 0
+        self.is_speed = 1
+        self.config = base_data
+        self.node_effect = self:getNodeEffect(true)
+        self.attr = self:getAttr()
+        self.only_attr = self:getOnlyAttr()
+        self.exclusive_effect = self:getExclusiveEffect(true)
+        self.only_exclusive_effect = self:getOnlyExclusiveEffect(true)
+        self.wakeup_effect = self:getWakeupEffect()
+    elseif type(data) == "table" then
+    end
+end
+
+-- （秘宝属性的生命+秘宝属性的生命成长/1000*（秘宝进阶的生命成长+秘宝觉醒的生命成长）/1000*秘宝等级
+--  +秘宝进阶的属性加成的hp_max+秘宝觉醒的属性加成的hp_max）
+--  + （秘宝属性的生命+秘宝属性的生命成长/1000）*（升级消耗的节点提升系数 + 觉醒效果的节点提升系数）
+-- 秘宝属性的生命成长/1000*秘宝进阶的生命成长/1000*秘宝等级  四舍五入取整
+function TreasureVo:getAttr()
+    local lv = deepCopy(self.lev)
+    if lv <= 0 then
+        lv = 1
+    end
+    local attr = {}
+    local base_data = deepCopy(Config.NinjaTreasureData.data_pro_info[self.id])
+    local star_data = deepCopy(Config.NinjaTreasureData.data_star_info[self.id][self.star])
+    local wake_data = deepCopy(Config.NinjaTreasureData.data_awake_info[self.id])
+    for key, value in pairs(TreasureConst.Attr) do
+        local base = base_data[value]
+        local wake_num = 0
+        if self.is_wakeup == 1 then
+            wake_num = wake_data and wake_data[TreasureConst.Add_Attr[key]]
+        end
+        local up = base_data[TreasureConst.Add_Attr[key]] / 1000 * (star_data[TreasureConst.Add_Attr[key]] + wake_num) / 1000 * lv
+        if up % 1 < 0.5 then
+            up = math.floor(up)
+        else
+            up = math.ceil(up)
+        end
+
+        local star_add = 0
+        for k, v in pairs(star_data.add_pro) do
+            if v[1] == value then
+                star_add = v[2]
+            end
+        end
+        if self.is_wakeup == 1 then
+            for k, v in pairs(wake_data and wake_data.add_pro) do
+                if v[1] == value then
+                    star_add = star_add + v[2]
+                end
+            end
+        end
+        local cfg = deepCopy(Config.NinjaTreasureData.data_lv_info[self.quality])
+        local coefficient = 0
+        for k, v in pairs(cfg) do
+            if v.lv <= lv and v.lv_skill_id ~= 0 then
+                local lv_skill_cfg = deepCopy(Config.NinjaTreasureData.data_skill_info[v.lv_skill_id])
+                if lv_skill_cfg.result and lv_skill_cfg.result[1] and lv_skill_cfg.result[1][1] and lv_skill_cfg.result[1][1] == "add_attr" then
+                    coefficient = lv_skill_cfg.result[1][4][1]/100
+                end
+            end
+        end
+        local skill_cfg = deepCopy(Config.NinjaTreasureData.data_skill_info[star_data.skill_id])
+        if skill_cfg.result and skill_cfg.result[1] and skill_cfg.result[1][1] and skill_cfg.result[1][1] == "add_attr" then
+            coefficient = skill_cfg.result[1][4][1]/100
+        end
+        if self.is_wakeup == 1 then
+            local wake_cfg = deepCopy(Config.NinjaTreasureData.data_awake_info[self.id])
+            local skill_cfg = deepCopy(Config.NinjaTreasureData.data_skill_info[wake_cfg.skill])
+            if skill_cfg.result and skill_cfg.result[1] and skill_cfg.result[1][1] and skill_cfg.result[1][1] == "add_attr" then
+                coefficient = skill_cfg.result[1][4][1]/100
+            end 
+        end
+        local  num = base + up + star_add
+        local num2 = base + base_data[TreasureConst.Add_Attr[key]] / 1000
+        num = num + num2 * coefficient
+        if num % 1 < 0.5 then
+            num = math.floor(num)
+        else
+            num = math.ceil(num)
+        end
+        if num ~= 0 then
+            attr[value] = num
+        end
+    end
+    return attr
+end
+--专属 基础属性
+function TreasureVo:getOnlyAttr()
+    local lv = deepCopy(self.lev)
+    if lv <= 0 then
+        lv = 1
+    end
+    local attr = {}
+    local base_data = deepCopy(Config.NinjaTreasureData.data_pro_mine_info[self.id])
+    local star_data = deepCopy(Config.NinjaTreasureData.data_star_info[self.id][self.star])
+    local wake_data = deepCopy(Config.NinjaTreasureData.data_awake_info[self.id])
+    if base_data and star_data then
+        for key, value in pairs(TreasureConst.Attr) do
+            local base = base_data[value]
+            local wake_num = 0
+            if self.is_wakeup == 1 then
+                wake_num = wake_data and wake_data[TreasureConst.Add_Only_Attr[key]]
+            end
+            local up = base_data[TreasureConst.Add_Attr[key]] / 1000 * (star_data[TreasureConst.Add_Only_Attr[key]] + wake_num) / 1000 * lv
+            if up % 1 < 0.5 then
+                up = math.floor(up)
+            else
+                up = math.ceil(up)
+            end
+    
+            local star_add = 0
+            for k, v in pairs(star_data.mine_add_pro) do
+                if v[1] == value then
+                    star_add = v[2]
+                end
+            end
+            if self.is_wakeup == 1 then
+                for k, v in pairs(wake_data and wake_data.mine_add_pro) do
+                    if v[1] == value then
+                        star_add = star_add + v[2]
+                    end
+                end
+            end
+            local cfg = deepCopy(Config.NinjaTreasureData.data_lv_info[self.quality])
+            local coefficient = 0
+            for k, v in pairs(cfg) do
+                if v.lv <= lv and v.lv_skill_id ~= 0 then
+                    local lv_skill_cfg = deepCopy(Config.NinjaTreasureData.data_skill_info[v.lv_skill_id])
+                    if lv_skill_cfg.result and lv_skill_cfg.result[1] and lv_skill_cfg.result[1][1] and lv_skill_cfg.result[1][1] == "add_attr" then
+                        coefficient = lv_skill_cfg.result[1][4][1]/100
+                    end
+                end
+            end
+            local skill_cfg = deepCopy(Config.NinjaTreasureData.data_skill_info[star_data.skill_id])
+            if skill_cfg.result and skill_cfg.result[1] and skill_cfg.result[1][1] and skill_cfg.result[1][1] == "add_attr" then
+                coefficient = skill_cfg.result[1][4][1]/100
+            end
+            if self.is_wakeup == 1 then
+                local wake_cfg = deepCopy(Config.NinjaTreasureData.data_awake_info[self.id])
+                local skill_cfg = deepCopy(Config.NinjaTreasureData.data_skill_info[wake_cfg.skill])
+                if skill_cfg.result and skill_cfg.result[1] and skill_cfg.result[1][1] and skill_cfg.result[1][1] == "add_attr" then
+                    coefficient = skill_cfg.result[1][4][1]/100
+                end 
+            end
+            local  num = base + up + star_add
+            local num2 = base + base_data[TreasureConst.Add_Attr[key]] / 1000
+            num = num + num2 * coefficient
+            if num % 1 < 0.5 then
+                num = math.floor(num)
+            else
+                num = math.ceil(num)
+            end
+            if num ~= 0 then
+                attr[value] = num
+            end
+        end
+    end
+    return attr
+end
+
+--节点效果
+function TreasureVo:getNodeEffect(isact)
+    local isact = isact or false --是否激活 图鉴认为已激活
+    local effect = {}
+    local cfg = deepCopy(Config.NinjaTreasureData.data_lv_info[self.quality])
+    if cfg then
+        for k, v in pairs(cfg) do
+            if v.add_txt and v.add_txt ~= "" then
+                local data = {}
+                local skill_cfg = Config.NinjaTreasureData.data_skill_info[v.lv_skill_id]
+                if skill_cfg then
+                    local txt = deepCopy(v.add_txt)
+                    local list = {}
+                    for key, value in pairs(skill_cfg.show_num) do
+                        for k, v in pairs(value) do
+                            table.insert(list,v)
+                        end
+                    end
+                    data.txt = LangStringFormat(txt,list)
+                else
+                    data.txt = v.add_txt
+                end
+                if isact then
+                    data.is_open = self.lev >= v.lv
+                else
+                    data.is_open = false
+                end
+                table.insert(effect,data)
+            end
+        end
+    end
+    return effect
+end
+
+--专属效果
+function TreasureVo:getExclusiveEffect(isact)
+    local isact = isact or false  --是否激活 图鉴认为已激活
+    local effect = {}
+    local cfg = deepCopy(Config.NinjaTreasureData.data_star_info[self.id])
+    table.sort(cfg,function(a,b) return a.star > b.star end)
+    if cfg then
+        for k, v in pairs(cfg) do
+            if v.skill_id and v.skill_txt and v.skill_txt ~= "" then
+                local data = {}
+                local txt = deepCopy(v.skill_txt)
+                local skill_cfg = Config.NinjaTreasureData.data_skill_info[v.skill_id]
+                if skill_cfg then
+                    local list = {}
+                    for key, value in pairs(skill_cfg.show_num) do
+                        for k, v in pairs(value) do
+                            table.insert(list,v)
+                        end
+                    end
+                    data.txt = LangStringFormat(txt,list)
+                else
+                    data.txt = txt
+                end
+                if isact then
+                    data.is_open = self.star >= v.star
+                else
+                    data.is_open = false
+                end
+                if k == tableLen(cfg) then
+                    table.insert(effect,data)
+                    return effect
+                else
+                    if self.star >= v.star then
+                        table.insert(effect,data)
+                        return effect
+                    end
+                end
+            end
+        end
+    end
+    return effect
+end
+
+--忍者专属魔导器 专属效果
+function TreasureVo:getOnlyExclusiveEffect(isact)
+    local isact = isact or false  --是否激活 图鉴认为已激活
+    local effect = {}
+    local cfg = deepCopy(Config.NinjaTreasureData.data_star_info[self.id])
+    -- table.sort(cfg,function(a,b) return a.star > b.star end)
+    if cfg then
+        for k, v in pairs(cfg) do
+            if v.skill_id and v.skill_txt and v.skill_txt ~= "" then
+                local data = {}
+                local txt = deepCopy(v.skill_txt)
+                local skill_cfg = Config.NinjaTreasureData.data_skill_info[v.skill_id]
+                if skill_cfg then
+                    local list = {}
+                    for key, value in pairs(skill_cfg.show_num) do
+                        for k, v in pairs(value) do
+                            table.insert(list,v)
+                        end
+                    end
+                    data.txt = LangStringFormat(txt,list)
+                else
+                    data.txt = txt
+                end
+                if isact then
+                    data.is_open = self.star == v.star
+                else
+                    data.is_open = false
+                end
+                table.insert(effect,data)
+            end
+        end
+    end
+    return effect
+end
+
+--觉醒效果
+function TreasureVo:getWakeupEffect()
+    local effect = {}
+    local cfg = deepCopy(Config.NinjaTreasureData.data_awake_info[self.id])
+    if cfg then
+        local txt = deepCopy(cfg.txt)
+        local skill_cfg = Config.NinjaTreasureData.data_skill_info[cfg.skill]
+        if skill_cfg then
+            local list = {}
+            for key, value in pairs(skill_cfg.show_num) do
+                for k, v in pairs(value) do
+                    table.insert(list,v)
+                end
+            end
+            effect.txt = LangStringFormat(txt,list)
+        else
+            effect.txt = txt
+        end
+    end
+    return effect
+end

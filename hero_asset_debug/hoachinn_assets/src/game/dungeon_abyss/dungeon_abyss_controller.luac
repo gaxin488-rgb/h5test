@@ -1,0 +1,362 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--封印塔
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-06-07
+-- --------------------------------------------------------------------
+DungeonAbyssController = DungeonAbyssController or BaseClass(BaseController)
+
+function DungeonAbyssController:config()
+    if not DungeonAbyssModel then
+        require("game.dungeon_abyss.dungeon_abyss_model") 
+    end
+    if not GlobalEvent then
+        require("common.global_event")
+    end
+    self.model = DungeonAbyssModel.New(self)
+    self.dispather = GlobalEvent:getInstance()
+end
+
+function DungeonAbyssController:getModel()
+    return self.model
+end
+
+function DungeonAbyssController:registerEvents()
+end
+
+function DungeonAbyssController:registerProtocals()
+    self:RegisterProtocal(22500, "handle22500")     --普通副本信息
+    self:RegisterProtocal(22501, "handle22501")     --进阶副本信息
+    self:RegisterProtocal(22502, "handle22502")     --挑战副本
+    self:RegisterProtocal(22503, "handle22503")     --副本选择难度
+    self:RegisterProtocal(22504, "handle22504")     --推送战斗结算
+    self:RegisterProtocal(22505, "handle22505")     --领取战令奖励
+    self:RegisterProtocal(22506, "handle22506")     --战报
+end
+
+--普通副本信息
+function DungeonAbyssController:sender22500()
+    self:SendProtocal(22500,{})
+end
+function DungeonAbyssController:handle22500( data )
+    local is_pass = false
+    if data.pass == 1 and not self.model:checkBaseIsPass() then
+        is_pass = true
+    end
+    self.model:setBaseInfo(data)
+    local status = self.model:getTotalRedStatus(1)
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.shinobi, {bid = CrossgroundConst.Red_Type.dungeonabyss, status = status})
+    local status = self.model:getTotalRedStatus(2)
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.shinobi, {bid = CrossgroundConst.Red_Type.dungeonabyss_advance, status = status})
+    GlobalEvent:getInstance():Fire(DungeonAbyssEvent.Update_Base_Data, is_pass)
+end
+
+function DungeonAbyssController:sender22501()
+    self:SendProtocal(22501,{})
+end
+function DungeonAbyssController:handle22501( data )
+    -- print("---------------------------------*** handle22501", vardump(data))
+    --重置更新
+    local choose = false
+    self.model:setAdvanceInfo(data)
+    if self.model:checkBaseIsPass() and not self.model:checkIsChooseDifDone() then
+        choose = true
+    end
+    local status = self.model:getTotalRedStatus(2)
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.shinobi, {bid = CrossgroundConst.Red_Type.dungeonabyss_advance, status = status})
+    GlobalEvent:getInstance():Fire(DungeonAbyssEvent.Update_Advance_Data, choose)
+end
+
+function DungeonAbyssController:sender22502(type, dun_id)
+    -- print("--------------------- handle22502", type, dun_id)
+    local protocal = {}
+    protocal.type = type
+    protocal.dun_id = dun_id
+    self:SendProtocal(22502,protocal)
+end
+function DungeonAbyssController:handle22502( data )
+    -- print("---------------------------------*** handle22502", vardump(data))
+end
+
+function DungeonAbyssController:sender22503(lv)
+    local protocal = {}
+    protocal.lv = lv
+    self:SendProtocal(22503,protocal)
+end
+function DungeonAbyssController:handle22503( data )
+    -- print("---------------------------------*** handle22503", vardump(data))
+    if data.code == 0 then
+        message(TI18N(data.msg))
+        return
+    end
+    self:getModel():setAdvacneDiff(data.lv or 1)
+    self:openDungeonAbyssChooseDifficultyPanel(false)
+    self:openDungeonAbyssMainWindow(true, 2)
+    local status = self.model:getTotalRedStatus(2)
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.shinobi, {bid = CrossgroundConst.Red_Type.dungeonabyss_advance, status = status})
+    GlobalEvent:getInstance():Fire(DungeonAbyssEvent.Update_Choose_Event)
+end
+
+function DungeonAbyssController:sender22504()
+    self:SendProtocal(22504,{})
+end
+function DungeonAbyssController:handle22504( data )
+    -- print("---------------------------------*** handle22504", data.type, vardump(data))
+    message(data.msg)
+    if data then
+        table.sort(data.all_hurt_statistics,function(a,b)
+            return a.round < b.round
+        end)
+        -- if data.type == BattleConst.Fight_Type.DungeonAbyss then
+            local best_partner = 0
+            local max_dps = 0
+            local role_name = ""
+            for key,value in pairs(data.all_hurt_statistics) do
+                if value.round == tableLen(data.all_hurt_statistics) then
+                    role_name = value.target_role_name
+                    for k,v in pairs(value.hurt_statistics) do
+                        if v.type == 1 then
+                            for a,b in pairs(v.partner_hurts) do
+                                if b.dps > max_dps then
+                                    best_partner = b.id
+                                    max_dps = b.dps
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            data.hurt_statistics = data.all_hurt_statistics
+            data.bossid = data.id or 0
+            data.all_dps = data.dps or 0
+            data.best_partner = best_partner
+            data.target_role_name = role_name
+            data.item_rewards = data.award
+            for i,v in ipairs(data.item_rewards) do
+                v.bid = v.item_id
+                local item_config = Config.ItemData.data_get_data(v.bid)
+                v.quality = item_config.quality
+            end
+            table.sort(data.item_rewards,function(a,b) return a.quality > b.quality end)
+        -- end
+        BattleController:getInstance():openFinishView(true, BattleConst.Fight_Type.DungeonAbyss, data)
+    end 
+end
+
+function DungeonAbyssController:sender22505(type)
+    local protocal = {}
+    protocal.type = type
+    self:SendProtocal(22505,protocal)
+end
+function DungeonAbyssController:handle22505( data )
+    -- print("---------------------------------*** handle22505", vardump(data))
+    GlobalEvent:getInstance():Fire(DungeonAbyssEvent.Update_Reward_Event)
+end
+
+function DungeonAbyssController:sender22506(type, tower)
+    -- print("---------------------- sender22506",type, tower)
+    local protocal = {}
+    protocal.type = type
+    protocal.tower = tower
+    self:SendProtocal(22506,protocal)
+end
+function DungeonAbyssController:handle22506( data )
+    -- print("---------------------------------*** handle22506", vardump(data))
+    table.sort(data.partner_list, function(a,b)
+        return a.round < b.round
+    end)
+    self:openDungeonAbyssChallengeRecordPanel(true, {list = {data}}, BattleConst.Fight_Type.DungeonAbyss)
+end
+
+--打开主界面
+function DungeonAbyssController:openDungeonAbyssMainWindow(bool, type, is_jump)
+    if bool == false then
+        if self.main_window ~= nil then
+            self.main_window:close()
+            self.main_window = nil
+        end
+    else
+        if type == 2 and not self:getModel():checkIsChooseDifDone() then
+            if not is_jump then
+                self:openDungeonAbyssChooseDifficultyPanel(true)
+                return
+            else
+                CrossgroundController:getInstance():openCrossGroundShinobiWindow(true)
+                message(TI18N("语言_c_7180"))
+                return
+            end
+        end
+        if not self.main_window then 
+            self.main_window = DungeonAbyssMainWindow.New(type)
+        end
+        if self.main_window and self.main_window:isOpen() == false then
+            self.main_window:open()
+        else
+            self.main_window:setVisible(true)
+        end
+    end
+end
+
+function DungeonAbyssController:isWindowOpen()
+    if self.main_window and not self.main_window:isOpen() then
+        return true
+    end
+    return false
+end
+
+--打开关卡信息界面
+function DungeonAbyssController:openDungeonAbyssDes(bool, data)
+    if bool == true then
+        if not self.dungeon_abyss_des then 
+            self.dungeon_abyss_des = DungeonAbyssDes.New(data.type, data.diff)
+        end
+        if self.dungeon_abyss_des and self.dungeon_abyss_des:isOpen() == false then
+            self.dungeon_abyss_des:open(data)
+        end
+
+    else 
+        if self.dungeon_abyss_des then 
+            self.dungeon_abyss_des:close()
+            self.dungeon_abyss_des = nil
+        end
+    end
+end
+--关卡阵容
+function DungeonAbyssController:openDungeonAbyssFightInfoPanel(bool, data)
+    if bool == true then
+        if not self.dungeon_abyss_fight_info then 
+            self.dungeon_abyss_fight_info = DungeonAbyssFightInfoPanel.New()
+        end
+        if self.dungeon_abyss_fight_info and self.dungeon_abyss_fight_info:isOpen() == false then
+            self.dungeon_abyss_fight_info:open(data)
+        end
+
+    else 
+        if self.dungeon_abyss_fight_info then 
+            self.dungeon_abyss_fight_info:close()
+            self.dungeon_abyss_fight_info = nil
+        end
+    end
+end
+--布阵
+function DungeonAbyssController:openDungeonAbyssGoFightPanel(bool, data)
+    if bool == true then
+        if not self.dungeon_abyss_go_fight then 
+            self.dungeon_abyss_go_fight = DungeonAbyssGoFightPanel.New()
+        end
+        if self.dungeon_abyss_go_fight and self.dungeon_abyss_go_fight:isOpen() == false then
+            self.dungeon_abyss_go_fight:open(data)
+        end
+
+    else 
+        if self.dungeon_abyss_go_fight then 
+            self.dungeon_abyss_go_fight:close()
+            self.dungeon_abyss_go_fight = nil
+        end
+    end
+end
+--关卡难度
+function DungeonAbyssController:openDungeonAbyssChooseDifficultyPanel(bool)
+    if bool == true then
+        if not self.dungeon_abyss_choose_difficulty then 
+            self.dungeon_abyss_choose_difficulty = DungeonAbyssChooseDifficultyPanel.New()
+        end
+        if self.dungeon_abyss_choose_difficulty and self.dungeon_abyss_choose_difficulty:isOpen() == false then
+            self.dungeon_abyss_choose_difficulty:open()
+        end
+
+    else 
+        if self.dungeon_abyss_choose_difficulty then 
+            self.dungeon_abyss_choose_difficulty:close()
+            self.dungeon_abyss_choose_difficulty = nil
+        end
+    end
+end
+--奖励预览
+function DungeonAbyssController:openDungeonAbyssDifficultyReward(bool, data)
+    if bool == true then
+        if not self.dungeon_abyss_difficulty_reward then 
+            self.dungeon_abyss_difficulty_reward = DungeonAbyssDifficultyReward.New()
+        end
+        if self.dungeon_abyss_difficulty_reward and self.dungeon_abyss_difficulty_reward:isOpen() == false then
+            self.dungeon_abyss_difficulty_reward:open(data)
+        end
+
+    else 
+        if self.dungeon_abyss_difficulty_reward then 
+            self.dungeon_abyss_difficulty_reward:close()
+            self.dungeon_abyss_difficulty_reward = nil
+        end
+    end
+end
+--战令
+function DungeonAbyssController:openDungeonAbyssWarOrderPanel(bool, data)
+    if bool == true then
+        if not self.dungeon_abyss_war_order then 
+            self.dungeon_abyss_war_order = DungeonAbyssWarOrderPanel.New(data.type, data.diff)
+        end
+        if self.dungeon_abyss_war_order and self.dungeon_abyss_war_order:isOpen() == false then
+            self.dungeon_abyss_war_order:open()
+        end
+
+    else 
+        if self.dungeon_abyss_war_order then 
+            self.dungeon_abyss_war_order:close()
+            self.dungeon_abyss_war_order = nil
+        end
+    end
+end
+--商店
+function DungeonAbyssController:openDungeonAbyssShopPanel(bool, data)
+    if bool == true then
+        if not self.dungeon_abyss_shop then 
+            self.dungeon_abyss_shop = DungeonAbyssShopPanel.New(data.type, data.diff)
+        end
+        if self.dungeon_abyss_shop and self.dungeon_abyss_shop:isOpen() == false then
+            self.dungeon_abyss_shop:open()
+        end
+
+    else 
+        if self.dungeon_abyss_shop then 
+            self.dungeon_abyss_shop:close()
+            self.dungeon_abyss_shop = nil
+        end
+    end
+end
+--战报
+function DungeonAbyssController:openDungeonAbyssChallengeRecordPanel(bool, data, type)
+    if bool == true then
+        if not self.dungeon_abyss_record then 
+            self.dungeon_abyss_record = DungeonAbyssChallengeRecordPanel.New()
+        end
+        if self.dungeon_abyss_record and self.dungeon_abyss_record:isOpen() == false then
+            self.dungeon_abyss_record:open(data, type)
+        end
+
+    else 
+        if self.dungeon_abyss_record then 
+            self.dungeon_abyss_record:close()
+            self.dungeon_abyss_record = nil
+        end
+    end
+end
+--战令购买
+function DungeonAbyssController:openDungeonAbyssBuyCardWindow(bool, type)
+    if bool == true then
+        if not self.dungeon_abyss_buy_card_window then 
+            self.dungeon_abyss_buy_card_window = DungeonAbyssBuyCardWindow.New(type)
+        end
+        if self.dungeon_abyss_buy_card_window and self.dungeon_abyss_buy_card_window:isOpen() == false then
+            self.dungeon_abyss_buy_card_window:open()
+        end
+
+    else 
+        if self.dungeon_abyss_buy_card_window then 
+            self.dungeon_abyss_buy_card_window:close()
+            self.dungeon_abyss_buy_card_window = nil
+        end
+    end
+end

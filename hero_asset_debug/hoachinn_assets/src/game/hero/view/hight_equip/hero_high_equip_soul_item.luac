@@ -1,0 +1,368 @@
+-- --------------------------------------------------------------------
+-- --------------------------------------------------------------------
+HeroHighEquipSoulItem = class("HeroHighEquipSoulItem", function() 
+	return ccui.Layout:create()
+end)
+
+local role_vo = RoleController:getInstance():getRoleVo()
+
+--==============================--
+--desc:创建物品对象
+--time:2018-06-05 04:41:34
+--@click:是否可点击
+--@scale:缩放值
+--@effect:点击时候是否要处理回弹效果
+--@is_show_tips:是否显示tips
+--@tips_data:tips参数 is_book是否是图鉴 is_btn是否显示底部按钮 
+--@return 
+--==============================--
+function HeroHighEquipSoulItem:ctor(click, scale, effect, is_show_tips, swallow_touch)
+
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_high_equip_material_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self.item_node = self.main_container:getChildByName("item_node")
+
+	self.add_btn = self.main_container:getChildByName("add_btn")
+	self.select_btn = self.main_container:getChildByName("select_btn")
+	self.select_btn:setSwallowTouches(false)
+	local desc = self.main_container:getChildByName("desc")
+    desc:setVisible(false)
+    local posx = desc:getPositionX()
+    local posy = desc:getPositionY()
+    self.desc = createRichLabel(20, cc.c4b(0x64, 0x32, 0x23, 0xff), cc.p(0.5, 0.5), cc.p(posx, posy))
+    self.main_container:addChild(self.desc)
+	self.select_num_bg = self.main_container:getChildByName("select_num_bg")
+	self.select_num = self.select_num_bg:getChildByName("select_num")
+	self.select_num_bg:setVisible(false)
+	self.dele_btn = self.main_container:getChildByName("dele_btn")
+	self.dele_btn:setVisible(false)
+	self:registerEvent()
+end
+
+function HeroHighEquipSoulItem:getData()
+	return self.data
+end
+function HeroHighEquipSoulItem:getSendData()
+    return self.send_data
+end
+function HeroHighEquipSoulItem:addCallBack(callback)
+	self.callback = callback
+end
+
+function HeroHighEquipSoulItem:setData(data)
+	self.data = data
+	local item_id = self.data.id
+	local exp = self.data.exp
+
+    self.num = 0
+    self.select_num:setString(self.num)
+    local str = 'EXP+<div fontcolor=#26952f>%s</div>'
+    self.desc:setString(string.format(str, exp))
+    local own_num =  BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+    if own_num == 0 then
+        own_num =  BackpackController:getInstance():getModel():getEquipItemNumByBid(item_id)
+    end
+    if not self.item then
+        self.item = BackPackItem.new(false, false, false, 0.9, false, false, false)
+        self.item_node:addChild(self.item)
+        -- self.item:addCallBack(function() self:onClickBtnAdd() end)
+        -- local function func()
+        --     HeroController:getInstance():openHighEquipUpSelectWindow(true,self.data.id,1,self.equip_data)
+        -- end
+        -- if self.item then
+        --     self.item:addLongTimeTouchCallback(func)
+        -- end
+    end
+    self.item:setBaseData(item_id, own_num)
+    -- self.item:resetNumPos()
+    if own_num == 0 then
+        setChildUnEnabled(true, self.item)
+        self.add_btn:setVisible(true)
+        local type = Config.ItemData.data_get_data(self.data.id).type
+        if BackPackConst.checkIsEquip(type) then
+            self.add_btn:setVisible(false)
+        end
+    else
+        setChildUnEnabled(false, self.item)
+        self.add_btn:setVisible(false)
+    end
+end
+
+function HeroHighEquipSoulItem:setExtend(extend_data,equip)
+    if not extend_data then return end
+    self.extend_data = extend_data
+	if equip then
+		self.equip_data = equip
+	end
+    local item_id = self.data.id
+    local item_info = self.extend_data[item_id]
+    if not item_info then
+        self.num = 0
+        self.select_num_bg:setVisible(false)
+        self.dele_btn:setVisible(false)
+        return
+    end
+    if item_id == item_info.item_id then
+        self.num = item_info.num
+        self.select_num:setString(self.num)
+        self.select_num:setScale(1)
+        local width = self.select_num:getContentSize().width
+        local height = self.select_num:getContentSize().height
+        self.select_num_bg:setContentSize(cc.size(width+10, self.select_num_bg:getContentSize().height))
+        self.select_num:setPositionX(width/2+5)
+    end
+    if self.num > 0 then
+        self.select_num_bg:setVisible(true)
+        self.dele_btn:setVisible(true)
+    else
+        self.select_num_bg:setVisible(false)
+        self.dele_btn:setVisible(false)
+    end
+end
+
+function HeroHighEquipSoulItem:registerEvent()
+    self.add_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type,1)
+        local type = Config.ItemData.data_get_data(self.data.id).type
+        if BackPackConst.checkIsEquip(type) then
+           HeroController:getInstance():openEquipTips(true, self.data)
+        else
+            local config = Config.ItemData.data_get_data(self.data.id)
+            BackpackController:getInstance():openTipsSource(true, config) 
+        end
+    end)
+    self.select_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+            self.is_click_btn = false --标志只点一次btn
+            self.dele_btn:setTouchEnabled(false)
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                self:startTimeTicket()
+            end))
+            self.sequence_action = self.select_btn:runAction(sequence_action)
+            self.sequence_action:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+            local touch_began = self.touch_began
+            local touch_move = sender:getTouchMovePosition()
+            if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 20 or math.abs(touch_move.y - touch_began.y) > 20) then 
+                self.dele_btn:setTouchEnabled(true)
+                self:clearTimeTicket()
+            end 
+        elseif event_type == ccui.TouchEventType.canceled then
+            self.dele_btn:setTouchEnabled(true)
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            local touch_began = self.touch_began
+            local touch_end = sender:getTouchEndPosition()
+            if touch_began and touch_end and (math.abs(touch_end.x - touch_began.x) > 20 or math.abs(touch_end.y - touch_began.y) > 20) then 
+                self.dele_btn:setTouchEnabled(true)
+                self:clearTimeTicket()
+                return
+            end 
+            self.dele_btn:setTouchEnabled(true)
+            self:clearTimeTicket()
+            if not self.is_click_btn then
+                playButtonSound2()
+                self:onClickBtnAdd()
+            end
+            self.is_click_btn1 = false --标志只点一次btn
+        end
+    end)
+    self.dele_btn:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type,1)
+        if event_type == ccui.TouchEventType.began then
+            self.is_click_btn1 = false --标志只点一次btn
+            local sequence_action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                self:startTimeTicket1()
+            end))
+            self.sequence_action1 = self.dele_btn:runAction(sequence_action)
+            self.sequence_action1:setTag(1)
+        elseif event_type == ccui.TouchEventType.moved then
+        elseif event_type == ccui.TouchEventType.canceled then
+            self.select_btn:setTouchEnabled(true)
+            self:clearTimeTicket1()
+        elseif event_type == ccui.TouchEventType.ended then
+            self.select_btn:setTouchEnabled(true)
+            self:clearTimeTicket1()
+            if not self.is_click_btn1 then
+                playButtonSound2()
+                self:onClickBtnMin()
+            end
+            self.is_click_btn1 = false --标志只点一次btn
+        end
+    end)
+end
+
+function HeroHighEquipSoulItem:onClickBtnMin()
+    if not tolua.isnull(self.select_num) then
+        local item_id = self.data.id
+        local add_exp = self.data.exp
+        local own_num =  BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+        if own_num == 0 then
+            own_num =  BackpackController:getInstance():getModel():getEquipItemNumByBid(item_id)
+        end
+        if own_num == 0 then
+            self.num = 0
+            return
+        end
+        self.num = self.num - 1
+        if self.num < 0 then 
+            self.num = 0
+        end
+        self.select_num:setString(self.num)
+        self.select_num:setScale(1)
+        local width = self.select_num:getContentSize().width
+        local height = self.select_num:getContentSize().height
+        self.select_num_bg:setContentSize(cc.size(width+10, self.select_num_bg:getContentSize().height))
+        self.select_num:setPositionX(width/2+5)
+    
+        if self.num <= 0 then
+            self.select_num_bg:setVisible(false)
+            self.dele_btn:setVisible(false)
+        else
+            self.select_num_bg:setVisible(true)
+            self.dele_btn:setVisible(true)
+        end
+    
+        local send_data = {}
+        send_data.item_id = item_id
+        send_data.num = self.num
+        self.send_data = send_data
+        if self.callback then
+            self.callback()
+        end
+    end
+end
+
+function HeroHighEquipSoulItem:onClickBtnAdd()
+    if not tolua.isnull(self.select_num) then
+        local item_id = self.data.id
+        local add_exp = self.data.exp
+        local own_num =  BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+        if own_num == 0 then
+            own_num =  BackpackController:getInstance():getModel():getEquipItemNumByBid(item_id)
+        end
+        if own_num == 0 then
+            self.num = 0
+            local item_config = Config.ItemData.data_get_data(item_id)
+            if item_config and not BackPackConst.checkIsEquip(item_config.type) then
+                BackpackController:getInstance():openTipsSource(true, item_id)
+            end
+            return
+        end
+        local is_full = self:checkFullExpStatus()
+        if is_full then
+            message(TI18N("语言_c_6817"))
+            return 
+        end
+        self.num = self.num + 1
+        if self.num > own_num then 
+            self.num = own_num
+            message(TI18N("语言_c_280"))
+        end
+        self.select_num:setString(self.num)
+        self.select_num:setScale(1)
+        local width = self.select_num:getContentSize().width
+        local height = self.select_num:getContentSize().height
+        self.select_num_bg:setContentSize(cc.size(width+10, self.select_num_bg:getContentSize().height))
+        self.select_num:setPositionX(width/2+5)
+        if self.num <= 0 then
+            self.select_num_bg:setVisible(false)
+            self.dele_btn:setVisible(false)
+        else
+            self.select_num_bg:setVisible(true)
+            self.dele_btn:setVisible(true)
+        end
+    
+        local send_data = {}
+        send_data.item_id = item_id
+        send_data.num = self.num
+        self.send_data = send_data
+        if self.callback then
+            self.callback()
+        end
+    end
+end
+--判断是否选到上限了 true->满了 false->没满
+function HeroHighEquipSoulItem:checkFullExpStatus()
+    --,{id=k,exp=v,max_lv=self.max_soul_level,max_exp=self.max_exp}
+    local max_lv = self.data.max_lv
+    local max_exp = self.data.max_exp
+
+	self.gold_info = BackpackController:getInstance():getModel():getGoldEquipData(self.equip_data.id)
+	local soul_level = self.gold_info.soul_level
+	local soul_exp = self.gold_info.soul_exp
+    local equip_bid = self.equip_data.config.id
+    local need_exp = max_exp
+    
+    local total_exp = 0
+    for k, v in pairs(self.extend_data) do
+       local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul_exp[v.item_id]
+       local exp = cfg
+       total_exp = exp * v.num + total_exp
+    end
+    if total_exp >= need_exp then
+        return true
+    end
+    return false
+end
+
+--长按-
+function HeroHighEquipSoulItem:startTimeTicket1()
+    if self.time_ticket1 == nil then
+        local _callback = function()
+            self.is_click_btn1 = true
+            self:onClickBtnMin()
+        end
+        self.time_ticket1 = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+    end
+end
+function HeroHighEquipSoulItem:clearTimeTicket1()
+    if self.sequence_action1 then
+        self.dele_btn:stopActionByTag(1)
+        self.sequence_action1 = nil
+    end
+    if self.time_ticket1 ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket1)
+        self.time_ticket1 = nil
+    end
+end 
+
+--长按+
+function HeroHighEquipSoulItem:startTimeTicket()
+    if self.time_ticket == nil then
+        local _callback = function()
+            local is_full = self:checkFullExpStatus()
+            if is_full then
+                message(TI18N("语言_c_6817"))
+                return 
+            end
+            self.is_click_btn = true
+            HeroController:getInstance():openHighEquipUpSelectWindow(true,self.data.id,2,self.equip_data)
+        end
+        self.time_ticket = GlobalTimeTicket:getInstance():add(_callback, 5 / display.DEFAULT_FPS)
+    end
+end
+function HeroHighEquipSoulItem:clearTimeTicket()
+    if self.sequence_action then
+        self.select_btn:stopActionByTag(1)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end 
+
+function HeroHighEquipSoulItem:DeleteMe()
+    self:clearTimeTicket()
+    self:clearTimeTicket1()
+	self:removeAllChildren()
+    self:removeFromParent()
+end

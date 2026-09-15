@@ -1,0 +1,206 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 14:19:50
+-- @description    : 
+		-- 时空争霸赛争霸赛大赛页面
+---------------------------------
+OverlordWindow = OverlordWindow or BaseClass(BaseView)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+
+function OverlordWindow:__init()
+	self.is_full_screen = true
+	self.layout_name = "arenaworldbully/overlord_window"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("time_warp", "competition"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("time_warp", "qualifier"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("barrage", "barrage"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("common", "common_1"), type = ResourcesType.plist},
+	}
+    self.tab_list = {}
+end
+
+function OverlordWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.content_panel = self.main_container:getChildByName("content_panel")
+	self.title_panel = self.main_container:getChildByName("title_panel")
+    self.title_bg = self.title_panel:getChildByName("title_bg")
+    self.title_txt = self.title_panel:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_c_6587"))
+    self.box_img = self.main_container:getChildByName("box_img")
+    self.change_btn = self.main_container:getChildByName("change_btn")
+    self.change_img = self.change_btn:getChildByName("change_img")
+    self.change_label = self.change_btn:getChildByName("change_label")
+    setTextSpacing(self.change_label,-6)
+    self.change_label:setChangeScaleOffWidth(80)
+    self:updateBtnChange()
+    self.tab_btn = self.main_container:getChildByName("tab_btn")
+    for i = 1, 2 do
+        local item = self.tab_btn:getChildByName("tab_btn_"..i)
+        item.normal_img = item:getChildByName("normal_img")
+        item.select_bg = item:getChildByName("select_img")
+        item.label = item:getChildByName("label")
+        setTextSpacing(item.label,-10)
+        item.index = i
+        if i == 1 then
+            item.label:setString(TI18N("语言_c_543"))
+        else
+            item.label:setString(TI18N("语言_c_6587"))
+        end
+        self.tab_list[i] = item
+    end
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    
+	local bottom_off = display.getBottom(self.main_container)
+	local tab_y = self.close_btn:getPositionY()
+	self.close_btn:setPositionY(bottom_off + tab_y)
+end
+
+function OverlordWindow:openRootWnd(setting)
+    local setting = setting or {}
+    local index = setting.index or ArenaworldbullyConst.guessing_tab.eGuessing
+    self:changeTabType(index) 
+    GlobalEvent:getInstance():Fire(BarrageEvent.HandleBarrageType, true, BarrageConst.type.arenaworldbully)
+    BarrageController:getInstance():showWirteBtn(true)
+end
+
+function OverlordWindow:changeTabType(index)
+    if self.tab_object ~= nil and self.tab_object.index == index then return end
+    if self.tab_object and self.tab_object.select_bg then
+        self.tab_object.select_bg:setVisible(false)
+        self.tab_object = nil
+    end
+    self.tab_object = self.tab_list[index]
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(true)
+    end
+	
+	self.cur_tab_index = index
+	if index == ArenaworldbullyConst.guessing_tab.eGuessing then
+        if self.overlord_match_window then
+            self.overlord_match_window:setVisible(false)
+        end
+        if not self.overlord_guessing_window then
+            if not OverlordGuessingWindow then
+                require("game.arenaworldbully.view.overlord_guessing_window")
+            end
+            self.overlord_guessing_window = OverlordGuessingWindow.new()
+            self.content_panel:addChild(self.overlord_guessing_window)
+        end
+        self.overlord_guessing_window:setVisible(true)
+    elseif index == ArenaworldbullyConst.guessing_tab.eOverlord then
+        if self.overlord_guessing_window then
+            self.overlord_guessing_window:setVisible(false)
+        end
+        if not self.overlord_match_window then
+            self.overlord_match_window = OverlordMatchWindow.new()
+            self.content_panel:addChild(self.overlord_match_window)
+        end
+        self.overlord_match_window:setVisible(true)
+    end
+    self:updateTabBtnRedStatus()
+end
+
+function OverlordWindow:updateTabBtnRedStatus(  )
+	for _,object in ipairs(self.tab_list) do
+        local red_status = false
+        if object.index == ArenaworldbullyConst.guessing_tab.eGuessing and self.cur_tab_index ~= object.index then -- 语言_c_543
+            -- if model:getRedForIndex(ArenaworldbullyConst.RedType.Guess) or model:getRedForIndex(ArenaworldbullyConst.RedType.GuessReward) then
+            if model:getBetRedForZone(model:getLookZone()) or model:getRedForIndex(ArenaworldbullyConst.RedType.GuessReward) then
+                red_status = true
+            end
+        end
+        addRedPointToNodeByStatus(object,red_status,10,10)
+    end
+end
+function OverlordWindow:setData()
+end
+function OverlordWindow:register_event(  )
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn()  end ,true, REGISTER_BUTTON_SOUND_BUTTON_TYPY)
+    for k, object in pairs(self.tab_list) do
+		if object then
+			object:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					playTabButtonSound()
+					self:changeTabType(object.index)
+				end
+			end)
+		end
+	end
+    
+    if self.update_preselection_data == nil then
+        self.update_preselection_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateArenaworldbullyRed, function()
+            self:updateTabBtnRedStatus()
+        end)
+    end
+    if self.update_over_guess_rank_data == nil then
+        self.update_over_guess_rank_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverGuessRankData, function()
+            self:updateBtnChange()
+        end)
+    end
+    
+    registerButtonEventListener(self.change_btn, handler(self, self._onClickBtnChange), true, 2)
+end
+
+--战区按钮切换
+function OverlordWindow:_onClickBtnChange(  )
+    local cfg = Config.ArenaTimeWarpData.data_zone
+    local new_zone = 0
+    if model:getLookZone() == #cfg then
+        new_zone = 1
+    else
+        new_zone = model:getLookZone() + 1
+    end
+    model:setLookZone(new_zone)
+    self:updateBtnChange()
+    self:updateTabBtnRedStatus()
+    if self.overlord_match_window then
+        self.overlord_match_window:setData()
+    end
+    if self.overlord_guessing_window then
+        self.overlord_guessing_window.bet_list = deepCopy(model:getOverGuessData(model:getLookZone()))
+        self.overlord_guessing_window:setGuessRankPanel()
+    end
+end
+function OverlordWindow:updateBtnChange(  )
+    self.change_label:setString(TI18N(model:getZoneName(model:getLookZone())))
+    local red_zone = 0
+    if model:getLookZone() == 1 then
+        red_zone = 2
+    else
+        red_zone = 1
+    end
+    addRedPointToNodeByStatus(self.change_btn,model:getBetRedForZone(red_zone),10,10)
+end
+function OverlordWindow:onClickCloseBtn()
+    controller:openOverlordWindow(false)
+end
+
+function OverlordWindow:close_callback()
+    GlobalEvent:getInstance():Fire(BarrageEvent.HandleBarrageType, false, BarrageConst.type.arenaworldbully)    
+    if self.overlord_guessing_window then
+        self.overlord_guessing_window:DeleteMe()
+        self.overlord_guessing_window = nil
+    end
+    if self.overlord_match_window then
+        self.overlord_match_window:DeleteMe()
+        self.overlord_match_window = nil
+    end
+    if self.update_preselection_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_preselection_data)
+        self.update_preselection_data = nil
+    end
+    if self.update_over_guess_rank_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_over_guess_rank_data)
+        self.update_over_guess_rank_data = nil
+    end
+    self:onClickCloseBtn()
+end

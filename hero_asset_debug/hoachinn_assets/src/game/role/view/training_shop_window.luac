@@ -1,0 +1,443 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-2-18 15:15:41
+-- @description    : 
+		-- 小助手商城
+---------------------------------
+TrainingShopWindow = class("TrainingShopWindow", function()
+    return ccui.Widget:create()
+end)
+local _controller = MallController:getInstance()
+local _model = _controller:getModel()
+local role_controller = RoleController:getInstance()
+local role_model = role_controller:getModel()
+
+function TrainingShopWindow:ctor(cfg)
+	self.par_cfg = cfg[1] or {}
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("roleinfo/training_shop_window"))
+	self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0,0)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+	self.attr_list = {}
+    -- 资源加载
+	local res_list = {}
+	self.cur_tab_data = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+-- 资源加载完成
+function TrainingShopWindow:loadResListCompleted(  )
+	self:configUI()
+	self._init_flag = true
+end
+
+function TrainingShopWindow:configUI(  )
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self.title_1 =  self.main_container:getChildByName("title_1")
+	self.title_2 =  self.main_container:getChildByName("title_2")
+	self.title_3 =  self.main_container:getChildByName("title_3")
+	self.title_1:setString(TI18N("语言_c_408"))
+	self.title_2:setString(TI18N("语言_c_7412"))
+	self.title_3:setString(TI18N("语言_c_7413"))
+	setTextMaxWidth(self.title_1,270,-10)
+	setTextMaxWidth(self.title_2,160,-10)
+	setTextMaxWidth(self.title_3,120,-10)
+
+	self.shop_panel = self.main_container:getChildByName("shop_panel")
+
+	if self.item_scrollview == nil then
+        local scroll_view_size = self.shop_panel:getContentSize()
+        local setting = {
+            item_class = TrainingShopWindowItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            item_width = 584,               -- 单元的尺寸width
+            item_height = 123,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1,
+			need_dynamic = true
+        }
+        self.item_scrollview = CommonScrollViewLayout.new(self.shop_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+
+	self:register_event()
+	_controller:sender13401(MallConst.MallType.GodShop)
+end
+
+function TrainingShopWindow:register_event(  )
+	--获取商品已购买次数(限于购买过的有限购的商品)
+    if not self.update_have_count then
+        self.update_have_count = GlobalEvent:getInstance():Bind(MallEvent.Open_View_Event,function ( data )
+            if not data then return end
+			if self.par_cfg and self.par_cfg.param and MallConst.MallType.GodShop and data.type == MallConst.MallType.GodShop then
+				--目前只有道具商店用这个协议
+				local list = self:initGodShopData(data.type, data)
+				if list ~= nil then
+					self.cur_tab_data = list
+					self.item_scrollview:setData(self.cur_tab_data)
+					local fun = function()
+						local status_data = role_model:getTrainingStatusForType(self.par_cfg.id)
+						if type(status_data) == "table" then
+							self.status_data = status_data
+						else
+							self.status_data = {status_data}
+						end
+						GlobalEvent:getInstance():Fire(RoleEvent.UPDATE_Training_Shop_Send_EVENT,self.status_data)
+					end
+					self.item_scrollview:addEndCallBack(fun)
+				end
+			end
+        end)
+    end
+	if not self.change_training_shop_send_event then
+        self.change_training_shop_send_event = GlobalEvent:getInstance():Bind(RoleEvent.Change_Training_Shop_Send_EVENT ,function(_type,id)
+			if _type and id then
+				if _type == 1 then
+					table.insert(self.status_data,id)
+				else
+					local list = {}
+					for k, v in pairs(self.status_data) do
+						if v ~= id then
+							table.insert(list,v)
+						end
+					end
+					self.status_data = list
+				end
+				role_model:setTrainingStatusForType(self.par_cfg.id,self.status_data)
+			end
+		end)
+    end
+end
+--初始化道具商店列表
+function TrainingShopWindow:initGodShopData(shop_type, data)
+	local config_list = Config.ExchangeData.data_shop_exchage_gold
+
+	local list = {}
+    local dic_buys = {}
+    for i,v in ipairs(data.item_list) do
+        if v.ext[1] and v.ext[1].val then
+            dic_buys[v.item_id] = v.ext[1].val
+        else
+            dic_buys[v.item_id] = 0
+        end
+    end
+
+    for k,config in pairs(config_list) do
+        local status = true
+        for k, v in pairs(config.ext_limit) do
+            if v[1] == "cystal_lev" then
+                status = status and HeroController:getInstance():getModel():checkEnoughResLev(v[2])
+            end
+        end
+		if status then
+			if table.indexof(self.par_cfg.param[1],config.id) then
+				local data = deepCopy(config)
+				if dic_buys[config.id] then
+					data.has_buy = dic_buys[config.id]
+				else
+					data.has_buy = 0
+				end
+				table.insert(list, data)
+			end
+		end
+    end
+    table.sort( list, function(a, b) return a.order < b.order end )
+	return list
+end
+
+function TrainingShopWindow:DeleteMe(  )
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.change_training_shop_send_event then
+        GlobalEvent:getInstance():UnBind(self.change_training_shop_send_event)
+        self.change_training_shop_send_event = nil
+    end
+    if self.update_have_count then 
+        GlobalEvent:getInstance():UnBind(self.update_have_count)
+        self.update_have_count = nil
+    end
+end
+
+
+
+
+TrainingShopWindowItem = class("TrainingShopWindowItem", function()
+    return ccui.Widget:create()
+end)
+function TrainingShopWindowItem:ctor()
+	self:configUI()
+	self:register_event()
+
+	self.elfin_step_list = {}
+	self.elfin_step_list.star_list = {}
+end
+
+function TrainingShopWindowItem:configUI(  )
+	self.size = cc.size(584, 123)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("roleinfo/training_shop_window_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.name = self.main_container:getChildByName("name")
+	-- setTextMaxWidth(self.name,300,-10)
+    self.checkbox = self.main_container:getChildByName("checkbox")
+	self.checkbox:setSelected(false)
+	self.discount = self.main_container:getChildByName("discount")
+	self.discount:setLocalZOrder(20)
+	self.discount_num = self.discount:getChildByName("discount_num")
+	self.discount:setVisible(false)
+	self.discount_label = createRichLabel(22,cc.c3b(0x7c,0x55,0x36),cc.p(0,0.5),cc.p(138,35),-8,nil,300)
+	self.discount_label:setString("")
+	self.main_container:addChild(self.discount_label)
+	self.discount_label:setVisible(false)
+	if not self.goods_item then
+		self.goods_item = BackPackItem.new(true,true,nil,0.8,true,true,true)
+		self.goods_item:setPosition(63,62)
+		self.main_container:addChild(self.goods_item)
+		self.goods_item:setDefaultTip()
+	end
+	self.goods_item:showTagIcon(false)
+	self.price_label = createRichLabel(24,cc.c3b(0x7c,0x55,0x36),cc.p(0,0.5),cc.p(322,60),-8,nil,300)
+	self.price_label:setString("")
+	self.main_container:addChild(self.price_label)
+end
+
+function TrainingShopWindowItem:register_event(  )
+	self.checkbox:addEventListener(function ( sender,event_type )
+		if event_type == ccui.CheckBoxEventType.selected then
+			playButtonSound2()
+			self:_onClickCheckBox(1)
+		elseif event_type == ccui.CheckBoxEventType.unselected then 
+			playButtonSound2()
+			self:_onClickCheckBox(2)
+		end
+	end)
+	
+    if not self.update_training_shop_send_event then
+        self.update_training_shop_send_event = GlobalEvent:getInstance():Bind(RoleEvent.UPDATE_Training_Shop_Send_EVENT ,function(data)
+			if data and next(data) then
+				local status = false
+				for k, v in pairs(data) do
+					if v == self.data.id then
+						status = true
+						break
+					end
+				end
+				self.checkbox:setSelected(status)
+			end
+		end)
+    end
+end
+-- 1选择 2取消
+function TrainingShopWindowItem:_onClickCheckBox(_type)
+	GlobalEvent:getInstance():Fire(RoleEvent.Change_Training_Shop_Send_EVENT,_type,self.data.id)
+end
+--刷新数据需要刷新选择框
+function TrainingShopWindowItem:updateCheckBox()
+	local status_data = role_model:getTrainingStatusForType(RoleConst.training_fun_index.shop)
+	if type(status_data) == "table" then
+	else
+		status_data = {status_data}
+	end
+	local status = false
+	for k, v in pairs(status_data) do
+		if v == self.data.id then
+			status = true
+			break
+		end
+	end
+	self.checkbox:setSelected(status)
+end
+function TrainingShopWindowItem:setData(data)
+	self.data = data
+	self:updateCheckBox()
+
+	local pay_config
+	local pay_type = data.pay_type
+	local own_sum = 0
+	if type(data.pay_type) == "number" then
+		pay_config = Config.ItemData.data_get_data(data.pay_type)
+		if table.indexof(self.special_item_id,data.pay_type) then
+			own_sum = BackpackController:getInstance():getModel():getItemNumByBid(data.pay_type)
+		elseif table.indexof(MallConst.Holiday_ItemId,data.pay_type) then
+			own_sum = self.role_vo:getActionAssetsNumByBid(pay_type)
+		else
+			pay_type = Config.ItemData.data_assets_id2label[data.pay_type]
+		end
+	else
+		pay_config = Config.ItemData.data_get_data(Config.ItemData.data_assets_label2id[data.pay_type])
+		pay_type = data.pay_type
+	end
+	if not pay_config then return end
+
+	self.pay_type = pay_type
+	
+	local item_id = data.item_bid or data.item_id
+	local count = data.item_num or 1
+	self.goods_item:setBaseData(item_id, count, nil, true)
+	if self.goods_item.data then
+		local str = self.goods_item.data.name
+		if transformTextToShortByWidth(self.name,str,300) then 
+			addEvt2showAllTextTips(self.name,str,0)   
+		else    
+			addEvt2showAllTextTips(self.name,"",0)  
+		end  
+	end
+	local txt = "<img src=%s visible=true scale=0.3 /> %s"
+	local res = ""
+	if pay_config.is_payval == 1 then
+		res = PathTool.getItemRes("txt_cn_"..pay_config.icon, false)
+	else
+		res = PathTool.getItemRes(pay_config.icon, false)
+	end
+	self.price_label:setString(string.format(txt,res,data.price))
+	
+	--限购
+	self.str = ""
+	--神树等级
+	self.limit_tree_flag = 0
+	local limit_num = 0
+	local limit_rank = 0
+	local limit_vip = 0
+	local buy_stage = 0
+	local limit_tree = 0
+	local is_show_limit_label = false
+	if data.ext_limit and next(data.ext_limit) then
+		for key, value in pairs(data.ext_limit) do
+			if value[1] == "cystal_lev" then
+				if not HeroController:getInstance():getModel():checkEnoughResLev(value[2]) then
+					limit_tree = value[2]
+				end
+			end
+		end
+	end
+
+	-- vip等级限购
+	self.vip_limit_flag = 0
+	if data["limit_vip"] and data.limit_vip > 0 then
+		if self.role_vo and self.role_vo.vip_lev < data.limit_vip then
+			is_show_limit_label = true
+			limit_vip = data.limit_vip
+		end
+	end
+	if is_show_limit_label == false then
+		if data["limit_count"] and data.limit_count>0 then
+			self.str = TI18N("语言_c_2036")
+			limit_num = data.limit_count
+			is_show_limit_label = true
+		elseif data["limit_this"] and data.limit_this>0 then
+			self.str = TI18N("语言_c_359")
+			limit_num = data.limit_this
+			is_show_limit_label = true
+		elseif data["limit_month"] and data.limit_month>0 then
+			self.str = TI18N("语言_c_2037")
+			limit_num = data.limit_month
+			is_show_limit_label = true
+		elseif data["limit_week"] and data.limit_week>0 then
+			self.str = TI18N("语言_c_1801")
+			limit_num = data.limit_week
+			is_show_limit_label = true
+		elseif data["limit_day"] and data.limit_day>0 then
+			self.str = TI18N("语言_c_1800")
+			limit_num = data.limit_day
+			is_show_limit_label = true
+		else
+			if data.shop_type==4 or data.shop_type == 2 then
+				limit_num = 1
+				is_show_limit_label = false
+			else
+				-- 特殊物品消耗的商店
+				if not table.indexof(self.special_item_id,pay_type) and table.indexof(Config.ItemData.data_assets_id2label, pay_type) then
+					own_sum = self.role_vo[pay_type] or 0
+				end
+				if own_sum < (20*data.price) then --取资产最大可买
+					local temp = math.floor(own_sum / data.price)
+					if temp >= 1 then 
+						limit_num = temp
+					else
+						limit_num = 1
+					end
+				else
+					limit_num = 20 --无限制购买的物品 一次购买上限20
+					is_show_limit_label = false
+				end
+			end
+		end
+	end
+
+	if limit_vip > 0 and is_show_limit_label then
+		self.discount_label:setVisible(true)
+		self.discount_label:setString(string.format(TI18N("语言_c_4008"),limit_vip))
+	elseif limit_num>0 and is_show_limit_label then
+		self.discount_label:setVisible(true)
+		self.discount_label:setString(string.format(TI18N("语言_c_4009"),self.str,data.has_buy,limit_num))
+	elseif limit_rank>0 and is_show_limit_label then
+		self.discount_label:setVisible(true)
+		self.discount_label:setString(string.format(TI18N("语言_c_4010"),limit_rank))
+	else
+		self.discount_label:setVisible(false)
+	end
+	-- print("====limit_num===",limit_num)
+	self.data.limit_num = limit_num
+	self.data.is_show_limit_label = is_show_limit_label
+
+	--折扣标签和折扣价格
+	if data["label"] and data.label>0 then --表里的
+		self.discount:setVisible(true)
+		if isPFChange(CommonConst.fun_type.rebate) then
+			local num2 = -10 * (10 - data.label)
+			self.discount_num:setString(string.format(TI18N("语言_c_4710"),num2))
+		else
+			self.discount_num:setString(string.format(TI18N("语言_c_4710"),data.label))
+		end
+	elseif data["discount_type"] and data.discount_type>0 then --服务器的信息
+		self.discount:setVisible(true)
+		if isPFChange(CommonConst.fun_type.rebate) then
+			local num2 = -10 * (10 - data.discount_type)
+			self.discount_num:setString(string.format(TI18N("语言_c_4710"),num2))
+		else
+			self.discount_num:setString(string.format(TI18N("语言_c_4710"),data.discount_type))
+		end
+	else
+		self.discount:setVisible(false)
+	end
+	if data["discount"] and data.discount>0 then
+		local txt = "<img src=%s visible=true scale=0.3 /> %s"
+		local res = ""
+		if pay_config.is_payval == 1 then
+			res = PathTool.getItemRes("txt_cn_"..pay_config.icon, false)
+		else
+			res = PathTool.getItemRes(pay_config.icon, false)
+		end
+		self.price_label:setString(string.format(txt,res,data.discount))
+	end
+end
+function TrainingShopWindowItem:DeleteMe(  )
+    if self.update_training_shop_send_event then
+        GlobalEvent:getInstance():UnBind(self.update_training_shop_send_event)
+        self.update_training_shop_send_event = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

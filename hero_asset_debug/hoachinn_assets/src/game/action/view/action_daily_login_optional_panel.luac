@@ -1,0 +1,400 @@
+--******** 文件说明 ********
+-- 
+-- @description: 每日登陆自选礼包
+-- @DateTime:    2020-03-18
+-- *******************************
+ActionDailyLoginOptionalPanel = ActionDailyLoginOptionalPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local table_sort = table.sort
+local num_pos_x = 306 --数字的位置
+function ActionDailyLoginOptionalPanel:__init()
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.TOP_TAG
+    self.backpackList = {}
+    self.nodeList = {}
+    self.choseList = {}
+    self.itemList = {}
+    self.action_list = {}
+    self.choose_index = 0
+    if BaseView and BaseView.winMap then
+        local is_mini = false
+        for k, v in pairs(BaseView.winMap) do
+            if v.layout_name and (v.layout_name == "mainui/item_exhibition_view" or  v.layout_name == "heaven/heaven_main_window") then
+                self.win_type = WinType.Mini
+                self.view_tag = ViewMgrTag.TOP_TAG
+                is_mini = true
+                break
+            end
+        end
+        if not is_mini then
+            for k, v in pairs(BaseView.winMap) do
+                if v.win_type == WinType.Mini then
+                    self.win_type = WinType.Mini
+                    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+                    break
+                end
+            end
+        end
+    end
+    self.layout_name = "action/action_daily_login_optional_panel"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("personalgift", "rfmpersonalgift_bg"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("personalgift", "personalgift"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("num", "type30"), type = ResourcesType.plist}
+    }
+    self.item_list = {}
+    self.max_index = 1 --最大个数
+    self.touch_buy_btn = true
+    self.charge_config = nil
+end
+
+function ActionDailyLoginOptionalPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)
+    self.Image_5 = self.main_container:getChildByName("Image_5")
+    -- local image_bg = self.main_container:getChildByName("image_bg")
+    -- local res = PathTool.getPlistImgForDownLoad("personalgift", "rfmpersonalgift_bg")
+    -- -- image_bg:setPositionY(180)
+    -- self.image_bg_load = loadSpriteTextureFromCDN(image_bg, res, ResourcesType.single, self.image_bg_load)
+    self.btn_close = self.main_container:getChildByName("btn_close")
+    self.btn_buy = self.main_container:getChildByName("btn_buy")
+    self.btn_buy_txt = self.btn_buy:getChildByName("Text_1")
+    self.time = self.main_container:getChildByName("time")
+    self.limit_buy_text = self.main_container:getChildByName("limit_buy_text")
+    for i=1,3 do
+        local Node = self.main_container:getChildByName("Node_"..i)
+        local Image = Node:getChildByName("Image_1")
+        local Image_Join = Image:getChildByName("Image_1")
+        local chose = self.main_container:getChildByName("chose_"..i)
+        self.nodeList[i] = Node
+        self.nodeList[i].image = Image
+        self.nodeList[i].Image_Join = Image_Join
+        self.choseList[i] = chose
+        chose:setZOrder(9999)
+    end
+    self.tab_page = self.main_container:getChildByName("tab_page")
+    self.btn_left = self.tab_page:getChildByName("btn_left")
+    self.btn_right = self.tab_page:getChildByName("btn_right")
+    self.gift_percent_num = CommonNum.new(30, self.main_container, nil, 0, cc.p(0, 0.5))
+    self.gift_percent_num:setPosition(num_pos_x, 397)
+    -- self.login_btn = self.main_container:getChildByName("login_btn")
+    -- self.login_btn_txt = self.login_btn:getChildByName("Text_1")
+    -- self.login_btn_txt:setString(TI18N("登录自选"))
+    -- self.star_btn = self.main_container:getChildByName("star_btn")
+    -- self.star_btn_txt = self.star_btn:getChildByName("Text_1")
+    -- self.star_btn_txt:setString(TI18N("星级自选"))
+    self.tip_img = self.main_container:getChildByName("tip_img")
+    self.tip_img:setVisible(false)
+    self:createEffect()
+end
+
+function ActionDailyLoginOptionalPanel:openRootWnd(setting)
+    self.setting = setting or {}
+    controller:sender21603()
+    controller:sender21608()
+end
+function ActionDailyLoginOptionalPanel:setPanel(list)
+    if not list then return end
+    self.data = list or {}
+    local cfg = Config.PersonalPushData.data_gift_data_list[self.data.id]
+    if cfg then
+        self.gift_percent_num:setNum(cfg.costly_num, true)
+        if self.icon_per == nil then
+            self.icon_per = createSprite(nil, num_pos_x + self.gift_percent_num:getContentSize().width, 368, self.main_container, cc.p(0, 0.5))
+            loadSpriteTexture(self.icon_per, PathTool.getResFrame("type30", "type30_per"), LOADTEXT_TYPE_PLIST)
+        else
+            self.icon_per:setPositionX(num_pos_x + self.gift_percent_num:getContentSize().width)
+        end
+
+        if cfg.form_title and next(cfg.form_title) then 
+            local res = PathTool.getPlistImgForDownLoad('personalgift', cfg.form_title[1])
+            loadSpriteTexture(self.tip_img, res, LOADTEXT_TYPE)
+            self.tip_img:setPosition(cc.p(cfg.form_title[2],cfg.form_title[3]))
+            self.tip_img:setScale(cfg.form_title[4])
+            self.tip_img:setVisible(true)
+        else
+            self.tip_img:setVisible(false)
+        end
+    end
+    self.id = self.data.id
+    local posreward = self.data.pos_reward
+    table.sort(posreward,function(a,b)
+        return a.pos<b.pos
+    end)
+    self.pos_reward = self.data.pos_reward
+    self.cfg = Config.PersonalPushData.data_quest_list[self.id]
+    local data = {}
+    for k, v in pairs(self.data.reward) do
+        table.insert(data,v)
+    end
+    for i=1,3 do
+        if self.cfg[i] and tableLen(self.cfg[i]) ~= 0 then
+            table.insert(data,self.data.pos_reward[i] or {})
+        end
+    end
+    -- local item_x = (self.main_container:getContentSize().width - 120) / tableLen(data)
+    local item_x = 118
+    for i=1,6 do
+        if not self.itemList or tolua.isnull(self.itemList[i]) then
+            local item = BackPackItem.new(nil,true,nil,0.9,nil,true)
+            self.main_container:addChild(item)
+            item:setAnchorPoint(cc.p(0.5,0))
+            local index_x = (i-1)%3 + 1
+            local _x = item_x*(index_x-1) + item_x * 0.5 + 120
+            local index_y = math.floor((i-1)/3)
+            local _y = index_y == 0 and 77 or 192
+            item:setPosition(cc.p(_x,_y))
+            item:setLocalZOrder(1)
+            self.itemList[i] = item
+        end
+        -- if i ~= 1 then
+        --     local id = i - 1
+        --     self.nodeList[id]:setAnchorPoint(cc.p(0.5,0.5))
+        --     self.nodeList[id]:setPositionX(item_x*(i-1) + item_x * 0.5 + 60)
+        -- end
+    end
+    for i=1,6 do
+        if data[i] then
+            local list = {}
+            if i <= 3 then
+                list.id = data[i][1] or data[i]["itemid"]
+                list.num = data[i][2] or data[i]["num"]
+                self.itemList[i]:setData(list)
+            else
+                local id = i - 3
+                if tableLen(data[i]) == 2 then
+                    local reward = self.cfg[data[i]["pos"]][data[i]["num"]].award[1]
+                    list.id = reward[1]
+                    list.num = reward[2]
+                    self.itemList[i]:setData(list)
+                    self.itemList[i]:setVisible(true)
+                    self.nodeList[id]:setVisible(false)
+                    self.choseList[id]:setVisible(true)
+                    -- self.choseList[id]:setPositionX(self.itemList[i]:getPositionX() + self.itemList[i]:getContentSize().width / 2 - 10)
+                else
+                    self.itemList[i]:setVisible(false)
+                    self.nodeList[id]:setVisible(true)
+                    self.choseList[id]:setVisible(false)
+                end
+            end
+        else
+            local id = i - 3
+            self.itemList[i]:setVisible(false)
+            self.nodeList[id]:setVisible(false)
+            self.choseList[id]:setVisible(false)
+        end
+    end
+    local time = self.data.end_time - GameNet:getInstance():getTime()
+    if time < 0 then
+        time = 0
+    end
+    commonCountDownTime(self.time,time or 0,{time_title=TI18N("语言_c_13"),end_callback = function(time) 
+        if time <= 0 then
+            controller:openActionDailyLoginOptionalPanel(false)
+        end
+    end})
+    local str = TI18N("语言_c_1688")..self.data.limit
+    self.limit_buy_text:setString(str)
+    self.charge_config = Config.ChargeData.data_charge_data[self.data.rechargeid]
+    self.btn_buy_txt:setString(string.format(TI18N("语言_c_4440"),GetMoneyNum(self.charge_config,"val")))
+end
+function ActionDailyLoginOptionalPanel:register_event()
+    registerButtonEventListener(self.btn_close, function()
+         controller:openActionDailyLoginOptionalPanel(false) end, false, 2)
+    for i=1,3 do
+        registerButtonEventListener(self.nodeList[i].image, function()
+             controller:openActionDailyLoginOptionalChosePanel(true,self.id,self.pos_reward,i)
+        end, false, 2)
+        registerButtonEventListener(self.choseList[i], function()
+            controller:openActionDailyLoginOptionalChosePanel(true,self.id,self.pos_reward,i)
+        end, false, 2)
+    end
+    registerButtonEventListener(self.btn_buy, function()
+        self:touchBtnCharge()
+    end, true, 1)
+    registerButtonEventListener(self.btn_right, function()
+        self:setChooseIndex(1)
+    end, true, 1)
+    registerButtonEventListener(self.btn_left, function()
+        self:setChooseIndex(0)
+    end, true, 1)
+
+    if not self.update_action_data  then
+        self.update_action_data = GlobalEvent:getInstance():Bind(ActionEvent.DailyLoginOptionalData,function (data)
+            if tableLen(data) == 0 then
+                local cfg = Config.PersonalPushData.data_gift_list
+                for key, value in pairs(self.action_list) do
+                    if value.id then
+                        if cfg[value.id].type_id == 15 then
+                            table.remove(self.action_list, key)
+                        end
+                    end
+                end
+            end
+            -- self:setData(data)
+            local list = {}
+            table.insert(list,data)
+            self:setData(list)
+        end)
+    end
+    if not self.update_data  then
+        self.update_data = GlobalEvent:getInstance():Bind(ActionEvent.StarOptionalData,function (data)
+            self:setData(data)
+        end)
+    end
+end
+
+-- 0减 1加
+function ActionDailyLoginOptionalPanel:setChooseIndex(index)
+    if index == 1 then
+        self.choose_index = self.choose_index + 1
+        if self.choose_index > tableLen(self.action_list) then
+            self.choose_index = 1
+        end
+    else
+        self.choose_index = self.choose_index - 1
+        if self.choose_index < 1 then
+            self.choose_index = tableLen(self.action_list)
+        end
+    end
+    self:setPanel(self.action_list[self.choose_index])
+end
+function ActionDailyLoginOptionalPanel:setData(list)
+    if tableLen(list) ~= 0 then
+        local cfg = Config.PersonalPushData.data_gift_list
+        if list.id then
+            if cfg[list.id].type_id == 15 then
+                local caninsert = true
+                local cfg = Config.PersonalPushData.data_gift_list
+                for key, value in pairs(self.action_list) do
+                    if value.id then
+                        if cfg[value.id].type_id == 15 then
+                            caninsert = false
+                            self.action_list[key] = list
+                        end
+                    end
+                end
+                if caninsert then
+                    table.insert(self.action_list,list)
+                end
+                list = {}
+            else
+                for k, v in pairs(self.action_list) do
+                    for key, value in pairs(list) do
+                        if v.id == value.id then
+                            self.action_list[k] = value
+                            list[key] = {}
+                        end
+                    end
+                end
+            end
+        end
+    end
+    if tableLen(list) ~= 0 then
+        for key, value in pairs(list) do
+            if tableLen(value) ~= 0 then
+                local status = true
+                for k, v in pairs(self.action_list) do
+                    if v.id and v.id == value.id then
+                        status = false
+                        self.action_list[k] = value
+                        break
+                    end
+                end
+                if status then
+                    table.insert(self.action_list,value)
+                end
+            end
+        end
+    end
+    for key, value in pairs(self.action_list) do
+        if tableLen(value) == 0 then
+            table.remove(self.action_list, key)
+        end
+    end
+    if tableLen(self.action_list) == 0 then
+        controller:openActionDailyLoginOptionalPanel(false)
+        return
+    end
+    if tableLen(self.action_list) <= 1 then
+        self.btn_left:setVisible(false)
+        self.btn_right:setVisible(false)
+    else
+        self.btn_left:setVisible(true)
+        self.btn_right:setVisible(true)
+    end
+    if self.choose_index == 0 then
+        self.choose_index = tableLen(self.action_list)
+    end
+    if self.setting and next(self.setting) then
+        if self.setting.type_id then
+            for k, v in pairs(self.action_list) do
+                local cfg = Config.PersonalPushData.data_gift_list[v.id]
+                if cfg.type_id == self.setting.type_id then
+                    self.choose_index = k
+                end
+            end
+        elseif self.setting.gift_id then
+            for k, v in pairs(self.action_list) do
+                if v.id == self.setting.gift_id then
+                    self.choose_index = k 
+                end
+            end
+        end
+    end
+    if self.choose_index == 0 then
+        self.choose_index = tableLen(self.action_list)
+    end
+    self:setPanel(self.action_list[self.choose_index])
+end
+function ActionDailyLoginOptionalPanel:touchBtnCharge()
+    if self.data and tableLen(self.data.pos_reward) == tableLen(self.cfg) then
+        local charge_list = Config.ChargeData.data_charge_data
+        local charge_id = self.data.rechargeid
+        if charge_id and charge_list[charge_id] then
+            local config = charge_list[charge_id]
+            sdkOnPay(config.val, nil, config.id, config.name)
+        else
+            message(TI18N("语言_s_903"))    
+        end
+    else
+        message(TI18N("语言_c_4770"))
+    end
+end
+-- 创建背景特效
+function ActionDailyLoginOptionalPanel:createEffect()
+    self.fg_effect = createEffectSpine("E30008", cc.p(40, 22), cc.p(0.5, 0.5), true, PlayerAction.action_4)
+    self.Image_5:addChild(self.fg_effect)
+    self.fg_effect:setPosition(16, 0)
+    -- self.fg_effect:setScale(0.6)
+end
+
+
+function ActionDailyLoginOptionalPanel:close_callback()
+    -- doStopAllActions(self.time)
+    if self.update_action_data then
+        self.update_action_data = GlobalEvent:getInstance():UnBind(self.update_action_data)
+        self.update_action_data = nil
+    end
+    if self.update_data then
+        self.update_data = GlobalEvent:getInstance():UnBind(self.update_data)
+        self.update_data = nil
+    end
+    if self.itemList then
+        for i,v in pairs(self.itemList) do
+            v:DeleteMe()
+        end
+        self.itemList = {}
+    end
+    if self.gift_percent_num then
+        self.gift_percent_num:DeleteMe()
+        self.gift_percent_num = nil
+    end
+    controller:openActionDailyLoginOptionalPanel(false)
+end

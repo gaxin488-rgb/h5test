@@ -1,0 +1,165 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      支援信息界面
+--      新加支援类型 要在HeroConst.Support中添加记录
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+FormSupportPanel = FormSupportPanel or BaseClass(BaseView)
+
+local elfinController = ElfinController:getInstance()
+local heroController = HeroController:getInstance()
+
+
+function FormSupportPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/support_panel"
+
+    self.res_list = {
+     -- { path = PathTool.getPlistImgForDownLoad("form","form"), type = ResourcesType.plist },
+    }
+    self.btn_list = {}
+    self.skill_list = {}
+    self.click_index = 1
+end
+
+function FormSupportPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+    self.title_panel = self.main_container:getChildByName("title_panel")
+    self.left_line = self.title_panel:getChildByName("left_line")
+    self.title = self.title_panel:getChildByName("title")
+    self.title:setString(TI18N("语言_c_6455"))
+    self.right_line = self.title_panel:getChildByName("right_line")
+    setLeftRightImg(self.left_line,self.title,self.right_line,10)
+    local tip_bg = self.main_container:getChildByName("tip_bg")
+    self.tip_txt = self.main_container:getChildByName("tip_txt")
+    self.tip_txt:setString(TI18N("语言_c_6454"))
+    tip_bg:setContentSize(cc.size(self.tip_txt:getContentSize().width + 100,tip_bg:getContentSize().height))
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.top_panel:setScrollBarEnabled(false)
+    self.click_img = self.top_panel:getChildByName("click_img")
+    for i = 1, 2 do
+        local btn = self.top_panel:getChildByName("btn_"..i)
+        self.btn_list[i] = btn
+    end
+    self.top_panel:setInnerContainerSize(cc.size(tableLen(self.btn_list) * 80,100))
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+end
+
+function FormSupportPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 1)
+    for i = 1, tableLen(self.btn_list) do
+        registerButtonEventListener(self.btn_list[i], function()
+            self:clickBtn(i)
+        end ,false, 1)
+    end
+
+end
+
+function FormSupportPanel:clickBtn(index)
+    local list = {}
+    if index == 1 then
+        for key, value in pairs(self.skill_list) do
+            for k, v in pairs(value) do
+                table.insert(list,v)
+            end
+        end
+    else
+        list = self.skill_list[index - 1]
+    end
+    self.click_img:setPositionX(self.btn_list[index]:getPositionX()-1)
+    self.skill_view:setData(list)
+end
+--关闭
+function FormSupportPanel:onClickBtnClose()
+    heroController:openFormSupportPanel(false)
+end
+
+function FormSupportPanel:openRootWnd(list)
+    self.skill_list = list
+    if self.skill_view == nil then
+        local scroll_view_size = self.bottom_panel:getContentSize()
+        local setting = {
+            item_class = FormSupportItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 450,               -- 单元的尺寸width
+            item_height = 130,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.skill_view = CommonScrollViewLayout.new(self.bottom_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    self:clickBtn(self.click_index)
+end
+
+
+function FormSupportPanel:close_callback()
+    heroController:openFormSupportPanel(false)
+    if self.elfin_support_data_event then 
+        GlobalEvent:getInstance():UnBind(self.elfin_support_data_event)
+        self.elfin_support_data_event = nil
+    end
+end
+
+
+--子项
+FormSupportItem = class("FormSupportItem", function()
+    return ccui.Widget:create()
+end)
+
+function FormSupportItem:ctor()
+    self.goods_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function FormSupportItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/support_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(450,130))
+	self:setTouchEnabled(false)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.txt_scroll = self.main_container:getChildByName("txt_scroll")
+    self.txt_scroll:setScrollBarEnabled(false)
+    self.desc = self.txt_scroll:getChildByName("desc")
+    self.desc:setChangeScaleOffWidth(-1000)
+    setTextMaxWidth(self.desc,320)
+end
+
+function FormSupportItem:setData(data)
+    local elfin_cfg = Config.SpriteData.data_elfin_data(data.id)
+    self.cfg = Config.SkillData.data_get_skill(elfin_cfg.support_skill_id)
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true,true,true,1,true)
+        self.main_container:addChild(self.skill_item)
+        self.skill_item:setPosition(cc.p(60,75))
+    end
+    self.skill_item:setSwallowTouches(false)
+    self.skill_item:setData(self.cfg)
+    self.desc:setString(self.cfg.des)
+    local _h = math.max(self.desc:getContentSize().height,self.txt_scroll:getContentSize().height)
+    self.txt_scroll:setInnerContainerSize(cc.size(self.txt_scroll:getContentSize().width,_h))
+    self.desc:setPositionY(_h)
+end
+
+function FormSupportItem:register_event( )
+    
+end
+
+function FormSupportItem:DeleteMe()
+
+end

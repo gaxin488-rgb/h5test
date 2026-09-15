@@ -1,0 +1,202 @@
+-- --------------------------------------------------------------------
+-- 激活潜能成功
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--     激活潜能成功
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+PotentialActivationPanel = PotentialActivationPanel or BaseClass(BaseView)
+local controller = PotentialController:getInstance()
+local model = controller:getModel()
+
+function PotentialActivationPanel:__init()
+    self.win_type = WinType.Mini
+    self.layout_name = "potential/potential_activation_panel"
+    self.view_tag = ViewMgrTag.MSG_TAG
+    self.res_list = {
+        -- { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist },
+    }
+
+    self.attr_list ={}
+end
+
+function PotentialActivationPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.attr_bg = self.main_container:getChildByName("attr_bg")
+    self.attr_panel = self.main_container:getChildByName("attr_panel")
+    self.halo_txt = self.attr_panel:getChildByName("halo_txt")
+    setTextMaxWidth(self.halo_txt,500)
+    self.halo_txt:setVisible(false)
+    self.baseattr_scr = self.attr_panel:getChildByName("baseattr_scr")
+    self.baseattr_scr:setVisible(false)
+    self.baseattr_scr:setScrollBarEnabled(false)
+    self.scroll_text = self.baseattr_scr:getChildByName("scroll_text")
+    setTextMaxWidth(self.scroll_text,410)
+    self.label = self.attr_panel:getChildByName("label")
+    setTextMaxWidth(self.label,600,-6)
+    self.label:setString(string.format(TI18N("语言_c_7053"),Config.PotentialData.data_const.attr_star.val))
+    self.hero_node = self.main_container:getChildByName("hero_node")
+    self.cir = self.hero_node:getChildByName("cir")
+    self.icon = self.hero_node:getChildByName("icon")
+    self.name = self.hero_node:getChildByName("name")
+    self.titlepanel = self.root_wnd:getChildByName("titlepanel")
+    self.title_container = self.titlepanel:getChildByName("title_container")
+    self.title_width = self.title_container:getContentSize().width
+    self.title_height = self.title_container:getContentSize().height
+end
+
+function PotentialActivationPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+end
+
+--关闭
+function PotentialActivationPanel:_onClickBtnClose()
+    controller:openPotentialActivationPanel(false)
+end
+
+function PotentialActivationPanel:openRootWnd(potential_id)
+    if not potential_id then return end
+    self.potential_id = potential_id
+    
+    BattleResultMgr:getInstance():setWaitShowPanel(true)
+    playOtherSound("c_get")
+    
+    self:handleEffect(true)
+
+    self.ex_cfg = Config.PotentialData.data_get_potential_base_ex[self.potential_id]
+    self.lev_cfg = Config.PotentialData.data_get_potential_detail[self.potential_id]
+    self.round_cfg = Config.PotentialData.data_get_round[self.ex_cfg.round_id]
+    self.lev_num = 1
+    self:updateHead()
+    self:updateBasePanel()
+end
+
+function PotentialActivationPanel:updateHead()
+    self.name:setString(self.ex_cfg.potential_name)
+    loadSpriteTexture(self.icon, PathTool.getPotentialIcon(self.ex_cfg.icon), LOADTEXT_TYPE)
+    if self.potential_id == self.round_cfg.key then
+        self.icon:setScale(0.8)
+    else
+        self.icon:setScale(1)
+    end
+end
+
+function PotentialActivationPanel:updateBasePanel()
+    self.now_lev_cfg = self.lev_cfg[self.lev_num]
+    if self.now_lev_cfg.effect_type == 1 or self.now_lev_cfg.effect_type == 4 or self.now_lev_cfg.effect_type == 5 or self.now_lev_cfg.effect_type == 6 then --加属性
+        self:updateAttrPanel()
+    elseif self.now_lev_cfg.effect_type == 2 then --加光环
+        self:updateHaloPanel()
+    elseif self.now_lev_cfg.effect_type == 3 then --技能
+        self:updateSkillPanel()
+    end
+end
+
+
+function PotentialActivationPanel:updateAttrPanel()
+    self.halo_txt:setVisible(false)
+    self.baseattr_scr:setVisible(false)
+    local list = self.now_lev_cfg.effect
+    local _h = math.ceil(tableLen(list)/2)*40
+    self.attr_bg:setContentSize(cc.size(self.attr_bg:getContentSize().width,_h))
+    for i,v in pairs(list) do
+        local attr_key = v[1]
+        local attr_val = v[2] or 0
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if not attr_name then
+            attr_name = Config.AttrExtraData.data_key_to_name[attr_key]
+        end
+        if attr_name then
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10) .."%"
+            end
+            
+            local attr_text = createRichLabel(24, cc.c4b(100,50,35,255), cc.p(0.5, 0.5), cc.p(125+(i-1)%2*355, 108-math.floor((i-1)/2)*40), -4, nil, 380)
+            self.attr_panel:addChild(attr_text)
+            local attr_str = ""
+            if attr_key == "atk_per" or attr_key == "hp_max_per" or attr_key == "def_per" then
+                attr_str = string.format("<div fontcolor=#e5cf91>%s: </div><div fontcolor=#fffdf7>+%s</div>", TI18N("语言_c_7075")..attr_name,attr_val)
+            else
+                attr_str = string.format("<div fontcolor=#e5cf91>%s: </div><div fontcolor=#fffdf7>+%s</div>", attr_name,attr_val)
+            end
+            attr_text:setString(attr_str)
+            if tableLen(list) == 1 then
+                attr_text:setPositionX(300)
+            end
+        end
+    end
+    if self.now_lev_cfg.effect_type == 4 or self.now_lev_cfg.effect_type == 1 or self.now_lev_cfg.effect_type == 5 or self.now_lev_cfg.effect_type == 6 then
+        self.label:setString(self.now_lev_cfg.effect_limit_text[2])
+    end
+end
+
+function PotentialActivationPanel:updateHaloPanel()
+    -- self.halo_txt:setVisible(true)
+    -- self.baseattr_scr:setVisible(false)
+    -- self.attr_bg:setContentSize(cc.size(self.attr_bg:getContentSize().width,130))
+    -- self.halo_txt:setString(string.format(self.now_lev_cfg.text,self.now_lev_cfg.effect[1][1]))
+    self.halo_txt:setVisible(false)
+    self.baseattr_scr:setVisible(true)
+    self.baseattr_scr:setContentSize(cc.size(417,self.baseattr_scr:getContentSize().height))
+    local skill_data = Config.SkillData.data_get_skill(self.now_lev_cfg.effect[1][tableLen(self.now_lev_cfg.effect[1])])
+    if skill_data then
+        self.eff_item = SkillItem.new(true, false, false, 0.8)
+        self.attr_panel:addChild(self.eff_item)
+        self.eff_item:setPosition(cc.p(108,70))
+        self.eff_item:setData(skill_data)
+
+        self.scroll_text:setString(skill_data.des)
+        local _h = math.max(self.baseattr_scr:getContentSize().height,self.scroll_text:getContentSize().height+10)
+        self.baseattr_scr:setInnerContainerSize(cc.size(417,_h))
+        self.scroll_text:setPosition(cc.p(5,_h))
+    end
+    self.baseattr_scr:setPosition(cc.p(600,self.baseattr_scr:getPositionY()))
+    self.attr_bg:setContentSize(cc.size(self.attr_bg:getContentSize().width,130))
+end
+
+function PotentialActivationPanel:updateSkillPanel()
+    self.halo_txt:setVisible(false)
+    self.baseattr_scr:setVisible(true)
+    self.baseattr_scr:setContentSize(cc.size(417,self.baseattr_scr:getContentSize().height))
+    local skill_data = Config.SkillData.data_get_skill(self.now_lev_cfg.effect[1])
+    if skill_data then
+        self.eff_item = SkillItem.new(true, false, false, 0.8)
+        self.attr_panel:addChild(self.eff_item)
+        self.eff_item:setPosition(cc.p(108,70))
+        self.eff_item:setData(skill_data)
+
+        self.scroll_text:setString(skill_data.des)
+        local _h = math.max(self.baseattr_scr:getContentSize().height,self.scroll_text:getContentSize().height+10)
+        self.baseattr_scr:setInnerContainerSize(cc.size(417,_h))
+        self.scroll_text:setPosition(cc.p(5,_h))
+    end
+    self.baseattr_scr:setPosition(cc.p(600,self.baseattr_scr:getPositionY()))
+    self.attr_bg:setContentSize(cc.size(self.attr_bg:getContentSize().width,130))
+end
+
+function PotentialActivationPanel:handleEffect(status)
+    if status == false then
+        if self.play_effect then
+            self.play_effect:clearTracks()
+            self.play_effect:removeFromParent()
+            self.play_effect = nil
+        end
+    else
+        local action = PlayerAction.action_1
+        if not tolua.isnull(self.title_container) and self.play_effect == nil then
+            self.play_effect = createEffectSpine(PathTool.getEffectRes(103), cc.p(self.title_width * 0.5, self.title_height * 0.5), cc.p(0.5, 0.5), false, action)
+            self.title_container:addChild(self.play_effect)
+        end
+    end
+end 
+
+function PotentialActivationPanel:close_callback()
+    self:handleEffect(false)
+    controller:openPotentialActivationPanel(false)
+end

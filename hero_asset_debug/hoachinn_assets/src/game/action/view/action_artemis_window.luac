@@ -1,0 +1,610 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      月神之约功能
+-- Create: 2020-02-10
+-- --------------------------------------------------------------------
+ActionArtemisWindow = ActionArtemisWindow or BaseClass(BaseView)
+
+local table_insert = table.insert
+
+local role_vo = RoleController:getInstance():getRoleVo()
+function ActionArtemisWindow:__init()
+    self.ctrl = ActionController:getInstance()
+    self.model = self.ctrl:getModel()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "action/action_artemis_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"), type = ResourcesType.plist },
+        {path = PathTool.getPlistImgForDownLoad("hero", "hero"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("partnersummon", "partnersummon"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("hero", "txt_cn_special_hero_title"), type = ResourcesType.single},
+    }
+
+    self.day_list = {}
+    self.skill_item_list = {}
+    self.cur_index = nil
+    self.change_index = 1
+end
+
+function ActionArtemisWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.model_icon = self.main_panel:getChildByName("model_icon")
+    self.title_2 = self.main_panel:getChildByName("title_2")
+    self.type_icon = self.title_2:getChildByName("type_icon")
+    self.hero_name_txt = self.title_2:getChildByName("hero_name_txt")
+    self.title = self.main_panel:getChildByName("title")
+    self.view_btn = self.main_panel:getChildByName("view_btn")
+    setTextMaxWidth(self.view_btn:getChildByName("label"),100)
+    self.view_btn:getChildByName("label"):setString(TI18N("语言_c_503"))
+    setTextSpacing(self.view_btn:getChildByName("label"),-10)
+    self.video_btn = self.main_panel:getChildByName("video_btn")
+    setTextMaxWidth(self.video_btn:getChildByName("label"),100)
+    self.video_btn:getChildByName("label"):setString(TI18N("语言_c_2287"))
+    self.change_btn = self.main_panel:getChildByName("change_btn")
+    self.change_btn:setVisible(false)
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.container = self.main_panel:getChildByName("container")
+    self.seven_con = self.container:getChildByName("seven_con")
+    
+    self.skill_container = self.main_panel:getChildByName("skill_container")--技能列表
+    self.skill_container:setScrollBarEnabled(false)
+    self.skill_container:setTouchEnabled(false)
+    self.skill_container_size = self.skill_container:getContentSize()
+
+    self.type_bg = self.main_panel:getChildByName("type_bg")
+    self.profession_icon = self.type_bg:getChildByName("profession_icon")
+    self.type_txt = self.type_bg:getChildByName("label")
+    self.type_txt:setChangeScaleOffWidth(-1000)
+    self.scorce_type = self.main_panel:getChildByName("scorce_type")
+    self.limit_type = self.main_panel:getChildByName("limit_type")
+    self.scorce_type:setVisible(false)
+    self.limit_type:setVisible(false)
+    self.use_btn = self.main_container:getChildByName("use_btn") -- 领取按钮
+    self.use_btn:getChildByName("label"):setString(TI18N("语言_c_8"))
+    self.use_btn:setTouchEnabled(false)
+    self.jump_btn = self.main_container:getChildByName("jump_btn") -- 跳转按钮
+    self.jump_btn:getChildByName("label"):setString(TI18N("语言_c_5179"))
+    self.jump_btn:setVisible(false)
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.tips= self.time_bg:getChildByName("tip1")
+    self.tips:setString(TI18N("语言_c_13"))
+    self.time_txt = self.time_bg:getChildByName("time_txt")
+    for i = 1, 7 do
+        local day = self.seven_con:getChildByName("day" .. i)
+        local item = ActionArtemisItem.new()
+        day:addChild(item)
+        self.day_list[i] = item
+    end
+    self.exclusive_prop_node = self.main_container:getChildByName("exclusive_prop_node")
+    self.exclusive_prop_node:setVisible(false)
+    local item = ExclusiveItem.new()
+    self.exclusive_prop_node:addChild(item)
+    self.exclusive_prop_node.itemIcon = item
+    self.ctrl:sender21102()
+end
+
+function ActionArtemisWindow:openRootWnd(id)
+	self.holiday_bid = id
+    local tabvo =  self.ctrl:getActionSubTabVo(self.holiday_bid)
+    if tabvo and tabvo.title2 and tabvo.title2 ~= "" then
+        local res = PathTool.getResFrame('partnersummon', tabvo.title2,false)
+        loadSpriteTexture(self.scorce_type, res, LOADTEXT_TYPE_PLIST)
+        self.scorce_type:setVisible(true)
+    else
+        self.scorce_type:setVisible(false)
+    end
+    if tabvo and tabvo.top_banner and tabvo.top_banner ~= "" then
+        local res = PathTool.getPlistImgForDownLoad("hero", tabvo.top_banner)
+        loadSpriteTexture(self.limit_type, res, LOADTEXT_TYPE)
+        self.limit_type:setVisible(true)
+    else
+        self.limit_type:setVisible(false)
+    end
+end
+
+function ActionArtemisWindow:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        self.ctrl:openArtemisWindow(false)
+    end, true, 2)
+	--英雄预览
+    registerButtonEventListener(self.view_btn, function()
+        if self.activityInfo and  self.activityInfo.id_list then
+            local hero_id = self.activityInfo.id_list[self.change_index].hero_id
+            local pokedex_config = Config.PartnerData.data_partner_pokedex[hero_id]
+            if pokedex_config and pokedex_config[1] then
+                local star = pokedex_config[1].star or 1
+                HeroController:getInstance():openHeroInfoWindowByBidStar(hero_id, star)
+            end
+        end
+    end, true, 2)
+	--战斗预览
+    registerButtonEventListener(self.video_btn, function()
+        if self.holiday_bid then
+            if self.activityInfo and self.activityInfo.id_list and next(self.activityInfo.id_list) then
+                local hero_id = self.activityInfo.id_list[self.change_index].hero_id
+                TimesummonController:getInstance():send23219(self.holiday_bid,hero_id)
+            end
+        end
+    end, true, 2)
+    --切换按钮
+    registerButtonEventListener(self.change_btn, function()
+        if self.change_index == 1 then
+            self.change_index = 2
+            self.change_btn:setRotation(180)
+        else
+            self.change_index = 1
+            self.change_btn:setRotation(0)
+        end
+        self:initSkill()
+    end, true, 2)
+
+    --领奖按钮
+    registerButtonEventListener(self.use_btn, function()
+        if not self.activityInfo then
+            return 
+        end
+        local target = self:getMinGetDay(self.activityInfo.status_list)
+        local list = self.activityInfo.status_list
+        table.sort(list,function(a,b)
+            return a.id<b.id
+        end)
+        local status = list[target].status
+        if status == 2 then
+            self.ctrl:sender21103(target)
+        else
+            message(TI18N("语言_s_3224"))
+        end
+    end, true, 2)
+    --获得英雄
+    registerButtonEventListener(self.jump_btn, function()
+        ActionController:getInstance():openActionMainPanel(true, nil, self.jump_bid or ActionRankCommonType.copyelite_palance1)
+    end, true, 2)
+    
+    -- 七天登录信息
+    if self.update_status == nil then
+        self.update_status = GlobalEvent:getInstance():Bind(ActionEvent.ArtmisAction, function(data)
+			self.activityInfo = data
+            self:updateRewardList()
+            self.use_btn:setTouchEnabled(true)
+        end)
+    end
+
+    if self.update_item == nil then
+        self.update_item = GlobalEvent:getInstance():Bind(ActionEvent.ArtmisUpdate, function(data)
+            if data.code and data.code == 1 then
+                self.ctrl:sender21102() --领取成功重新请求数据
+            end
+        end)
+    end
+end
+
+--刷新数据
+function ActionArtemisWindow:updateRewardList()
+    if self.activityInfo then
+        if self.activityInfo.status_list then 
+            local data = self.activityInfo.status_list
+            local Vis = 0
+            for k,v in pairs(data) do
+                if self.day_list[v.id] then
+                    self.day_list[v.id]:setData(v.id,self.activityInfo.session)
+                    self.day_list[v.id]:setStatus(v.status)
+                end
+                if v.id == 7 then
+                    self.day_list[v.id]:setScale(1.5)
+                else
+                    self.day_list[v.id]:setScale(0.9)
+                end
+                if v.status == 3 then 
+                    Vis = Vis + 1
+                end
+            end
+            if Vis == 7 then
+                MainuiController:getInstance():removeFunctionIconById(MainuiConst.icon.artemis)
+            end
+            self.now_day = math.min(#data + 1,7)
+            local red_status = self:getRedPointStatus()
+            addRedPointToNodeByStatus(self.use_btn,red_status,10,8)
+            if red_status then
+                self.use_btn:setTouchEnabled(true)
+                setChildUnEnabled(false, self.use_btn)
+            else
+                self.use_btn:setTouchEnabled(false)
+                setChildUnEnabled(true, self.use_btn)
+                self.ctrl:setHolidayStatus(self.holiday_bid, false)
+            end
+        end
+        if self.activityInfo.session then
+            self.funId = self.activityInfo.session
+        end
+        if self.activityInfo.id_list and next(self.activityInfo.id_list) then
+            self.change_btn:setVisible(tableLen(self.activityInfo.id_list) > 1)
+            self:setTitleInfo()
+        end
+        self:initSkill()
+        self:setTime()
+    end
+end
+
+function ActionArtemisWindow:setTime( )
+    doStopAllActions(self.time_txt)
+    local tabvo =  self.ctrl:getActionSubTabVo(self.holiday_bid)
+    local less_time = tabvo and tabvo.remain_sec or 0
+    self.model:setCountDownTime(self.time_txt, less_time)
+end
+
+function ActionArtemisWindow:initSkill()
+    if self.activityInfo then
+        -- body
+        local bid = self.activityInfo.id_list[self.change_index].hero_id
+        local hero_id = getNorKey(bid, 13)
+        local star_config = Config.PartnerData.data_partner_star(hero_id)
+        if star_config == nil then return end
+        local skill_list = {}
+        for i,v in ipairs(star_config.skills) do
+            -- 不是普通攻击 1表示普通攻击
+            if v[1] ~= 1 then
+                v.sort = i
+                table_insert(skill_list, v)
+            end
+        end
+        local cfg = Config.PartnerUltraData.data_ene_skill[bid]
+        if cfg then
+            table.sort(cfg,function(a,b) return a.lev > b.lev end)
+            local list = {
+                [1]=7,
+                [2]=deepCopy(cfg[1].skill[1]),
+            }
+            table_insert(skill_list, list)
+        end
+        --技能item的宽度
+        local item_width = 88 + 28
+        local total_width = item_width * #skill_list - 28
+        local cfg = Config.PartnerData.data_partner_base[bid]
+        if cfg then
+            if cfg.score == 9 then
+                for k, v in pairs(skill_list) do
+                    if v[1] == 2 then
+                        v.sort = 9999
+                    end
+                end
+            elseif cfg.score == 10 then
+                for k, v in pairs(skill_list) do
+                    if v[1] == 2 then
+                        v.sort = 7
+                    elseif v[1] == 7 then
+                        v.sort = v[1]+1
+                    end
+                end
+                item_width = 88 + 15
+                total_width = item_width * #skill_list - 15
+            end
+        end
+        table.sort(skill_list,function(a,b)
+            return a.sort < b.sort
+        end)
+        local max_width = math.max(self.skill_container_size.width, total_width)
+        self.skill_container:setInnerContainerSize(cc.size(max_width, self.skill_container_size.height))
+        for i,v in ipairs(self.skill_item_list) do
+            v:setVisible(false)
+        end
+        local x = 0
+        if total_width > self.skill_container_size.width then
+            --技能的总宽度大于 显示的宽度 就从左往右显示
+            x = 0
+            self.skill_container:setInnerContainerSize(cc.size(total_width,self.skill_container_size.height))
+            self.skill_container:setTouchEnabled(true)
+        else
+            --否则从中从中间显示
+            x = (self.skill_container_size.width - total_width) * 0.5
+            self.skill_container:setInnerContainerSize(cc.size(self.skill_container_size.width,self.skill_container_size.height))
+            self.skill_container:setTouchEnabled(false)
+        end
+        for i,skill in ipairs(skill_list) do
+            local config = Config.SkillData.data_get_skill(skill[2])
+            if config then
+                if self.skill_item_list[i] == nil then
+                    self.skill_item_list[i] = {}
+                    self.skill_item_list[i] = SkillItem.new(true,true,true,0.8, true)
+                    self.skill_container:addChild(self.skill_item_list[i])
+                end
+                self.skill_item_list[i]:setData(config)
+                self.skill_item_list[i]:setVisible(true)
+                if self.skill_item_list[i] and self.skill_item_list[i].setSkillSubscript then
+                    self.skill_item_list[i]:setSkillSubscript(Config.PartnerData.data_partner_base[bid].hurt_type)
+                end
+                if self.skill_item_list[i] and self.skill_item_list[i].setSpSkillSubscript then
+                    if cfg and cfg.score >= 10 then
+                        if i == 6 then
+                            self.skill_item_list[i]:setSpSkillSubscript(true,Config.PartnerData.data_partner_base[bid].hurt_type+2)
+                        else
+                            self.skill_item_list[i]:setSpSkillSubscript(false)
+                        end
+                    else
+                        self.skill_item_list[i]:setSpSkillSubscript(false)
+                    end
+                end
+                if x == 0 then
+                    self.skill_item_list[i]:setPosition( x + item_width * (i - 1) + item_width * 0.5 - 10, 88/2 + 6)
+                else
+                    self.skill_item_list[i]:setPosition( x + item_width * (i - 1) + item_width * 0.5 - 10, 88/2 + 6)
+                end
+            else 
+                print(string_format("@技能表id: %s 没发现", tostring(skill.skill_bid)))
+            end
+        end
+    end
+end
+
+--当前可领取的奖励的天数
+function ActionArtemisWindow:getMinGetDay( data )
+	local day = self.now_day
+	for k,v in pairs(data) do
+		if v.id == 1 and v.status == 2 then 
+			return 1
+		else
+			if v.id < day and v.status == 2 then 
+				day = v.id
+			end
+		end
+	end
+	return day
+end
+
+-- 设置展示
+function ActionArtemisWindow:setTitleInfo()
+    if self.activityInfo then
+        local hero_id = self.activityInfo.id_list[self.change_index].hero_id
+        local id = HeroController:getInstance():getModel():getNewConvertStaBid(hero_id)
+        if id then
+            hero_id = id
+        end
+        local heroInfocfg = Config.PartnerData.data_partner_base[hero_id]
+        local herodraw = "ninjacontract_"..hero_id
+        local bg_res = PathTool.getPlistImgForDownLoad("ninjacontract",herodraw, false)
+    
+        if self.model_icon then
+            self.item_load = loadSpriteTextureFromCDN(self.model_icon, bg_res, ResourcesType.single, self.item_load) 
+        end
+        local heroName = heroInfocfg and heroInfocfg.name or ""
+        self.hero_name_txt:setString(heroName)
+        local camp_type = heroInfocfg and heroInfocfg.camp_type or 1
+        local res = PathTool.getHeroCampTypeIcon(camp_type)
+        loadSpriteTexture(self.type_icon, res, LOADTEXT_TYPE_PLIST)
+    
+        local name_width = self.hero_name_txt:getContentSize().width
+        self.title_2:setContentSize(cc.size(name_width + 160 ,66))
+        self.hero_name_txt:setPositionX((name_width + 160)/2)
+    
+        local herocfg = Config.PartnerData.data_partner_base[hero_id]
+        local hero_type = herocfg and herocfg.type or 4
+        local res = PathTool.getPartnerTypeIcon(hero_type)
+        loadSpriteTexture(self.profession_icon, res, LOADTEXT_TYPE_PLIST)
+        local dataconfig = Config.HolidayDaysData.data_id[self.funId]
+        if dataconfig and dataconfig[1] and dataconfig[1].day_desc then
+            local str =  dataconfig[1].day_desc
+            self.type_txt:setString(TI18N(str))
+        end
+        self.type_bg:setContentSize(cc.size(self.profession_icon:getContentSize().width + self.type_txt:getContentSize().width,44))
+        self.type_txt:setPositionX(self.type_bg:getContentSize().width/2)
+        self.profession_icon:setPositionX(0)
+        
+        if self.activityInfo.bid then
+            self.use_btn:setPositionX(180)
+            self.jump_btn:setVisible(true)
+            self.jump_bid = self.activityInfo.bid
+        else
+            self.use_btn:setPositionX(360)
+            self.jump_btn:setVisible(false)
+        end
+        self:updateExclusivePropItem(hero_id)
+    end
+end
+
+function ActionArtemisWindow:updateExclusivePropItem(hero_id)
+    if not Config or not Config.PartnerSoulData then
+        require("config.partner_soul_data")
+    end
+    local showsoul_limit_level = Config.PartnerSoulData.data_const["showsoul_limit_level"]
+    if showsoul_limit_level and showsoul_limit_level.val > role_vo.lev then return end
+    if not hero_id then return end
+    local h_cfg = Config.PartnerData.data_partner_base_fun(hero_id)
+    if not h_cfg then
+        send_error_to_pf("not h_cfg"..tostring(hero_id))
+        return
+    end
+    local horcruxes = h_cfg.horcruxes
+    local hro_cfg = Config.PartnerSoulData.data_soul_level[horcruxes]
+    local data = {id = horcruxes, lev = tableLen(hro_cfg), score_val = hro_cfg[tableLen(hro_cfg)].score}
+    local limit_cfg = Config.PartnerSoulData.data_const["entrance_lv"]
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("partner_soul_data")
+    if h_cfg.horcruxes_show == 0 and not table.indexof(nohideIds,horcruxes) then
+        self.exclusive_prop_node:setVisible(false)
+    else
+        if horcruxes and horcruxes ~= 0 and limit_cfg and limit_cfg.val <= role_vo.lev then
+            local unlock_star = Config.PartnerSoulData.data_const["open_star_condition"].val
+            local unlock_tower = Config.PartnerSoulData.data_const["open_tower_layers"].val
+            local now_tower = StartowerController:getInstance():getModel():getNowTowerId() or 0
+            self.exclusive_prop_node:setVisible(true)
+            local soul_base_cfg = Config.PartnerSoulData.data_base_info[horcruxes]
+            if not soul_base_cfg then
+                return
+            end
+            local quality = 0
+            if soul_base_cfg.quality >= 0 and soul_base_cfg.quality <= 5 then
+                quality = soul_base_cfg.quality
+            end
+            local res_id = PathTool.getQualityBg(soul_base_cfg.quality)
+
+            local item_data = {}
+            item_data.is_lock = false
+            item_data.bg = res_id
+            item_data.icon = PathTool.getSoulHorcruxIcon(soul_base_cfg.icon)
+            item_data.lev = data.lev
+            item_data.callback = function()
+                self:onClickExclusivePropItem(hero_id)
+            end
+            self.exclusive_prop_node.itemIcon:setData(item_data)
+        else
+            self.exclusive_prop_node:setVisible(false)
+        end
+    end
+end
+function ActionArtemisWindow:onClickExclusivePropItem(hero_id)
+    if not hero_id then return end
+    local h_cfg = Config.PartnerData.data_partner_base_fun(hero_id)
+    local hro_cfg = Config.PartnerSoulData.data_soul_level[h_cfg.horcruxes]
+    hro_cfg = hro_cfg[tableLen(hro_cfg)]
+    local list = {}
+    list.bid = hero_id
+    list.star = 5
+    list.hid = h_cfg.horcruxes
+    list.h_lev = hro_cfg.lev
+    list.h_score = hro_cfg.score
+    local data = {panel_type = HERO_SOUL_TYPE, hero_vo = list, is_lock = false}
+    HeroController:getInstance():openExclusivePropsPanel(true, data)
+end
+--设置红点
+function ActionArtemisWindow:getRedPointStatus()
+    if self.activityInfo then
+        local data = self.activityInfo.status_list
+        for k,v in pairs(data) do
+            if v.status == 2 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+function ActionArtemisWindow:close_callback()
+    for k, v in pairs(self.day_list) do
+        if v then
+            v:DeleteMe()
+        end
+    end
+    self.day_list = nil
+    doStopAllActions(self.time_txt)
+    if self.update_item ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_item)
+        self.update_item = nil
+    end
+    if self.update_status ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_status)
+        self.update_status = nil
+    end
+
+	if self.item_load then
+        self.item_load:DeleteMe()
+    end
+    self.item_load = nil
+
+    self.ctrl:openArtemisWindow(false)
+end
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      月神之约子项
+-- Create: 2020-02-10
+-- --------------------------------------------------------------------
+ActionArtemisItem = class("ActionArtemisItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionArtemisItem:ctor()
+    self.ctrl = ActionController:getInstance()
+    self.model = self.ctrl:getModel()
+
+    self:configUI()
+    self:register_event()
+    self.status = 1
+    self.day_index = 1
+end
+
+function ActionArtemisItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_artemis_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_day = self.main_container:getChildByName("title_day")
+    self.img = self.main_container:getChildByName("img")
+    self.icon = self.img:getChildByName("icon")
+    self.get = self.main_container:getChildByName("get")
+    self.get:setVisible(false)
+    self.get_open = self.main_container:getChildByName("get_open")
+    self.get_open:setVisible(false)
+end
+
+function ActionArtemisItem:register_event()
+    self.main_container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            -- playButtonSound2()
+            -- if self.callback then
+            --     self:callback()
+            -- end
+        end
+    end)
+end
+
+function ActionArtemisItem:setData(index,session)
+    if not index or not session then
+        return
+    end
+    self.day_index = index
+    self.session = session
+    self.title_day:setString(string.format(TI18N("语言_c_1499"), index))
+    if not Config.HolidayDaysData.data_id[session] then
+        return
+    end
+    local day_conf = Config.HolidayDaysData.data_id[session][index]
+    if not day_conf or not day_conf.rewards then
+        return
+    end
+    local item_data = day_conf.rewards[1]
+    if not self.item then
+        self.item = BackPackItem.new(false, true, false, 1, false, true)
+        self.icon:addChild(self.item, 3)
+    end
+    self.item:setBaseData(item_data[1], item_data[2])
+    self.item:setBg(false)
+    -- self.item:showNumLabel(false)
+    self.item:setPosition(50, 50)
+    if day_conf.is_spe_day == 1 then--表示是特殊物品
+        local res_id = PathTool.getResFrame("common", "common_1010")
+        self.img:loadTexture(self.background_res_id, LOADTEXT_TYPE_PLIST)
+    end
+end
+
+function ActionArtemisItem:setStatus(status)
+    self.status = status
+    if self.status == 3 then 
+        self.get:setVisible(true)
+    else
+        self.get:setVisible(false)
+    end
+    if self.status == 2 then -- 可领取
+        self.get_open:setVisible(true)
+    else
+        self.get_open:setVisible(false)
+    end
+    -- self:setTitleLab(status)
+end
+
+function ActionArtemisItem:DeleteMe()
+    -- doStopAllActions(self.title_day)
+    if self.item then
+    	self.item:DeleteMe()
+    	self.item = nil
+    end
+end

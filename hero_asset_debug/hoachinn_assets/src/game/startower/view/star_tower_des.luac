@@ -1,0 +1,219 @@
+-- --------------------------------------------------------------------
+-- 竖版星命塔挑战主界面
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      关卡信息
+-- <br/>Create: 2020-xx-xx
+-- --------------------------------------------------------------------
+StarTowerDes = StarTowerDes or BaseClass(BaseView)
+local table_insert = table.insert
+function StarTowerDes:__init(data)
+    self.ctrl = StartowerController:getInstance()
+    self.is_full_screen = false
+    self.layout_name = "startower/star_tower_des"
+    self.cur_type = 0
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("startower","startower"), type = ResourcesType.plist },
+    }
+   self.data = data
+   local title = data.name or ""
+   self.title_str = title
+   self.item_list = {}
+   self.win_type = WinType.Big
+end
+
+function StarTowerDes:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")    
+    self:playEnterAnimatianByObj(self.main_panel, 1)
+
+    self.title = self.main_panel:getChildByName("title")
+    self.title:setString(self.title_str)
+
+    self.top_panel = self.main_panel:getChildByName("top_panel")
+    self.award_panel = self.main_panel:getChildByName("award_panel")
+    
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.video_btn = self.top_panel:getChildByName("video_btn")
+    local label = self.video_btn:getChildByName("label")
+    label:setString(TI18N("语言_c_1605"))
+
+    local label  =self.award_panel:getChildByName("label")
+    label:setString(TI18N("语言_c_532"))
+
+    self.no_label =  createLabel(24,Config.ColorData.data_color4[175],nil,338,55,"",self.main_panel,nil,cc.p(0.5,0.5))
+    self.no_label:setString(TI18N("语言_c_4096"))
+    self.no_label:setVisible(true)
+
+    if self.data then
+        self.ctrl:sender11325(self.data.lev)
+    end
+    self:updateDesc()
+    self:updateGoodsList()
+end
+
+function StarTowerDes:updateModel(data)
+    if not data then return end
+    if not self.partner_model then 
+        self.partner_model = BaseRole.new(BaseRole.type.unit, data.unit_id)
+        self.partner_model:setAnimation(0,PlayerAction.show,true) 
+        self.top_panel:addChild(self.partner_model)
+        self.partner_model:setPosition(cc.p(313,310))
+    end
+end
+
+function StarTowerDes:register_event()
+    self.close_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            self.ctrl:openStarTowerDes(false)
+        end
+    end)
+    self.background:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            self.ctrl:openStarTowerDes(false)
+        end
+    end)
+
+    self.video_btn:addTouchEventListener(function(sender, event_type) 
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            if not self.video_data then return end
+            if not self.video_data.tower_replay_data or next(self.video_data.tower_replay_data) ==nil then 
+                message(TI18N("语言_c_4098"))
+                return
+            end
+            self.ctrl:openVideoWindow(true,self.video_data,self.data.lev)
+        end
+    end)
+    if not self.video_data_event then 
+        self.video_data_event = GlobalEvent:getInstance():Bind(StartowerEvent.Video_Data_Event,function(data)
+            self.video_data = data
+            self:updateVideoData(data)
+        end)
+    end
+end
+
+function StarTowerDes:updateVideoData(data)
+    if not data then return end
+
+    if not self.fast_desc then 
+        self.fast_desc = createRichLabel(24,Config.ColorData.data_color4[175],cc.p(0,1),cc.p(20,-12),nil,nil,300)
+        self.top_panel:addChild(self.fast_desc)
+    end
+
+    if not self.power_desc then 
+        self.power_desc = createRichLabel(24,Config.ColorData.data_color4[175],cc.p(0,1),cc.p(20,-52),nil,nil,300)
+        self.top_panel:addChild(self.power_desc)
+    end
+    self.fast_desc:setString(TI18N("语言_c_4100"))
+    self.power_desc:setString(TI18N("语言_c_4101"))
+    local list = data.tower_replay_data or {}
+    for i,v in pairs(list) do
+        if v and v.type == 1 then 
+            local str = string.format(TI18N("语言_c_4102"),v.name)
+            self.fast_desc:setString(str)
+        else
+            local str = string.format(TI18N("语言_c_4084"),v.name)
+            self.power_desc:setString(str)
+        end
+    end
+end
+function StarTowerDes:updateDesc()
+    if not self.data then return end
+    --推荐战力
+    self.boss_power =createRichLabel(24,Config.ColorData.data_color4[175],cc.p(0,0),cc.p(20,15),nil,nil,620)
+    self.top_panel:addChild(self.boss_power)
+
+    local power = self.data.recommend or 0
+    local str = string.format(TI18N("语言_c_4104"),power)
+    self.boss_power:setString(str)
+end
+
+function StarTowerDes:openRootWnd()
+end
+
+--更新物品消耗
+function StarTowerDes:updateGoodsList()
+    if not self.data then return end
+    for i,v in pairs(self.item_list) do 
+        v:setVisible(false)
+    end
+    local expend_list = {}
+    
+    local now_id = self.ctrl:getModel():getNowTowerId() or 0
+    if now_id < self.data.lev then 
+        local first_id  = 0
+        local num = 0
+        if self.data.first_show[1] and self.data.first_show[1][1] and self.data.first_show[1][2] then
+            first_id = self.data.first_show[1][1]
+            num = self.data.first_show[1][2]
+        end
+        table_insert(expend_list,{[1]=first_id,[2]=num,[3]=true})
+    end
+
+    for i,v in pairs( self.data.award) do
+        table_insert(expend_list,v)
+    end
+
+    local index  =1
+    local size = self.award_panel:getContentSize()
+    for i,v in pairs(expend_list) do 
+        if not self.item_list[index] then 
+            local item = BackPackItem.new(true,true,nil,0.9)
+            item:setDefaultTip()
+            self.award_panel:addChild(item)
+            self.item_list[index] = item
+        end
+
+        self.item_list[index]:setPosition(cc.p(90+150*(index-1),70))
+        local config = Config.ItemData.data_get_data(v[1])
+        if config then
+            self.item_list[index]:setData(config)
+            self.item_list[index]:setVisible(true)
+            self.item_list[index]:setNum(v[2])
+        end
+        self.item_list[index]:showBiaoQian(false)
+        if v and v[3] and v[3] == true then 
+            self.item_list[index]:showBiaoQian(true,TI18N("语言_c_123"))
+        end
+        index = index +1
+    end
+
+    local now_tower = self.ctrl:getModel():getNowTowerId() or 0
+end
+
+--[[
+    @desc: 切换标签页
+    author:{author}
+    time:2018-05-03 21:58:15
+    --@type: 
+    return
+]]
+
+--[[
+    @desc: 设置标签页面板数据内容
+    author:{author}
+    time:2018-05-03 21:57:09
+    return
+]]
+function StarTowerDes:setPanelData()
+end
+
+function StarTowerDes:close_callback()
+    self.ctrl:openStarTowerDes(false)
+    for i,v in pairs(self.item_list) do
+        v:DeleteMe()
+    end
+    self.item_list = nil
+    if self.video_data_event then
+        GlobalEvent:getInstance():UnBind(self.video_data_event)
+        self.video_data_event = nil
+    end
+end

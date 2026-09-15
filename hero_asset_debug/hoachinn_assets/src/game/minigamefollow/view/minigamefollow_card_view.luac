@@ -1,0 +1,635 @@
+--------------------------------------------
+-- 
+-- 
+---------------------------------
+local _table_insert = table.insert
+local minigamefolowModel
+if MinigameFollowController then
+    minigamefolowModel = MinigameFollowController:getInstance():getModel()
+end
+
+local D_SIZE = cc.size(720, 1280)
+
+MinigameFollowCardview = class("MinigameFollowCardview", function()
+	return ccui.Widget:create()
+end)
+
+function MinigameFollowCardview:ctor(partner)
+    -- if partner and not tolua.isnull(partner) then
+    --     partner:addChild(self)
+    -- end
+    if MinigameFollowController then
+        minigamefolowModel = MinigameFollowController:getInstance():getModel()
+    end
+    self.partner = partner
+    self.card_list = {}
+    self.card_null_list = {}
+    self.global_cd_time = 0
+    self.auto_status = false
+    self:configUI()
+    self:register_event()
+    D_SIZE = partner.root:getContentSize()
+end
+
+function MinigameFollowCardview:configUI()
+    self:setContentSize(cc.size(D_SIZE.width, 220))
+    local layout = ccui.Layout:create()
+    self:addChild(layout)
+    -- layout:setBackGroundColor(cc.c3b(100,100,100))
+    -- layout:setBackGroundColorOpacity(255)
+    -- layout:setBackGroundColorType(1)
+    local size = cc.size(720, 220)
+    layout:setContentSize(size)
+    layout:setAnchorPoint(0.5, 0)
+    layout:setPosition(cc.p(D_SIZE.width/2, 0))
+    -- layout:setClippingEnabled(true)
+    self.container = layout
+
+    local image = createImage(layout, PathTool.getResFrame("common", "common_1_21", nil, "common_1"), size.width/2, 0, cc.p(0.5, 0), true)
+    image:setScale9Enabled(true)
+    image:ignoreContentAdaptWithSize(true)
+    image:setContentSize(cc.size(D_SIZE.width, 150))
+    local label = createLabel(20, cc.c3b(0xfa, 0xd9, 0x83), nil, size.width/2, 32, "", self.container, nil, cc.p(0.5, 0.5))
+    label:setDimensions(600, 0)
+    label:setAlignment(1,1)
+    label:setLineSpacing(-8)
+    label:setString(TI18N("语言_c_g_82"))
+
+    local card_pool = {101, 201, 501, 301, 401}
+    for i = 1, #card_pool, 1 do
+        self:addNullCardItem(card_pool[i], i)
+    end
+end
+
+function MinigameFollowCardview:getCardCount()
+    return #self.card_list
+end
+
+function MinigameFollowCardview:addCardItem(card_id, pos)
+    local index = 0
+    for k, v in pairs(self.card_null_list) do
+        local config = Config.MinigameMobcontrol2Data.data_strategy_info[v.card_id]
+        local t_config = Config.MinigameMobcontrol2Data.data_strategy_info[card_id]
+        if config.type == t_config.type then
+            self:playItemEffect(v, pos)
+            break
+        end
+    end
+
+    -- local info = {
+    --     card_id = card_id,
+    --     index = #self.card_list + 1,
+    --     partner = self.container
+    -- }
+    -- if MinigameFollowCardItem then
+        -- local item = MinigameFollowCardItem.new(info)
+        -- self.card_list = self.card_list or {}
+        -- self.card_list[#self.card_list + 1] = item
+    -- end
+end
+
+function MinigameFollowCardview:playItemEffect(item, w_pos)
+    local card_item = item
+    local function getAngle(a_pos, b_pos)
+        local dis_pos = cc.p(b_pos.x - a_pos.x, b_pos.y - a_pos.y)
+        local num = math.atan2(dis_pos.x, dis_pos.y)
+        local angle = math.deg(math.abs(num))
+        return angle
+    end
+    local local_pos = self.container:convertToNodeSpace(w_pos)
+    local t_pos = cc.p(card_item:getPosition())
+    if not self.add_card_small_effect then
+        local effect = createEffectSpine("E10111", t_pos, cc.p(0.5, 0.5), false, PlayerAction.action_1, nil, nil, true)
+        self.container:addChild(effect)
+        self.add_card_small_effect = effect
+    end
+    if not self.add_card_big_effect then
+        local effect = createEffectSpine("E10112", t_pos, cc.p(0.5, 0.5), false, PlayerAction.action_1, nil, nil, true)
+        self.container:addChild(effect)
+        self.add_card_big_effect = effect
+    end
+    if not self.add_card_effect then
+        local effect = createEffectSpine("E10110", t_pos, cc.p(0.5, 0.5), false, PlayerAction.action_1, nil, nil, true)
+        self.container:addChild(effect)
+        self.add_card_effect = effect
+    end
+    local scalex_sign = 1
+    if t_pos.x < local_pos.x then
+        scalex_sign = 1
+    else
+        scalex_sign = -1
+    end
+    local init_dis = cc.pGetDistance(cc.p(self.card_null_list[1]:getPosition()), cc.p(360, 300))
+    local init_angle = getAngle(cc.p(self.card_null_list[1]:getPosition()), cc.p(360, 300))
+    local cur_angle = getAngle(t_pos, local_pos)
+    local cur_dis = cc.pGetDistance(t_pos, local_pos)
+    local scale_count = cur_dis/init_dis
+    self.add_card_effect:setRotation((cur_angle - init_angle)*scalex_sign)
+    self.add_card_effect:setScaleX(scale_count*scalex_sign)
+    self.add_card_effect:setScaleY(scale_count)
+    self.add_card_effect:setPosition(t_pos)
+    self.add_card_small_effect:setPosition(t_pos)
+    self.add_card_big_effect:setPosition(t_pos)
+    self.add_card_effect:registerSpineEventHandler(function(event)
+        if event.animation == "action1" then
+            card_item:addCardCount(function(event_type, callback)
+                if event_type == 0 then
+                    self.add_card_small_effect:setAnimation(0, "action1", false)
+                elseif event_type == 1 then
+                    self.add_card_big_effect:setAnimation(0, "action1", false)
+                    self.add_card_big_effect:registerSpineEventHandler(function(event)
+                        if event.eventData.name == "shine" then
+                            if callback then
+                                callback()
+                            end
+                        end
+                    end, sp.EventType.ANIMATION_EVENT)
+                end
+            end)
+        end
+    end, sp.EventType.ANIMATION_COMPLETE)
+    self.add_card_effect:setAnimation(0, "action1", false)
+end
+
+function MinigameFollowCardview:addNullCardItem(card_id, index)
+    local info = {
+        card_id = card_id,
+        index = index,
+        partner = self.container,
+        up_num = 0
+    }
+    if MinigameFollowCardItem then
+        local item = MinigameFollowCardItem.new(info)
+        self.card_null_list = self.card_null_list or {}
+        self.card_null_list[index] = item
+    end
+end
+
+function MinigameFollowCardview:updateCdUI()
+    for k, v in pairs(self.card_null_list) do
+        v:updateCdUI()
+    end
+end
+
+--auto
+function MinigameFollowCardview:autoUseCard()
+    if not self.global_cd_time then
+        return
+    end
+    if not self.auto_status then
+        self.global_cd_time = GameNet:getInstance():getTimeFloat()
+        return
+    end
+    local cur_time = GameNet:getInstance():getTimeFloat()
+    local global_cd = Config.MinigameMobcontrol2Data.data_const["global_cd"].val
+    if cur_time - self.global_cd_time >= global_cd/1000 then
+        for i, v in ipairs(self.card_null_list) do
+            if v.can_use and v:checkUseTime() then
+                self.partner:useSkillCard(v.card_id)
+                self.global_cd_time = GameNet:getInstance():getTimeFloat()
+                break
+            end
+        end
+    end
+end
+
+function MinigameFollowCardview:changeAutoState()
+    self.auto_status = not self.auto_status
+end
+
+function MinigameFollowCardview:onTouchOther(touch, event)
+    if event == ccui.TouchEventType.began then
+        local touch_pos = self.container:convertToNodeSpace(touch:getLocation())  
+        local offset = cc.p(0, 0)
+        self.click_index_new = nil
+        for i, v in pairs(self.card_null_list) do
+            local rect = v:getBoundingBox()
+            local touch_card_status = cc.rectContainsPoint(rect, touch_pos) 
+            if touch_card_status and v.can_use then
+                if v:checkUseTime() then
+                    self.click_index_new = v.index
+                    self.start_pos_new = cc.p(v:getPosition())
+                    customClickAction_2(v, event) 
+                end
+                break
+            end
+        end
+    elseif event == ccui.TouchEventType.moved then 
+        -- if not self.click_card then return end
+        -- customClickAction_2(self.card_null_list[self.click_card], event) 
+        -- local pos = cc.p(self.card_null_list[self.click_card]:getPosition())
+        -- pos.x = pos.x + touch:getDelta().x
+        -- pos.y = pos.y + touch:getDelta().y
+        -- if cc.pGetDistance(self.start_pos_new,pos) > 2 then
+        --     self.click_card = nil
+        -- end
+    elseif event == ccui.TouchEventType.ended then 
+        local start_pos = touch:getStartLocation()
+        local cur_pos = touch:getLocation()
+        if self.click_index_new then
+            customClickAction_2(self.card_null_list[self.click_index_new], event) 
+            local touch_pos = self.container:convertToNodeSpace(touch:getLocation())
+            local rect = self.card_null_list[self.click_index_new]:getBoundingBox()
+            -- if cc.pGetDistance(start_pos,cur_pos) < 2 then
+            if cc.rectContainsPoint(rect, touch_pos) then
+                self.partner:useSkillCard(self.card_null_list[self.click_index_new].card_id)
+            end
+            self.click_index_new = nil
+        end
+    end
+end
+
+function MinigameFollowCardview:onTouch(touch, event)
+    self:onTouchOther(touch, event)
+    if true then return end
+    if event == ccui.TouchEventType.began then
+        self.touch_pos = self.container:convertToNodeSpace(touch:getLocation())  
+        local offset = cc.p(0, 0)
+        for i, v in ipairs(self.card_list) do
+            local rect = v:getBoundingBox()
+            local touch_card_status = cc.rectContainsPoint(rect, self.touch_pos) 
+            if touch_card_status then
+                self.touch_card = v
+                offset.x = self.touch_pos.x - v:getPositionX()
+                offset.y = self.touch_pos.y - v:getPositionY()
+                break
+            end
+        end
+
+        if not self.touch_card then 
+            self.mark_first_time = nil
+            self.mark_last_time = nil
+            self.click_index = nil
+            return
+        end
+        self.touch_card:retain()
+        self.touch_card:removeFromParent()
+        self:addChild(self.touch_card)
+        local touch_pos = self:convertToNodeSpace(touch:getLocation())  
+        touch_pos.x = touch_pos.x - offset.x
+        touch_pos.y = touch_pos.y - offset.y
+        self.touch_card:setPosition(touch_pos)
+        self.touch_card.start_pos = touch_pos
+        self.touch_card.move_over = false
+
+        self.click_index = self.click_index or self.touch_card.index
+        if not self.click_index or self.click_index == self.touch_card.index then
+            if not self.mark_first_time then
+                self.mark_first_time = GameNet:getInstance():getTimeFloat()
+            else
+                self.mark_last_time = self.mark_last_time or GameNet:getInstance():getTimeFloat()
+            end
+        else
+            self.mark_first_time = GameNet:getInstance():getTimeFloat()
+            self.mark_last_time = nil
+            self.click_index = self.touch_card.index
+        end
+        
+    elseif event == ccui.TouchEventType.moved then 
+        if not self.touch_card then return end
+        -- local touch_pos = self:convertToNodeSpace(touch:getLocation())  
+        -- self.touch_card:setPosition(touch_pos)
+        local pos = cc.p(self.touch_card:getPosition())
+        pos.x = pos.x + touch:getDelta().x
+        pos.y = pos.y + touch:getDelta().y
+        self.touch_card:setPosition(pos)
+    elseif event == ccui.TouchEventType.ended then
+        if not self.touch_card then return end
+        local rect1 = self.touch_card:getBoundingBox()
+        local intersects = nil
+        local is_use = false
+        for i, v in pairs(self.card_list) do
+            local rect2 = v:getBoundingBox()
+            local q_pos = self:convertToNodeSpace(cc.p(rect2.x, rect2.y)) 
+            local offset_x = 10
+            local offset_y = 10
+            rect2.x = q_pos.x + offset_x
+            rect2.y = q_pos.y + offset_y
+            rect2.width = rect2.width + offset_x*2
+            rect2.height = rect2.height + offset_y*2
+            
+            local rect1 = self.touch_card:getBoundingBox()
+            rect1.x = rect1.x + offset_x
+            rect1.y = rect1.y + offset_y
+            rect1.width = rect1.width + offset_x*2
+            rect1.height = rect1.height + offset_y*2
+            if cc.rectIntersectsRect(rect1,rect2) then
+                -- intersects = v
+                break
+            end
+        end
+        local rect1 = self.touch_card:getBoundingBox()
+        local rect2 = self.container:getBoundingBox() 
+        if not cc.rectIntersectsRect(rect1,rect2) then
+            is_use = true
+        end
+        if self.mark_first_time and self.mark_last_time then
+            -- print("-------------------------------------------- ///// 1", self.mark_last_time, self.mark_first_time)
+            if self.mark_last_time - self.mark_first_time < 0.5 then
+                -- print("-------------------------------------------- ///// 2")
+                for i = 1, 5, 1 do
+                    local item = self.card_list[i]
+                    if item and not tolua.isnull(item) and item.card_id == self.touch_card.card_id and self.touch_card.index ~= item.index then
+                        -- print("-------------------------------------------- ///// 3")
+                        local config = Config.MinigameMobcontrol2Data.data_strategy_info[self.touch_card.card_id + 1]
+                        if config then
+                            table.remove(self.card_list, i)
+                            item:removeFromParent()
+                            item = nil
+                            self.touch_card:fusingSuccess()
+                        end
+                        break
+                    end
+                end
+            end
+            self.mark_first_time = nil
+            self.mark_last_time = nil
+            self.click_index = nil
+        end
+        if intersects and intersects.index ~= self.touch_card.index and intersects.card_id == self.touch_card.card_id then
+            table.remove(self.card_list, self.touch_card.index)
+            self.touch_card:removeFromParent()
+            self.touch_card:release()
+            self.touch_card = nil
+            intersects:fusingSuccess()
+        elseif is_use then
+            local card_id = self.touch_card.card_id
+            table.remove(self.card_list, self.touch_card.index)
+            self.touch_card:removeFromParent()
+            self.touch_card:release()
+            self.touch_card = nil
+            self.partner:useSkillCard(card_id)
+            self.mark_first_time = nil
+            self.mark_last_time = nil
+            self.click_index = nil
+        else
+            local pos = cc.p(self.touch_card:getPosition())
+            local move_over = cc.pGetDistance(self.touch_card.start_pos,pos) > 2
+            if move_over then
+                self.mark_first_time = nil
+                self.mark_last_time = nil
+                self.click_index = nil
+            end
+            self.touch_card:removeFromParent()
+            self.container:addChild(self.touch_card)
+            self.touch_card:updatePos()
+            self.touch_card:release()
+            self.touch_card = nil
+            self.touch_pos = nil
+        end
+        local new_list = {}
+        for i = 1, 5, 1 do
+            local item = self.card_list[i]
+            if item and not tolua.isnull(item) then
+                new_list[#new_list + 1] = item
+            end
+        end
+        -- print("--------------- ", vardump(new_list))
+        self.card_list = new_list
+        for i, v in ipairs(self.card_list) do
+            v:updateIndex(i)
+            v:updatePos()
+        end
+        -- for i, v in ipairs(self.card_null_list) do
+        --     v:setVisible(self.card_list[i] == nil)
+        -- end
+    end
+end
+
+function MinigameFollowCardview:resetCard()
+    self.card_list = {}
+    self.card_null_list = {}
+    self.global_cd_time = 0
+    self.auto_status = false
+    if self.add_card_small_effect then
+        self.add_card_small_effect:clearTracks()
+        self.add_card_small_effect:removeFromParent()
+        self.add_card_small_effect = nil
+    end
+    if self.add_card_big_effect then
+        self.add_card_big_effect:clearTracks()
+        self.add_card_big_effect:removeFromParent()
+        self.add_card_big_effect = nil
+    end
+    if self.add_card_effect then
+        self.add_card_effect:clearTracks()
+        self.add_card_effect:removeFromParent()
+        self.add_card_effect = nil
+    end
+    self.container:removeAllChildren()
+end
+
+function MinigameFollowCardview:register_event()
+
+end
+
+function MinigameFollowCardview:DeleteMe()
+    self.touch_card = nil
+    self.touch_pos = nil
+    self.mark_first_time = nil
+    self.mark_last_time = nil
+    self.click_index = nil
+    self.card_list = {}
+    self.card_null_list = {}
+
+    if self.add_card_small_effect then
+        self.add_card_small_effect:clearTracks()
+        self.add_card_small_effect:removeFromParent()
+        self.add_card_small_effect = nil
+    end
+    if self.add_card_big_effect then
+        self.add_card_big_effect:clearTracks()
+        self.add_card_big_effect:removeFromParent()
+        self.add_card_big_effect = nil
+    end
+    if self.add_card_effect then
+        self.add_card_effect:clearTracks()
+        self.add_card_effect:removeFromParent()
+        self.add_card_effect = nil
+    end
+    self:removeFromParent()
+
+    self.click_index_new = nil
+end
+------------------------------------
+MinigameFollowCardItem = class("MinigameFollowCardItem", function()
+	return ccui.Layout:create()
+end)
+
+local lv_star_pos = {
+    [1] = {cc.p(78, 20)},
+    [2] = {cc.p(68, 15),cc.p(89, 25)},
+    [3] = {cc.p(58, 15),cc.p(73, 25),cc.p(88, 15),cc.p(103, 25)},
+    [4] = {cc.p(51, 15),cc.p(60, 25),cc.p(69, 15),cc.p(78, 25),cc.p(87, 15),cc.p(96, 25),cc.p(105, 15),cc.p(114, 25)},
+    [5] = {},
+}
+
+function MinigameFollowCardItem:ctor(info)
+    self.card_id = info.card_id
+    self.index = info.index
+    self.partner = info.partner
+    self.up_num = info.up_num
+
+    self.cd_time = 0
+    self.can_use = true
+
+    local size = cc.size(129, 171)
+    self:setContentSize(size)
+    self:setAnchorPoint(0.5, 0.5)
+    info.partner:addChild(self)
+    self:setCascadeOpacityEnabled(true)
+
+    local csbPath = PathTool.getTargetCSB("minigame/minigame_battle_card")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.image_skill_icon = self.root_wnd:getChildByName("image_skill_icon") 
+    self.level_label = self.image_skill_icon:getChildByName("level_label") 
+    self.level_label.level_label_num = self.level_label:getChildByName("level_label_num")  
+    self.sp_level = self.image_skill_icon:getChildByName("sp_level") 
+
+    self.layout_cd = self.image_skill_icon:getChildByName("layout_cd") 
+    self.layout_cd.size = self.layout_cd:getContentSize()
+    self.layout_cd:setContentSize(cc.size(self.layout_cd.size.width, 0))
+
+    self.sp_star_list = {}
+    for i = 1, 8, 1 do
+        local sp_star_dark = self.image_skill_icon:getChildByName("sp_star_dark"..i) 
+        sp_star_dark.sp_star_bright = sp_star_dark:getChildByName("sp_star_bright") 
+        sp_star_dark.sp_star_bright:setVisible(false)
+        sp_star_dark:setVisible(false)
+        self.sp_star_list[#self.sp_star_list + 1] = sp_star_dark
+    end
+    self.sp_star_max = self.image_skill_icon:getChildByName("sp_star_max")
+
+    self:updateUI()
+end
+
+function MinigameFollowCardItem:updateUI()
+    if self.card_id then
+        local config = Config.MinigameMobcontrol2Data.data_strategy_info[self.card_id]
+        if config.res and config.res ~= "" then
+            local image_name, image_type,image_plist = minigamefolowModel:getImageType(config.res)
+            self.image_skill_icon:loadTexture(PathTool.getMinigameFollowRes(image_name,image_type, image_plist), image_type)
+            self.level_label:setString(TI18N("语言_c_g_109")) 
+            self.level_label.level_label_num:setString(self.card_id%10)
+            ccui.Helper:doLayout(self.level_label)
+            local res = "minigame_mobcontrol2_"..self.card_id%10
+            loadSpriteTexture(self.sp_level, PathTool.getMinigameFollowRes(res,1), 1)
+        end
+        self.level_label:setVisible(true)
+        self.sp_level:setVisible(true)
+
+        local pos_list = lv_star_pos[self.card_id%10]
+        local dark_star_num = #pos_list
+        local bright_star_num = self.up_num
+        for i, v in ipairs(self.sp_star_list) do
+            if pos_list[i] then
+                v:setPosition(pos_list[i])
+            end
+            v:setVisible(dark_star_num >= i)
+            v.sp_star_bright:setVisible(bright_star_num >= i)
+        end
+    else
+        self.level_label:setVisible(false)
+        self.sp_level:setVisible(false)
+        self.image_skill_icon:loadTexture(PathTool.getMinigameFollowRes("minigame_mobcontrol2_12",1), 1)
+    end
+
+    -- self.label = createLabel(30, cc.c3b(100,100,100), nil, size.width/2, 15, "self.card_id", self, nil, cc.p(0.5, 0.5))
+
+    self:setPosition(cc.p(720, self.partner:getContentSize().height/2))
+    local pos = cc.p(86 + 138*(self.index - 1), self.partner:getContentSize().height/2 + 40)
+    -- self:runAction(cc.MoveTo:create(0.1, pos))
+    self:setPosition(pos)
+end
+ 
+function MinigameFollowCardItem:updateIndex(index)
+    self.index = index
+end
+
+function MinigameFollowCardItem:updatePos()
+    local pos = cc.p(720/5/2 + 720/5*(self.index - 1), self.partner:getContentSize().height/2 + 40)
+    self:stopAllActions()
+    self:setPosition(pos)
+end
+
+function MinigameFollowCardItem:fusingSuccess()
+    self.card_id = self.card_id + 1
+    -- self.label:setString(self.card_id)
+    local config = Config.MinigameMobcontrol2Data.data_strategy_info[self.card_id]
+    local image_name, image_type,image_plist = minigamefolowModel:getImageType(config.res)
+    self.image_skill_icon:loadTexture(PathTool.getMinigameFollowRes(image_name,image_type, image_plist), image_type)
+    self.level_label:setString("Lv.") 
+    ccui.Helper:doLayout(self.level_label)
+    local res = "minigame_mobcontrol2_"..self.card_id%10
+    loadSpriteTexture(self.sp_level, PathTool.getMinigameFollowRes(res,1), 1)
+end
+
+function MinigameFollowCardItem:addCardCount(callback)
+    self.up_num = self.up_num + 1
+    local cost_list = {0, 1, 2, 4, 8}
+    local target_id = self.card_id + 1
+    local config = Config.MinigameMobcontrol2Data.data_strategy_info[target_id]
+    self:updateUI()
+    if config then
+        local cost_num = cost_list[target_id%10]
+        if self.up_num >= cost_num then -- synthetic success
+            self.can_use = false
+            callback(1, function()
+                self.card_id = self.card_id + 1
+                self.up_num = 0
+                self:updateUI() 
+                self.can_use = true
+            end)
+            -- self:runAction(cc.Sequence:create(cc.DelayTime:create(0.2),cc.FadeOut:create(0.2), cc.CallFunc:create(function()
+            --     self.card_id = self.card_id + 1
+            --     self.up_num = 0
+            --     self:updateUI() 
+            -- end), cc.FadeIn:create(0.2), cc.CallFunc:create(function()
+            --     self.can_use = true
+            -- end)))
+
+        end
+        callback(0)
+    else -- reduce cd time
+        callback(0)
+    end
+end
+
+function MinigameFollowCardItem:updateCdTime()
+    self.cd_time = GameNet:getInstance():getTimeFloat()
+end
+
+function MinigameFollowCardItem:getCdCount()
+    local cur_time = GameNet:getInstance():getTimeFloat()
+    local config = Config.MinigameMobcontrol2Data.data_strategy_info[self.card_id]
+    local cd_list = Config.MinigameMobcontrol2Data.data_const["card_skill_cd"].val
+    local cd_count = cd_list[config.type]/1000
+    local next_cfg = Config.MinigameMobcontrol2Data.data_strategy_info[self.card_id + 1]
+    local extra_cd = Config.MinigameMobcontrol2Data.data_const["extra_cd"].val
+    local extra_cd_cap = Config.MinigameMobcontrol2Data.data_const["extra_cd_cap"].val
+    if not next_cfg then
+        cd_count = cd_count - math.min(self.up_num*extra_cd, extra_cd_cap)
+    end
+    return cd_count
+end
+
+function MinigameFollowCardItem:checkUseTime()
+    local cur_time = GameNet:getInstance():getTimeFloat()
+    local cd_count = self:getCdCount()
+    if cur_time - self.cd_time >= cd_count then
+        self.cd_time = GameNet:getInstance():getTimeFloat()
+        return true
+    end
+    return false
+end
+
+function MinigameFollowCardItem:updateCdUI()
+    local size = clone(self.layout_cd.size)
+    local cd_count = self:getCdCount()
+    local cur_time = GameNet:getInstance():getTimeFloat()
+    local cur_count = cur_time - self.cd_time
+    local percent = math.min(cur_count/cd_count, 1)
+    size.height = size.height*(1 - percent)
+    self.layout_cd:setContentSize(size)
+end

@@ -1,0 +1,451 @@
+--
+-- 
+-- @Date:   2019-04-24 15:26:48
+-- @description:	欧气专属升级礼包
+--
+ActionLuckyUpNewShopPanel = class("ActionLuckyUpNewShopPanel", function()
+	return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = ActionController:getInstance():getModel()
+local string_format = string.format
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function ActionLuckyUpNewShopPanel:ctor(bid)
+	self.holiday_bid = bid
+    self.gear_num = 1
+    self.show_reward_list = {}
+	self:configUI()
+	self:register_event()
+end
+
+function ActionLuckyUpNewShopPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_lucky_up_new_shop_panel"))
+	self.root_wnd:setPosition(-40,-80)
+	self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setAnchorPoint(0, 0)
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.time_panel = self.main_container:getChildByName("time_panel") 		--剩余时间
+    self.txt_time_title = self.time_panel:getChildByName("txt_time_title") 	--时间标题
+    self.txt_time_title:setString(TI18N("语言_c_1242"))
+    self.txt_time_val = self.time_panel:getChildByName("txt_time_val") 		--剩余时间
+    self.time_panel:setContentSize(cc.size(self.txt_time_title:getContentSize().width+120, self.time_panel:getContentSize().height))
+    setItemXOneByOne({self.txt_time_title,self.txt_time_val})
+
+    self.panel_1 = self.main_container:getChildByName("panel_1")
+    self.title_img = self.panel_1:getChildByName("title_img")
+    self.tip_img = self.panel_1:getChildByName("tip_img")
+    self.img_bg = self.panel_1:getChildByName("img_bg")
+    self.first_panel = self.panel_1:getChildByName("first_panel")
+    self.title = self.first_panel:getChildByName("title")
+    self.goods_list = self.first_panel:getChildByName("goods_list")
+    local scroll_size = self.goods_list:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 10,                  -- 第一个单元的X起点
+        space_x = 25,                    -- x方向的间隔
+        start_y = 8,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width * 0.9,   -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.9, -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scroll_view = CommonScrollViewLayout:create(self.goods_list, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_size, setting)
+    self.item_scroll_view:setSwallowTouches(false)
+    self.item_scroll_view:setClickEnabled(false)
+
+    self.txt_price = self.first_panel:getChildByName("txt_price")
+    self.img_cut_line = self.first_panel:getChildByName("img_cut_line")
+    self.txt_limit_time = self.first_panel:getChildByName("txt_limit_time")
+    self.btn_buy = self.first_panel:getChildByName("btn_buy")
+    self.txt_buy = self.btn_buy:getChildByName("txt_buy")
+
+    self.other_panel = self.panel_1:getChildByName("other_panel")
+    local scroll_size = self.other_panel:getContentSize()
+    local setting = {
+        item_class = ActionLuckyUpNewShopItem,      -- 单元类
+        start_x = 18,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 5,                   -- y方向的间隔
+        item_width = 684,   -- 单元的尺寸width
+        item_height = 235, -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+    }
+    self.gift_scroll_view = CommonScrollViewLayout:create(self.other_panel, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_size, setting)
+    self.gift_scroll_view:setSwallowTouches(false)
+
+    
+    self.next_panel = self.main_container:getChildByName("next_panel")
+    self.next_btn = self.next_panel:getChildByName("next_btn")
+    self.next_title = self.next_btn:getChildByName("next_title")
+    self.next_title:setString(TI18N("语言_c_6479"))
+    self.next_tip_bg = self.next_panel:getChildByName("next_tip_bg")
+    self.next_tip = createRichLabel(20,cc.c3b(0x7c,0x55,0x36),cc.p(0,0.5),cc.p(193,100),nil,nil,600)
+    self.next_panel:addChild(self.next_tip)
+    self.next_tip:setHorizontalLayoutType(2)
+
+    controller:cs16603(self.holiday_bid)
+end
+
+function ActionLuckyUpNewShopPanel:register_event()
+    if not self.update_action_even_event then
+        self.update_action_even_event = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE,function (data)
+            if not data then return end
+            if data.bid == self.holiday_bid then
+                self:setData(data)
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.btn_buy, function()
+        if self.data then
+            local list = self.data.aim_list[1]
+            if list and list.charge_id and list.left_time > 0 then
+                self.cur_charge_id = list.charge_id
+                ActionController:getInstance():sender21016(list.charge_id)
+            end
+        end
+    end, true, 1)
+    -- registerButtonEventListener(self.btn_buy_2, function()
+    --     if self.data then
+    --         local list = self.data.aim_list[2]
+    --         if list and list.charge_id and list.left_time > 0 then
+    --             self.cur_charge_id = list.charge_id
+    --             ActionController:getInstance():sender21016(list.charge_id)
+    --         end
+    --     end
+    -- end, true, 1)
+    -- registerButtonEventListener(self.btn_buy_3, function()
+    --     if not self.data then return end
+    --     local list = self.data.aim_list[3]
+    --     if list and list.charge_id and list.left_time > 0 then
+    --         self.cur_charge_id = list.charge_id
+    --         ActionController:getInstance():sender21016(list.charge_id)
+    --     end
+    -- end, true, 1)
+    registerButtonEventListener(self.next_btn, function()
+        local _x,_y = self.next_panel:getPosition()
+        local world_pos = self:convertToWorldSpace(cc.p(_x+350,_y))
+        EsecsiceController:getInstance():openEserciseShowRewardWindow(true,self.show_reward_list,world_pos)
+    end, true, 1)
+    if not self.charge_data_event then
+        self.charge_data_event = GlobalEvent:getInstance():Bind(ActionEvent.Is_Charge_Event,function(data)
+            if data and data.status and data.charge_id then
+                local charge_config = Config.ChargeData.data_charge_data[data.charge_id]
+                if charge_config and data.status == 1 and data.charge_id == self.cur_charge_id then
+                    sdkOnPay(charge_config.val, 1, charge_config.id, charge_config.name, charge_config.name)
+                end
+            end
+        end)
+    end
+end
+function ActionLuckyUpNewShopPanel:setPanel(data)
+    if self.gear_num == 1 then
+        self.first_panel:setVisible(true)
+        self.other_panel:setVisible(false)
+        local gift_txt = string.format(TI18N("语言_c_6969"),StringUtil.numToRoman(self.gear_num))
+        self.title:setString(gift_txt)
+        local list = data.aim_list[self.gear_num+1]
+        self.show_reward_list = list.item_list
+        local need_num = keyfind('aim_args_key', 6, data.aim_list[1].aim_args).aim_args_val
+        local have_num_1 = keyfind('aim_args_key', 32, data.aim_list[1].aim_args).aim_args_val
+        local have_num_2 = keyfind('aim_args_key', 43, data.aim_list[1].aim_args).aim_args_val
+        local have_num = have_num_1+have_num_2
+        if have_num > need_num then
+            have_num = need_num
+        end
+        self.next_tip:setString(LangStringFormat(TI18N("语言_c_6970"),need_num - have_num,StringUtil.numToRoman(self.gear_num)))
+        local need_lev = keyfind('aim_args_key', 200, list.aim_args).aim_args_val
+        if role_vo.lev >= need_lev then
+            self.next_panel:setVisible(true)
+            self.next_tip_bg:setContentSize(cc.size(self.next_tip:getContentSize().width+60,self.next_tip_bg:getContentSize().height))
+        else
+            self.next_panel:setVisible(false)
+        end
+
+        local list = data.aim_list[self.gear_num]
+        local price_list = keyfind('aim_args_key', ActionExtType.ActivityOldPrice, list.aim_args)
+        local price = price_list.aim_args_val or 0
+        self.txt_price:setString(string_format(TI18N("语言_c_4473"), price))
+        local dis_price_list = keyfind('aim_args_key', ActionExtType.ActivityCurrentPrice, list.aim_args)
+        local discount_price = dis_price_list.aim_args_val or 0
+        self.txt_buy:setString(string_format(TI18N("语言_c_4440"), discount_price))
+        local current_list = keyfind('aim_args_key', ActionExtType.RechageCurCount, list.aim_args)
+        local totle_list = keyfind('aim_args_key', ActionExtType.RechageTotalCount, list.aim_args)
+        local current_count = current_list.aim_args_val or 0
+        local totle_count = totle_list.aim_args_val or 0
+        self.txt_limit_time:setString(string_format(TI18N("语言_c_4472"),current_count,totle_count))
+        list.left_time = totle_count - current_count
+        if list.left_time <= 0 then
+            self.txt_buy:setString(TI18N("语言_c_210"))
+            self.txt_buy:enableOutline(Config.ColorData.data_color4[84],2)
+            setChildUnEnabled(true, self.btn_buy)
+        else
+            setChildUnEnabled(false, self.btn_buy)
+        end
+        local charge_list = keyfind('aim_args_key', ActionExtType.ItemRechargeId, list.aim_args)
+        --支付物品ID
+        list.charge_id = charge_list.aim_args_val or 0
+        local item_count = tableLen(list.item_list)
+        if item_count > 5 then
+            self.item_scroll_view:setClickEnabled(true)
+            self.item_scroll_view:setPositionX(0)
+        else
+            self.item_scroll_view:setClickEnabled(false)
+            self.item_scroll_view:setPositionX((5 - item_count) * 10 + (4 - item_count) * 55)
+        end
+        self.item_scroll_view:setData(list.item_list)
+        self.item_scroll_view:addEndCallBack(function()
+            local list = self.item_scroll_view:getItemList()
+            for k,v in pairs(list) do
+                v:setDefaultTip()
+                v:setSwallowTouches(false)
+            end
+        end)
+    else
+        self.first_panel:setVisible(false)
+        self.other_panel:setVisible(true)
+
+        local gift_txt = string.format(TI18N("语言_c_6969"),StringUtil.numToRoman(self.gear_num))
+        local list = data.aim_list[self.gear_num+1]
+        if list then
+            self.show_reward_list = list.item_list
+            local need_num = keyfind('aim_args_key', 6, data.aim_list[self.gear_num].aim_args).aim_args_val
+            local have_num_1 = keyfind('aim_args_key', 32, data.aim_list[self.gear_num].aim_args).aim_args_val
+            local have_num_2 = keyfind('aim_args_key', 43, data.aim_list[self.gear_num].aim_args).aim_args_val
+            local have_num = have_num_1+have_num_2
+            if have_num > need_num then
+                have_num = need_num
+            end
+            self.next_tip:setString(LangStringFormat(TI18N("语言_c_6970"),need_num - have_num,StringUtil.numToRoman(self.gear_num)))
+            local need_lev = keyfind('aim_args_key', 200, list.aim_args).aim_args_val
+            if role_vo.lev >= need_lev then
+                self.next_panel:setVisible(true)
+                self.next_tip_bg:setContentSize(cc.size(self.next_tip:getContentSize().width+60,self.next_tip_bg:getContentSize().height))
+            else
+                self.next_panel:setVisible(false)
+            end
+        else
+            self.next_panel:setVisible(false)
+        end
+
+        local scroll_list = {}
+        for i=1,self.gear_num do
+            table.insert(scroll_list,data.aim_list[i])
+        end
+        table.sort(scroll_list,function(a,b)
+            return a.aim > b.aim
+        end)
+        self.gift_scroll_view:setData(scroll_list)
+        if #scroll_list > 2 then
+            self.gift_scroll_view:setClickEnabled(true)
+        else
+            self.gift_scroll_view:setClickEnabled(false)
+        end
+    end
+end
+function ActionLuckyUpNewShopPanel:setGearNum(data)
+    local num = 1
+    for i = 1, tableLen(data.aim_list) do
+        local list = data.aim_list[i]
+        local last_list = data.aim_list[i-1]
+        local need_num = 0
+        local have_num = 0
+        local need_lev = 0
+        if last_list then
+            need_num = keyfind('aim_args_key', 6, last_list.aim_args).aim_args_val
+            have_num = keyfind('aim_args_key', 32, last_list.aim_args).aim_args_val
+        end
+        need_lev = keyfind('aim_args_key', 200, list.aim_args).aim_args_val
+        if role_vo.lev >= need_lev and have_num >= need_num then
+            num = list.aim
+        end
+    end
+    return num
+end
+function ActionLuckyUpNewShopPanel:setData(data)
+	if not data then return end
+    table.sort(data.aim_list,function(a,b) return a.aim < b.aim end)
+    self.data = data
+    self.gear_num = self:setGearNum(data)
+    local list = {}
+    local str = "txt_cn_action_high_value_gift_panel"
+    self.holiday_bid = self.holiday_bid or ActionRankCommonType.over_value_gift_up
+    self.tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if self.tab_vo and self.tab_vo.reward_title and self.tab_vo.reward_title ~= "" then
+        list = string.split(self.tab_vo.reward_title,",")
+    end
+    local res = PathTool.getPlistImgForDownLoad("bigbg/action", list[self.gear_num])
+    if not self.item_load then
+        self.item_load = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(self.title_img) then
+                loadSpriteTexture(self.title_img, res, LOADTEXT_TYPE)
+            end
+        end,self.item_load)
+    end
+    
+    loadSpriteTexture(self.tip_img, PathTool.getPlistImgForDownLoad("bigbg/action",self.tab_vo.aim_title), LOADTEXT_TYPE)
+    self:setPanel(data)
+    -- 倒计时
+    local time = data.remain_sec or 0
+    model:setCountDownTime(self.txt_time_val, time)
+end
+
+function ActionLuckyUpNewShopPanel:DeleteMe()
+    doStopAllActions(self.txt_time_val)
+    if self.item_load then 
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    if self.item_scroll_view then
+        self.item_scroll_view:DeleteMe()
+        self.item_scroll_view = nil
+    end
+    if self.gift_scroll_view then
+        self.gift_scroll_view:DeleteMe()
+        self.gift_scroll_view = nil
+    end
+    if self.charge_data_event then
+        GlobalEvent:getInstance():UnBind(self.charge_data_event)
+        self.charge_data_event = nil
+    end
+    if self.update_action_even_event then
+        GlobalEvent:getInstance():UnBind(self.update_action_even_event)
+        self.update_action_even_event = nil
+    end
+end
+
+
+----------------------------------------------
+--@ 子项
+ActionLuckyUpNewShopItem = class("ActionLuckyUpNewShopItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionLuckyUpNewShopItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function ActionLuckyUpNewShopItem:configUI(  )
+	self.size = cc.size(684,235)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("action/action_lucky_up_new_shop_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title = self.main_container:getChildByName("title")
+    self.goods_list = self.main_container:getChildByName("goods_list")
+
+    local scroll_size = self.goods_list:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 10,                  -- 第一个单元的X起点
+        space_x = 25,                    -- x方向的间隔
+        start_y = 8,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width * 0.9,   -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.9, -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scroll_view = CommonScrollViewLayout:create(self.goods_list, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_size, setting)
+    self.item_scroll_view:setSwallowTouches(false)
+    self.item_scroll_view:setClickEnabled(false)
+
+    self.txt_price = self.main_container:getChildByName("txt_price")
+    self.img_cut_line = self.main_container:getChildByName("img_cut_line")
+    self.txt_limit_time = self.main_container:getChildByName("txt_limit_time")
+    self.btn_buy = self.main_container:getChildByName("btn_buy")
+    self.txt_buy = self.btn_buy:getChildByName("txt_buy")    
+end
+
+function ActionLuckyUpNewShopItem:register_event(  )
+	registerButtonEventListener(self.btn_buy, function()
+        if self.data then
+            if self.data and self.data.charge_id and self.data.left_time > 0 then
+                self.cur_charge_id = self.data.charge_id
+                ActionController:getInstance():sender21016(self.data.charge_id)
+            end
+        end
+    end, true, 1)
+
+    if not self.charge_data_event then
+        self.charge_data_event = GlobalEvent:getInstance():Bind(ActionEvent.Is_Charge_Event,function(data)
+            if data and data.status and data.charge_id and data.charge_id == self.cur_charge_id then
+                local charge_config = Config.ChargeData.data_charge_data[data.charge_id]
+                if charge_config and data.status == 1 then
+                    sdkOnPay(charge_config.val, 1, charge_config.id, charge_config.name, charge_config.name)
+                end
+            end
+        end)
+    end
+end
+
+function ActionLuckyUpNewShopItem:setData( data )
+    self.data = data
+    local gift_txt = string.format(TI18N("语言_c_6969"),StringUtil.numToRoman(data.aim))
+    self.title:setString(gift_txt)
+
+    local price_list = keyfind('aim_args_key', ActionExtType.ActivityOldPrice, data.aim_args)
+    local price = price_list.aim_args_val or 0
+    self.txt_price:setString(string_format(TI18N("语言_c_4473"), price))
+    local dis_price_list = keyfind('aim_args_key', ActionExtType.ActivityCurrentPrice, data.aim_args)
+    local discount_price = dis_price_list.aim_args_val or 0
+    self.txt_buy:setString(string_format(TI18N("语言_c_4440"), discount_price))
+    local current_list = keyfind('aim_args_key', ActionExtType.RechageCurCount, data.aim_args)
+    local totle_list = keyfind('aim_args_key', ActionExtType.RechageTotalCount, data.aim_args)
+    local current_count = current_list.aim_args_val or 0
+    local totle_count = totle_list.aim_args_val or 0
+    self.txt_limit_time:setString(string_format(TI18N("语言_c_4472"),current_count,totle_count))
+    data.left_time = totle_count - current_count
+    if data.left_time <= 0 then
+        self.txt_buy:setString(TI18N("语言_c_210"))
+        self.txt_buy:enableOutline(Config.ColorData.data_color4[84],2)
+        setChildUnEnabled(true, self.btn_buy)
+    else
+        setChildUnEnabled(false, self.btn_buy)
+    end
+    local charge_list = keyfind('aim_args_key', ActionExtType.ItemRechargeId, data.aim_args)
+    --支付物品ID
+    data.charge_id = charge_list.aim_args_val or 0
+    local item_count = tableLen(data.item_list)
+    if item_count > 5 then
+        self.item_scroll_view:setClickEnabled(true)
+        self.item_scroll_view:setPositionX(0)
+    else
+        self.item_scroll_view:setClickEnabled(false)
+        self.item_scroll_view:setPositionX((5 - item_count) * 10 + (4 - item_count) * 55)
+    end
+    self.item_scroll_view:setData(data.item_list)
+    self.item_scroll_view:addEndCallBack(function()
+        local data = self.item_scroll_view:getItemList()
+        for k,v in pairs(data) do
+            v:setDefaultTip()
+            v:setSwallowTouches(false)
+        end
+    end)
+end
+
+function ActionLuckyUpNewShopItem:DeleteMe(  )
+    if self.item_scroll_view then
+        self.item_scroll_view:DeleteMe()
+        self.item_scroll_view = nil
+    end
+    if self.charge_data_event then
+        GlobalEvent:getInstance():UnBind(self.charge_data_event)
+        self.charge_data_event = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

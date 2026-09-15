@@ -1,0 +1,226 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description: 金色装备分解页面
+-- <br/>Create: 2018年11月14日
+--
+-- --------------------------------------------------------------------
+HeroHighEquipDecomposeWindow = HeroHighEquipDecomposeWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+function HeroHighEquipDecomposeWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self._list = {}
+    self.layout_name = "hero/hero_high_equip_decompose_window"
+end
+
+function HeroHighEquipDecomposeWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.mainContainer = self.root_wnd:getChildByName("main_panel")
+    self:playEnterAnimatianByObj(self.mainContainer , 1)  
+
+    self.tips = self.mainContainer:getChildByName("tips")
+    setTextMaxWidth(self.tips, 580,-6)
+    self.tips:setString(TI18N("语言_c_6800"))
+    self.close_btn = self.mainContainer:getChildByName("close_btn")
+    self.confirm_btn = self.mainContainer:getChildByName("confirm_btn")
+    self.confirm_btn:getChildByName("label"):setString(TI18N("语言_c_2"))
+    self.cancel_btn = self.mainContainer:getChildByName("cancel_btn")
+    self.cancel_btn:getChildByName("label"):setString(TI18N("语言_c_62"))
+    local title_container = self.mainContainer:getChildByName("title_container")
+    title_container:getChildByName("title_label"):setString(TI18N("语言_c_6148"))
+    
+    self.item_list = self.mainContainer:getChildByName("item_list")
+	local scroll_view_size = self.item_list:getContentSize()
+    local setting = {
+        item_class = BackPackItem, -- 单元类
+        start_x = 15, -- 第一个单元的X起点
+        space_x = 30, -- x方向的间隔
+        start_y = 20, -- 第一个单元的Y起点
+        space_y = 30, -- y方向的间隔
+        item_width = BackPackItem.Width*0.95, -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.95, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 4, -- 列数，作用于垂直滚动类型
+        scale = 0.95
+    }
+
+    self.cell_item_scrollview = CommonScrollViewLayout.new(self.item_list,cc.p(0, 0),ScrollViewDir.vertical,ScrollViewStartPos.top,scroll_view_size,setting)
+    self.cell_item_scrollview:setSwallowTouches(false)
+end
+
+function HeroHighEquipDecomposeWindow:register_event()
+    registerButtonEventListener(self.background, function() self:_onClickBtnClose() end ,false, 2) 
+    registerButtonEventListener(self.close_btn, function() self:_onClickBtnClose() end ,true, 2) 
+    registerButtonEventListener(self.confirm_btn, function() self:changeTabIndex() end ,true, 2) 
+    registerButtonEventListener(self.cancel_btn, function() self:_onClickBtnClose() end ,true, 2) 
+end
+
+function HeroHighEquipDecomposeWindow:_onClickBtnClose()
+    controller:openHighEquipComposeWindow(false)
+end
+function HeroHighEquipDecomposeWindow:changeTabIndex()
+    controller:sender11445(self.equip_data.id)
+end
+
+function HeroHighEquipDecomposeWindow:openRootWnd(equip_data)
+    self.equip_data = equip_data
+    self.gold_info = BackpackController:getInstance():getModel():getGoldEquipData(self.equip_data.id)
+    if not self.gold_info then
+        return
+    end
+    local equip_bid = self.equip_data.config.id
+
+    local enchant_level = self.gold_info.enchant_level
+    local enchant_exp = self.gold_info.enchant_exp
+    local total_up_exp = enchant_exp
+    for i = 1, enchant_level, 1 do
+        local key = getNorKey(equip_bid, (i-1)) 
+        local cfg = Config.PartnerGoldeqmData.data_get_eqm_enchant(key)
+        if cfg then
+            total_up_exp = total_up_exp + cfg.exp
+        end
+    end
+    local up_cost_list = {}
+    local up_cost_cfg = Config.PartnerGoldeqmData.data_get_eqm_star_exp
+    for k, v in pairs(up_cost_cfg) do
+        table.insert(up_cost_list, deepCopy(v))
+    end
+    table_sort(up_cost_list, SortTools.KeyLowerSorter("exp"))
+    local _1_list = self:getCount(total_up_exp,up_cost_list)
+
+    local xishu = Config.PartnerGoldeqmData.data_get_constant.gold_require.val
+    local co_id =  Config.PartnerGoldeqmData.data_get_constant.gold_id.val
+    local cost_gold = xishu * total_up_exp / 1000
+
+    local refine_level = self.gold_info.refine_level
+    local _2_list = {}
+    for i = 1, refine_level, 1 do
+        local key = getNorKey(equip_bid, (i-1)) 
+        local cfg = Config.PartnerGoldeqmData.data_get_eqm_refine(key)
+        if cfg then
+            local cost = cfg.cost
+            for k, v in pairs(cost) do
+                table.insert(_2_list, deepCopy(v))
+            end
+        end
+    end
+
+    local soul_level = self.gold_info.soul_level
+    local soul_exp = self.gold_info.soul_exp
+    local total_soul_exp = soul_exp
+    for i = 1, soul_level, 1 do
+        local key = getNorKey(equip_bid, (i-1)) 
+        local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul(key)
+        if cfg then
+            total_soul_exp = total_soul_exp + cfg.exp
+        end
+    end
+    local soul_cost_list = {}
+    local soul_cost_cfg = Config.PartnerGoldeqmData.data_get_eqm_soul_exp
+    for k, v in pairs(soul_cost_cfg) do
+        local id = k
+        local item_cfg = Config.ItemData.data_get_data(k)
+        if BackPackConst.checkIsEquip(item_cfg.type) then
+        else
+            table.insert(soul_cost_list, {id=id,exp=v})
+        end
+    end
+    local _3_list = self:getCount(total_soul_exp,soul_cost_list)
+    if soul_level > 0 then
+        local key = getNorKey(equip_bid, 0) 
+        local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul(key)
+        local act_cost = cfg.unlock_item[1]
+        table.insert(_3_list,act_cost)
+    end
+    
+    local star_level = self.gold_info.star_level
+    local _4_list = {}
+    for i = 1, star_level, 1 do
+        local key = getNorKey(equip_bid, (i - 1 )) 
+        local cfg = Config.PartnerGoldeqmData.data_get_eqm_star(key)
+        if cfg then
+            local cost = cfg.cost or {}
+            for k, v in pairs(cost) do
+                table.insert(_4_list, deepCopy(v))
+            end
+        end
+    end
+
+    local _5_list = {}
+    local hecfg = Config.PartnerGoldeqmData.data_get_patch_compose
+    for k, v in pairs(hecfg) do
+        if v.gold_eqm_id == equip_bid then
+            table.insert(_5_list, {v.id,v.num})
+            break
+        end
+    end
+
+    local list = {}
+    for k, v in pairs(_1_list) do
+        if v[2] > 0 then
+            table.insert(list,v)
+        end
+    end
+    for k, v in pairs(_2_list) do
+        if v[2] > 0 then
+            table.insert(list,v)
+        end
+    end
+    for k, v in pairs(_3_list) do
+        if v[2] > 0 then
+            table.insert(list,v)
+        end
+    end
+    for k, v in pairs(_4_list) do
+        if v[2] > 0 then
+            table.insert(list,v)
+        end
+    end
+    for k, v in pairs(_5_list) do
+        if v[2] > 0 then
+            table.insert(list,v)
+        end
+    end
+    if cost_gold > 0 then
+        table.insert(list,{co_id,cost_gold})
+    end
+    self.cell_item_scrollview:setData(list)
+    self.cell_item_scrollview:addEndCallBack(function()
+        local list = self.cell_item_scrollview:getItemList()
+        for k,v in pairs(list) do
+            v:setDefaultTip()
+            v:setSwallowTouches(false)
+        end
+    end)
+end
+
+function HeroHighEquipDecomposeWindow:getCount(total,list)
+    local empty_list = {}
+    if total > 0 then
+        for i = #list, 1, -1 do
+            local first_num = math.floor(total / list[i].exp)
+            local first_id = list[i].id
+            table.insert(empty_list, {first_id,first_num})
+            total = total - first_num * list[i].exp
+        end
+    end
+    return empty_list
+end
+
+function HeroHighEquipDecomposeWindow:close_callback()
+    if self.cell_item_scrollview then
+        self.cell_item_scrollview:DeleteMe()
+        self.cell_item_scrollview = nil
+    end
+
+    controller:openHighEquipComposeWindow(false)
+end

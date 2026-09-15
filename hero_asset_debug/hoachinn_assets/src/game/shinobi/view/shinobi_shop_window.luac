@@ -1,0 +1,301 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-05-08 17:22:36
+-- @description    : 
+		-- 跨服竞技场 声望商店
+---------------------------------
+local _controller = ShinobiController:getInstance()
+local _model = _controller:getModel()
+
+ShinobiShopWindow = ShinobiShopWindow or BaseClass(BaseView)
+
+function ShinobiShopWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "shinobi/shinobi_shop_window"
+
+    self.role_vo = RoleController:getInstance():getRoleVo()
+end
+
+function ShinobiShopWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(main_container, 2)
+
+    local win_title = main_container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_5982"))
+    local title_bg = main_container:getChildByName("image_2")
+    moveTextBg(win_title,title_bg,60,332)
+
+    self.title_time = main_container:getChildByName("title_time")
+	main_container:getChildByName("title_time"):setString(TI18N("语言_c_403"))
+	main_container:getChildByName("title_count"):setString(TI18N("语言_c_466"))
+
+	self.close_btn = main_container:getChildByName("close_btn")
+	self.refresh_btn = main_container:getChildByName("refresh_btn")
+	local btn_size = self.refresh_btn:getContentSize()
+	self.refresh_btn_label = createRichLabel(22, 1, cc.p(0.5, 0.5), cc.p(btn_size.width/2, btn_size.height/2))
+	self.refresh_btn:addChild(self.refresh_btn_label)
+    self.top_label = main_container:getChildByName("top_label")
+    main_container:getChildByName("left_label"):setString(TI18N("语言_c_6044"))
+    self.quest_btn=main_container:getChildByName("quest_btn")
+	self.res_label = main_container:getChildByName("res_label")
+	self.txt_time = main_container:getChildByName("txt_time")
+	self.txt_count = main_container:getChildByName("txt_count")
+	self.title_count = main_container:getChildByName("title_count")
+    self.res_icon  = main_container:getChildByName("res_icon")
+    local itemcfg = Config.ItemData.data_get_data(44)--
+    if itemcfg then
+        local icon_res = PathTool.getItemRes(itemcfg.icon)
+        loadSpriteTexture(self.res_icon, icon_res, LOADTEXT_TYPE)
+    end
+
+    setItemXOneByOne({self.title_time,self.txt_time})
+    setItemXOneByOne({self.title_count,self.txt_count})
+
+	local list_panel = main_container:getChildByName("list_panel")
+    local scroll_view_size = list_panel:getContentSize()
+    local setting = {
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 4,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 306,               -- 单元的尺寸width
+        item_height = 143,              -- 单元的尺寸height
+        -- row = 1,                        -- 行数，作用于水平滚动类型
+        col = 2,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewSingleLayout.new(list_panel, cc.p(0, 0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0,0))
+
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+end
+
+function ShinobiShopWindow:createNewCell(  )
+    local cell = MallItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+
+function ShinobiShopWindow:numberOfCells(  )
+    if not self.show_list then return 0 end
+    return #self.show_list
+end
+
+function ShinobiShopWindow:updateCellByIndex( cell, index )
+    if not self.show_list then return end
+    cell.index = index
+    local cell_data = self.show_list[index]
+    cell:setData(cell_data)
+end
+
+function ShinobiShopWindow:onCellTouched(cell)
+    local index = cell.index
+    local cell_data = self.show_list[index]
+    if cell_data then
+        if cell_data.has_buy == nil then
+            if cell_data.ext and cell_data.ext[1] then
+                cell_data.has_buy = cell_data.ext[1].val
+            else
+                cell_data.has_buy = 0
+            end
+        end
+
+        cell_data.shop_type = MallConst.MallType.ArenaShibobiShop
+        MallController:getInstance():openMallBuyWindow(true, cell_data)
+    end
+end
+
+function ShinobiShopWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, function (  )
+		_controller:openShinobiShopWindow(false)
+	end, true, 2)
+
+	registerButtonEventListener(self.background, function (  )
+		_controller:openShinobiShopWindow(false)
+	end, false, 2)
+
+	registerButtonEventListener(self.refresh_btn, function (  )
+		self:_onClickRefreshBtn()
+	end, true)
+    
+    registerButtonEventListener(self.quest_btn, function (  )
+		self:_onClickQuestBtn()
+	end, true)
+
+
+	self:addGlobalEvent(MallEvent.Get_Buy_list, function ( data )
+		if data.type == MallConst.MallType.ArenaShibobiShop then
+			self.data = data
+            self:setLessTime( data.refresh_time - GameNet:getInstance():getTime())
+            self:setResetCount(data)
+            for k,v in pairs(data.item_list) do
+                v.shop_type = MallConst.MallType.ArenaShibobiShop
+            end
+            self.show_list = self.data.item_list or {} -- self:getConfig(self.data) or {} 
+            self.item_scrollview:reloadData()
+        end
+	end)
+
+    if not self.role_lev_event and self.role_vo then
+        self.role_lev_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+            if key and key == "arena_shinobi_cent" then 
+                self:updateResNum()
+            end
+        end)
+    end
+end
+
+function ShinobiShopWindow:_onClickRefreshBtn(  )
+    local list =  Config.ExchangeData.data_shop_list[MallConst.MallType.ArenaShibobiShop].cost_list
+    if self.is_free_refresh or self.role_vo.arena_shinobi_cent >= list[1][2] then
+        MallController:getInstance():sender13405(MallConst.MallType.ArenaShibobiShop)
+    else
+        message(TI18N("语言_c_6051"))
+        BackpackController:getInstance():openTipsSource(true,44)
+    end
+end
+function ShinobiShopWindow:_onClickQuestBtn(  )
+    _controller:openShinoPreviewWindow(true)
+end
+
+function ShinobiShopWindow:openRootWnd(  )
+	MallController:getInstance():sender13403(MallConst.MallType.ArenaShibobiShop)
+    local base_data = _model:getShinobiMyBaseInfo()
+    if base_data and base_data.cur_dan and base_data.cur_dan>0 then
+        local name=Config.ArenaShinobiData.data_shinobi_level_fun(base_data.best_dan).name
+        self.top_label:setString(string.format(TI18N("语言_c_6006"),name))
+    else
+        self.top_label:setString(TI18N("语言_c_5885"))
+    end
+    self:updateResNum()
+end
+
+function ShinobiShopWindow:updateResNum(  )
+    if self.role_vo then
+        self.res_label:setString(self.role_vo.arena_shinobi_cent)
+    end
+end
+
+function ShinobiShopWindow:getConfig(data)
+    local item_list = {}
+    local config = Config.ExchangeData.data_shop_exchage_arena_shinobi
+    if config then
+        local list = deepCopy(data.item_list)
+        for a, j in pairs(config) do
+            if list and next(list or {}) ~= nil  then
+                for k, v in pairs(list) do --已经买过的限购物品
+                    if j.id == v.item_id then
+                        if v.ext[1].val then --不管是什么限购 赋值已购买次数就好了。。
+                            j.has_buy = v.ext[1].val
+                            table.remove(list, k)
+                        end
+                        break
+                    else
+                        j.has_buy = 0
+                    end
+                end
+            else
+                j.has_buy = 0
+            end
+            table.insert(item_list, j)
+        end
+    end
+    table.sort(item_list ,function (a,b)
+        if a.limit_count and a.limit_count > 0 and a.has_buy >= a.limit_count and (not b.limit_count or b.limit_count == 0 or b.has_buy < b.limit_count) then
+            return false
+        elseif b.limit_count and b.limit_count > 0 and b.has_buy >= b.limit_count and (not a.limit_count or a.limit_count == 0 or a.has_buy < a.limit_count) then
+            return true
+        else
+            return  a.order < b.order
+        end
+    end)
+    return item_list
+end
+
+
+function ShinobiShopWindow:setResetCount( data )
+    if not data then return end
+    if not Config.ExchangeData then
+        require "config.exchange_data"
+		if not Config.ExchangeData then return end
+    end
+    local free_count = data.free_count or 0
+    local btn_str = TI18N("语言_c_409")
+    self.is_free_refresh = false
+    if free_count <= 0 then
+        local  config = Config.ExchangeData.data_shop_list[MallConst.MallType.ArenaShibobiShop]
+        if config then
+            local cost_list = config.cost_list
+            local bid = cost_list[1][1]
+            local num = cost_list[1][2]
+            btn_str = string.format(TI18N("语言_c_467"), PathTool.getItemRes(Config.ItemData.data_get_data(44).icon), num)
+        end
+    else
+        self.is_free_refresh = true
+        local asset_cfg = Config.ExchangeData.data_shop_exchage_cost["arena_shinobi_refresh_free"] 
+        if asset_cfg then
+            -- btn_str = string.format("<div fontsize=24 outline=2,#6c2b00>%s(%s/%s)</div>", TI18N("语言_c_409"), free_count, asset_cfg.val)
+            btn_str = string.format("<div fontsize=24 outline=2,#6c2b00>%s</div>", TI18N("语言_c_409"))
+        end
+    end
+    self.refresh_btn_label:setString(btn_str)
+
+    self.txt_count:setVisible(true)
+    local config = Config.ExchangeData.data_shop_exchage_cost.arena_shinobi_refresh_number
+    local max_count = 0 
+    if config then
+        max_count = config.val
+    end
+    local count = data.count or 0
+    local text = string.format("%s/%s", count, max_count)
+    self.txt_count:setString(text)
+end
+
+function ShinobiShopWindow:setLessTime( less_time )
+	if tolua.isnull(self.txt_time) then return end
+    doStopAllActions(self.txt_time)
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.txt_time:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                doStopAllActions(self.txt_time)
+            else
+                self:setTimeFormatString(less_time)
+            end
+        end))))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+
+function ShinobiShopWindow:setTimeFormatString(time)
+    if time > 0 then
+        self.txt_time:setString(TimeTool.GetTimeFormat(time))
+    else
+        self.txt_time:setString("00:00:00")
+    end
+    local tx = self.title_time:getPositionX() + self.title_time:getContentSize().width
+    self.txt_time:setPositionX(tx)
+end
+
+function ShinobiShopWindow:close_callback(  )
+	if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.role_lev_event and self.role_vo then
+        self.role_vo:UnBind(self.role_lev_event)
+        self.role_lev_event = nil
+    end
+	_controller:openShinobiShopWindow(false)
+end

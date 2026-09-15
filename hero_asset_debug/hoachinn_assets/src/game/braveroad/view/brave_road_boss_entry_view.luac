@@ -1,0 +1,153 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 勇者之路副本 词条预览
+--------------------------------- 
+local _controller = BraveRoadController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+BraveRoadBossEntryView = BraveRoadBossEntryView or BaseClass(BaseView)
+
+function BraveRoadBossEntryView:__init()
+	self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "braveroad/brave_road_boss_entry_view"
+
+    self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("tips", "tips"), type = ResourcesType.plist},
+	}
+
+	self.horcruxes_item_list = {}
+end
+
+function BraveRoadBossEntryView:open_callback( )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+
+	self.label_title = main_container:getChildByName("label_title")
+	self.label_title:setString(TI18N("语言_c_5064"))
+	self.entry_list = main_container:getChildByName("entry_list")
+
+	local scroll_view_size = self.entry_list:getContentSize()
+    local setting = {
+        item_class = BraveRoadBossEntryItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 4,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 570,               -- 单元的尺寸width
+        item_height = 130,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.entry_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+	self.item_scrollview:setSwallowTouches(false)
+end
+
+function BraveRoadBossEntryView:register_event( )
+	registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn), false, 1)
+	-- registerButtonEventListener(self.btn_chose, handler(self, self.onClickChoseBtn), true)
+end
+
+function BraveRoadBossEntryView:onClickCloseBtn(  )
+	_controller:openBraveRoadBossEntryView(false)
+end
+
+function BraveRoadBossEntryView:openRootWnd(data)
+	self.data = data
+	self:setData()
+end
+
+function BraveRoadBossEntryView:setData()
+	self.item_scrollview:setData(self.data.entry_data or {})
+end
+
+function BraveRoadBossEntryView:close_callback( )
+	_controller:openBraveRoadBossEntryView(false)
+end
+
+--------------item--------------------------------------
+BraveRoadBossEntryItem = class("BraveRoadBossEntryItem", function()
+    return ccui.Widget:create()
+end)
+
+function BraveRoadBossEntryItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function BraveRoadBossEntryItem:configUI( )
+	local csbPath = PathTool.getTargetCSB("braveroad/brave_road_boss_entry_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+	self:addChild(self.root_wnd)
+
+	self.size = self.root_wnd:getContentSize()
+	self:setTouchEnabled(false)
+	self:setAnchorPoint(cc.p(0, 0))
+	self:setContentSize(self.size)
+	self.ScrollView_1 = self.root_wnd:getChildByName("ScrollView_1")
+	self.entry_desc = self.ScrollView_1:getChildByName("entry_desc")
+	self.entry_desc:ignoreContentAdaptWithSize(true)
+	self.entry_desc:setTextAreaSize(cc.size(410, 0))
+
+	self.entry_icon = self.root_wnd:getChildByName("entry_icon")
+	self.entry_icon.name = self.entry_icon:getChildByName("name")
+	self.entry_icon.star_1 = self.entry_icon:getChildByName("star_1")
+	self.entry_icon.star_2 = self.entry_icon:getChildByName("star_2")
+	self.entry_icon.star_3 = self.entry_icon:getChildByName("star_3")
+end
+
+function BraveRoadBossEntryItem:register_event(  )
+end
+
+function BraveRoadBossEntryItem:setData(data)
+	self.data = data
+	local tips_config = _model:getTipsConfigByBid(data.tips_id)
+	local tab_index = _model:getTipsTabTypeByBid(data.cid, data.tips_id)
+	self.entry_icon:loadTexture(PathTool.getResFrame("limit_training",PathTool.getBraveRoadEntryIcon(tab_index)), LOADTEXT_TYPE_PLIST)
+	-- self.entry_icon.name:setString(tips_config.tip)
+	self.entry_icon.name:setString(transformTextToShort(tips_config.tip, 6))
+	self.entry_icon.name:setTouchEnabled(true)
+	addEvt2showAllTextTips(self.entry_icon.name,tips_config.tip,6)
+	local num = tips_config.star
+	self.entry_icon.star_3:setVisible(num >= 3)
+	self.entry_icon.star_2:setVisible(num >= 2)
+	self.entry_icon.star_1:setVisible(num >= 1)
+	self:adpatStar(self.entry_icon)
+	self.entry_desc:setString(tips_config.desc)
+	local _y = math.max(self.entry_desc:getContentSize().height, self.ScrollView_1:getContentSize().height)
+	self.entry_desc:setPositionY(_y)
+	self.ScrollView_1:setInnerContainerSize(cc.size(430, _y))
+end
+
+function BraveRoadBossEntryItem:adpatStar(partner)
+	local list = {partner.star_1, partner.star_2, partner.star_3}
+	local num = 0
+	for i, v in ipairs(list) do
+		if v:isVisible() then
+			num = num + 1
+		end
+	end
+	local init_x = partner:getContentSize().width/2
+	local single_w = partner.star_1:getContentSize().width
+	local single_s = -15
+	local total_s_w = num * single_w + (num - 1) * single_s
+	local off_init_x = single_w*partner.star_1:getAnchorPoint().x
+	for i, v in ipairs(list) do
+		v:setPositionX(init_x - total_s_w/2 + off_init_x + (i - 1)*(single_w + single_s))
+	end
+end
+
+function BraveRoadBossEntryItem:DeleteMe(  )
+	self:removeAllChildren()
+    self:removeFromParent()
+end

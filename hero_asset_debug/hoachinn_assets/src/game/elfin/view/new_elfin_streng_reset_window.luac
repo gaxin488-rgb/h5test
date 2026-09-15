@@ -1,0 +1,163 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      通灵兽强化重生
+-- <br/>Create: 2020年3月26日
+--
+-- --------------------------------------------------------------------
+NewElfinStrengResetWindow = NewElfinStrengResetWindow or BaseClass(BaseView)
+
+local table_insert = table.insert
+local controller = ElfinController:getInstance()
+local model = controller:getModel()
+
+function NewElfinStrengResetWindow:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini
+    self.layout_name = "elfin/new_elfin_streng_reset_window"
+end 
+
+function NewElfinStrengResetWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(container , 2)  
+    self.win_title = container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_5014"))
+    autoSizeTitleBg(self.win_title,container:getChildByName("Image_2"))
+    self.top_val = createRichLabel(26, cc.c4b(0x64, 0x32, 0x23, 0xff), cc.p(0.5, 1), cc.p(337,415),-10,nil,580)
+    container:addChild(self.top_val)
+
+    self.confirm_btn = container:getChildByName("confirm_btn")
+    self.confirm_btn_label = createRichLabel(26,cc.c3b(0xf8,0xef,0x76),cc.p(0.5,0.5),cc.p(80,32))
+    self.confirm_btn:addChild(self.confirm_btn_label)
+    self.list_view = container:getChildByName("list_view")
+
+    self.close_btn = container:getChildByName("close_btn")
+    self.container = container
+
+    local line_img = createImage(container, nil, 0, 0, cc.p(0,0.5), false, 1)
+    -- line_img:setCapInsets(cc.rect(24, 24, 107, 89))
+    line_img:setAnchorPoint(0.5,0)
+    line_img:setScaleX(1.8)
+    line_img:setPosition(cc.p(container:getContentSize().width/2, 20))
+
+    local bg_res = PathTool.getPlistImgForDownLoad("bigbg/pattern", "pattern_1")
+    self.line_load = loadImageTextureFromCDN(line_img, bg_res, ResourcesType.single, self.line_load)
+end
+
+function NewElfinStrengResetWindow:register_event()
+    registerButtonEventListener(self.close_btn, function() controller:openNewElfinStrengResetWindow(false) end ,true, 1)
+    registerButtonEventListener(self.background, function() controller:openNewElfinStrengResetWindow(false) end ,false, 1)
+
+    registerButtonEventListener(self.confirm_btn, function() self:onConfirmButton() end ,true, 2)
+end
+
+
+
+function NewElfinStrengResetWindow:upateShowList()
+    if #self.show_list == 0 then
+        commonShowEmptyIcon(self.list_view, true, {font_size = 22,scale = 1, text = TI18N("语言_c_3132")})
+        return
+    end
+    if self.item_scrollview == nil then
+        local size = self.list_view:getContentSize()
+        local setting = {
+            -- item_class = BackPackItem,      -- 单元类
+            start_x = 16,                  -- 第一个单元的X起点
+            space_x = 32,                    -- x方向的间隔
+            start_y = 6,                    -- 第一个单元的Y起点
+            space_y = 10,                   -- y方向的间隔
+            item_width = 110,               -- 单元的尺寸width
+            item_height = 119,              -- 单元的尺寸height
+            row = 4,                        -- 行数，作用于水平滚动类型
+            col = 4,                         -- 列数，作用于垂直滚动类型
+            once_num = 4,
+            need_dynamic = true
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.list_view, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, size, setting)
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.item_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function NewElfinStrengResetWindow:createNewCell(width, height)
+    local cell = BackPackItem.new(true, true ,nil,nil,nil,true)
+    return cell
+end
+--获取数据数量
+function NewElfinStrengResetWindow:numberOfCells()
+    return #self.show_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function NewElfinStrengResetWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.show_list[index]
+    if cell_data then
+        cell:setData(cell_data)
+    end
+
+end
+
+function NewElfinStrengResetWindow:onConfirmButton()
+    local str = TI18N("语言_c_7599")
+    CommonAlert.show( str, TI18N("语言_c_63"), function()
+        controller:send26577(self.elfin_id)
+        controller:openNewElfinStrengResetWindow(false)
+    end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_154"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+end
+
+function NewElfinStrengResetWindow:openRootWnd(elfin_id)
+    if not elfin_id then return end
+    self.elfin_id = elfin_id
+    local item_cfg = Config.ItemData.data_get_data(self.elfin_id)
+    local lev = model:getElfinStrongLev(self.elfin_id)
+    if not item_cfg then return end
+    if not Config.SpriteData.data_sprite_enhance[item_cfg.quality] then return end
+    if not Config.SpriteData.data_sprite_enhance[item_cfg.quality][lev] then return end
+    local cfg = Config.SpriteData.data_sprite_enhance[item_cfg.quality]
+
+    self.show_list = {}
+    for k, v in pairs(cfg) do
+        if v.level < lev then
+            for key, value in pairs(v.cost_up) do
+                table.insert(self.show_list,value)
+            end
+        end
+    end
+    self.show_list = getAttrRemovalOfDuplicatesList(self.show_list)
+    self:upateShowList()
+    local top_str = string.format(TI18N("语言_c_7529"), item_cfg.name)
+    self.top_val:setString(top_str)
+    self.top_val:setPositionY(410)
+    local now_cfg = cfg[lev]
+    local item_id = now_cfg.cost_reset[1][1]
+    local item_num = now_cfg.cost_reset[1][2]
+    local item_cfg = Config.ItemData.data_get_data(item_id)
+    local res = PathTool.getItemRes(item_cfg.icon)
+    local str = string.format("<div outline=2,#5c2705><img src=%s scale=0.3 visible=true />%s</div>",res,item_num)
+    self.confirm_btn_label:setString(str)
+end
+
+
+function NewElfinStrengResetWindow:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+
+    if self.line_load  then
+        self.line_load:DeleteMe()
+    end
+    self.line_load = nil
+    controller:openNewElfinStrengResetWindow(false)
+end

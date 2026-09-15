@@ -1,0 +1,143 @@
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+MinigameRankHall = MinigameRankHall or BaseClass(BaseView)
+local controller = MinigameController:getInstance()
+
+function MinigameRankHall:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Tips
+    self.layout_name = "minigame/minigame_rank_hall"
+    self.view_cache_list = {}
+
+    self.item_list = {}
+end
+
+function MinigameRankHall:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    local main_panel = main_container:getChildByName("main_panel")
+    self.Image_2 = main_panel:getChildByName("Image_2")
+    self.win_title = main_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_g_71"))
+    moveTextBg(self.win_title,self.Image_2,60,300)
+
+    self.node_container = main_panel:getChildByName("node_container")
+    
+    self.close_btn = main_panel:getChildByName("close_btn")
+
+    self.image_rank = main_panel:getChildByName("image_rank")
+    self.image_rank:getChildByName("label"):setString(TI18N("语言_c_g_71"))
+    self.image_rank_reward = main_panel:getChildByName("image_rank_reward")
+    self.image_rank_reward:getChildByName("label"):setString(TI18N("语言_c_g_72"))
+    self.image_lv_reward = main_panel:getChildByName("image_lv_reward")
+    self.image_lv_reward:getChildByName("label"):setString(TI18N("语言_c_g_73"))
+
+    self.btn_list = {self.image_rank, self.image_rank_reward, self.image_lv_reward}
+end
+
+function MinigameRankHall:updateTitle(index)
+    if index == 1 then
+        self.win_title:setString(TI18N("语言_c_g_71"))
+        moveTextBg(self.win_title,self.Image_2,60,300)
+    elseif index == 2 then
+        self.win_title:setString(TI18N("语言_c_g_72"))
+        moveTextBg(self.win_title,self.Image_2,60,300)
+    elseif index == 3 then
+        self.win_title:setString(TI18N("语言_c_g_73"))
+        moveTextBg(self.win_title,self.Image_2,60,300)
+    end
+end
+
+function MinigameRankHall:register_event()
+    self.close_btn:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            controller:openMinigameRankHall(false)
+        end
+    end)
+
+    self.background:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            controller:openMinigameRankHall(false)
+        end
+    end)
+
+    registerButtonEventListener(self.image_rank, function()
+        self:changeView(1)
+    end,true, 1)
+    registerButtonEventListener(self.image_rank_reward, function()
+        self:changeView(2)
+    end,true, 1)
+    registerButtonEventListener(self.image_lv_reward, function()
+        self:changeView(3)
+    end,true, 1)
+
+    if self.update_rank_event == nil then
+        self.update_rank_event = GlobalEvent:getInstance():Bind(MinigameEvent.MinigameRankEvent_Get_Rank_data, function(data)
+            if not data then return end
+            if data.type == RankConstant.RankType.minigame then
+                self.rand_data = data
+                self:changeView(1)
+            end
+        end)
+    end
+end
+
+function MinigameRankHall:changeView(index)
+    if not self.rand_data then return end
+    self:updateTitle(index)
+    local panel = self.view_cache_list[index]
+    if not panel then
+        if index == 1 then
+            panel = MinigameRankView.new()
+        elseif index == 2 then
+            panel = MinigameRankRewardView.new()
+        elseif index == 3 then
+            panel = MinigameLevelRewardView.new()
+        end
+        self.node_container:addChild(panel)
+        self.view_cache_list[index] = panel
+    end
+    panel:setVisible(true)
+    for k, v in pairs(self.view_cache_list) do
+        if k ~= index then
+            v:setVisible(false)
+        end
+    end
+    for i, v in ipairs(self.btn_list) do
+        if i == index then
+            v:loadTexture(PathTool.getResFrame("common", "common_1011"), LOADTEXT_TYPE_PLIST)
+        else
+            v:loadTexture(PathTool.getResFrame("common", "common_1012"), LOADTEXT_TYPE_PLIST)
+        end
+    end
+    panel:open(self.rand_data)
+end
+
+function MinigameRankHall:openRootWnd(data)
+    controller:send_29503(RankConstant.RankType.minigame, 1, 100)
+end
+
+function MinigameRankHall:close_callback()
+    for k, v in pairs(self.view_cache_list) do
+        v:DeleteMe()
+        v:removeFromParent()
+        v = nil
+    end
+
+    if self.update_rank_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_rank_event)
+        self.update_rank_event = nil
+    end
+    controller:openMinigameRankHall(false)
+end

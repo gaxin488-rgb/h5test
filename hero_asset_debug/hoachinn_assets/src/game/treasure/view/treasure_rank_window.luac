@@ -1,0 +1,450 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 研发任务
+--------------------------------- 
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+
+TreasureRankWindow = TreasureRankWindow or BaseClass(BaseView)
+
+function TreasureRankWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "treasure/treasure_rank_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("planesafkorderaction","planesafkorderaction"), type = ResourcesType.plist},
+	}
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.tabBtn_list = {}
+    self.data_base_info = Config.NinjaTreasureResearchData.data_base_info
+    self.research_cfg = model:getResearchCfg() --筛选完的配置表
+    self.project_num = 1 --项目期数
+    self.click_num = 0 --第几个魔导器
+    self.btn_list = {}--底部项目选择
+end
+
+function TreasureRankWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.project_scroll = self.main_panel:getChildByName("project_scroll")
+    self.project_scroll:setScrollBarEnabled(false)
+    self.title_bg = self.main_panel:getChildByName("title_bg")
+    self.win_title = self.main_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6341"))
+    local _w = math.max(self.win_title:getContentSize().width+100,300)
+    self.title_bg:setContentSize(cc.size(_w,self.title_bg:getContentSize().height))
+    self.container = self.main_panel:getChildByName("container")
+    self.tab_btn = self.container:getChildByName("tab_btn")
+    local res = PathTool.getResFrame("taskexp", "task_exp_08")
+    for i = 1, 3 do
+        local tab = self.tab_btn:getChildByName("tab_btn_"..i)
+        tab.normal_img = tab:getChildByName("normal_img")
+        tab.select_img = tab:getChildByName("select_img")
+        tab.select_img:setVisible(false)
+        tab.bar_bg = tab:getChildByName("bar_bg")
+        tab.bar_node = tab:getChildByName("bar_node")
+        tab.icon = tab:getChildByName("icon")
+        tab.per_bg = tab:getChildByName("per_bg")
+        tab.label = tab:getChildByName("label")
+        tab.label:setChangeScaleOffWidth(-1000)
+        setTextMaxWidth(tab.label,140)
+        local sprite = createSprite(res, 0, 0, nil, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+        tab.progress = cc.ProgressTimer:create(sprite)
+        tab.progress:setType(cc.PROGRESS_TIMER_TYPE_RADIAL)
+        tab.bar_node:addChild(tab.progress)
+        tab.bar_node:setScale(-1, 1)
+        
+        --百分比
+        tab.per_label = tab:getChildByName("per_label")
+        tab.index = i
+        self.tabBtn_list[i] = tab
+    end
+    self.rank_container = self.container:getChildByName("rank_container")
+end
+
+function TreasureRankWindow:register_event(  )
+	registerButtonEventListener(self.background, function (  )
+		controller:openTreasureRankWindow(false)
+	end, false, 2)
+    for i = 1, tableLen(self.tabBtn_list) do
+        registerButtonEventListener(self.tabBtn_list[i], function (  )
+            self:_onClickTabBtn(i)
+        end, false, 2)
+    end
+    
+    if not self.research_data_event then
+        self.research_data_event = GlobalEvent:getInstance():Bind(TreasureEvent.Research_Rank_Data_Event, function (round,pos)
+            self:setBtnList()
+        end)
+	end
+end
+
+function TreasureRankWindow:_onClickTabBtn(i)
+    local data = model:ResearchSta(self.project_num,i)
+    if data ~= 2 then 
+        message(TI18N("语言_c_6342"))
+        return
+    end
+    self.click_num = i
+    model:setResearchRankIndex(self.click_num)
+    for k,v in ipairs(self.tabBtn_list) do
+        if v.index == i then
+            v.select_img:setVisible(true)
+        else
+            v.select_img:setVisible(false)
+        end
+    end
+    self:setPanel()
+end
+
+-- 滑动的时候处理显示
+function TreasureRankWindow:updateSlideShowByVertical()
+    local container_y = self.reward_list:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+-- 奖励列表
+function TreasureRankWindow:createTaskCell()
+    local cell = TreasureRankItem.new()
+    return cell
+end
+
+function TreasureRankWindow:numberOfTaskCells()
+    if not self.rank_list then
+        return 0
+    end
+    return #self.rank_list
+end
+
+function TreasureRankWindow:updateTaskCellByIndex(cell, index)
+    if not self.rank_list then
+        return
+    end
+    local cell_data = self.rank_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+
+function TreasureRankWindow:openRootWnd(project_num,click_num)
+    controller:sender22344()
+    self.project_num = project_num
+    self.click_num = click_num
+    if self.reward_list == nil then
+        local scroll_view_size = self.rank_container:getContentSize()
+        local setting = {
+            start_x = 9,
+            space_x = 0,
+            start_y = 5,
+            space_y = 10,
+            item_width = 610,
+            item_height = 135,
+            row = 0,
+            col = 1,
+            need_dynamic = true,
+            checkovercallback = handler(self, self.updateSlideShowByVertical)
+        }
+        self.reward_list = CommonScrollViewSingleLayout.new(self.rank_container, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+        self.reward_list:setSwallowTouches(true)
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    end
+end
+
+function TreasureRankWindow:setPanel()
+    local list = deepCopy(model:getResearchRankListForItem(self.project_num,self.click_num))
+    if list then
+        self.rank_list = list.quest_list
+        for key, value in pairs(self.rank_list) do
+            if value.state == 0 then
+                value.sort = 2
+            elseif value.state == 1 then
+                value.sort = 3
+            else
+                value.sort = 1
+            end
+        end
+        local sort_func = SortTools.tableCommonSorter({{"sort", true}, {"id", false}})
+        table.sort(self.rank_list,sort_func)
+        self.reward_list:reloadData(nil,nil,true)
+    end
+end
+--设置上方列表
+function TreasureRankWindow:setTabList()
+    local data = self.research_cfg[self.project_num]
+    for i = 1, tableLen(self.tabBtn_list) do
+        local item = self.tabBtn_list[i]
+        if i > tableLen(data) then
+            item:setVisible(false)
+        else
+            item:setVisible(true)
+            local list = deepCopy(model:getResearchRankListForItem(self.project_num,i))
+            local num = 0
+            local need_num = 0
+            if list and next(list.quest_list) then
+                for k, v in pairs(list.quest_list) do
+                    need_num = need_num + 1
+                    if v.state == 2 then
+                        num = num + 1
+                    end
+                end
+            else
+                need_num = tableLen(data[i].achievement_list)
+            end
+            local per_num = math.floor(num / need_num * 100)
+            if per_num > 100 then
+                per_num = 100
+            elseif per_num < 0 then
+                per_num = 0
+            end
+            item.progress:setPercentage(per_num)
+            item.per_label:setString(per_num.."%")
+            local cfg = deepCopy(Config.NinjaTreasureData.data_base_info[data[i].annals_id])
+            item.label:setString(transformTextToShort(cfg.name,10))
+            addEvt2showAllTextTips(item.label,cfg.name,10)
+            local star_cfg = Config.NinjaTreasureData.data_star_info[cfg.id]
+            loadSpriteTexture(item.icon, string.format("resource/ninja_treasure/treasure_item/%s.png",star_cfg[1].icon), LOADTEXT_TYPE)
+        end
+    end
+end
+--设置下方项目列表红点
+function TreasureRankWindow:setBtnListRed()
+    for k, v in pairs(self.btn_list) do
+        addRedPointToNodeByStatus(v,model:getResearchRankRedForProject(k),10,10)
+    end
+    self:setTabBtnListRed()
+end
+--设置下方项目列表红点
+function TreasureRankWindow:setTabBtnListRed()
+    for k, v in pairs(self.tabBtn_list) do
+        addRedPointToNodeByStatus(v,model:getResearchRankRedForProjectPos(self.project_num,v.index),10,10)
+    end
+end
+--设置下方项目列表
+function TreasureRankWindow:setBtnList()
+    local name_list = deepCopy(Config.NinjaTreasureResearchData.data_constant["project_name"].val)
+    local size = cc.size(130,54)
+    local i = 1
+    for k, v in pairs(self.research_cfg) do
+        if not self.btn_list[i] then
+            local item = ccui.Widget:create()
+            item:setContentSize(size)
+            item:setTouchEnabled(true)
+            item:setAnchorPoint(cc.p(0.5,0.5))
+            local unselect_bg = createImage(item,PathTool.getResFrame("common", "common_1012"),65,27,cc.p(0.5,0.5),true,nil,true)
+            unselect_bg:setContentSize(size)
+            local select_bg = createImage(item,PathTool.getResFrame("common", "common_1011"),65,27,cc.p(0.5,0.5),true,nil,true)
+            select_bg:setContentSize(size)
+            local tab_tips = createImage(item,PathTool.getResFrame("common", "common_1014"),120,47,cc.p(0.5,0.5),true)
+            tab_tips:setVisible(false)
+            local title = createLabel(22,cc.c3b(0xff,0xed,0xd6),cc.c3b(0x2a,0x16,0x0e),65,27,"",item,2,cc.p(0.5,0.5))
+            title:setLineSpacing(-14)
+            title:setChangeScaleOffWidth(15)
+            title:setString(name_list[k][2])
+            item.unselect_bg = unselect_bg
+            item.select_bg = select_bg
+            item.tab_tips = tab_tips
+            item.title = title
+            item.index = k
+            self.project_scroll:getInnerContainer():addChild(item)
+            self.btn_list[i] = item
+            item:setPosition(cc.p((item:getContentSize().width+2)*(i-0.5),self.project_scroll:getContentSize().height*0.5))
+            item:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    self:clickBtn(item.index)
+                end
+            end)
+        end
+        i = i + 1
+    end
+    local _w = math.max((size.width+2)*tableLen(self.btn_list),self.project_scroll:getContentSize().width)
+    self.project_scroll:setInnerContainerSize(cc.size(_w,size.height))
+    self:clickBtn(self.project_num)
+    self:setBtnListRed()
+end
+--下方项目列表点击事件
+function TreasureRankWindow:clickBtn(index)
+    local status = false
+    local cfg = self.research_cfg[index]
+    for key, value in pairs(cfg) do
+        local data = model:ResearchSta(value.round,value.id)
+        if data == 2 then
+            status = true
+        end
+    end
+    if not status then
+        message(TI18N("语言_c_6342"))
+        return
+    end
+    self.project_num = index
+    model:setResearchRankRound(self.project_num)
+    local list = deepCopy(model:getResearchRankListForRound(self.project_num))
+    table.sort(list.pos_info_list,function(a,b) return a.pos < b.pos end)
+    self.click_num = self.click_num ~= 0 and self.click_num or list.pos_info_list[1].pos
+    for key, value in pairs(self.btn_list) do
+        if value.index == index then
+            value.unselect_bg:setVisible(false)
+            value.select_bg:setVisible(true)
+        else
+            value.unselect_bg:setVisible(true)
+            value.select_bg:setVisible(false)
+        end
+    end
+    self:setPanel()
+    self:setTabList()
+    self:_onClickTabBtn(self.click_num)
+end
+
+function TreasureRankWindow:close_callback(  )
+	controller:openTreasureRankWindow(false)
+    
+    if self.research_data_event then
+        GlobalEvent:getInstance():UnBind(self.research_data_event)
+        self.research_data_event = nil
+    end
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      魔导器任务子集
+-- Create: 2018-06-28
+-- --------------------------------------------------------------------
+TreasureRankItem = class("TreasureRankItem", function()
+    return ccui.Widget:create()
+end)
+
+function TreasureRankItem:ctor()
+    self:configUI()
+    self:register_event()
+    self.item_list = {}
+    self.item_list2 = {}
+end
+
+function TreasureRankItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("treasure/treasure_rank_item"))
+    self:addChild(self.root_wnd)
+    self:setAnchorPoint(0, 0)
+    self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(610,135))
+	self:setTouchEnabled(true)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.comfirm_btn = self.main_container:getChildByName("comfirm_btn")
+    self.comfirm_txt = self.comfirm_btn:getChildByName("label")
+    self.comfirm_txt:setString(TI18N("语言_c_8"))
+    self.item_scroll = self.main_container:getChildByName("item_scroll")
+    self.item_scroll:setScrollBarEnabled(false)
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.pic_has = self.main_container:getChildByName("pic_has")
+    self.title = self.main_container:getChildByName("title")
+    self.txt_scroll = self.main_container:getChildByName("txt_scroll")
+    self.txt_scroll:setScrollBarEnabled(false)
+    self.rank_txt = createLabel(20,cc.c3b(0x57,0x2c,0x05),nil,0,80,"",self.txt_scroll,nil,cc.p(0,1))
+    self.rank_txt:setWidth(279)
+    self.rank_txt:setLineSpacing(-4)
+end
+
+function TreasureRankItem:register_event()
+    registerButtonEventListener(self.comfirm_btn, function()
+        if self.data.state == 1 then
+            local round = model:getResearchRankRound()
+            local index = model:getResearchRankIndex()
+            controller:sender22346(round,index,self.data.id)
+        else
+            message(TI18N("语言_c_6343"))
+        end
+	end, true)
+end
+function TreasureRankItem:showProgress(status, percent, label)
+    if status then
+        if self.comp_bar == nil then
+            local size = cc.size(115, 19)
+            local res = PathTool.getResFrame("common","common_90005")
+            local res1 = PathTool.getResFrame("common","common_90006")
+            local bg,comp_bar = createLoadingBar(res, res1, size, self.main_container, cc.p(0.5,0.5), 540, 64, true, true)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+        else
+            self.comp_bar_bg:setVisible(true)
+        end
+
+        if not self.comp_bar_label then
+            local size = cc.size(115, 19)
+            local text_color = cc.c3b(0x64,0x32,0x23)
+            self.comp_bar_label = createLabel(18, text_color, nil, size.width/2, size.height/2 + 30, "", self.comp_bar, 2, cc.p(0.5, 0.5))
+        end
+
+        self.comp_bar:setPercent(percent)
+        self.comp_bar_label:setString(label)  
+    else
+        if self.comp_bar_bg then
+            self.comp_bar_bg:setVisible(false)
+        end
+    end
+end
+function TreasureRankItem:setRoundIndex(round,index)
+    self.click_round = round
+    self.click_index = index
+end
+function TreasureRankItem:setData(data)
+    self.data = data
+    self.cfg = deepCopy(Config.NinjaTreasureResearchData.data_get[data.id])
+    --进度条 
+    local target_val = 0
+    local value = 1
+    if data.quest_state[1] then
+        if data.quest_state[1] then
+            target_val = data.quest_state[1].need_num
+            value = data.quest_state[1].num
+        end
+    end
+    local per =  value * 100 / target_val
+    local str = string.format("(%s/%s)", MoneyTool.GetMoneyString(value), MoneyTool.GetMoneyString(target_val))
+    self:showProgress(true, per, str)
+    self.title:setString(self.cfg.name)
+    self.title_bg:setContentSize(cc.size(math.max(self.title_bg:getContentSize().width,self.title:getContentSize().width+50),self.title_bg:getContentSize().height))
+    self.rank_txt:setString(self.cfg.desc)
+    local _h = math.max(self.txt_scroll:getContentSize().height,self.rank_txt:getContentSize().height)
+    self.txt_scroll:setInnerContainerSize(cc.size(self.txt_scroll:getContentSize().width,_h))
+    if _h > self.txt_scroll:getContentSize().height then
+        self.txt_scroll:setTouchEnabled(true)
+    else
+        self.txt_scroll:setTouchEnabled(false)
+    end
+    self.rank_txt:setPositionY(_h)
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.item_list = nil
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 4
+    setting.max_count = 2
+    setting.is_center = true
+    self.item_list = commonShowSingleRowItemList(self.item_scroll, self.item_list, self.cfg.commit_rewards, setting)
+    self.pic_has:setVisible(data.state == 2)
+    self.comfirm_btn:setVisible(data.state == 1)
+    self.comp_bar:setVisible(data.state == 0)
+    self.comp_bar_bg:setVisible(data.state == 0)
+end
+function TreasureRankItem:DeleteMe()
+end

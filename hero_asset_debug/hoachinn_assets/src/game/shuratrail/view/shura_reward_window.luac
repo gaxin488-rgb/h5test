@@ -1,0 +1,291 @@
+-- --------------------------------------------------------------------
+--
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      奖励一览的总界面
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ShuraRewardWindow = ShuraRewardWindow or BaseClass(BaseView)
+
+local controller = Shura_trailController:getInstance()
+local model = Shura_trailController:getInstance():getModel()
+-- local const_data = Config.EndlessHighData.data_const
+local max_count = 10
+local table_sort = table.sort
+
+function ShuraRewardWindow:__init()
+    self.is_full_screen = false
+    self.layout_name = "shuratrail/shuratrail_reward_window"
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.partner_list = {}
+end
+
+function ShuraRewardWindow:open_callback(...)
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.Image_2 = self.main_panel:getChildByName("Image_2")
+    self.win_title = self.main_panel:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6255"))
+    local _x = math.max(self.Image_2:getContentSize().width,self.win_title:getContentSize().width+100)
+    self.Image_2:setContentSize(cc.size(_x,self.Image_2:getContentSize().height))
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.scroll_list = self.main_panel:getChildByName("scroll_list")
+    self.desc = self.main_panel:getChildByName("desc")
+    self.desc:setString(transformTextToShort(TI18N("语言_c_1070"),60))
+    addEvt2showAllTextTips(self.desc,TI18N("语言_c_1070"),60)
+
+    local scroll_view_size = self.scroll_list:getContentSize()
+    local setting = {
+        item_class = ShuraRewardItem, -- 单元类
+        start_x = 10, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 5, -- y方向的间隔
+        item_width = 586, -- 单元的尺寸width
+        item_height = 170, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.item_scrollview =
+        CommonScrollViewLayout.new(self.scroll_list, cc.p(0, 10), ScrollViewDir.vertical, ScrollViewStartPos.top, cc.size(scroll_view_size.width, scroll_view_size.height - 20), setting)
+    self.item_scrollview:setSwallowTouches(false)
+    self.emptyTips = createImage(self.scroll_list, PathTool.getEmptyMark(), scroll_view_size.width / 2, 450, cc.p(0.5, 1))
+    self.emptyTips:setVisible(false)
+    self.empty_label = createLabel(26, Config.ColorData.data_color4[274], nil, self.emptyTips:getContentSize().width / 2, -35, TI18N("语言_c_1071"), self.emptyTips, 0, cc.p(0.5, 0))
+    -- self:updateItemData()
+    controller:send23918()
+    self:register_event()
+end
+
+function ShuraRewardWindow:register_event(...)
+    if self.background then
+        self.background:addTouchEventListener(
+            function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    controller:openShuraRewardWindow(false)
+                end
+            end
+        )
+    end
+
+    if self.close_btn then
+        self.close_btn:addTouchEventListener(
+            function(sender, event_type)
+                customClickAction_2(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    controller:openShuraRewardWindow(false)
+                end
+            end
+        )
+    end
+
+    if not self.update_first_event then
+        self.update_first_event =
+            GlobalEvent:getInstance():Bind(
+                Shura_trailEvent.UPDATA_FIRST_DATA,
+            function()
+                self:updateItemData()
+            end
+        )
+    end
+end
+
+-- 设置列表内容
+function ShuraRewardWindow:updateItemData()
+    local list_data = {}
+    local config = Config.EndlessHighData
+    if config then
+        local first_data = model:getFirstData()  
+        if config.data_first_data and config.data_first_data and first_data then
+            local temp_count = 1
+            for k, v in ipairs(config.data_first_data) do
+                if v.id >= first_data.id then
+                    local cur_is_receive = false
+                    if first_data.rewarded then
+                        for k1, v1 in pairs(first_data.rewarded) do
+                            if v1.id == v.id then
+                                cur_is_receive = true
+                            end
+                        end
+                    end
+                    local temp_data = {
+                        select_index = self.cur_selected,
+                        id = v.id,
+                        items = deepCopy(v.items),
+                        limit_id = v.limit_id,
+                        can_receive = first_data.max_id >= v.limit_id and first_data.status == 1,
+                        is_receive = cur_is_receive,
+                        type = self.touch_type,
+                        max_id = first_data.max_id
+                    }
+                    
+                    table.insert(list_data, temp_data)
+                    temp_count = temp_count + 1
+                    if temp_count > max_count then
+                        break
+                    end
+                end
+            end
+        end
+    end
+    if next(list_data) == nil then
+        self.emptyTips:setVisible(true)
+    else
+        self.emptyTips:setVisible(false)
+    end
+    self.item_scrollview:setData(list_data)
+end
+
+function ShuraRewardWindow:openRootWnd(...)
+end
+
+function ShuraRewardWindow:close_callback(...)
+    if self.update_first_event then
+        GlobalEvent:getInstance():UnBind(self.update_first_event)
+        self.update_first_event = nil
+    end
+    -- if self.update_base_event then
+    --     GlobalEvent:getInstance():UnBind(self.update_base_event)
+    --     self.update_base_event = nil
+    -- end
+    controller:openShuraRewardWindow(false)
+end
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      无尽试炼奖励预览item
+--
+-- --------------------------------------------------------------------
+ShuraRewardItem =
+    class(
+    "ShuraRewardItem",
+    function()
+        return ccui.Layout:create()
+    end
+)
+
+function ShuraRewardItem:ctor()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("shuratrail/shuratrail_reward_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.title_label = self.main_panel:getChildByName("title_label")
+    self.reward_container = self.main_panel:getChildByName("reward_container")
+    self.first_btn_container = self.main_panel:getChildByName("first_btn_container")
+    self.btn_receive = self.first_btn_container:getChildByName("btn_receive")
+    self.btn_receive_label = self.btn_receive:getChildByName("label")
+    self.btn_receive_label:setString(TI18N("语言_c_109"))
+    self.receive_txt = self.first_btn_container:getChildByName("receive_txt")
+    setTextMaxWidth(self.receive_txt,180)
+    self.receive_txt:setString(TI18N("语言_c_1078"))
+    self.receive_level = self.first_btn_container:getChildByName("receive_level")
+
+    local scroll_view_size = self.reward_container:getContentSize()
+    local setting = {
+        item_class = BackPackItem, -- 单元类
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 10, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = BackPackItem.Width * 0.8, -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.8, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 0, -- 列数，作用于垂直滚动类型
+        scale = 0.8
+    }
+
+    self.item_scrollview = CommonScrollViewLayout.new(self.reward_container, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+
+    self:registerEvent()
+end
+
+function ShuraRewardItem:registerEvent()
+    if self.btn_receive then
+        self.btn_receive:addTouchEventListener(
+            function(sender, event_type)
+                customClickAction_2(sender, event_type)
+                if ccui.TouchEventType.ended == event_type then
+                    playButtonSound()
+                    if self.data and self.data.id then
+                        controller:send23919(self.data.id)
+                    end
+                end
+            end
+        )
+    end
+end
+
+function ShuraRewardItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    self.first_btn_container:setVisible(true)
+    self.btn_receive:setVisible(self.data.can_receive)
+    if self.data.is_receive then
+        self.btn_receive_label:setString(TI18N("语言_c_78"))
+        setChildUnEnabled(true, self.btn_receive)
+        self.btn_receive:setEnabled(false)
+        self.btn_receive_label:disableEffect(cc.LabelEffect.OUTLINE)
+    else
+        self.btn_receive_label:setString(TI18N("语言_c_109"))
+        setChildUnEnabled(false, self.btn_receive)
+        self.btn_receive:setEnabled(true)
+        self.btn_receive_label:enableOutline(cc.c4b(0x76,0x45,0x19,0xff), 2)
+        -- self.btn_receive:loadTextures(PathTool.getResFrame("common", "common_1017"), "", "", LOADTEXT_TYPE_PLIST)
+    end
+    self.receive_level:setVisible(not self.data.can_receive)
+    self.receive_txt:setVisible(not self.data.can_receive)
+    local title_text = string.format(TI18N("语言_c_1079"), self.data.limit_id) or ""
+    if not self.data.can_receive then
+        local max_round = data.max_id
+    
+        if self.data.limit_id >= max_round then
+            self.receive_level:setString(self.data.limit_id - max_round)
+        else
+            self.receive_level:setString("0")
+        end
+    end
+    self.title_label:setString(title_text)
+    -- 奖励数据
+    local item_list = {}
+    for k, v in pairs(data.items) do
+        local vo = {}
+        vo.id = v[1]
+        vo.quantity = v[2]
+        table.insert(item_list, vo)
+    end
+    self.item_scrollview:addEndCallBack(function()
+        local list = self.item_scrollview:getItemList()
+        for k, v in pairs(list) do
+            v.effect = false
+            v:setDefaultTip()
+            v:setSwallowTouches(true)
+        end
+    end)
+    self.item_scrollview:setData(item_list)
+end
+
+function ShuraRewardItem:DeleteMe()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

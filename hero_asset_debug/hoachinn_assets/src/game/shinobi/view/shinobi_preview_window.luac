@@ -1,0 +1,101 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-21 10:58:07
+-- @description    : 
+		-- 先知殿预览
+---------------------------------
+ShinobiPreviewWindow = ShinobiPreviewWindow or BaseClass(BaseView)
+local table_insert = table.insert
+local table_sort = table.sort
+local string_format = string.format
+local controller = ShinobiController:getInstance()
+local model = controller:getModel()
+--[[
+tag:默认为nil，是先知这个，1是主城召唤
+]]
+function ShinobiPreviewWindow:__init(tag)
+	self.win_type = WinType.Mini
+	self.is_full_screen = true
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.layout_name = "seerpalace/seerpalace_preview_window"
+	--[[self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("mall", "mall"), type = ResourcesType.plist },
+    }--]]
+    self.summon_tag = tag or nil
+end
+
+function ShinobiPreviewWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+	self.container = container
+    self:playEnterAnimatianByObj(container , 2)
+
+	local win_title = container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_728"))
+
+	self.list_panel = container:getChildByName("list_panel")
+	self.scroll_view_size = self.list_panel:getContentSize()
+	self.scroll_view = createScrollView(self.scroll_view_size.width, self.scroll_view_size.height, 0, 0, self.list_panel, ccui.ScrollViewDir.vertical)
+
+end
+
+function ShinobiPreviewWindow:openRootWnd( index )
+	MallController:getInstance():sender13421(MallConst.MallType.ArenaShibobiShop)
+end
+
+function ShinobiPreviewWindow:setData( data )
+	if data and next(data.item_list)~=nil then
+		local list=data.item_list
+		table_sort(list,function(a,b) return a.preview < b.preview end)
+		
+		local scale = 0.9
+		local space_y = 40
+		local content_h = space_y + (BackPackItem.Height*scale+30) * math.ceil(#list/4)
+		local max_height = math.max(content_h, self.scroll_view_size.height)
+		self.scroll_view:setInnerContainerSize(cc.size(self.scroll_view_size.width, max_height))
+		for i,v in pairs(list) do
+			delayRun(self.list_panel, i/60, function()
+				local item_node = BackPackItem.new(false,true)
+				item_node:setAnchorPoint(cc.p(0,1))
+				item_node:setScale(scale)
+		        item_node:setBaseData(v.item_id)
+		        item_node:showItemEffect(false)
+				item_node:setSelfNum(v.item_num)
+		        -- item_node:setSummonNumber(string_format("%0.3f",v.summon_desc))
+		        item_node:setDefaultTip()
+		        local pos_x = 30 + (BackPackItem.Width*scale + 30) * ((i-1)%4)
+		        local pos_y = max_height - ((BackPackItem.Height*scale + 30) * math.floor((i-1)/4))
+		        item_node:setPosition(cc.p(pos_x, pos_y))
+				self.scroll_view:addChild(item_node)
+			end)
+		end
+	end
+end
+
+function ShinobiPreviewWindow:register_event(  )
+	registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+
+	if not self.Get_Preview_Event  then
+        self.Get_Preview_Event = GlobalEvent:getInstance():Bind(MallEvent.Get_Preview_Data, function(data)
+            self:setData(data)
+        end)
+    end
+end
+
+function ShinobiPreviewWindow:_onClickBtnClose(  )
+	controller:openShinoPreviewWindow(false)
+end
+
+function ShinobiPreviewWindow:close_callback(  )
+	self.list_panel:stopAllActions()
+	controller:openShinoPreviewWindow(false)
+	if self.Get_Preview_Event then
+		GlobalEvent:getInstance():UnBind(self.Get_Preview_Event)
+        self.Get_Preview_Event = nil
+    end
+end

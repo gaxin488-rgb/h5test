@@ -1,0 +1,245 @@
+-- --------------------------------------------------------------------
+-- 通灵兽图鉴信息主界面
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ElfinMainInfoWindow = ElfinMainInfoWindow or BaseClass(BaseView)
+
+local controller = ElfinController:getInstance()
+local model = controller:getModel()
+
+function ElfinMainInfoWindow:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "elfin/elfin_main_info_window"
+    self.res_list = {
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.panel_list = {}
+    self.tab_list = {}
+    self.click_index = 0
+end
+
+function ElfinMainInfoWindow:open_callback()
+    self.bg = self.root_wnd:getChildByName("bg")
+    self.bg:setScale( display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.title_txt_list = {
+        [1] = TI18N("语言_c_7525"),
+        [2] = TI18N("语言_c_7526"),
+        [3] = TI18N("语言_c_7527"),
+    }
+    for i = 1, #self.title_txt_list do
+        local list = {}
+        list.btn = self.bottom_panel:getChildByName("tab_btn_"..i)
+        list.normal_img = list.btn:getChildByName("normal_img")
+        list.select_bg = list.btn:getChildByName("select_bg")
+        list.select_img = list.btn:getChildByName("select_img")
+        list.label = list.btn:getChildByName("label")
+        setTextSpacing(list.label,-8)
+        list.label:setString(self.title_txt_list[i])
+        if list.label:getContentSize().width > list.btn:getContentSize().width + 20 then
+            local _scale = (list.btn:getContentSize().width+20) / list.label:getContentSize().width
+            list.label:setScale(_scale)
+        else
+            list.label:setScale(1)
+        end
+        list.red_point = list.btn:getChildByName("red_point")
+        list.red_point:setVisible(false)
+        self.tab_list[i] = list
+    end
+
+    local bottom_y = display.getBottom(self.main_container)
+
+    local tab_y = self.bottom_panel:getPositionY()
+    self.bottom_panel:setPositionY(bottom_y + tab_y)
+    local tab_y = self.close_btn:getPositionY()
+    self.close_btn:setPositionY(bottom_y + tab_y)
+end
+
+function ElfinMainInfoWindow:register_event()
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 1) 
+    for i=1,#self.tab_list do
+        registerButtonEventListener(self.tab_list[i].btn, function() 
+            self:changeTabType(i)
+        end ,true, 1) 
+    end
+    self:addGlobalEvent(ElfinEvent.ElfinBookDataUpdate, function()
+        self:updateElfinIsAct()
+        self:updateElfinBtnGrey()
+        self:updateBtnRed()
+    end)
+end
+function ElfinMainInfoWindow:onClickCloseBtn()
+    controller:openRedElfinInfoWindow(false)
+    controller:openElfinMainInfoWindow(false)
+end
+
+function ElfinMainInfoWindow:updateBtnRed()
+    for i=1,#self.tab_list do
+        local status = false
+        if i == 1 then
+            status = self.click_index ~= i and model:getRedPetRedStatusById(self.elfin_id)
+        elseif i == 2 then
+            status = self.click_index ~= i and model:getElfinStrongRed(self.elfin_id)
+        end
+        self.tab_list[i].red_point:setVisible(status)
+    end
+end
+
+function ElfinMainInfoWindow:openRootWnd(data, is_show)
+    local index = 1
+	self.data = data
+	self.is_show = is_show
+    self:updateElfinIsAct()
+    self:changeTabType(index)
+    self:updateElfinBtnVis()
+    self:updateElfinBtnGrey()
+end
+function ElfinMainInfoWindow:updateElfinBtnVis()
+    if not model:isHideElfinStreng() then
+        self.tab_list[3].btn:setPositionX(316)
+        self.tab_list[2].btn:setVisible(true)
+    else
+        self.tab_list[3].btn:setPositionX(194)
+        self.tab_list[2].btn:setVisible(false)
+    end
+    if not model:checkCanAttach(self.data[1]) then
+        self.tab_list[3].btn:setVisible(false)
+    else
+        self.tab_list[3].btn:setVisible(true)
+    end
+end
+function ElfinMainInfoWindow:updateElfinIsAct()
+    local list = {}
+    for i,bid in ipairs(self.data) do
+        table.insert(list, bid)
+    end
+    local function sortFunc( objA, objB )
+            return objA < objB
+    end
+    table.sort(list, sortFunc)
+    self.is_active = false
+    self.elfin_id = list[1]
+    for k, v in pairs(list) do
+        self.elfin_id = v
+        local status = model:checkElfinActStatus(self.elfin_id)
+        if status then
+            self.is_active = true
+            break
+        end
+    end
+end
+function ElfinMainInfoWindow:updateElfinBtnGrey()
+    if not self.is_active then 
+        setChildUnEnabled(true,self.tab_list[2].btn)
+        setChildUnEnabled(true,self.tab_list[3].btn)
+    else
+        setChildUnEnabled(false,self.tab_list[2].btn)
+        setChildUnEnabled(false,self.tab_list[3].btn)
+    end
+end
+function ElfinMainInfoWindow:changeTabType(index)
+    if index == 0 then index = 1 end
+    if self.click_index == index then return end
+    
+    if index ~= 1 then
+        if not self.is_active then 
+            message(TI18N("语言_c_7335"))
+            return
+        end
+    end
+    if index == 3 then
+        local list = {}
+        local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("sprite_data")
+        for i,bid in ipairs(self.data) do
+            table.insert(list, bid)
+        end
+        local function sortFunc( objA, objB )
+            return objA < objB
+        end
+        table.sort(list, sortFunc)
+        
+        local elfin_id = list[#list]
+        for k, v in pairs(list) do
+            local id = v
+            local status = model:checkElfinActStatus(id)
+            if status then
+                elfin_id = id
+                break
+            end
+        end
+	    local qMap = model:checkCanAttach(elfin_id)
+        if not qMap then 
+            message(TI18N("语言_c_7528"))
+            return
+        end
+    end
+    self.click_index = index
+    for i = 1, #self.tab_list do
+        if i == index then
+            self.tab_list[i].select_bg:setVisible(true)
+            self.tab_list[i].normal_img:setVisible(false)
+            self.tab_list[i].select_img:setVisible(true)
+            self.tab_list[i].label:setTextColor(cc.c4b(0xf5,0xd2,0x69,0xff))
+            self.tab_list[i].label:enableOutline(cc.c4b(0x18,0x01,0x01,0xff),2)
+            
+        else
+            self.tab_list[i].select_bg:setVisible(false)
+            self.tab_list[i].normal_img:setVisible(true)
+            self.tab_list[i].select_img:setVisible(false)
+            self.tab_list[i].label:setTextColor(cc.c4b(255,255,255,255))
+            self.tab_list[i].label:enableOutline(cc.c4b(0x00,0x00,0x00,0xff),2)
+        end
+    end
+    if index == 1 then
+        controller:openNewElfinStrengWindow(false)
+        controller:openElfinAttachWindow(false)
+        controller:openRedElfinInfoWindow(true, self.data, self.is_show)
+    elseif index == 2 then
+        controller:openRedElfinInfoWindow(false)
+        controller:openElfinAttachWindow(false)
+        controller:openNewElfinStrengWindow(true, self.data, self.is_show)
+    elseif index == 3 then
+        local list = {}
+        local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("sprite_data")
+        for i,bid in ipairs(self.data) do
+            table.insert(list, bid)
+        end
+        local function sortFunc( objA, objB )
+            return objA < objB
+        end
+        table.sort(list, sortFunc)
+        
+        local elfin_id = list[#list]
+        for k, v in pairs(list) do
+            local id = v
+            local status = model:checkElfinActStatus(id)
+            if status then
+                elfin_id = id
+                break
+            end
+        end
+        controller:openRedElfinInfoWindow(false)
+        controller:openNewElfinStrengWindow(false)
+        controller:openElfinMainInfoWindow(false)
+        controller:openElfinAttachWindow(true, elfin_id)
+    end
+    self:updateBtnRed()
+end
+
+function ElfinMainInfoWindow:close_callback()
+    controller:openRedElfinInfoWindow(false)
+    controller:openNewElfinStrengWindow(false)
+    controller:openElfinAttachWindow(false)
+    controller:openElfinMainInfoWindow(false)
+end

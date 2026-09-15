@@ -1,0 +1,110 @@
+-- --------------------------------------------------------------------
+-- @author: lzh(必填, 创建模块的人员)
+-- @description:
+--      关注微博
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+SubscriptionWeiboPanel = class("SubscriptionWeiboPanel", function()
+	return ccui.Widget:create()
+end) 
+
+function SubscriptionWeiboPanel:ctor()
+    self:createRootWnd()
+    self:registerEvent()
+end
+
+function SubscriptionWeiboPanel:createRootWnd()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("welfare/subscription_weibo_panel"))
+	self:addChild(self.root_wnd)
+	self:setPosition(-40, -80)
+	self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.bg = self.main_container:getChildByName("bg")
+    self.save_btn = self.main_container:getChildByName("save_btn")
+    self.save_btn:getChildByName("Text_6"):setString(TI18N("保存至相册"))
+
+    -- 加载背景
+    self:loadBackground()
+end
+
+function SubscriptionWeiboPanel:loadBackground()
+    local bg_path = PathTool.getPlistImgForDownLoad("bigbg/welfare", "txt_cn_subscription_weibo_1") 
+    self.loader = loadSpriteTextureFromCDN(self.bg, bg_path, ResourcesType.single)
+end
+
+function SubscriptionWeiboPanel:registerEvent()
+    registerButtonEventListener(self.save_btn, function()
+        self:checkPlatform()
+    end,true, 1)
+end
+
+function SubscriptionWeiboPanel:checkPlatform ()
+    if PLATFORM_NAME == "symlf" or PLATFORM_NAME == "demo" or PLATFORM_NAME == "release2" then
+        if IS_IOS_PLATFORM == true then     --ios中下面两个包不可见
+            if FINAL_CHANNEL == "syios_smzhs" or FINAL_CHANNEL == "syios_zsry" then
+                message(TI18N("暂不支持"))
+                return
+            else
+                self:savePhotoPicture()
+            end
+        else    --ios以外的平台可见
+            self:savePhotoPicture()
+        end
+    else
+        message(TI18N("暂不支持"))
+        return
+    end
+end
+--保存图片
+function SubscriptionWeiboPanel:savePhotoPicture()
+    if not IS_IOS_PLATFORM and callFunc("checkWrite") == "false" then return end
+    if self.poste_picture then return end
+    local container = ViewManager:getInstance():getLayerByTag( ViewMgrTag.LOADING_TAG )
+    self.poste_picture = createSprite("", SCREEN_WIDTH*0.5, SCREEN_HEIGHT*0.5, container, cc.p(0.5, 0.5),LOADTEXT_TYPE)
+    self.poste_picture:setScale(display.getMaxScale())
+
+    local res = PathTool.getPlistImgForDownLoad("bigbg/welfare", "txt_cn_subscription_weibo_2", true)
+    self.sprite_load = createResourcesLoad(res, ResourcesType.single, function()
+        if not tolua.isnull(self.poste_picture) then
+            loadSpriteTexture(self.poste_picture, res , LOADTEXT_TYPE)
+            local fileName = cc.FileUtils:getInstance():getWritablePath().."poste_weibo.png"
+            delayOnce(function()
+                cc.utils:captureScreen(function(succeed)
+                    if succeed then
+                        saveImageToPhoto(fileName,3)
+                    else
+                        message(TI18N("保存失败"))
+                    end
+                    if not tolua.isnull(self.poste_picture) then
+                        self.poste_picture:removeFromParent()
+                        self.poste_picture = nil
+                    end
+                end, fileName)
+            end, 0.01)
+        end
+    end,self.sprite_load)
+end
+
+function SubscriptionWeiboPanel:setVisibleStatus(status)
+    status = status or false
+	self:setVisible(status)
+end
+
+function SubscriptionWeiboPanel:DeleteMe()
+    if self.loader then
+        self.loader:DeleteMe()
+    end
+    self.loader = nil
+
+    if self.sprite_load then
+        self.sprite_load:DeleteMe()
+    end
+    self.sprite_load = nil
+    if not tolua.isnull(self.poste_picture) then
+        self.poste_picture:removeFromParent()
+        self.poste_picture = nil
+    end
+end

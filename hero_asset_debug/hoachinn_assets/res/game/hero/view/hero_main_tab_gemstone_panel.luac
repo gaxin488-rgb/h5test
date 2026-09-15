@@ -1,0 +1,228 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- HERO GEM TAB - Khảm Ngọc (inside hero_main_info_window tab_container)
+-- ═══════════════════════════════════════════════════════════════════════════════
+HeroMainTabGemstonePanel = class("HeroMainTabGemstonePanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+local GEM_TYPE      = {51, 52, 53, 54, 55}
+local GEM_LOCK_STAR = {1, 3, 6, 9, 11}
+
+local function normalizeGemVo(vo)
+    if not vo then return nil end
+    local cfg = vo.config
+    if cfg == nil then
+        local bid = vo.base_id or vo.bid or vo.id
+        if bid and Config and Config.ItemData and Config.ItemData.data_get_data then
+            cfg = Config.ItemData.data_get_data(bid)
+            if cfg then vo.config = cfg end
+        end
+    end
+    return cfg
+end
+
+local function getGemVoByPos(hero_vo, pos)
+    if not hero_vo or not pos then return nil end
+    local eqm_list = hero_vo.eqm_list or {}
+    local gem_type = GEM_TYPE[pos]
+    return (gem_type and eqm_list[gem_type]) or (hero_vo.gem_list or {})[pos]
+end
+
+function HeroMainTabGemstonePanel:ctor(parent)
+    self.parent   = parent
+    self.hero_vo  = nil
+    self.slot_list   = {}
+    self.effect_list = {}
+    self.lock_label_list = {}
+    self.spine_list = {}
+
+    -- Spine config (same style as hero_tips_panel)
+    self.gem_spine_config = {
+        [1] = "E313153", [2] = "E313153", [3] = "E313154",
+        [4] = "E313154", [5] = "E313155",
+    }
+    self.gem_scale = 1
+    self.gem_item_scale = 0.75
+    self.gem_spine_scale = 1.15
+    self.spine_z_order = 100
+
+    self:layoutUI()
+    self:registerEvents()
+end
+
+function HeroMainTabGemstonePanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_main_tab_gemstone_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.tab_panel = self.root_wnd:getChildByName("tab_panel")
+
+    -- Get lock labels from CSD
+    for i = 1, 5 do
+        self.lock_label_list[i] = self.tab_panel:getChildByName("lock_label_" .. i)
+    end
+
+    -- Create 5 gem slots on CSD nodes
+    for i = 1, 5 do
+        local gem_node = self.tab_panel:getChildByName("gem_node_" .. i)
+        local spine_node = self.tab_panel:getChildByName("spine_node_" .. i)
+        if gem_node then
+            gem_node:setTouchEnabled(true)
+            local item = BackPackItem.new(false, true, nil, self.gem_scale, false, true)
+            item:setAnchorPoint(cc.p(0.5, 0.5))
+            item:setPosition(cc.p(0, 0))
+            item:setScale(self.gem_item_scale)
+            item:showArtifactLock(true)
+            gem_node:addChild(item, 1)
+            self.slot_list[i] = item
+
+            local pos = i
+            item:addCallBack(function()
+                self:onClickSlot(pos)
+            end)
+            registerButtonEventListener(gem_node, function()
+                self:onClickSlot(pos)
+            end, false)
+
+            self.effect_list[i] = nil
+        end
+
+        -- Spine effect: prefer spine_node, fallback to tab_panel position to avoid gem_node clipping.
+        local spine_parent = spine_node
+        local spine_pos = cc.p(0, 0)
+        if not spine_parent and gem_node then
+            spine_parent = self.tab_panel
+            spine_pos = cc.p(gem_node:getPosition())
+        end
+        if spine_parent then
+            local spine_name = self.gem_spine_config[i]
+            if spine_name and spine_name ~= "" then
+                local ok2, spine = pcall(createEffectSpine,
+                    spine_name,
+                    spine_pos,
+                    cc.p(0.5, 0.5),
+                    true,
+                    PlayerAction.action_2
+                )
+                if ok2 and spine then
+                    spine:setScale(self.gem_spine_scale)
+                    spine_parent:addChild(spine, self.spine_z_order)
+                    spine:setVisible(true)
+                    self.spine_list[i] = spine
+                end
+            end
+        end
+    end
+end
+
+function HeroMainTabGemstonePanel:onClickSlot(pos)
+    if not self.hero_vo then return end
+    local need_star = GEM_LOCK_STAR[pos]
+    if self.hero_vo.star < need_star then
+        message(string.format("Cần %d sao để mở khóa", need_star))
+        return
+    end
+
+    local gem_vo = getGemVoByPos(self.hero_vo, pos)
+
+    if gem_vo and normalizeGemVo(gem_vo) then
+        controller:openEquipTips(true, gem_vo, PartnerConst.EqmTips.partner, self.hero_vo)
+    else
+        local gem_type = GEM_TYPE[pos]
+        controller:openEquipPanel(true, gem_type, self.hero_vo.partner_id)
+    end
+end
+
+function HeroMainTabGemstonePanel:updateSlots()
+    if not self.hero_vo then return end
+
+    for i = 1, 5 do
+        local item = self.slot_list[i]
+        if not item then break end
+        local need_star = GEM_LOCK_STAR[i]
+
+        if self.hero_vo.star >= need_star then
+            item:showArtifactLock(false)
+            if self.lock_label_list[i] then self.lock_label_list[i]:setVisible(false) end
+            local gem_vo = getGemVoByPos(self.hero_vo, i)
+            local cfg = normalizeGemVo(gem_vo)
+            if gem_vo and cfg then
+                item:setData(gem_vo)
+                -- Hien thi enchant tren icon ngoc (checkIsEquip chi nhan type 1-4)
+                local slot_enc = self.hero_vo.slot_enchant and self.hero_vo.slot_enchant[cfg.type or 0] or 0
+                local enc = math.max(gem_vo.enchant or 0, slot_enc)
+                item:setEnchantLev(enc)
+                item:showAddIcon(false)
+            else
+                item:setData()
+                item:showAddIcon(true)
+            end
+            if self.effect_list[i] then
+                self.effect_list[i]:setVisible(true)
+            end
+        else
+            item:setData()
+            item:showAddIcon(false)
+            item:showArtifactLock(true)
+            if self.lock_label_list[i] then self.lock_label_list[i]:setVisible(true) end
+            if self.effect_list[i] then
+                self.effect_list[i]:setVisible(false)
+            end
+        end
+    end
+end
+
+function HeroMainTabGemstonePanel:setData(hero_vo)
+    if not hero_vo then return end
+    self.hero_vo = hero_vo
+    self:updateSlots()
+end
+
+function HeroMainTabGemstonePanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+    if bool then
+        self:updateSlots()
+    end
+end
+
+function HeroMainTabGemstonePanel:registerEvents()
+    if not self.equip_update_event then
+        self.equip_update_event = GlobalEvent:getInstance():Bind(
+            HeroEvent.Equip_Update_Event,
+            function()
+                if self.hero_vo then
+                    self.hero_vo = model:getHeroById(self.hero_vo.partner_id) or self.hero_vo
+                    self:updateSlots()
+                end
+            end
+        )
+    end
+end
+
+function HeroMainTabGemstonePanel:DeleteMe()
+    if self.equip_update_event then
+        GlobalEvent:getInstance():UnBind(self.equip_update_event)
+        self.equip_update_event = nil
+    end
+    -- Clear spine references
+    if self.spine_list then
+        for k, v in pairs(self.spine_list) do
+            if v then v:removeFromParent() end
+        end
+    end
+    self.spine_list = {}
+    -- Clear effect references first (effects are children of items, removed with them)
+    self.effect_list = {}
+    for i, item in pairs(self.slot_list) do
+        if item and item.DeleteMe then
+            item:DeleteMe()
+        end
+        self.slot_list[i] = nil
+    end
+end

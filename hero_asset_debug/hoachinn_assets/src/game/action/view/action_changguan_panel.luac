@@ -1,0 +1,837 @@
+-- --------------------------------------------------------------------
+-- 闯关礼包
+-- --------------------------------------------------------------------
+ActionChangguanPanel = ActionChangguanPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance() 
+local model = ActionController:getInstance():getModel()
+
+function ActionChangguanPanel:__init(ctrl)
+    self.is_full_screen = true
+    self.win_type = WinType.Full  
+    self.layout_name = "action/action_changguan_panel"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("holiday_levelshop","txt_cn_levelshop_1"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("holiday_levelshop","holiday_levelshop"), type = ResourcesType.plist },
+    }
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.select_id = 1
+    self.select_item = nil
+end
+
+function ActionChangguanPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.background2 = self.root_wnd:getChildByName("background2")
+
+    self.item_1 = self.root_wnd:getChildByName("item_1")
+    self.item_2 = self.root_wnd:getChildByName("item_2")
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.close_btn = self.root_wnd:getChildByName("close_btn")
+
+    self.eff_node = self.main_container:getChildByName("eff_node")
+    self.tip_panel = self.eff_node:getChildByName("tip_panel")
+    self.tips_bg = self.tip_panel:getChildByName("tips_bg")
+    self.tips = createRichLabel(18, 1, cc.p(0.5, 1), cc.p(101, 85), -4, nil, 180)
+    self.tip_panel:addChild(self.tips)
+    self.tip_panel:setLocalZOrder(99)
+    self.tips:setString("")
+
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.title_con = self.main_container:getChildByName("title_con")
+    self.title_img = self.title_con:getChildByName("title_img")
+    self.time_title = self.title_con:getChildByName("time_title")
+    self.time_title:setVisible(false)
+    local posx = self.time_title:getPositionX()
+    local posy = self.time_title:getPositionY()
+    self.time_val = createRichLabel(20, 1, cc.p(0.5, 0.5), cc.p(posx, posy), -4, nil, 300)
+    self.title_con:addChild(self.time_val)
+
+    self.list = self.main_container:getChildByName("list")
+    self.bottom_btn = self.main_container:getChildByName("bottom_btn")
+    self.top_btn = self.main_container:getChildByName("top_btn")
+    self.gift_list = self.main_container:getChildByName("gift_list")
+    self.add_btn = self.main_container:getChildByName("add_btn")
+    self.item_num_txt = self.main_container:getChildByName("item_num_txt")
+    self.item_icon = self.main_container:getChildByName("item_icon")
+    self.tab_con = self.main_container:getChildByName("tab_con")
+    self.tab_label = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0.5, 0.5), cc.p(250,33), -4, 2, 480)
+    self.tab_con:addChild(self.tab_label)
+    self.cond_layer = self.main_container:getChildByName("cond_layer")
+    self.cond_label = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0.5, 0.5), cc.p(71,31), -8, 2, 120)
+    self.cond_label:setHorizontalLayoutType(2)
+    self.cond_layer:addChild(self.cond_label)
+
+    local scroll_view_size = self.list:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 5, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔 k, 
+        item_width = 400, -- 单元的尺寸width
+        item_height = 101, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+    }
+    self.scroll_view = CommonScrollViewSingleLayout.new(self.list, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.bottom, scroll_view_size, setting)
+    self.scroll_view:setSwallowTouches(true)
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.createCell), ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.scroll_view:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    --self.scroll_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+
+    local scroll_view_size = self.gift_list:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 10, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔 k, 
+        item_width = 220, -- 单元的尺寸width
+        item_height = 265, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 0, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.gift_list, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell), ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex), ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+
+    self:adaptationScreen()
+end
+
+--设置适配屏幕
+function ActionChangguanPanel:adaptationScreen()
+    --对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop()
+    local bottom_y = display.getBottom()
+    local left_x = display.getLeft()
+    local right_x = display.getRight()
+
+    self.main_container:setPosition(cc.p(360, bottom_y))
+    self.background2:setPosition(cc.p(360, bottom_y))
+
+    self.close_btn:setPositionY(bottom_y+145)
+end
+
+function ActionChangguanPanel:createCell()
+    local cell = ActionChangguanItem.new(self.item_1)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+function ActionChangguanPanel:onCellTouched(cell)
+    local data = cell:getData()
+    local level = data.level
+    if level ~= self.select_id then
+        self.select_id = level
+        self:initGiftData()
+    end
+    if self.select_item then
+        self.select_item:setSelectStatus(false)
+    end
+    self.select_item = cell
+    self.select_item:setSelectStatus(true)
+    self:updateTips()
+end
+function ActionChangguanPanel:numberOfCells()
+    if not self.list_list then
+        return 0
+    end
+    return #self.list_list
+end
+function ActionChangguanPanel:updateCellByIndex(cell, index)
+    if not self.list_list then
+        return
+    end
+    local cell_data = self.list_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setHolidayCampid(self.camp_id)
+    cell:setData(cell_data)
+    if cell_data.level == self.select_id then
+        if self.select_item then
+            self.select_item:setSelectStatus(false)
+        end
+        self.select_item = cell
+        self.select_item:setSelectStatus(true)
+    end
+end
+
+
+-- 礼包列表
+function ActionChangguanPanel:createTaskCell()
+    local cell = ActionChangguanGiftItem.new(self.item_2)
+    cell:addCallBack(function() self:onCellTaskTouched(cell) end)
+    return cell
+end
+function ActionChangguanPanel:onCellTaskTouched(cell)
+    local data = cell:getCostData()
+    local cell_data = cell:getData() 
+    local good_id = cell_data.goods_id
+    local camp_id,level = cell:getHolidayCampInfo()
+    local sell_out = model:checkSelectIsSellOut(camp_id, level ,good_id)
+    local lock_status = model:checkSelectLockstatus(camp_id,level)
+    if not sell_out then
+        if lock_status then
+            controller:openChuangguanBuy(true,data,level)
+        else
+            message(TI18N("语言_c_1586"))
+        end
+    else
+        message(TI18N("语言_s_1419"))
+    end
+end
+function ActionChangguanPanel:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+function ActionChangguanPanel:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setHolidayCampid(self.camp_id,self.select_id)
+    cell:setData(cell_data)
+end
+
+function ActionChangguanPanel:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        controller:openChuangguanPanel(false)
+    end,true, 2)
+    registerButtonEventListener(self.add_btn, function()
+        local config = Config.ItemData.data_get_data(self.cost_money)
+        BackpackController:getInstance():openTipsSource(true, config)
+    end,true, 2)
+    registerButtonEventListener(self.btn_rule, function(param,sender, event_type)
+        local cfg = Config.HolidayLevelshopData.data_constant
+        TipsManager:getInstance():showCommonTips(cfg.rule_txt.val, sender:getTouchBeganPosition(),nil,nil,500)
+    end,true, 2)
+
+    self:addGlobalEvent(ActionEvent.updateChuangguanGiftData, function()
+        self:setCostMoneyInfo()
+        self:initListData()
+        self:initGiftData()
+        -- self:updateGiftData()
+        local cost_num = model:getNowCostByCampid(self.camp_id)
+        local config = Config.ItemData.data_get_data(self.cost_money)
+        local str = TI18N("语言_c_7175")
+        self.cond_label:setString(string.format(str,config.icon,cost_num))
+        self:updateTips()
+        self:setTipPanelData()
+    end)
+
+    self:addGlobalEvent(BackpackEvent.ADD_GOODS, function(bag_code, data_list)
+        self:setCostMoneyInfo()
+    end)
+    self:addGlobalEvent(BackpackEvent.DELETE_GOODS, function(bag_code, data_list)
+        self:setCostMoneyInfo()
+    end)
+    self:addGlobalEvent(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code, data_list)
+        self:setCostMoneyInfo()
+    end)
+    -- 道具数量变化 货币和活动道具
+	if not self.role_assets_event and self.role_vo then
+        self.role_assets_event =  self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ACTION_ASSETS, function(id, value) 
+            if id and id == self.cost_money and self.role_vo then 
+                self:setCostMoneyInfo()
+            end
+        end)
+    end
+end
+
+function ActionChangguanPanel:updateGiftData()
+    local gift_data = model:getChuangguanGiftDataByCampid(self.camp_id)
+    if gift_data then
+        local level = gift_data.pass_level
+        if self.select_id ~= level then
+            self.select_id = level
+        end
+    end
+
+    local cost_num = model:getNowCostByCampid(self.camp_id)
+    local config = Config.ItemData.data_get_data(self.cost_money)
+    local str = TI18N("语言_c_7175")
+    self.cond_label:setString(string.format(str,config.icon,cost_num))
+    self:updateTips()
+end
+
+function ActionChangguanPanel:updateTips()
+    local status,total_num,need_num = model:getUnlockNextInfo(self.camp_id)
+    if status == 1 then --已全部解锁
+        self.tab_label:setString(TI18N("语言_c_7176"))
+    elseif status == 2 then
+        local is_unlock = model:checkSelectLockstatus(self.camp_id,self.select_id)
+        local str = ""
+        local config = Config.ItemData.data_get_data(self.cost_money)
+        if is_unlock then --已解锁 
+            local gift_data = model:getChuangguanGiftDataByCampid(self.camp_id)
+            local next_lv = 1
+            if gift_data then
+                next_lv = gift_data.pass_level + 1
+            end
+            str = string.format(TI18N("语言_c_7183"),config.icon,need_num,next_lv)
+        else
+            local __num = model:getNeedCostByCampidandId(self.camp_id,self.select_id)
+            str = string.format(TI18N("语言_c_7177"),config.icon, __num)
+        end
+        self.tab_label:setString(str)
+    end
+end
+
+function ActionChangguanPanel:openRootWnd(bid)
+    self.holiday_bid = 993257
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    self.camp_id = tabvo.camp_id -- 活动的唯一Id
+    local group_cfg = Config.HolidayLevelshopData.data_get_camp[self.camp_id]
+    self.group_id = group_cfg.index
+    self.cost_money = group_cfg.asset
+
+    --如果没有活动数据就请求一下
+    local act_data = model:getChuangguanGiftDataByCampid( self.camp_id)
+    if not act_data then
+        controller:cs11520()
+    end
+
+    local lsee_time = tabvo.remain_sec
+    self:setCountDownTime(lsee_time)
+    self:createShowSpine(group_cfg.spine, group_cfg.spine_fix[1])
+    self:setCostMoneyInfo()
+    self:updateGiftData()
+    self:initListData()
+    self:initGiftData()
+    self:setTipPanelData()
+    self:jumpToMoveByY(101 * (#self.list_list - self.select_id - 1.5))
+end
+
+function ActionChangguanPanel:setTipPanelData()
+    local const_cfg =  Config.HolidayLevelshopData.data_constant
+    local spine_txt = const_cfg.spine_txt.val--"达到第{1}关，即可享受{2}商品{3}折优惠"--
+    local spine_txt_pos = const_cfg.spine_txt_pos
+    local cfg = Config.HolidayLevelshopData.data_get_camp[self.camp_id]
+    local special_items = cfg.special_items[1]
+    if special_items and next(special_items) then
+        local now_lv = 1
+        local gift_data = model:getChuangguanGiftDataByCampid(self.camp_id)
+        if gift_data then
+            now_lv = gift_data.pass_level
+        end
+        local target_lv
+        local target_id 
+        for i, v in ipairs(special_items) do
+            local data = v
+            if data[1] > now_lv then
+                target_lv = data[1]
+                target_id = data[2]
+                break
+            end
+        end
+        if target_lv and target_id then
+            local goods_data = Config.HolidayLevelshopData.data_get_goods[target_id]
+            local item_id = goods_data.item_id
+            local itemcfg = Config.ItemData.data_get_data(item_id)
+            local str = LangStringFormat(spine_txt, target_lv,itemcfg.name)
+            if isPFChange(CommonConst.fun_type.rebate) then
+                local num2 = 10 * (10 - goods_data.discount) 
+                str = LangStringFormat(spine_txt, target_lv,itemcfg.name)
+            else
+            end
+            self.tips:setString(str)
+            local size = self.tips:getContentSize()
+            self.tips_bg:setContentSize(cc.size(203, size.height + 40))
+            self.tip_panel:setVisible(true)
+        else
+            self.tip_panel:setVisible(false)
+        end
+    else
+        self.tip_panel:setVisible(false)
+    end
+end
+
+function ActionChangguanPanel:setCostMoneyInfo()
+    local own_num = BackpackController:getInstance():getModel():getItemNumByBid(self.cost_money)
+    if own_num == 0 then
+        own_num = self.role_vo:getActionAssetsNumByBid(self.cost_money)
+    end
+    self.item_num_txt:setString(own_num)
+    loadSpriteTexture(self.item_icon, PathTool.getItemRes(Config.ItemData.data_get_data(self.cost_money).icon), LOADTEXT_TYPE)
+end
+
+function ActionChangguanPanel:initListData()
+    local cfg = Config.HolidayLevelshopData.data_get_level[self.group_id]
+    local list = deepCopy(cfg)
+    self.list_list = {}
+    for k, v in pairs(list) do
+        table.insert(self.list_list,v)
+    end
+    table.sort(self.list_list, function(a, b) return a.level < b.level end )
+    self.scroll_view:reloadData(nil,nil,true)
+end
+
+function ActionChangguanPanel:jumpToMoveByY(y)
+    if not y then
+        return
+    end
+    local pos = y
+    if pos < 0 then
+        pos = 0
+    end
+
+    local len = #self.list_list or 1
+    local scroll_view_size = self.scroll_view:getContentSize()
+    local pos_per = pos * 100 / (len * 101 - scroll_view_size.height)
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.scroll_view:scrollToPercentVertical(pos_per, 0.5, true)
+end
+
+function ActionChangguanPanel:initGiftData()
+    local cfg = Config.HolidayLevelshopData.data_get_level[self.group_id]
+
+    local select_cfg = cfg[self.select_id]
+    self.reward_list = {}
+    local _list = select_cfg.goods_list
+    for k, v in pairs(_list) do
+        local id = v
+        local _cfg = Config.HolidayLevelshopData.data_get_goods[id]
+        table.insert(self.reward_list,_cfg)
+    end
+    self.reward_goods_item:reloadData()
+end
+
+function ActionChangguanPanel:updateConditionInfo()
+      -- {index=1, level=1, coin="levelshop_1", goods_list={1001,1002,1003}, open_cond={{70,250}}},
+    local cfg = Config.HolidayLevelshopData.data_get_level[self.group_id]
+    local select_cfg = cfg[self.select_id]
+    local open_cond = select_cfg.open_cond
+    if open_cond and next(open_cond) then
+        local cost_data = open_cond[1]
+        local cost_id = cost_data[1]
+        local cost_num = cost_data[2]
+        local str = TI18N("语言_c_7178")
+        self.tab_label:setString(string.format(str,cost_id,cost_num))
+    end
+    local group_cfg = Config.HolidayLevelshopData.data_get_camp[self.camp_id]
+    local asset = group_cfg.asset
+    local str = TI18N("语言_c_7179")
+    self.cond_label:setString(string.format(str,asset,0))
+end
+
+function ActionChangguanPanel:createShowSpine(eff_id,pos)
+    if not self.spine_model then
+        self.spine_model = createSpineByName(eff_id, PlayerAction.action)
+        self.spine_model:setPositionX(pos[1])
+        self.spine_model:setPositionY(pos[2])
+        self.spine_model:setScale(pos[3])
+        self.eff_node:addChild(self.spine_model)
+        self.spine_model:setAnimation(0, PlayerAction.action, true)
+    end
+end
+
+function ActionChangguanPanel:setCountDownTime(less_time)
+    if tolua.isnull(self.time_val) then return end
+    doStopAllActions(self.time_val)
+    if less_time > 0 then
+        self:setTimeFormatString(self.time_val,less_time)
+        self.time_val:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            if not tolua.isnull(self.time_val) then
+                less_time = less_time - 1
+                if less_time < 0 then
+                    doStopAllActions(self.time_val)
+                    self.time_val:setString("00:00:00")
+                else
+                    self:setTimeFormatString(self.time_val,less_time)
+                end
+            end
+        end))))
+    else
+        self:setTimeFormatString(self.time_val,less_time)
+    end
+end
+function ActionChangguanPanel:setTimeFormatString(node,time)
+    if time > 0 then
+        local str = "<div fontcolor=#ffffff outline=2,#000000>%s</div><div fontcolor=#00ff00 outline=2,#000000>%s</div>"
+        node:setString(string.format(str,TI18N('语言_c_1113'),TimeTool.GetTimeForFunction(time)))--(TI18N('语言_c_1113').. TimeTool.GetTimeForFunction(time))
+    else
+        doStopAllActions(node)
+        node:setString("00:00:00")
+    end
+end
+
+function ActionChangguanPanel:close_callback()
+    doStopAllActions(self.time_val)
+    if self.role_assets_event and self.role_vo then
+        self.role_vo:UnBind(self.role_assets_event)
+        self.role_assets_event = nil
+    end
+    if self.spine_model then
+        self.spine_model:clearTracks()
+        self.spine_model:removeFromParent()
+        self.spine_model = nil
+    end
+    if self.scroll_view then
+        self.scroll_view:DeleteMe()
+        self.scroll_view = nil
+    end
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    controller:openChuangguanPanel(false)
+end
+
+
+--礼包
+ActionChangguanGiftItem = class("ActionChangguanGiftItem", function()
+	return ccui.Layout:create()
+end)
+function ActionChangguanGiftItem:ctor(node)
+    self.is_completed = false
+    self.star_list = {}
+    self:setExtendData(node)
+    self:register_event()
+end
+function ActionChangguanGiftItem:setExtendData(node)	
+	if not tolua.isnull(node) and self.root_wnd == nil then
+		self.is_completed = true
+		local size = node:getContentSize()
+		self:setAnchorPoint(cc.p(0.5, 0.5))
+		self:setContentSize(size)
+		
+		self.root_wnd = node:clone()
+		self.root_wnd:setVisible(true)
+		self.root_wnd:setAnchorPoint(0.5, 0.5)
+		self.root_wnd:setPosition(size.width * 0.5, size.height * 0.5)
+		self:addChild(self.root_wnd)
+
+        self.bg = self.root_wnd:getChildByName("bg")
+		self.buy_btn = self.root_wnd:getChildByName("buy_btn")
+		local label = self.buy_btn:getChildByName("label")
+        label:setVisible(false)
+        local posx = label:getPositionX()
+        local posy = label:getPositionY()
+        self.label = createRichLabel(20, cc.c4b(0xf8, 0xef, 0x76, 0xff), cc.p(0.5, 0.5), cc.p(posx,posy), -4)
+        self.buy_btn:addChild(self.label)
+
+        self.discount = self.root_wnd:getChildByName("discount")
+        self.discount:setLocalZOrder(98)
+        self.discount_num = self.discount:getChildByName("discount_num")
+        self.discount:setVisible(false)
+
+        self.sell_all = self.root_wnd:getChildByName("sell_all")
+        self.sell_all:setLocalZOrder(99)
+        self.sell_all:setVisible(false)
+        
+	end
+end
+function ActionChangguanGiftItem:register_event()
+	registerButtonEventListener(self.buy_btn, function()  --皮肤预览按钮屏蔽
+        if self.callback then
+            self.callback()
+        end
+	end, false)
+end
+function ActionChangguanGiftItem:setHolidayCampid(camp_id,level)
+    self.camp_id = camp_id
+    self.select_lv = level
+end
+function ActionChangguanGiftItem:getHolidayCampInfo(camp_id,level)
+    return  self.camp_id , self.select_lv
+end
+function ActionChangguanGiftItem:setData(data)
+    self.data = data
+
+    if data.recommend == 1 then
+        self.bg:loadTexture(PathTool.getResFrame("holiday_levelshop", "levelshop_6"), LOADTEXT_TYPE_PLIST)
+    else
+        self.bg:loadTexture(PathTool.getResFrame("holiday_levelshop", "levelshop_5"), LOADTEXT_TYPE_PLIST)
+    end
+
+    if not self.goods_item then
+        self.goods_item = BackPackItem.new(false,true,false,1,false,true)
+        self.goods_item:setAnchorPoint(0.5, 0.5)
+        self.goods_item:setPosition(110, 153)
+        self.root_wnd:addChild(self.goods_item)
+    end
+    local vo = {}
+    vo = deepCopy(Config.ItemData.data_get_data(data.item_id))
+    vo.quantity = data.item_num
+    self.goods_item:setData(vo,false,true)
+    if not self.limit_txt then
+        self.limit_txt = createRichLabel(20, cc.c4b(0x7c, 0x55, 0x36, 0xff), cc.p(0.5, 0.5), cc.p(110,234), -4)
+        self.root_wnd:addChild(self.limit_txt)
+    end
+    local buy_num = model:getChuangguanGiftByCampidAndLv(self.camp_id,self.select_lv,data.goods_id)
+    self.limit_txt:setString(string.format(TI18N("语言_c_7185"),buy_num,data.buy_num_limit))--("限购0/"..data.buy_num_limit)
+
+    local cost_id = data.asset
+    local config = Config.ItemData.data_get_data(cost_id)
+    local price = data.price
+    local price_str = string.format("<img src=\'resource/item/%s.png\' scale=0.3 /><div fontcolor=#f8ef76 outline=2,#5c2705>%s</div>",config.icon,price) 
+    self.label:setString(price_str)
+    
+    local discount = data.discount
+    if discount and discount ~= 0 then
+        if discount == 10 then
+            self.discount_num:setString(TI18N("语言_c_1543"))
+        else
+            self.discount_num:setString(string.format(TI18N("语言_c_4710"), discount))
+            self.discount:setVisible(true)
+            if isPFChange(CommonConst.fun_type.rebate) then
+                local num2 = -10 * (10 - discount)
+                self.discount_num:setString(string.format(TI18N("语言_c_4710"), num2))
+            end
+        end
+    else
+        self.discount:setVisible(false)
+    end
+
+    local sell_out = model:checkSelectIsSellOut(self.camp_id, self.select_lv, data.goods_id)
+    if not sell_out then
+        self.sell_all:setVisible(false)
+        setChildUnEnabled(false, self.buy_btn)
+    else
+        self.sell_all:setVisible(true)
+        setChildUnEnabled(true, self.buy_btn)
+    end
+
+    self.object_data = {}
+    self.object_data.item_bid = data.item_id
+    self.object_data.limit_num = data.buy_num_limit
+    self.object_data.price = data.price
+    self.object_data.cost_type = data.asset
+    self.object_data.has_buy = buy_num
+    self.object_data.cfg_data = data
+    self.object_data.camp_id = self.camp_id
+    self.object_data.level = self.select_lv
+
+    -- [1001] = {goods_id=1001, item_id=10103, item_num=1, buy_num_limit=5, asset=70, price=20, discount=7},
+end
+function ActionChangguanGiftItem:setLockStatus(status)
+    self.lock_img:setVisible(status)
+end
+function ActionChangguanGiftItem:getCostData()
+    return self.object_data
+end
+function ActionChangguanGiftItem:getData()
+    return self.data
+end
+function ActionChangguanGiftItem:addCallBack(callback)
+    self.callback = callback
+end
+function ActionChangguanGiftItem:DeleteMe()
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+
+ActionChangguanItem = class("ActionChangguanItem", function()
+	return ccui.Layout:create()
+end)
+
+function ActionChangguanItem:ctor(node)
+    self.is_completed = false
+    self.star_list = {}
+    self:setExtendData(node)
+    self:register_event()
+end
+function ActionChangguanItem:register_event()
+	registerButtonEventListener(self.click_layer, function()  --皮肤预览按钮屏蔽
+        if self.callback then
+            self.callback()
+        end
+	end, false)
+end
+function ActionChangguanItem:setExtendData(node)	
+	if not tolua.isnull(node) and self.root_wnd == nil then
+		self.is_completed = true
+		local size = node:getContentSize()
+		self:setAnchorPoint(cc.p(0.5, 0.5))
+		self:setContentSize(size)
+		
+		self.root_wnd = node:clone()
+		self.root_wnd:setVisible(true)
+		self.root_wnd:setAnchorPoint(0.5, 0.5)
+		self.root_wnd:setPosition(size.width * 0.5, size.height * 0.5)
+		self:addChild(self.root_wnd)
+
+		self.line_gray = self.root_wnd:getChildByName("line_gray")
+        -- self.line_gray:setVisible(false)
+		self.line = self.root_wnd:getChildByName("line")
+        self.line:setVisible(false)
+        self.label = self.root_wnd:getChildByName("label")
+        self.click_layer = self.root_wnd:getChildByName("click_layer")
+        self.click_layer:ignoreContentAdaptWithSize(true)
+		self.zhuangshi_img = self.root_wnd:getChildByName("zhuangshi_img")
+        self.zhuangshi_img:ignoreContentAdaptWithSize(true)
+        self.zhuangshi_img:setVisible(false)
+		self.current_img = self.root_wnd:getChildByName("current_img")
+        self.current_img:ignoreContentAdaptWithSize(true)
+        self.current_img:setVisible(false)
+        self.lock_img = self.root_wnd:getChildByName("lock_img")
+        self.lock_img:setVisible(false)
+        self.special_item_layer = self.root_wnd:getChildByName("item_layer")
+        self.special_item_layer:setVisible(false)
+        if self.item_scroller == nil then
+            local scroll_view_size = self.special_item_layer:getContentSize()
+            local setting = {
+                item_class = BackPackItem,      -- 单元类
+                start_x = 5,                  -- 第一个单元的X起点
+                space_x = 0,                  -- x方向的间隔
+                start_y = 5,                    -- 第一个单元的Y起点
+                space_y = 5,                   -- y方向的间隔
+                item_width = BackPackItem.Width*0.6,               -- 单元的尺寸width
+                item_height = BackPackItem.Height*0.6,              -- 单元的尺寸height
+                row = 1,                        -- 行数，作用于水平滚动类型
+                col = 0,
+                scale = 0.6
+            }
+            self.item_scroller = CommonScrollViewLayout.new(self.special_item_layer, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+        end
+	end
+end
+function ActionChangguanItem:setSelectStatus(status)
+    self.current_img:setVisible(status)
+end
+function ActionChangguanItem:setHolidayCampid(camp_id)
+    self.camp_id = camp_id
+end
+function ActionChangguanItem:setData(data)
+    self.current_img:setVisible(false)
+    self.data = data
+    local level = data.level
+    self.label:setString(string.format( TI18N("语言_c_34"),level))
+    if level % 2 == 0 then
+        self.line_gray:setScaleX(-1)
+        self.line:setScaleX(-1)
+        self.current_img:setPositionX(327)
+        self.click_layer:setPositionX(327)
+        self.label:setPositionX(313)
+        self.lock_img:setPositionX(315)
+    else
+        self.line_gray:setScaleX(1)
+		self.line:setScaleX(1)
+        self.current_img:setPositionX(113)
+        self.click_layer:setPositionX(113)
+        self.label:setPositionX(98)
+        self.lock_img:setPositionX(99)
+    end
+
+    local group = data.index
+    local cfg = Config.HolidayLevelshopData.data_get_level[group]
+    local next_lv = data.level + 1
+    local next_lock = model:checkSelectLockstatus(self.camp_id,next_lv)
+    if not cfg[next_lv] then
+        self.line_gray:setVisible(false)
+		self.line:setVisible(false)
+    else
+        self.line_gray:setVisible(true)
+        if next_lock then
+            self.line:setVisible(true)
+        else
+            self.line:setVisible(false)
+        end
+    end
+
+    local res = data.coin
+    local is_sell_out = model:checkChuangguanGiftSellOutByCampidAndLv(self.camp_id,level)
+    if is_sell_out then
+        self.current_img:loadTexture(PathTool.getResFrame("holiday_levelshop", res.."_3"), LOADTEXT_TYPE_PLIST)
+        self.click_layer:loadTexture(PathTool.getResFrame("holiday_levelshop", res.."_2"), LOADTEXT_TYPE_PLIST)
+    else
+        self.current_img:loadTexture(PathTool.getResFrame("holiday_levelshop", res.."_1"), LOADTEXT_TYPE_PLIST)
+        self.click_layer:loadTexture(PathTool.getResFrame("holiday_levelshop", res), LOADTEXT_TYPE_PLIST)
+    end
+
+    local zhuangshi_res = data.bk_pic
+    if zhuangshi_res ~= "" then
+        self.zhuangshi_img:loadTexture(PathTool.getResFrame("holiday_levelshop", zhuangshi_res), LOADTEXT_TYPE_PLIST)
+        if level % 2 == 0 then
+            self.zhuangshi_img:setPositionX(313)
+        else
+            self.zhuangshi_img:setPositionX(98)
+        end
+        self.zhuangshi_img:setVisible(true)
+    else
+        self.zhuangshi_img:setVisible(false)
+    end
+
+    local is_special = data.is_special
+    if is_special == TRUE then
+        if not self.item_eff then
+            self.item_eff = createEffectSpine("E50104", cc.p(47, 41), cc.p(0.5, 0.5), true, "action1")
+            self.click_layer:addChild(self.item_eff)
+        end
+        self.item_eff:setVisible(true)
+    else
+        if self.item_eff then
+            self.item_eff:setVisible(false)
+        end
+    end
+
+    local is_unlock = model:checkSelectLockstatus(self.camp_id,level)
+    if is_unlock then
+        self.lock_img:setVisible(false)
+    else
+        self.lock_img:setVisible(true)
+    end
+
+    local is_show = data.is_show
+    if is_show == TRUE then
+        local good_list = {}
+        local show_list = data.goods_list
+        for k, v in pairs(show_list) do
+            local good_data = Config.HolidayLevelshopData.data_get_goods[v]
+            local item_id = good_data.item_id
+            local item_cfg = deepCopy(Config.ItemData.data_get_data(item_id))
+            table.insert(good_list,item_cfg)
+        end
+        self.special_item_layer:setContentSize(cc.size(76*#good_list,80))
+        if level % 2 == 0 then
+            self.special_item_layer:setPositionX(258-80*#good_list)
+        else
+            self.special_item_layer:setPositionX(153)
+        end
+        self.item_scroller.scroll_view:setContentSize(cc.size(76*#good_list,80))
+        self.item_scroller.scroll_view:setInnerContainerSize(cc.size(76*#good_list,80))
+        self.item_scroller:setData(good_list)
+        self.item_scroller:addEndCallBack(function (  )
+            local list = self.item_scroller:getItemList()
+            for k,v in pairs(list) do
+                v:setDefaultTip()
+                v:setSwallowTouches(false)
+            end
+        end)
+        self.special_item_layer:setVisible(true)
+    else
+        self.special_item_layer:setVisible(false)
+    end
+end
+function ActionChangguanItem:getData()
+    return self.data
+end
+function ActionChangguanItem:addCallBack(callback)
+    self.callback = callback
+end
+function ActionChangguanItem:setLockStatus(status)
+    self.lock_img:setVisible(status)
+end
+function ActionChangguanItem:DeleteMe()
+    if self.item_eff then
+        self.item_eff:clearTracks()
+        self.item_eff:removeFromParent()
+        self.item_eff=nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end 

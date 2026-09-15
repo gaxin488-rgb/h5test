@@ -1,0 +1,682 @@
+--------------------------------------------
+-- @Author  : yuanqi@shiyue.com
+-- @Editor  : yuanqi@shiyue.com
+-- @Date    : 2020-08-12
+-- @description    : 
+		-- 家园属性详情
+---------------------------------
+local _controller = HomeworldController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _string_format = string.format
+local _table_sort = table.sort
+
+HomeworldAttrInfoWindow = HomeworldAttrInfoWindow or BaseClass(BaseView)
+
+function HomeworldAttrInfoWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "homeworld/homeworld_attr_info_window"
+	self.base_data_list = {}
+	self.suit_data_list = {}
+	self.soft_data_list = {}
+	self.attr_bg_list = {}
+	self.attr_icon_list = {}
+	self.attr_label_list = {}
+	--[[self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("homeworld", "homeworld"), type = ResourcesType.plist},
+	}--]]
+end
+
+function HomeworldAttrInfoWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container , 1) 
+
+	local cur_storey_index = _model:getMyHomeCurStoreyIndex()
+	main_container:getChildByName("win_title"):setString(TI18N("属性加成总览"))
+	main_container:getChildByName("title_label_1"):setString(TI18N("概况总览"))
+	main_container:getChildByName("title_label_2"):setString(TI18N("家具属性基础加成"))
+	main_container:getChildByName("title_label_3"):setString(TI18N("家具套装加成"))
+	main_container:getChildByName("title_label_4"):setString(TI18N("舒适度加成"))
+	main_container:getChildByName("title_txt_1"):setString(TI18N("家具名"))
+	main_container:getChildByName("title_txt_2"):setString(TI18N("家具属性基础加成"))
+	main_container:getChildByName('title_txt_3'):setString(TI18N("套装名"))
+	main_container:getChildByName("title_txt_4"):setString(TI18N("套件数量"))
+	main_container:getChildByName("title_txt_5"):setString(TI18N("家具套装加成"))
+	main_container:getChildByName("title_txt_6"):setString(TI18N("数量"))
+	main_container:getChildByName("title_txt_7"):setString(TI18N("楼层"))
+	main_container:getChildByName("title_txt_8"):setString(TI18N("楼层舒适度"))
+	main_container:getChildByName("title_txt_9"):setString(TI18N("舒适度加成"))
+	main_container:getChildByName("tips_label"):setVisible(false)--setString(TI18N("解锁家具、增加收集进度、提升每层舒适度均可加成英雄属性！"))
+	local tips_label =  createRichLabel(18, cc.c4b(0x95,0x53,0x22,0xff), cc.p(0.5,0.5), cc.p(340, 44), 4, nil, 600)
+    main_container:addChild(tips_label)
+    tips_label:setString(TI18N("解锁家具、增加收集进度、提升每层舒适度均可加成英雄属性！"))
+
+	self.close_btn = main_container:getChildByName("close_btn")
+	self.btn_rule = main_container:getChildByName("btn_rule")
+	self.base_total_txt = main_container:getChildByName("base_total_txt")
+	self.base_total_txt:setVisible(false)
+	self.suit_total_txt = main_container:getChildByName("suit_total_txt")
+	self.soft_total_txt = main_container:getChildByName("soft_total_txt")
+	self.soft_txt_floor = main_container:getChildByName("soft_txt_floor")
+	self.soft_txt_num = main_container:getChildByName("soft_txt_num")
+	self.soft_txt_add = main_container:getChildByName("soft_txt_add")
+
+	for i = 1, 2 do
+		local attr_bg = main_container:getChildByName("attr_bg_" .. i)
+		local attr_icon = main_container:getChildByName("attr_icon_" .. i)
+		local attr_label = main_container:getChildByName("attr_label_" .. i)
+		self.attr_bg_list[i] = attr_bg
+		self.attr_icon_list[i] = attr_icon
+		self.attr_label_list[i] = attr_label
+	end
+
+	local base_list_panel = main_container:getChildByName("base_list_panel")
+	if self.base_scrollview == nil then
+        local scroll_view_size = base_list_panel:getContentSize()
+        local setting = {
+            start_x = 0,                  -- 第一个单元的X起点
+			space_x = 0,                    -- x方向的间隔
+			start_y = 0,                    -- 第一个单元的Y起点
+			space_y = 5,                   -- y方向的间隔
+			item_width = 602,               -- 单元的尺寸width
+			item_height = 30,              -- 单元的尺寸height
+			row = 0,                        -- 行数，作用于水平滚动类型
+			col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+			need_dynamic = true
+        }
+        self.base_scrollview = CommonScrollViewSingleLayout.new(base_list_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.base_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.base_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.base_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.base_scrollview:setSwallowTouches(false)
+
+	local suit_list_panel = main_container:getChildByName("suit_list_panel")
+	if self.suit_scrollview == nil then
+        local scroll_view_size = suit_list_panel:getContentSize()
+        local setting = {
+            start_x = 0,                  -- 第一个单元的X起点
+			space_x = 0,                    -- x方向的间隔
+			start_y = 0,                    -- 第一个单元的Y起点
+			space_y = 5,                   -- y方向的间隔
+			item_width = 602,               -- 单元的尺寸width
+			item_height = 30,              -- 单元的尺寸height
+			row = 0,                        -- 行数，作用于水平滚动类型
+			col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+			need_dynamic = true
+        }
+        self.suit_scrollview = CommonScrollViewSingleLayout.new(suit_list_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.suit_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell1), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.suit_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells1), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.suit_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex1), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+	self.suit_scrollview:setSwallowTouches(false)
+	
+	local soft_add_list = main_container:getChildByName("soft_add_list")
+	if self.soft_scrollview == nil then
+        local scroll_view_size = soft_add_list:getContentSize()
+        local setting = {
+            start_x = 0,                  -- 第一个单元的X起点
+			space_x = 0,                    -- x方向的间隔
+			start_y = 0,                    -- 第一个单元的Y起点
+			space_y = 5,                   -- y方向的间隔
+			item_width = 602,               -- 单元的尺寸width
+			item_height = 30,              -- 单元的尺寸height
+			row = 0,                        -- 行数，作用于水平滚动类型
+			col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+			need_dynamic = true
+        }
+        self.soft_scrollview = CommonScrollViewSingleLayout.new(soft_add_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.soft_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell2), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.soft_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells2), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.soft_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex2), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+	self.soft_scrollview:setSwallowTouches(false)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HomeworldAttrInfoWindow:createNewCell(width, height)
+    local cell = HomeworldAttrInfoBaseItem.new()
+	return cell
+end
+
+--获取数据数量
+function HomeworldAttrInfoWindow:numberOfCells()
+    if not self.base_data_list then return 0 end
+    return #self.base_data_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HomeworldAttrInfoWindow:updateCellByIndex(cell, index)
+    if not self.base_data_list then return end
+    cell.index = index
+    if self.tab ~= nil and cell.setExtendData ~= nil then
+        cell:setExtendData(self.tab)
+    end
+    local cell_data = self.base_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HomeworldAttrInfoWindow:createNewCell1(width, height)
+    local cell = HomeworldAttrInfoSuitItem.new()
+	return cell
+end
+
+--获取数据数量
+function HomeworldAttrInfoWindow:numberOfCells1()
+    if not self.suit_data_list then return 0 end
+    return #self.suit_data_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell1的返回的对象
+--inde :数据的索引
+function HomeworldAttrInfoWindow:updateCellByIndex1(cell, index)
+    if not self.suit_data_list then return end
+    cell.index = index
+    local cell_data = self.suit_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HomeworldAttrInfoWindow:createNewCell2(width, height)
+    local cell = HomeworldAttrInfoSoftItem.new()
+	return cell
+end
+
+--获取数据数量
+function HomeworldAttrInfoWindow:numberOfCells2()
+    if not self.soft_data_list then return 0 end
+    return #self.soft_data_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell2的返回的对象
+--inde :数据的索引
+function HomeworldAttrInfoWindow:updateCellByIndex2(cell, index)
+    if not self.soft_data_list then return end
+    cell.index = index
+    local cell_data = self.soft_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function HomeworldAttrInfoWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, function (  )
+		_controller:openHomeBonusOverviewPanel(false)
+	end, true, 2)
+
+	registerButtonEventListener(self.background, function (  )
+		_controller:openHomeBonusOverviewPanel(false)
+	end, false, 2)
+
+	registerButtonEventListener(self.btn_rule, function ( param,sender, event_type )
+		local rule_cfg = Config.HomeData.data_const["home_attr_rule"]
+    	if rule_cfg then
+    		TipsManager:getInstance():showCommonTips(rule_cfg.desc, sender:getTouchBeganPosition(), nil, nil, 550)
+    	end
+	end, true, 1)
+
+	-- 更新所有楼层舒适度
+	self:addGlobalEvent(HomeworldEvent.Update_All_floor_Soft, function ( data )
+		-- 属性
+		local total_attr = _model:getAllTotalAttr()
+		local soft_additoin_list = _model:getAllSoftAddition(data)
+		for i, v in pairs(total_attr) do
+			if self.attr_bg_list[i] and self.attr_icon_list[i] and self.attr_label_list[i] then
+				self.attr_bg_list[i]:setVisible(true)
+				self.attr_icon_list[i]:setVisible(true)
+				self.attr_label_list[i]:setVisible(true)
+				local icon_path, attr_name = _model:getAttrIconPathAndName(v[1])
+				loadSpriteTexture(self.attr_icon_list[i], icon_path, LOADTEXT_TYPE_PLIST)
+				local soft_add_per = 0
+				if soft_additoin_list then
+					for _, attr_per in pairs(soft_additoin_list) do
+						if v[1] .. "_per" == attr_per[1] then
+							soft_add_per = attr_per[2] / 1000
+							break
+						end
+					end
+				end
+				self.attr_label_list[i]:setString(attr_name .. (v[2] + math.floor((v[2] * soft_add_per) + 0.5)))
+			end
+		end
+        self:updateSoftList(data)
+    end)
+end
+
+function HomeworldAttrInfoWindow:openRootWnd(  )
+	_controller:sender26025()
+	self:setData()
+end
+
+function HomeworldAttrInfoWindow:setData(  )
+	-- local function checkAddSuitData( unit_cfg )
+	-- 	if unit_cfg.set_id and unit_cfg.set_id > 0 then
+	-- 		local is_have = false
+	-- 		for k,v in pairs(suit_data_list) do
+	-- 			if unit_cfg.set_id == v.set_id then
+	-- 				is_have = true
+    --                 local is_cal_num = true
+    --                 for _,u_bid in pairs(v.item_list) do
+    --                     if unit_cfg.bid == u_bid then
+    --                         is_cal_num = false
+    --                         break
+    --                     end
+    --                 end
+    --                 if is_cal_num then
+    --                     v.num = v.num + 1
+    --                     _table_insert(v.item_list, unit_cfg.bid)
+    --                 end
+	-- 				break
+	-- 			end
+	-- 		end
+	-- 		if not is_have then
+	-- 			local suit_data = {}
+	-- 			suit_data.set_id = unit_cfg.set_id
+	-- 			suit_data.num = 1
+	-- 			suit_data.cfg = Config.HomeData.data_suit_soft[unit_cfg.set_id]
+	-- 			suit_data.item_list = {}
+	-- 			_table_insert(suit_data.item_list, unit_cfg.bid)
+	-- 			_table_insert(suit_data_list, suit_data)
+	-- 		end
+	-- 	end
+	-- end
+
+	-- -- 墙壁
+	-- local wall_bid = _model:getMyHomeWallId()
+	-- local wall_cfg = Config.HomeData.data_home_unit(wall_bid)
+	-- if wall_cfg then
+	-- 	local s_data = {}
+	-- 	s_data.bid = wall_cfg.bid
+	-- 	s_data.num = 1
+	-- 	s_data.cfg = deepCopy(wall_cfg)
+	-- 	_table_insert(unit_cfg_list, s_data)
+
+	-- 	checkAddSuitData(wall_cfg)
+	-- end
+	-- -- 地板
+	-- local floor_bid = _model:getMyHomeFloorId()
+	-- local floor_cfg = Config.HomeData.data_home_unit(floor_bid)
+	-- if floor_cfg then
+	-- 	local s_data = {}
+	-- 	s_data.bid = floor_cfg.bid
+	-- 	s_data.num = 1
+	-- 	s_data.cfg = deepCopy(floor_cfg)
+	-- 	_table_insert(unit_cfg_list, s_data)
+
+	-- 	checkAddSuitData(floor_cfg)
+	-- end
+	-- -- 家具
+	-- local all_furniture_list = _model:getMyHomeFurnitureData()
+	-- for k,vo in pairs(all_furniture_list) do
+	-- 	local furniture_cfg = Config.HomeData.data_home_unit(vo.bid)
+	-- 	if furniture_cfg then
+	-- 		local is_have = false
+	-- 		for _,s_data in pairs(unit_cfg_list) do
+	-- 			if s_data.bid == furniture_cfg.bid then
+	-- 				is_have = true
+	-- 				s_data.num = s_data.num + 1
+	-- 				break
+	-- 			end
+	-- 		end
+	-- 		if not is_have then
+	-- 			local s_data = {}
+	-- 			s_data.bid = furniture_cfg.bid
+	-- 			s_data.num = 1
+	-- 			s_data.cfg = deepCopy(furniture_cfg)
+	-- 			_table_insert(unit_cfg_list, s_data)
+	-- 		end
+
+	-- 		checkAddSuitData(furniture_cfg)
+	-- 	end
+	-- end
+
+	-- -- 家具基础舒适度
+	-- local total_base_soft = 0
+	-- for k,s_data in pairs(unit_cfg_list) do
+	-- 	local cal_num = math.min(s_data.cfg.effect_count, s_data.num)
+	-- 	s_data.cal_soft = s_data.cfg.soft*cal_num
+	-- 	total_base_soft = total_base_soft + s_data.cal_soft
+	-- end
+
+	-- self.base_total_txt:setString(_string_format(TI18N("总计:%d"), total_base_soft))
+	-- self.base_scrollview:setData(unit_cfg_list)
+
+	-- -- 套装舒适度加成
+	-- local show_suit_data = {}
+	-- local total_suit_soft = 0
+	-- for k,s_data in pairs(suit_data_list) do
+	-- 	local diff_val
+	-- 	local cur_num
+	-- 	for num,cfg in pairs(s_data.cfg) do
+	-- 		if s_data.num >= num and (not diff_val or diff_val > (s_data.num - num)) then
+	-- 			diff_val = s_data.num - num
+	-- 			cur_num = num
+	-- 		end
+	-- 	end
+	-- 	if cur_num then
+	-- 		s_data.cfg = s_data.cfg[cur_num]
+	-- 		total_suit_soft = total_suit_soft + s_data.cfg.all_soft
+	-- 		_table_insert(show_suit_data, s_data)
+	-- 	end
+	-- end
+	-- self.suit_scrollview:setData(show_suit_data)
+	-- self.suit_total_txt:setString(_string_format(TI18N("总计:%d"), total_suit_soft))
+
+	-- 基础加成
+	self.base_data_list = {}
+	-- 家具套装加成
+	self.suit_data_list = {}
+
+	local suit_list = Config.HomeData.data_suit
+	if suit_list then
+		for _, suit_info in pairs(suit_list) do
+			-- 处理基础属性加成
+			local suit_id_list = Config.HomeData.data_suit_unit[suit_info.set_id]
+			if suit_id_list then
+				for k, id in pairs(suit_id_list) do
+					local is_had = _model:isHadFurnitureByBid(id)
+					if is_had then
+						local unit_cfg = Config.HomeData.data_home_unit(id)
+						_table_insert(self.base_data_list, unit_cfg)
+					end
+				end
+			end
+			-- 处理套装属性加成
+			local suit_cfg, suit_count = _model:getSuitAttr(suit_info.set_id)
+			if next(suit_cfg) and suit_count and suit_count ~= 0 then
+				local temp_data = {}
+				temp_data.attr = suit_cfg.attr
+				temp_data.attr_num = suit_cfg.attr_num
+				temp_data.name = suit_info.name
+				temp_data.have_num = suit_count
+				_table_insert(self.suit_data_list, temp_data)
+			end
+		end
+		-- self:setBaseTotalTxt()
+	end
+	self.base_scrollview:reloadData()
+	self.suit_scrollview:reloadData()
+end
+
+function HomeworldAttrInfoWindow:updateSoftList(data)
+	if data and data.soft_list then
+		self.soft_data_list = data.soft_list
+		_table_sort(self.soft_data_list, SortTools.KeyLowerSorter("floor"))
+		self.soft_scrollview:reloadData()
+	end
+end
+
+-- function HomeworldAttrInfoWindow:setBaseTotalTxt()
+-- 	if self.base_data_list then
+-- 		local attr_list = {}
+-- 		for i, v in ipairs(self.base_data_list) do
+-- 			for i1, v1 in ipairs(v.attr) do
+-- 				if attr_list[v1[1]] == nil then
+-- 					attr_list[v1[1]] = {}
+-- 					attr_list[v1[1]].val = 0
+-- 					attr_list[v1[1]].sort = i1
+-- 				end
+-- 				attr_list[v1[1]].val = attr_list[v1[1]].val + v1[2]
+-- 			end
+-- 		end
+-- 		local sort_attr_list = {}
+-- 		for k, v in pairs(attr_list) do
+-- 			_table_insert(sort_attr_list, {key = k, val = v})
+-- 		end
+-- 		_table_sort(sort_attr_list, function(a, b) return a.val.sort < b.val.sort end)
+-- 		local total_attr_list = {}
+-- 		for i, v in ipairs(sort_attr_list) do
+-- 			_table_insert(total_attr_list, {v.key, v.val.val})
+-- 		end
+-- 		local attr_str = ""
+-- 		for i, v in ipairs(total_attr_list) do
+-- 			local attr_key = v[1]
+-- 			local attr_val = v[2]
+-- 			local attr_name = Config.AttrData.data_key_to_name[attr_key]
+-- 			local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+-- 			if is_per == true then
+-- 				attr_val = (attr_val*0.1).."%"
+-- 			end
+-- 			attr_str = _string_format("%s+%s ", attr_str .. attr_name, attr_val)
+-- 		end
+-- 		self.base_total_txt:setString(attr_str)
+-- 	end
+-- end
+
+function HomeworldAttrInfoWindow:close_callback(  )
+	if self.base_scrollview then
+		self.base_scrollview:DeleteMe()
+		self.base_scrollview = nil
+	end
+	if self.suit_scrollview then
+		self.suit_scrollview:DeleteMe()
+		self.suit_scrollview = nil
+	end
+	if self.soft_scrollview then
+		self.soft_scrollview:DeleteMe()
+		self.soft_scrollview = nil
+	end
+	_controller:openHomeBonusOverviewPanel(false)
+end
+
+--------------------------
+HomeworldAttrInfoBaseItem = class("HomeworldAttrInfoBaseItem", function()
+    return ccui.Widget:create()
+end)
+
+function HomeworldAttrInfoBaseItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function HomeworldAttrInfoBaseItem:configUI(  )
+	self.root_wnd = ccui.Layout:create()
+    self.size = cc.size(602, 30)
+    self.root_wnd:setContentSize(self.size)
+    self:setContentSize(self.size)
+    self.root_wnd:setTouchEnabled(false)
+    self:addChild(self.root_wnd)
+end
+
+function HomeworldAttrInfoBaseItem:register_event(  )
+	
+end
+
+function HomeworldAttrInfoBaseItem:setData( data )
+	if not data then return end
+
+	local item_cfg = Config.ItemData.data_get_data(data.bid)
+	local unit_cfg = data
+	if not item_cfg or not unit_cfg then return end
+
+	if not self.name_txt then
+		self.name_txt = createLabel(24, 1, nil, 20, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0, 0.5))
+	end
+	self.name_txt:setTextColor(BackPackConst.getWhiteQualityColorC4B(item_cfg.quality))
+	self.name_txt:setString(unit_cfg.name)
+
+	if not self.num_txt then
+		self.num_txt = createLabel(24, 274, nil, 286, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0.5, 0.5))
+	end
+	self.num_txt:setString("1/1")
+
+	if not self.attr_txt then
+		-- self.attr_txt = createLabel(24, 274, nil, 485, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0.5, 0.5))
+		self.attr_txt = createRichLabel(24, 274, cc.p(0, 0.5), cc.p(380, self.size.height*0.5), nil, nil, 300)
+		self.root_wnd:addChild(self.attr_txt)
+	end
+	local attr_str = ""
+	for i, v in ipairs(unit_cfg.attr) do
+		local attr_key = v[1]
+		local attr_val = v[2]
+		local icon_path = _model:getAttrIconPathAndName(attr_key)
+		local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+		if is_per == true then
+			attr_val = (attr_val*0.1).."%"
+		end
+		local cur_attr_str = _string_format("<img src='%s' scale=1 />%s", icon_path, attr_val)
+		if attr_val > 99 then
+			cur_attr_str = cur_attr_str .. "   "
+		elseif attr_val > 9 then
+			cur_attr_str = cur_attr_str .. "      "
+		end
+		attr_str = _string_format("%s%s ", attr_str , cur_attr_str)
+	end
+	self.attr_txt:setString(attr_str)
+end
+
+function HomeworldAttrInfoBaseItem:DeleteMe(  )
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+--------------------------
+HomeworldAttrInfoSuitItem = class("HomeworldAttrInfoSuitItem", function()
+    return ccui.Widget:create()
+end)
+
+function HomeworldAttrInfoSuitItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function HomeworldAttrInfoSuitItem:configUI(  )
+	self.root_wnd = ccui.Layout:create()
+    self.size = cc.size(602, 30)
+    self.root_wnd:setContentSize(self.size)
+    self:setContentSize(self.size)
+    self.root_wnd:setTouchEnabled(false)
+    self:addChild(self.root_wnd)
+end
+
+function HomeworldAttrInfoSuitItem:register_event(  )
+	
+end
+
+function HomeworldAttrInfoSuitItem:setData( data )
+	if not data then return end
+
+	if not self.name_txt then
+		self.name_txt = createLabel(24, 274, nil, 20, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0, 0.5))
+	end
+	self.name_txt:setString(data.name)
+
+	if not self.num_txt then
+		self.num_txt = createLabel(24, 274, nil, 258, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0.5, 0.5))
+	end
+	self.num_txt:setString(data.have_num .. "/" .. data.attr_num)
+
+	if not self.suit_txt then
+		-- self.suit_txt = createLabel(24, 274, nil, 463, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0.5, 0.5))
+		self.suit_txt = createRichLabel(24, 274, cc.p(0, 0.5), cc.p(360, self.size.height*0.5), nil, nil, 300)
+		self.root_wnd:addChild(self.suit_txt)
+	end
+	local attr_str = ""
+	for i, v in ipairs(data.attr) do
+		local attr_key = v[1]
+		local attr_val = v[2]
+		local icon_path = _model:getAttrIconPathAndName(attr_key)
+		local attr_name = Config.AttrData.data_key_to_name[attr_key]
+		local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+		if is_per == true then
+			attr_val = (attr_val*0.1).."%"
+		end
+		local cur_attr_str = _string_format("<img src='%s' scale=1 />%s", icon_path, attr_val)
+		if attr_val > 999 then
+			cur_attr_str = cur_attr_str .. "   "
+		elseif attr_val > 99 then
+			cur_attr_str = cur_attr_str .. "      "
+		elseif attr_val > 9 then
+			cur_attr_str = cur_attr_str .. "         "
+		end
+		attr_str = _string_format("%s%s ", attr_str , cur_attr_str)
+	end
+	self.suit_txt:setString(attr_str)
+end
+
+function HomeworldAttrInfoSuitItem:DeleteMe(  )
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+--------------------------
+HomeworldAttrInfoSoftItem = class("HomeworldAttrInfoSoftItem", function()
+    return ccui.Widget:create()
+end)
+
+function HomeworldAttrInfoSoftItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function HomeworldAttrInfoSoftItem:configUI(  )
+	self.root_wnd = ccui.Layout:create()
+    self.size = cc.size(602, 30)
+    self.root_wnd:setContentSize(self.size)
+    self:setContentSize(self.size)
+    self.root_wnd:setTouchEnabled(false)
+    self:addChild(self.root_wnd)
+end
+
+function HomeworldAttrInfoSoftItem:register_event(  )
+	
+end
+
+function HomeworldAttrInfoSoftItem:setData( data )
+	if not data then return end
+
+	if not self.name_txt then
+		self.name_txt = createLabel(24, 274, nil, 20, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0, 0.5))
+	end
+	self.name_txt:setString(_string_format(TI18N("第%s层"), StringUtil.numToChinese(data.floor)))
+
+	if not self.num_txt then
+		self.num_txt = createLabel(24, 274, nil, 300, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0.5, 0.5))
+	end
+	self.num_txt:setString(data.soft)
+
+	if not self.soft_txt then
+		self.soft_txt = createLabel(24, 274, nil, 507, self.size.height*0.5, nil, self.root_wnd, nil, cc.p(0.5, 0.5))
+	end
+	local soft_add_cfg = _model:getSoftAdditionCfg(data.floor, data.soft)
+	if soft_add_cfg then
+		self.soft_txt:setString(soft_add_cfg.show_per)
+	else
+        self.soft_txt:setString("0%")
+	end
+end
+
+function HomeworldAttrInfoSoftItem:DeleteMe(  )
+	self:removeAllChildren()
+	self:removeFromParent()
+end

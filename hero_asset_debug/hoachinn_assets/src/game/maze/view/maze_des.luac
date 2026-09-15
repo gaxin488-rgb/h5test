@@ -1,0 +1,390 @@
+local _controller = MazeController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+MazeDes = MazeDes or BaseClass(BaseView)
+
+function MazeDes:__init()
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "maze/maze_des"
+end
+
+function MazeDes:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    local container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(container, 2)
+
+    self.title_bg = container:getChildByName("image_2")
+    self.win_title = container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_maze_1"))
+    moveTextBg(self.win_title, self.title_bg, 60, 159)
+    self.panel_top = container:getChildByName("panel_top")
+    self.top_label_name = self.panel_top:getChildByName("label_name")
+    self.top_label_title = self.panel_top:getChildByName("label_title")
+    self.top_label_title:setString("")
+    self.top_desc_group = self.panel_top:getChildByName("desc_group")
+    self.hero_desc = createRichLabel(24, cc.c3b(0x77, 0x55, 0x36), cc.p(0, 1), cc.p(0, 0),nil,nil,470)
+    self.top_desc_group:addChild(self.hero_desc)
+    self.top_desc_group:setScrollBarEnabled(false)
+
+    self.image_middle = container:getChildByName("image_middle")
+    self.label_form = self.image_middle:getChildByName("label_form")
+    self.label_form:setString(TI18N("语言_c_2054"))
+
+    self.down_group = self.image_middle:getChildByName("down_group")
+    self.down_value = self.down_group:getChildByName("down_value")
+
+    self.image_power_value = self.image_middle:getChildByName("image_power_value")
+    self.label_power_value = self.image_power_value:getChildByName("label_power_value")
+
+    self.fight_btn = container:getChildByName("fight_btn")
+    self.fight_btn_label = self.fight_btn:getChildByName("label")
+    self.fight_btn_label:setString(TI18N("语言_maze_02_1"))
+    self.icon_bg = container:getChildByName("icon_bg")
+    self.icon_bg:setVisible(true)
+    self.icon_img = self.icon_bg:getChildByName("icon_img")
+    self.icon_num_group = self.icon_bg:getChildByName("icon_num_group")
+    self.icon_num = self.icon_num_group:getChildByName("icon_num")
+    self.num_double = self.icon_num_group:getChildByName("num_double")
+    self.num_double:setString("")
+    self.icon_img:setScale(0.5, 0.5)
+    self.down_value:setString("0%")
+    local config = Config.MazeData.data_const
+    if config then
+        local sneak_item = config["sneak_item"].val
+        if sneak_item then
+            local item_config = Config.ItemData.data_get_data(sneak_item)
+            if item_config then
+                local res = PathTool.getItemRes(item_config.icon)
+                loadSpriteTexture(self.icon_img, res, LOADTEXT_TYPE)
+            end
+        end
+    end
+    
+
+    -- 阵容列表
+	local hero_list = self.image_middle:getChildByName("hero_list")
+    local scroll_view_size = hero_list:getContentSize()
+    local setting = {
+        -- item_class = HeroExhibitionItem, -- 单元类
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 15, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 119, -- 单元的尺寸width
+        item_height = 119, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 1 -- 列数，作用于垂直滚动类型
+    }
+
+	self.form_scrollview = CommonScrollViewSingleLayout.new(hero_list, cc.p(0, 0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.form_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.form_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.form_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+	
+
+    -- 首通奖励
+    local image_right = self.image_middle:getChildByName("image_2")
+    local image_left = self.image_middle:getChildByName("image_2_0")
+    local label_reward = self.image_middle:getChildByName("label_reward")
+    label_reward:setString(TI18N("语言_c_11"))
+    setTextTweenBg(label_reward, image_left, image_right, nil, nil, true)
+    local reward_list = self.image_middle:getChildByName("layout_list")
+    local scroll_view_size = reward_list:getContentSize()
+    local setting = {
+        item_class = BackPackItem, -- 单元类
+        start_x = 3, -- 第一个单元的X起点
+        space_x = 15, -- x方向的间隔
+        start_y = 11, -- 第一个单元的Y起点
+        space_y = 4, -- y方向的间隔
+        item_width = BackPackItem.Width, -- 单元的尺寸width
+        item_height = BackPackItem.Height, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 0, -- 列数，作用于垂直滚动类型
+        scale = 1,
+        is_center = true
+    }
+    self.reward_scrollview = CommonScrollViewLayout.new(reward_list, cc.p(0, 0), ScrollViewDir.horizontal,
+        ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_scrollview:setBounceEnabled(false)
+    self.reward_scrollview:setSwallowTouches(false)
+
+    self.close_btn = container:getChildByName("close_btn")
+    self.challenge_btn = container:getChildByName("challenge_btn")
+    self.challenge_btn:getChildByName("label"):setString(TI18N("语言_c_457"))
+
+	self.role_head = PlayerHead.new(PlayerHead.type.circle)
+    self.role_head:setPosition(80, 180)
+    self.role_head:setScale(1)
+    self.panel_top:addChild(self.role_head)
+end
+
+function MazeDes:register_event()
+    registerButtonEventListener(self.close_btn, handler(self, self._onClickCloseBtn), true, 1)
+    registerButtonEventListener(self.background, handler(self, self._onClickCloseBtn), nil, 1)
+    registerButtonEventListener(self.challenge_btn, handler(self, self._onClickEmbattleBtn), true, 2)
+    registerButtonEventListener(self.fight_btn, handler(self, self._onClickFightBtn), true, 2)
+
+	self:addGlobalEvent(MazeEvent.Update_Maze_Des_List, function(data)
+        self:setData(data)
+    end)
+end
+
+--创建cell 
+function MazeDes:createNewCell()
+    local cell = HeroExhibitionItem.new(0.9, true)
+    cell.from_type = HeroConst.ExhibitionItemType.eMaze
+    return cell
+end
+
+--获取数据数量
+function MazeDes:numberOfCells()
+	-- debug_Print("numberOfCells.hero_list ", self.hero_list )
+    if not self.hero_list then return 0 end
+    return #self.hero_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function MazeDes:updateCellByIndex(cell, index)
+	-- debug_Print("updateCellByIndex.hero_list ", self.hero_list )
+	if not self.hero_list then
+        return
+    end
+    local cell_data = self.hero_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+    cell:setBarPosition(nil,-20)
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function MazeDes:onCellTouched(cell)
+    cell:setDefaultClick(false)
+end
+
+function MazeDes:_onClickCloseBtn()
+    _controller:openMazeDes(false)
+end
+
+function MazeDes:_onClickEmbattleBtn()
+    HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.Maze, {index = self.id}, HeroConst.FormShowType.eFormFight)
+	-- HeroController:getInstance():openFormMainWindow(true, PartnerConst.Fun_Form.Maze, {index = self.id})
+end
+
+function MazeDes:_onClickFightBtn()
+    local function call_back()
+        _controller:sender30305(self.id)
+    end
+    local str = TI18N("语言_c_6886")
+    CommonAlert.show(str, TI18N("语言_c_63"), call_back, TI18N("语言_c_62"))
+end
+
+function MazeDes:openRootWnd(id)
+	self.id = id
+	_controller:sender30307(id)
+end
+
+function MazeDes:setData(data) -- data是当前节点玩家数据
+	--  {uint32, rid, "角色ID"}
+	-- ,{string, srv_id, "服务器ID"}
+	-- ,{string, name, "玩家名"}
+	-- ,{uint16, lev, "等级"}
+	-- ,{uint8, vip_lev, "VIP等级"}
+	-- ,{uint32, face, "头像"}
+	-- ,{uint8, sex, "性别"}
+	-- ,{uint32, power, "战力"}
+	-- ,{string, gname, "联盟名"}
+	-- ,{uint32, avatar_id, "头像框"}
+	-- ,{uint8, formation_type, "阵法类型"}
+	-- ,{uint8, formation_lev, "阵法等级"}
+	-- ,{array, tuple, p_list, "伙伴信息", [
+	-- 	{uint8, pos, "位置"}
+	-- 	,{uint32, id, "伙伴唯一id"}
+	-- 	,{uint32, bid, "BID"}
+	-- 	,{uint16, lev, "等级"}
+	-- 	,{uint8, quality, "品质(修改为皮肤id)"}
+	-- 	,{uint8, star, "星级"}
+	-- 	,{uint8, hp_per, "剩余血量百分比"}
+	-- ]}
+	-- ,{uint8, is_robot, "是否机器人"}
+	-- ,{uint32, face_update_time, "自定义头像时间"}
+	-- ,{string, face_file, "自定义头像"}
+	-- ,{uint8, is_sneak, "是否奇袭过"}
+    local maze_data = _model:getMazeData()
+    if maze_data and data then
+		local sneak_count = maze_data["sneak_count"] or 0
+		local cost = 0
+        local config = Config.MazeData.data_const
+        if config then
+            local sneak_cost = config["sneak_cost"].val
+            local max_count = config["sneak_times"].val
+            local sneak_single_times = config["sneak_single_times"].val
+            local sneak_attack_dec_arr = config["sneak_attack_dec"].val
+            local sneak_attack_dec = sneak_attack_dec_arr[data.is_sneak]
+            self.icon_bg:setVisible(data.is_sneak < sneak_single_times)
+            setChildUnEnabled(data.is_sneak >= sneak_single_times, self.fight_btn)
+            self.fight_btn:setTouchEnabled(data.is_sneak < sneak_single_times)
+            self.down_group:setVisible(data.is_sneak > 0)
+            if sneak_attack_dec then
+                local sneak_attack_val = sneak_attack_dec * 0.1
+                self.down_value:setString(sneak_attack_val .. "%")
+            end
+            if sneak_count >= max_count then
+                self.icon_bg:setVisible(false)
+                setChildUnEnabled(true, self.fight_btn)
+                self.fight_btn:setTouchEnabled(false)
+            else
+                if sneak_cost and sneak_cost[sneak_count + 1] then
+                    cost = sneak_cost[sneak_count + 1][2]
+                end
+                if cost > 0 then
+                    self.icon_num:setString(cost)
+                    if data.is_sneak > 0 then
+                        local double_num = data.is_sneak + 1
+                        self.num_double:setString("x"..double_num)
+                        self.num_double:setPositionX(self.icon_num:getPositionX() + self.icon_num:getContentSize().width + 2)
+                    else
+                        self.num_double:setString("")
+                    end
+                else
+                    self.icon_num:setString(TI18N("语言_c_6841"))
+                    self.num_double:setString("")
+                end
+            end
+        end
+		
+        local hero_list = {}
+        for i, v in ipairs(data.p_list) do
+            local partner_data = v
+			local partner_id =  partner_data.bid.."_"..partner_data.star
+			local partner_cfg = Config.PartnerData.data_partner_star(partner_id)
+			if partner_cfg then
+				local hero_vo = HeroVo.New()
+				hero_vo.bid = tonumber(partner_cfg.bid)
+				hero_vo.lev = partner_data.lev
+				hero_vo.star = partner_cfg.star
+				hero_vo.hp_per = partner_data.hp_per
+				hero_list[#hero_list +1] = hero_vo
+			end
+        end
+        self.hero_list = hero_list
+		self.form_scrollview:reloadData()
+		-- debug_Print("data.p_list", hero_list)
+        self.top_label_name:setString(data.name)
+		local power = data.power
+		if config and data.is_sneak > 0 then
+            local sneak_attack_arr = config["sneak_attack_dec"].val
+            local sneak_attack = sneak_attack_arr[data.is_sneak]
+			power = math.floor((1 - sneak_attack * 0.001) * data.power)
+        end
+
+        self.label_power_value:setString(MoneyTool.moneyFormat(power))
+		-- self.form_scrollview:setExtendData({from_type=HeroConst.ExhibitionItemType.eMaze})
+		-- self.form_scrollview:setData(self.hero_list)
+        -- self.form_scrollview:addEndCallBack(function()
+        --     local item_list = self.form_scrollview:getItemList()
+        --     for k, v in pairs(item_list) do
+        --         v:setDefaultClick(false)
+        --     end
+        -- end)
+        self.reward_scrollview:setData(self:generateRewardData(data.power))
+        self.reward_scrollview:addEndCallBack(function()
+            local item_list = self.reward_scrollview:getItemList()
+            for k, v in pairs(item_list) do
+                v:setDefaultTip()
+                v:setSwallowTouches(false)
+            end
+        end)
+		self.role_head:setHeadRes(data.face, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+		self.role_head:setLev(data.lev)
+        local diff_config = Config.MazeData.data_diff_info
+        -- local sneak_attack_dec_arr = config["sneak_attack_dec"].val
+        -- local sneak_attack_dec = 0
+        -- if config and data.is_sneak > 0 then
+        --     sneak_attack_dec = sneak_attack_dec_arr[data.is_sneak]* 0.1
+        -- end
+        local floor = maze_data.floor
+        local award_param = (diff_config[floor].award_param - 1000) * 0.1
+        local sneak_times = Config.MazeData.data_const["sneak_times"].val
+        local has_sneak_times = sneak_times - sneak_count
+        if floor == 1 then 
+            self.hero_desc:setString(string.format(TI18N("语言_maze_01_2"), has_sneak_times))
+        else
+            self.hero_desc:setString(string.format(TI18N("语言_maze_01_3"),award_param .. "%",has_sneak_times))
+        end
+        if self.hero_desc:getContentSize().height <= 155 then
+            self.hero_desc:setPositionY(155)
+            self.top_desc_group:setTouchEnabled(false)
+            self.top_desc_group:setInnerContainerSize(cc.size( self.top_desc_group:getContentSize().width,155))
+        else
+            self.top_desc_group:setTouchEnabled(true)
+            self.hero_desc:setPositionY(self.hero_desc:getContentSize().height)
+            self.top_desc_group:setInnerContainerSize(cc.size( self.top_desc_group:getContentSize().width,self.hero_desc:getContentSize().height))
+        end
+    end
+end
+
+function MazeDes:generateRewardData(power)
+	local maze_data = _model:getMazeData()
+	local item_data = {}
+	if maze_data then
+		local power_group = maze_data.power_group
+		local floor = maze_data.floor
+		local power_config = Config.MazeData.data_power_group
+		local group_id = 0
+		if power_config and power_config[power_group] then
+			local random_power = power_config[power_group].random_power
+			for k, v in pairs(random_power) do
+				if v[1] == floor then
+					group_id = v[2]
+					break
+				end
+			end
+		end
+		local data_power_info = Config.MazeData.data_power_info
+		if data_power_info and data_power_info[group_id] then
+			local base_award = data_power_info[group_id].base_award
+			local min_power = data_power_info[group_id].min_power --战力下限
+			local up_award = data_power_info[group_id].up_award	
+			if base_award and min_power and up_award then
+				local itemid = base_award[1][1] -- 基础id
+				local item_num = base_award[1][2] -- 基础数量
+				local up_num = up_award[1][1] -- 提升基数
+				local up_pro = up_award[1][2] -- 提升比例 （每超过多少后增加提升基数，向下取整）
+				--计算数量公式：math.floor(（敌人战力 - 战力下限）/提升比例) * 提升基数 + 基础数量
+				local all_num = math.floor((power - min_power)/up_pro) * up_num + item_num
+				local vo = deepCopy(Config.ItemData.data_get_data(itemid))
+				vo.quantity = all_num
+				table.insert(item_data, vo)
+			end
+		end
+		local data_diff_info = Config.MazeData.data_diff_info
+		if data_diff_info and data_diff_info[floor] then
+			local fight_award = data_diff_info[floor].fight_award
+			for k, v in pairs(fight_award) do
+				local vo = deepCopy(Config.ItemData.data_get_data(v[1]))
+				vo.quantity = v[2]
+				table.insert(item_data, vo)
+			end
+		end
+	end
+	return item_data
+end
+
+function MazeDes:close_callback()
+	if self.role_head then
+        self.role_head:DeleteMe()
+        self.role_head = nil
+    end
+    self.form_scrollview:removeFromParent()
+    self.form_scrollview = nil
+    self.reward_scrollview:removeFromParent()
+    self.reward_scrollview = nil
+    _controller:openMazeDes(false)
+end

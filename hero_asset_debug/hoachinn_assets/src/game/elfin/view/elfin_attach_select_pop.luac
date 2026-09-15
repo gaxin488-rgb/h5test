@@ -1,0 +1,213 @@
+-- Author: nieming
+-- Date: Mon Jun 17 2024 20:29:05 GMT+0800 (中国标准时间)
+-- Describle： 
+ElfinAttachSelectPop = ElfinAttachSelectPop or BaseClass(BaseView)
+
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+-- desc: 
+function ElfinAttachSelectPop:__init()
+	self.is_full_screen = false
+	self.layout_name = "elfin/elfin_attach_select_pop"
+	self.res_list = {
+	}
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.win_type = WinType.Big
+	self.background_mask_enable = true
+end
+-- desc: 
+function ElfinAttachSelectPop:open_callback()
+	self._ui = self
+	self.background = self.root_wnd:getChildByName("background")
+	self.background:setScale(display.getMaxScale())
+	self._root = self.root_wnd:getChildByName("_root")
+	self.bg_panel = self._root:getChildByName("bg_panel")
+	self._closeBtn = self._root:getChildByName("_closeBtn")
+	self.imgTitleBg = self._root:getChildByName("imgTitleBg")
+	self._title = self._root:getChildByName("_title")
+	self._scrollBg = self._root:getChildByName("_scrollBg")
+	self._listViewParent = self._root:getChildByName("_listViewParent")
+
+	local ui = self
+	ui._title:setString(TI18N("语言_c_d_266"))
+	autoSizeTitleBg(ui._title, self.imgTitleBg, 100, 250)
+
+	self:playEnterAnimatianByObj(ui._root, 2)
+
+	local scroll_view_size = ui._listViewParent:getContentSize()
+    local list_setting = {
+        start_x = 5,
+        space_x = 29,
+        start_y = 0,
+        space_y = 10,
+        item_width = 119,
+        item_height = 169,
+        row = 0,
+        col = 4,
+        need_dynamic = true
+    }
+    ui._listView = CommonScrollViewSingleLayout.new(ui._listViewParent, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0, 0)) 
+    ui._listView:registerScriptHandlerSingle(handler(self,self._createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    ui._listView:registerScriptHandlerSingle(handler(self,self._numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    ui._listView:registerScriptHandlerSingle(handler(self,self._updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    ui._listView:registerScriptHandlerSingle(handler(self,self._onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+
+end
+
+
+-- desc: 
+function ElfinAttachSelectPop:register_event()
+	local ui = self._ui
+	registerButtonEventListener(self._closeBtn, handler(self, self.close), true, 2)
+	registerButtonEventListener(self.background, handler(self, self.close), false, 2)
+	self:addGlobalEvent(ElfinEvent.Get_Elfin_Tree_Data_Event, function ()
+		self._listData = self:getAttachSrcList(self._elfinId)
+		self:refresh()
+	end)
+
+end
+
+-- 获取 可被附魂的列表
+function ElfinAttachSelectPop:getAttachSrcList(id)
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("sprite_data")
+	local nohideIdsMap = {}
+	for k ,v in pairs(nohideIds) do
+		nohideIdsMap[v] = true
+	end
+
+	local qMap = _model:_getBeAttachQualityList(id)
+
+	local all_elfin_data = BackpackController:getInstance():getModel():getAllBackPackArray(BackPackConst.item_tab_type.ELFIN) or {}
+	local cfgs = {}
+	--背包数据
+	if all_elfin_data and next(all_elfin_data) ~= nil then
+		for i,v in ipairs(all_elfin_data) do
+			local elfin_cfg = Config.SpriteData.data_elfin_data(v.base_id)
+			local item_config = Config.ItemData.data_get_data(v.base_id)
+			if qMap[item_config.quality] and elfin_cfg and elfin_cfg.embed_hide ~= 1 then
+				local a = {cfg = elfin_cfg, quality = item_config.quality, bag_data = v , in_bag = true, sort = 3, id = elfin_cfg.id }
+				table.insert(cfgs, a)
+			end
+		end
+	end
+
+	--精灵树数据
+	local elfin_bid_list = _model:getElfinTreeElfinList()
+	if elfin_bid_list and next(elfin_bid_list) ~= nil then
+		for k,v in pairs(elfin_bid_list) do
+			local item_bid = v.item_bid
+			local item_config = Config.ItemData.data_get_data(item_bid)
+			local elfin_cfg = Config.SpriteData.data_elfin_data(item_bid)
+			if item_config and qMap[item_config.quality] and elfin_cfg and elfin_cfg.embed_hide ~= 1 then
+				local a = {cfg = elfin_cfg, quality = item_config.quality , in_form = true, sort = 2, id = elfin_cfg.id}
+				table.insert(cfgs, a)
+			end
+		end
+	end
+	--复审数据
+	local all_attch_elfin = _model:getALLattchElfin()
+	if all_attch_elfin and next(all_attch_elfin) ~= nil then
+		for k,v in pairs(all_attch_elfin) do
+			local item_bid = v
+			local item_config = Config.ItemData.data_get_data(item_bid)
+			local elfin_cfg = Config.SpriteData.data_elfin_data(item_bid)
+			if item_config and qMap[item_config.quality] and elfin_cfg and elfin_cfg.embed_hide ~= 1 then
+				local a = {cfg = elfin_cfg, quality=item_config.quality, in_attch = true, show_attch_id = k , sort = 1, id = elfin_cfg.id}
+				table.insert(cfgs, a)
+			end
+		end
+	end
+
+	-- --已经有附魂的
+	-- local attachElfinId = _model:getAttachElfinById(self._elfinId)
+	-- print("+++++++++++++++",attachElfinId)
+	-- if attachElfinId then
+	-- 	local is_in = false
+	-- 	for k, v in pairs(cfgs) do
+	-- 		if v.cfg.id == attachElfinId then
+	-- 			is_in = true
+	-- 		end
+	-- 	end
+	-- 	if not is_in then
+	-- 		local elfin_cfg = Config.SpriteData.data_elfin_data(attachElfinId)
+	-- 		local item_config = Config.ItemData.data_get_data(attachElfinId)
+	-- 		if qMap[item_config.quality] then
+	-- 			local a = {cfg = elfin_cfg, quality = item_config.quality}
+	-- 			table.insert(cfgs, a)
+	-- 		end
+	-- 	end
+	-- end
+
+	for k, v in pairs(cfgs) do
+		v.active = 1
+		v.id = v.cfg.id
+		v.targetId = id
+	end
+
+	return cfgs
+end
+-- desc: 
+function ElfinAttachSelectPop:openRootWnd(elfinId)
+	self._elfinId = elfinId
+	local elfin_cfg = Config.SpriteData.data_elfin_data(elfinId)
+	self._elfinCfg = elfin_cfg
+	self._listData = self:getAttachSrcList(self._elfinId)
+	self:refresh()
+end
+
+function ElfinAttachSelectPop:reSortData()
+	if self._listData then
+		-- table.sort(self._listData, function (a, b)
+		-- 	if a.quality ~=  b.quality then
+		-- 		return a.quality > b.quality
+		-- 	end
+		-- 	if a.sort ~=  b.sort then
+		-- 		return a.sort > b.sort
+		-- 	end
+		-- 	return a.cfg.id < b.cfg.id
+		-- end)
+		table.sort(self._listData,SortTools.tableCommonSorter({ {"quality", true}, {"id", true}, {"sort", true} }))
+	end
+end
+
+function ElfinAttachSelectPop:refresh()
+	if not self._elfinCfg then
+		return
+	end
+	local ui = self._ui
+	self:reSortData()
+	ui._listView:reloadData()
+end
+
+
+function ElfinAttachSelectPop:_createNewCell()
+	local cell = ElfinAttachSelectItem.create()
+    -- cell:addCallBack(function() self:_onCellTouched(cell) end)
+    return cell
+end
+
+function ElfinAttachSelectPop:_numberOfCells()
+	if not self._listData then return 0 end
+	return #self._listData
+end
+
+function ElfinAttachSelectPop:_updateCellByIndex( cell, index )
+	cell.index = index
+	local data = self._listData[index]
+    if data then
+		cell:setData(data)
+    end
+end
+
+function ElfinAttachSelectPop:_onCellTouched( cell )
+	
+end
+
+
+
+-- desc: 
+function ElfinAttachSelectPop:close_callback()
+	ElfinController:getInstance():openElfinAttachSelectPop(false)
+
+
+end

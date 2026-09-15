@@ -1,0 +1,290 @@
+---------------------------------
+-- 
+-- 
+-- @date 2019/10/28 21:14:57
+-- @description: 大富翁图例说明
+---------------------------------
+local _controller = MonopolyController:getInstance()
+local _model = _controller:getModel()
+
+MonopolySweepWindow = MonopolySweepWindow or BaseClass(BaseView)
+
+function MonopolySweepWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+    self.sweep_round = 1
+    self.max_round = 1
+    self.role_vo = RoleController:getInstance():getRoleVo()
+	self.layout_name = "monopoly/monopoly_sweep_window"
+end
+
+function MonopolySweepWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container = main_container
+    self:playEnterAnimatianByObj(main_container , 2) 
+    local image_title = main_container:getChildByName("image_title")
+    local win_title = main_container:getChildByName("win_title")
+    win_title:setString(TI18N("语言_c_228"))
+    local _width = math.max(win_title:getContentSize().width+120,image_title:getContentSize().width)
+    image_title:setContentSize(cc.size(_width,image_title:getContentSize().height))
+    self.close_btn = main_container:getChildByName("close_btn")
+    self.btn_rule = main_container:getChildByName("btn_rule")
+    self.buff_panel = main_container:getChildByName("buff_panel")
+    self.buff_title_bg = self.buff_panel:getChildByName("buff_title_bg")
+    self.buff_title_txt = self.buff_panel:getChildByName("buff_title_txt")
+    self.buff_title_txt:setString(TI18N("语言_c_6272"))
+    local buff_width = math.max(self.buff_title_txt:getContentSize().width + 20,self.buff_title_bg:getContentSize().width)
+    self.buff_title_bg:setContentSize(cc.size(buff_width,50))
+    self.buff_list = self.buff_panel:getChildByName("buff_list")
+    self.buff_list:setScrollBarEnabled(false)
+    self.item_panel = main_container:getChildByName("item_panel")
+    self.item_title_bg = self.item_panel:getChildByName("item_title_bg")
+    self.item_title_txt = self.item_panel:getChildByName("item_title_txt")
+    self.item_title_txt:setString(TI18N("语言_c_11"))
+    local item_width = math.max(self.item_title_txt:getContentSize().width + 20,self.item_title_bg:getContentSize().width)
+    self.item_title_bg:setContentSize(cc.size(item_width,50))
+    self.item_list = self.item_panel:getChildByName("item_list")
+    self.item_list:setScrollBarEnabled(false)
+    self.tip_panel = main_container:getChildByName("tip_panel")
+    self.tip_txt1 = self.tip_panel:getChildByName("tip_txt1")
+    self.tip_txt1:setString(TI18N("语言_c_6273"))
+    self.tip_txt2 = createRichLabel(24, cc.c3b(0x7c,0x55,0x36), cc.p(0,0.5), cc.p(310,30), nil, nil, 600)
+    self.tip_panel:addChild(self.tip_txt2)
+    self.item_bg_1 = main_container:getChildByName("item_bg_1")
+    self.max_btn = self.item_bg_1:getChildByName("max_btn")
+    self.add_btn = self.item_bg_1:getChildByName("add_btn")
+    self.redu_btn = self.item_bg_1:getChildByName("redu_btn")
+    self.resolve_count = self.item_bg_1:getChildByName("resolve_count")
+    self.tip = self.item_bg_1:getChildByName("tip")
+    self.tip:setString(TI18N("语言_c_6275"))
+    setTextMaxWidth(self.tip,120,-4)
+    self.sweep_btn = main_container:getChildByName("sweep_btn")
+    self.num_txt = createRichLabel(24, cc.c3b(0x7c,0x55,0x36), cc.p(0,0.5), cc.p(20,30), nil, nil, 600)
+    main_container:addChild(self.num_txt)
+    self.sweep_img = self.sweep_btn:getChildByName("sweep_img")
+    self.sweep_txt = self.sweep_btn:getChildByName("sweep_txt")
+    self.sweep_txt:setString(TI18N("语言_c_796"))
+    self.have_txt = createRichLabel(24, cc.c3b(0xf1,0xe2,0xc7), cc.p(1,0.5), cc.p(650,49), nil, nil, 600)
+    main_container:addChild(self.have_txt)
+    self.have_bg = main_container:getChildByName("have_bg")
+
+    --添加可编辑的输入文本
+    local res = PathTool.getResFrame("common","common_99998")
+    local edit_content = createEditBox(self.item_bg_1, res,cc.size(90,50), nil, 22, nil, 22, "", nil, nil, LOADTEXT_TYPE_PLIST)
+    self.edit_content = edit_content
+    edit_content:setAnchorPoint(cc.p(0.5,0.5))
+    edit_content:setPlaceholderFontColor(cc.c4b(0xff,0xf6,0xe4,0xff))
+    edit_content:setFontColor(cc.c4b(0x64,0x32,0x23,0xff))
+    edit_content:setPosition(cc.p(114, 27))
+
+    local begin_change_label = false
+    local function editBoxTextEventHandle(strEventName,pSender)
+        if strEventName == "return" or strEventName == "ended" then
+            if begin_change_label and not tolua.isnull(self.resolve_count) then  
+                begin_change_label = false
+                self.resolve_count:setVisible(true)
+                local str = pSender:getText()
+                pSender:setText("")  
+                if str ~= "" then
+                    local num = tonumber(str)
+                    if num ~= nil and num > 0 then
+                        self:setCurUseItemInfoByPercent(num)
+                    else
+                        self:setCurUseItemInfoByPercent(0)
+                        message(TI18N("语言_c_570"))
+                    end
+                else
+                    self:setCurUseItemInfoByPercent(0)
+                end 
+
+            end
+        elseif strEventName == "began" then
+            if not tolua.isnull(self.resolve_count) then
+                if not begin_change_label then
+                    self.resolve_count:setVisible(false)
+                    begin_change_label = true
+                end
+            end
+        elseif strEventName == "changed" then
+
+        end
+    end
+    edit_content:registerScriptEditBoxHandler(editBoxTextEventHandle)
+end
+
+
+function MonopolySweepWindow:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn), false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickCloseBtn), true, 2)
+    registerButtonEventListener(self.redu_btn, handler(self, self.onClickSubBtn), true, 2)
+    registerButtonEventListener(self.add_btn, handler(self, self.onClickAddBtn), true, 2)
+    registerButtonEventListener(self.max_btn, handler(self, self.onClickMaxBtn), true, 2)
+    registerButtonEventListener(self.sweep_btn, handler(self, self.onClickSweepBtn), true, 2)
+    registerButtonEventListener(self.btn_rule, function (param,sender, event_type)
+        local rule_cfg = deepCopy(Config.MonopolyMapsData.data_const[self.holidayId])
+        if rule_cfg then
+            local cfg = deepCopy(Config.MonopolyMapsData.data_get_collect[self.holidayId][self.stage])
+            rule_cfg = string.format(rule_cfg["monopoly_maps_raid"].val,cfg.need_turn,cfg.costs[1][2])
+            TipsManager:getInstance():showCommonTips(rule_cfg, sender:getTouchBeganPosition())
+        end
+    end, true, 1, nil, 1)
+    -- 道具数量变化
+	if not self.role_assets_event and self.role_vo then
+        self.role_assets_event =  self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ACTION_ASSETS, function(id, value)
+            if id and id == self.need_id and self.role_vo then 
+				self:updateItemNum()
+            end
+        end)
+	end
+    -- 活动基础数据
+    self:addGlobalEvent(MonopolyEvent.Update_Monopoly_Base_Data_Event, function ()
+        self:updateItemNum()
+        self:setData()
+    end)
+end
+
+function MonopolySweepWindow:onClickSweepBtn()
+    if _model:getMonopolyOpenNum(self.stage) <= 0 then
+        message(TI18N("语言_c_6771"))
+        return
+    end
+    if self.max_round > 0 then
+        _controller:sender27411(self.stage,self.sweep_round)
+    else
+    message(TI18N("语言_c_6294"))
+        MonopolyController:getInstance():openMoonOrderWindow(true,93031)
+    end
+end
+
+function MonopolySweepWindow:setCurUseItemInfoByPercent(num)
+    if self.max_round > 0 then
+        self.sweep_round = num
+        if self.sweep_round < 1 then
+            self.sweep_round = 1
+        end
+        if self.sweep_round > self.max_round then
+            self.sweep_round = self.max_round
+        end
+        self:setData()
+    end
+end
+
+function MonopolySweepWindow:onClickSubBtn()
+    if self.sweep_round > 1 then
+        self.sweep_round = self.sweep_round - 1
+        self:setData()
+    end
+end
+
+function MonopolySweepWindow:onClickAddBtn()
+    if self.sweep_round < self.max_round then
+        self.sweep_round = self.sweep_round + 1
+        self:setData()
+    end
+end
+
+function MonopolySweepWindow:onClickMaxBtn()
+    self.sweep_round = self.max_round
+    if self.sweep_round < 1 then
+        self.sweep_round = 1
+    end
+    self:setData()
+end
+
+function MonopolySweepWindow:onClickCloseBtn()
+    _controller:openMonopolySweepWindow(false)
+end
+
+function MonopolySweepWindow:openRootWnd(stage)
+    self.holidayId = _model:getCamp_id1()
+    self.cfg = deepCopy(Config.MonopolyMapsData.data_get_collect[self.holidayId][stage])
+    self.stage = stage
+    self.need_id = self.cfg.costs[1][1]
+    self.need_num = self.cfg.costs[1][2]
+    self:updateItemNum()
+    self:setData()
+end
+function MonopolySweepWindow:updateItemNum()
+    self.have_num = RoleController:getInstance():getRoleVo():getActionAssetsNumByBid(self.need_id)
+    local str = TI18N("<img src=%s scale=0.5 /> x %s")
+    local back_cfg = Config.ItemData.data_get_data(self.need_id)
+    self.have_txt:setString(string.format(str,PathTool.getItemRes(back_cfg.icon),self.have_num))
+    self.have_bg:setContentSize(cc.size(self.have_txt:getContentSize().width,50))
+    self.max_round = math.floor(self.have_num / self.need_num)
+    if self.max_round > 50 then
+        self.max_round = 50
+    end
+    self.max_round = math.min(self.max_round,_model:getMonopolyOpenNum(self.stage))
+end
+
+function MonopolySweepWindow:setData()
+    local list1 = deepCopy(self.cfg.show1)
+    for key, value in pairs(list1) do
+        value[2] = value[2] * self.sweep_round
+    end
+    local list2 = deepCopy(self.cfg.show2)
+    for key, value in pairs(list2) do
+        value[2] = value[2] * self.sweep_round
+    end
+    local setting1 = {}
+    setting1.scale = 0.8
+    setting1.space_x = 10
+    setting1.max_count = 5
+    setting1.is_center = false
+    self.item_list1 = commonShowSingleRowItemList(self.buff_list, self.item_list1, list1, setting1)
+    
+    local setting2 = {}
+    setting2.scale = 0.8
+    setting2.space_x = 10
+    setting2.max_count = 5
+    setting2.is_center = false
+    self.item_list2 = commonShowSingleRowItemList(self.item_list, self.item_list2, list2, setting2)
+    local str1 = TI18N("语言_c_6274")
+    if self.have_num < self.need_num then
+        str1 = TI18N("语言_c_6276")
+    end
+    self.tip_txt2:setString(string.format(str1,self.sweep_round * self.need_num))
+    self.tip_txt2:setPositionX((self.tip_panel:getContentSize().width - self.tip_txt2:getContentSize().width) * 0.5)
+    self.resolve_count:setString(self.sweep_round)
+    if self.sweep_round <= 1 then
+        setChildUnEnabled(true,self.redu_btn)
+        self.redu_btn:setTouchEnabled(false)
+    else
+        setChildUnEnabled(false,self.redu_btn)
+        self.redu_btn:setTouchEnabled(true)
+    end
+    if self.sweep_round >= self.max_round then
+        setChildUnEnabled(true,self.add_btn)
+        self.add_btn:setTouchEnabled(false)
+    else
+        setChildUnEnabled(false,self.add_btn)
+        self.add_btn:setTouchEnabled(true)
+    end
+    self.num_txt:setString(string.format(TI18N("语言_c_6770"),_model:getMonopolyOpenNum(self.stage)))
+end
+
+function MonopolySweepWindow:close_callback()
+    if self.item_list1 then
+        for i,v in pairs(self.item_list1) do
+            v:DeleteMe()
+        end
+        self.item_list1 = nil
+    end
+    if self.item_list2 then
+        for i,v in pairs(self.item_list2) do
+            v:DeleteMe()
+        end
+        self.item_list2 = nil
+    end    
+	if self.role_assets_event and self.role_vo then
+        self.role_vo:UnBind(self.role_assets_event)
+        self.role_assets_event = nil
+    end
+    _controller:openMonopolySweepWindow(false)
+end

@@ -1,0 +1,619 @@
+-- --------------------------------------------------------------------
+-- 竖版技能item
+-- --------------------------------------------------------------------
+
+SkillItem = class("SkillItem", function() 
+    return ccui.Layout:create()
+end)
+
+SkillItem.Width = 119
+SkillItem.Height = 119
+
+function SkillItem:ctor(play_start, click, is_show_tips, scale, show_lev, swallow_touch)
+    self.play = play_start
+    self.click = click
+    self.is_show_tips = is_show_tips or false
+    self.scale = scale or 1
+    self.can_reset_name = true
+	self._effect_extra = 1.20
+
+    self.size = cc.size(SkillItem.Width, SkillItem.Height)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+    if self.scale ~= 1 then
+        self:setScale(self.scale)
+    end
+
+    self:configUI()
+
+    if self.click == true then
+        self:setTouchEnabled(true)
+        self:registerEvent()
+        self:setSwallowTouches(swallow_touch)
+    end
+end
+
+function SkillItem:setClickInfo(setting)
+    setting  = setting or {}
+    self.clickScroll = setting.clickScroll or false
+    self.click = setting.click or false
+    if self.click == true then
+        self:setTouchEnabled(true)
+        self:registerEvent()
+    end
+    self.swallow_touch = setting.swallow_touch or false
+    if self.swallow_touch == true then
+        self:setSwallowTouches(self.swallow_touch)
+    end
+end
+
+function SkillItem:configUI()
+    --背景
+    local res = PathTool.getNormalSkillBg()
+    self.background = createImage(self, res,  self.size.width/2, self.size.height/2, cc.p(0.5,0.5), true, 0, true)
+    self.background:setContentSize(self.size)
+    --技能图标
+    self.item_icon = createSprite(nil,  self.size.width/2, self.size.height/2, self, cc.p(0.5,0.5), LOADTEXT_TYPE, 0)
+
+    -- [E51104] เลเยอร์สำหรับวางเอฟเฟกต์ ให้อยู่ “หลัง” ไอคอนเสมอ
+    if not self.effect_layer then
+        self.effect_layer = ccui.Layout:create()
+        self.effect_layer:setContentSize(self.size)
+        self.effect_layer:setAnchorPoint(cc.p(0.5,0.5))
+        self.effect_layer:setPosition(self.size.width/2, self.size.height/2)
+        self.effect_layer:setTouchEnabled(false)
+        self:addChild(self.effect_layer, -1)
+        self.effect_layer:setLocalZOrder(5) -- [E51104] ให้อยู่หน้ารูปสกิล
+    end
+    -- [E51104] เตรียมฟังก์ชันช่วยสร้างและจัดสเกลเอฟเฟกต์
+    if not self._ensureEffect then
+        function SkillItem:_ensureEffect()
+            if self._skill_effect and self._skill_effect:isVisible() ~= nil then
+                return self._skill_effect
+            end
+            -- ใช้แบบเดียวกับระบบเดิม
+            local pos = cc.p(self.size.width/2, self.size.height/2)
+            local eff = createEffectSpine("E51104", pos)  -- <<< ชื่อเอฟเฟกต์
+            if eff then
+                self._skill_effect = eff
+                self.effect_layer:addChild(eff, -1)
+                self:_resizeEffectToSlot()                  -- เดิมคงไว้
+                self._skill_effect:setLocalZOrder(5)        -- [E51104] ให้อยู่หน้าไอคอน
+                -- [E51104-FIT] วัดและล็อกสเกลครั้งแรก
+                self:_measureEffectBoundsOnce()
+                if self._effect_scale_ready then
+                    self:_applyEffectScaleLocked()
+                end
+            end
+            return self._skill_effect
+        end
+        function SkillItem:_resizeEffectToSlot()
+			if not self._skill_effect then return end
+			local size = self.size
+			
+            local old_scale = self._skill_effect:getScale()
+			self._skill_effect:setScale(1.0)
+			local bb = self._skill_effect:getBoundingBox()
+			self._skill_effect:setScale(old_scale)
+
+			local w = (bb and bb.width  > 0) and bb.width  or 100
+			local h = (bb and bb.height > 0) and bb.height or 100
+
+			-- ใช้ "cover" ให้เต็มช่องเสมอ แล้วคูณ extra
+			local rw, rh = size.width / w, size.height / h
+			local scale = math.max(rw, rh) * (self._effect_extra or 1.0)
+
+			self._skill_effect:setScale(scale)
+			self._skill_effect:setPosition(size.width/2, size.height/2)
+		end
+
+        -- [E51104-FIT] วัด bounding box หลายเฟรมเพื่อหา reference ที่ใหญ่สุด (ครั้งเดียว)
+        function SkillItem:_measureEffectBoundsOnce()
+            if self._effect_scale_ready or not self._skill_effect then return end
+            self._effect_ref_w, self._effect_ref_h = 0, 0
+            local function snap()
+                if not self._skill_effect then return end
+                local bb = self._skill_effect:getBoundingBox()
+                if bb then
+                    self._effect_ref_w = math.max(self._effect_ref_w or 0, bb.width  or 0)
+                    self._effect_ref_h = math.max(self._effect_ref_h or 0, bb.height or 0)
+                end
+            end
+            self:runAction(cc.Sequence:create(
+                cc.DelayTime:create(0.00), cc.CallFunc:create(snap),
+                cc.DelayTime:create(0.06), cc.CallFunc:create(snap),
+                cc.DelayTime:create(0.12), cc.CallFunc:create(function()
+                    snap()
+                    self._effect_scale_ready = true
+                    self:_applyEffectScaleLocked()
+                end)
+            ))
+        end
+
+        -- [E51104-FIT] ใช้ค่ามาตรฐานที่วัดไว้เพื่อคงขนาดให้เท่ากันเสมอ
+        function SkillItem:_applyEffectScaleLocked()
+			if not self._skill_effect then return end
+			local size = self.size
+			
+            local old_scale = self._skill_effect:getScale()
+			self._skill_effect:setScale(1.0)
+			local bb = self._skill_effect:getBoundingBox()
+			self._skill_effect:setScale(old_scale)
+
+			local w = (bb and bb.width  > 0) and bb.width  or 100
+			local h = (bb and bb.height > 0) and bb.height or 100
+			local rw, rh = size.width / w, size.height / h
+			local scale = math.max(rw, rh) * (self._effect_extra or 1.0)
+
+			self._skill_effect:setScale(scale)
+			self._skill_effect:setPosition(size.width/2, size.height/2)
+		end
+    end
+
+    --技能等级
+    if self.show_lev then
+        local res = PathTool.getResFrame("common","common_2018")
+        self.level_bg = createImage(self, res, 10,108, cc.p(0.5,0.5), true, 1, false)
+        self.num_label = createLabel(20,cc.c4b(0x64,0x32,0x23,0xff),nil,8,107,"00",self,1, cc.p(0.5,0.5))
+        self.num_label = createLabel(24,cc.c4b(0xff,0xff,0xff,0xff),nil,8,107,"00",self,1, cc.p(0.5,0.5))
+        self.num_label:setZOrder(1)
+    end
+end
+
+function SkillItem:setlvSize(lvNum)
+    if self.level_bg then self.level_bg:setScale(lvNum) end
+    if self.num_label then self.num_label:setScale(lvNum) end
+    if self.num_label2 then
+        self.num_label2:setScale(lvNum)
+        self.num_label2:setVisible(false)
+    end
+end
+
+function SkillItem:getSize() return self.size end
+function SkillItem:resetName(status) self.can_reset_name = status end
+function SkillItem:getData() return self.data end
+
+function SkillItem:setSelected(status)
+    if not self.select_bg and status == false then return end
+    if not self.select_bg then 
+        local res= PathTool.getSelectBg()
+        self.select_bg = createImage(self, res, self.size.width/2,self.size.height/2, cc.p(0.5,0.5), true,1,true)
+        self.select_bg:setContentSize(self.size)
+        self.select_bg:setZOrder(1)
+    end
+    self.select_bg:setVisible(status)
+end
+
+function SkillItem:setTickSelected(status)
+    if status then
+        if self.lay_select == nil then
+            self.lay_select = ccui.Layout:create()
+            self.lay_select:setAnchorPoint(cc.p(0.5,0.5))
+            self.lay_select:setContentSize(self.size)
+            self.lay_select:setPosition(self.size.width/2, self.size.height/2) 
+            self.lay_select:setTouchEnabled(false)
+            showLayoutRect(self.lay_select, 150)
+            local res = PathTool.getResFrame("common","common_1043")
+            createImage(self.lay_select,res,self.size.width/2,self.size.height/2,cc.p(0.5,0.5),true,0,false)
+            self:addChild(self.lay_select, 1)
+        else
+            self.lay_select:setVisible(true)
+        end
+    else
+        if self.lay_select then self.lay_select:setVisible(false) end
+    end
+end
+
+function SkillItem:addCallBack(callback) self.callback = callback end
+function SkillItem:setTipsHideFlag(flag) self.tips_hide_flag = flag end
+function SkillItem:setSkillFirstCd(first_cd) self.first_cd = first_cd end
+function SkillItem:setHallowsAtkVal(val) self.hallows_atk_val = val end
+
+function SkillItem:registerEvent()
+    if self.click == true then
+        self:addTouchEventListener(function(sender, event_type) 
+            customClickAction_2(self, event_type, self.scale)
+            if self.clickScroll and event_type == ccui.TouchEventType.began then
+                self.touch_began = sender:getTouchBeganPosition()
+            end
+            if event_type == ccui.TouchEventType.ended then
+                if self.clickScroll then
+                    local b = self.touch_began
+                    local e = sender:getTouchEndPosition()
+                    if b and e and (math.abs(e.x-b.x) > 20 or math.abs(e.y-b.y) > 20) then
+                        return
+                    end
+                end
+                playButtonSound2()
+                if self.btn_fun and (not self.data) then
+                    self:btn_fun(self.add_btn_index)
+                else
+                    if self.is_show_tips == true then
+                        if self.skill_config then
+                            TipsManager:getInstance():showSkillTips(self.skill_config, self.is_unabled or false, false, self.tips_hide_flag or false, self.first_cd or 0, self.hallows_atk_val or 0)
+                        elseif self.lock_tips then
+                            message(self.lock_tips)
+                        elseif self.none_tips then
+                            message(self.none_tips)
+                        end
+                    end
+                    if sender.guide_call_back ~= nil then sender.guide_call_back(sender) end
+                    if self.callback then self:callback() end
+                end
+            end
+        end)
+    end
+end
+
+--==============================--
+-- 设置数据
+--==============================--
+function SkillItem:setData(data)
+    self.data = data
+    self:showRedPoint(false)
+    if self.data == nil then
+        self.skill_config = nil
+        self.item_icon:setVisible(false)
+        -- [E51104] ไม่มีข้อมูล: ซ่อนเอฟเฟกต์
+        if self._skill_effect then self._skill_effect:setVisible(false) end
+        if self.num_label then self.num_label:setVisible(false) end
+        self:showName(false)
+        self.background_res_id = PathTool.getQualityBg(0)
+        self.background:loadTexture(self.background_res_id, LOADTEXT_TYPE_PLIST)
+        return
+    else
+        local id = data.skill_bid or data.skill_id or data.bid
+        local skill_config = Config.SkillData.data_get_skill(id)
+        if not skill_config then return end
+        self.skill_config = skill_config
+
+        local skill_icon = PathTool.getSkillRes(skill_config.icon, false)
+        self.item_icon:setVisible(true)
+        loadSpriteTexture(self.item_icon, skill_icon, LOADTEXT_TYPE)
+
+        -- [E51104] แนบ/แสดงเอฟเฟกต์บนช่อง และจัดสเกลให้พอดี + ล็อกขนาดคงที่
+        local eff = self:_ensureEffect()
+        if eff then
+            eff:setVisible(true)
+            self:_resizeEffectToSlot()             -- เดิมคงไว้
+            self:_measureEffectBoundsOnce()        -- [E51104-FIT] เก็บขอบเขตครั้งแรก
+            if self._effect_scale_ready then
+                self:_applyEffectScaleLocked()     -- [E51104-FIT] คงสเกลเดิมทุกครั้ง
+            end
+        end
+
+        local background_res_id = PathTool.getQualityBg(0)
+        if self.background_res_id ~= background_res_id then
+            self.background_res_id = background_res_id
+            self.background:loadTexture(self.background_res_id, LOADTEXT_TYPE_PLIST)
+        end
+
+        if self.show_lev and self.num_label or self.num_label2 then
+            if skill_config.client_lev and skill_config.client_lev > 0 then
+                self.num_label:setVisible(true)
+                self.num_label:setString(skill_config.client_lev)
+                if self.num_label2 then self.num_label2:setString(skill_config.client_lev) end
+            elseif skill_config.level and skill_config.level > 0 then
+                self.num_label:setVisible(true)
+                self.num_label:setString(skill_config.level)
+                if self.num_label2 then self.num_label2:setString(skill_config.level) end
+            else
+                self.num_label:setVisible(false)
+            end
+        end
+
+        if data and data.is_show_name == true then
+            self:showName(true, skill_config.name)
+        end
+        self:showRecommondIcon(false)
+        if data and data.is_recommend == true then self:showRecommondIcon(true) end
+        if data and data.is_learn == true then self:showRecommondIcon(true, 2) end
+
+        if data and self.can_reset_name == true then
+            self:setName("guidesign_skillitem_"..id)
+        end
+
+        local partner_awakening_skill_config = Config.PartnerSkillData.data_partner_awakening_skill
+        if partner_awakening_skill_config and partner_awakening_skill_config[id] then
+            self:showAwakeningSkillIcon(true, partner_awakening_skill_config[id])
+        else
+            self:showAwakeningSkillIcon(false)
+        end
+    end 
+
+    if data and data.is_touch == true then 
+        if self.callback then self:callback() end
+        data.is_touch = false
+    end
+    if data and data.scale_value and type(data.scale_value) == "number" then 
+        self.root_wnd:setScale(data.scale_value)
+    end
+end
+
+-- 灰度
+function SkillItem:setGrayStatus(bool)
+    local num = bool and 160 or 255
+    self.item_icon:setOpacity(num)
+end
+
+function SkillItem:showUnEnabled(bool)
+    setChildUnEnabled(bool, self.item_icon)
+    setChildUnEnabled(bool, self.background)
+    if self.level_bg then setChildUnEnabled(bool, self.level_bg) end
+    self.is_unabled = bool
+end
+
+function SkillItem:showLockIcon(bool,str,tips)
+    if bool == false and not self.artifact_lock then return end
+    if not self.artifact_lock then 
+        local res = PathTool.getResFrame("common","common_90009")
+        self.artifact_lock = createImage(self, res, 60,60, cc.p(0.5,0.5), true, 1, false)
+        self.lock_label = createLabel(22,cc.c4b(0xd9,0xcc,0xbb,0xff),cc.c4b(0x56,0x25,0x12,0xff),57,12,"",self,1, cc.p(0.5,0))
+    end
+    str = str or ""
+    self.artifact_lock:setVisible(bool)
+    self.lock_label:setVisible(bool)
+    self.lock_label:setString(str)
+    self.lock_tips = tips
+end
+
+function SkillItem:showRecommondIcon(bool,qian_type)
+    if bool == false and not self.recommond_icon then return end
+    if not self.recommond_icon then 
+        local res = PathTool.getResFrame("common","common_90015")
+        self.recommond_icon = createSprite(res,34,89,self,cc.p(0.5,0.5),nil,2)
+        self.recommond_label = createLabel(18,Config.ColorData.data_color4[1],cc.c4b(0x95,0x0f,0x00,0xff),29,25,"",self.recommond_icon,2, cc.p(0.5,0))
+        self.recommond_label:setRotation(-45)
+    end
+    if bool == true then
+        self.recommond_icon:setVisible(true)
+        local qian_type = qian_type or 1
+        local str 
+        local res 
+        if qian_type == 1 then
+            str = TI18N("语言_c_1363")
+            res = PathTool.getResFrame("common","common_30016")
+            self.recommond_icon:setPosition(31,87)
+            self.recommond_label:setPosition(31,37)
+            self.recommond_label:enableOutline(cc.c4b(0x5c,0x1b,0x77,0xff), 2)
+        elseif qian_type == 2 then
+            str = TI18N("语言_c_2930")
+            res = PathTool.getResFrame("common","common_30013")
+            self.recommond_icon:setPosition(31,87)
+            self.recommond_label:setPosition(31,37)
+            self.recommond_label:enableOutline(cc.c4b(0x8e,0x2b,0x00,0xff), 2)
+        elseif qian_type ==3 then
+            str = TI18N("语言_c_2931")
+            res = PathTool.getResFrame("common","common_90015")
+            self.recommond_icon:setPosition(34,89)
+            self.recommond_label:setPosition(29,25)
+            self.recommond_label:enableOutline(cc.c4b(0x95,0x0f,0x00,0xff), 2)
+        elseif qian_type == 4 then
+            str = TI18N("语言_c_2932")
+            res = PathTool.getResFrame("common","common_90015")
+            self.recommond_icon:setPosition(34,89)
+            self.recommond_label:setPosition(29,25)
+            self.recommond_label:enableOutline(cc.c4b(0x95,0x0f,0x00,0xff), 2)
+        elseif qian_type == 5 then
+            str = TI18N("语言_c_2933")
+            res = PathTool.getResFrame("common","common_30015")
+            self.recommond_icon:setPosition(31,87)
+            self.recommond_label:setPosition(31,37)
+            self.recommond_label:enableOutline(cc.c4b(0x00,0x55,0x74,0xff), 2)
+        else
+            self.recommond_icon:setVisible(false)
+            return    
+        end
+        loadSpriteTexture(self.recommond_icon, res, LOADTEXT_TYPE_PLIST)
+        self.recommond_label:setString(str)
+    else
+        self.recommond_icon:setVisible(false)        
+    end
+end
+
+function SkillItem:showUnusualIcon(status, type)
+    if status == false and not self.unusual_icon then return end
+    if not self.unusual_icon then  
+        self.unusual_icon = createSprite(nil,-6,123,self,cc.p(0,1),nil,2)
+    end
+    if status == true then
+        local res = PathTool.getResFrame("common","txt_cn_common_unusual")
+        if type == 2 then res = PathTool.getResFrame("common","txt_cn_common_unusual_2") end
+        loadSpriteTexture(self.unusual_icon, res, LOADTEXT_TYPE_PLIST)
+    end
+    self.unusual_icon:setVisible(status)
+end
+
+function SkillItem:showAwakeningSkillIcon(status, cfg)
+    if status == false and not self.awakening_icon then return end
+    if not self.awakening_icon then  
+        self.awakening_icon = createSprite(PathTool.getResFrame("common","common_1108"),60,127,self,cc.p(0.5,1),nil,2)
+    end
+    self.awakening_icon:setVisible(status)
+    if cfg then
+        if status then
+            if self.skill_profession_icon == nil then
+                self.skill_profession_icon = createSprite(nil,102,36,self,cc.p(0.5,1),nil,2)
+                local res = PathTool.getPlistImgForDownLoad("bigbg/hero", "talent_profession")
+                self.skill_profession_icon_item_load = loadSpriteTextureFromCDN(self.skill_profession_icon, res, ResourcesType.single, self.skill_profession_icon_item_load)
+            end
+            if self.skill_profession_label == nil then
+                self.skill_profession_label = createLabel(20,cc.c3b(0xff,0xf6,0xcc),nil,14.5,17,"",self.skill_profession_icon,1, cc.p(0.5,0.5))
+            end
+            local limit_career = cfg.limit_career or {}
+            local profession_name
+            if limit_career and next(limit_career) ~= nil then
+                profession_name = HeroConst.CareerName2[limit_career[1][1]] or TI18N("语言_c_2934")
+            else
+                profession_name = TI18N("语言_c_2934")
+            end
+            self.skill_profession_label:setString(profession_name)  
+        end
+    end
+    if self.skill_profession_icon then
+        self.skill_profession_icon:setVisible(status)
+    end
+end
+
+function SkillItem:showName(bool,name,pos,fontSize,is_bg,fontColor,res_img,res_size,maxChar)
+    if bool == false and not self.name then return end
+    if not self.name then 
+        if is_bg and self.name_bg == nil then
+            local res = res_img or PathTool.getResFrame("common","common_2028")
+            local resSize = res_size or cc.size(108,30)
+            self.name_bg = createImage(self, res, 60,-32, cc.p(0.5,0), true, 0, true)
+            self.name_bg:setContentSize(resSize)
+            self.name_bg:setCapInsets(cc.rect(10, 14, 1, 1))
+        end
+        fontSize = fontSize or 24
+        fontColor = fontColor or Config.ColorData.data_color4[156]
+        self.name = createLabel(fontSize,fontColor,nil,54,0,"",self.name_bg,1, cc.p(0.5,0))
+    end
+    name = name or ""
+    local maxChar = maxChar or 0
+    if maxChar ~= 0 then
+        self.name:setString(transformTextToShort(name,maxChar))
+        addEvt2showAllTextTips(self.name,name,maxChar,nil,nil,nil,true,true)
+    else
+        self.name:setString(name)
+    end
+    self.name:setVisible(bool)
+    if self.name_bg then
+        self.name_bg:setVisible(bool)
+        self.name_bg:setContentSize(cc.size(self.name:getContentSize().width + 20,self.name_bg:getContentSize().height))
+        self.name:setPositionX(self.name_bg:getContentSize().width/2)
+    end
+    if pos then 
+        self.name:setPosition(pos)
+        if self.name_bg then self.name_bg:setPosition(cc.p(pos.x,pos.y -2)) end
+    end
+end
+
+function SkillItem:showProbability(bool,probability,pos,fontSize,is_bg,fontColor,res_img,res_size)
+    if bool == false and not self.probability then return end
+    if not self.probability then 
+        if is_bg and self.probability_bg == nil then
+            local res = res_img or PathTool.getResFrame("common","common_2028")
+            local resSize = res_size or cc.size(108,30)
+            self.probability_bg = createImage(self, res, 60,-72, cc.p(0.5,0), true, 0, true)
+            self.probability_bg:setContentSize(resSize)
+            self.probability_bg:setCapInsets(cc.rect(10, 14, 1, 1))
+        end
+        fontSize = fontSize or 24
+        fontColor = fontColor or Config.ColorData.data_color4[156]
+        self.probability = createLabel(fontSize,fontColor,nil,60,-70,"",self,1, cc.p(0.5,0))
+    end
+    probability = probability or ""
+    local prob = probability.."%"
+    local str = string.format(TI18N("使用率%s"),prob)
+    self.probability:setString(str)
+    self.probability:setVisible(bool)
+    if self.probability_bg then self.probability_bg:setVisible(bool) end
+    if pos then 
+        self.probability:setPosition(pos)
+        if self.probability_bg then self.probability_bg:setPosition(cc.p(pos.x,pos.y -2)) end
+    end
+end
+
+function SkillItem:setNameColor(nameColor, outlineColor, outlineSize)
+    if self.name then
+        if nameColor then self.name:setTextColor(nameColor) end
+        if outlineColor and outlineSize then self.name:enableOutline(outlineColor, outlineSize) end
+    end
+end
+
+function SkillItem:showAddIcon(bool,index)
+    if bool == false and not self.add_btn then return end
+    self.add_btn_index = index
+    if not self.add_btn then 
+        local res = PathTool.getResFrame("common","common_90026")
+        self.add_btn = createSprite(res, 60, 60, self, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    end
+    self.add_btn:setVisible(bool)
+end
+
+function SkillItem:showLevel(status)
+    self.show_lev = status
+    if status == true then
+        if not self.level_bg then
+            self.level_bg = createImage(self, PathTool.getResFrame("common","common_2018"), 10,108, cc.p(0.5,0.5), true, 1, true)
+            self.level_bg:setContentSize(cc.size(35, 35))
+        end
+        if not self.num_label then
+            self.num_label = createLabel(20,cc.c4b(0x64,0x32,0x23,0xff),nil,8,107,"00",self,1, cc.p(0.5,0.5))
+            self.num_label:setZOrder(1)
+        end
+        if not self.num_label2 then
+            self.num_label2 = createLabel(24,cc.c4b(0xff,0xff,0xff,0xff),cc.c4b(0x00,0x00,0x00,0xff),0,115,"00",self,1, cc.p(0.5,0.5))
+            self.num_label2:setZOrder(1)
+        end
+        self.level_bg:setVisible(true)
+        self.num_label:setVisible(true)
+        self.num_label2:setVisible(false)
+    else
+        if self.level_bg then self.level_bg:setVisible(false) end
+        if self.num_label then self.num_label:setVisible(false) end
+        if self.num_label2 then self.num_label2:setVisible(false) end
+    end
+end
+
+function SkillItem:showLevelBg(status)
+    self.level_bg:setVisible(status)
+    self.num_label:setVisible(status)
+    self.num_label2:setVisible(false)
+end
+
+function SkillItem:showNoneText(status, none_tips)
+    if status == true then
+        if not self.none_txt then
+            self.none_txt = createLabel(32, cc.c4b(255,236,178,255), nil, self.size.width/2, self.size.height/2, TI18N("语言_c_2103"), self, nil, cc.p(0.5, 0.5))
+        end
+        self.none_txt:setVisible(true)
+    elseif self.none_txt then
+        self.none_txt:setVisible(false)
+    end
+    self.none_tips = none_tips
+end
+
+function SkillItem:showRedPoint(bool)
+    if self.skill_config and self.skill_config.next_id == 0 then bool = false end
+    if bool == false and not self.red_point then return end
+    if not self.red_point then 
+        local res = PathTool.getResFrame("common","common_1014")
+        self.red_point = createImage(self,res,107,107,cc.p(0.5,0.5),true,10,false)
+        self.red_point:setScale(0.7)
+    end
+    self.red_point:setVisible(bool)
+end
+
+function SkillItem:showArrowRedPoint(bool)
+    if bool == false and not self.arrow_red_point then return end
+    if not self.arrow_red_point then 
+        local res = PathTool.getResFrame("common","common_1086")
+        self.arrow_red_point = createImage(self,res,103,100,cc.p(0.5,0.5),true,10,false)
+    end
+    self.arrow_red_point:setVisible(bool)
+end
+
+function SkillItem:setAddBtnFun(btn_fun) self.btn_fun = btn_fun end
+
+function SkillItem:isHaveData()
+    if not self.data or next(self.data) == nil then return false end
+    return true
+end
+
+function SkillItem:getSkillConfig() return self.skill_config end
+
+function SkillItem:DeleteMe()
+    if self.skill_profession_icon_item_load then
+        self.skill_profession_icon_item_load:DeleteMe()
+        self.skill_profession_icon_item_load = nil
+    end
+    -- [E51104] cleanup
+    if self._skill_effect then
+        self._skill_effect:removeFromParent()
+        self._skill_effect = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

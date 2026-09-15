@@ -1,0 +1,720 @@
+BattleDramaDispatchAllWindow = BattleDramaDispatchAllWindow or BaseClass(BaseView)
+
+local _drama_model = BattleDramaController:getInstance():getModel()
+local _controller = BattleDramaController:getInstance() 
+local treasure_controller = TreasureController:getInstance()
+local treasure_model = treasure_controller:getModel()
+local elfin_controller = ElfinController:getInstance()
+local elfin_model = elfin_controller:getModel()
+local choose_list = {}
+function BattleDramaDispatchAllWindow:__init()
+    self.is_full_screen = false
+    self.layout_name = "battledrama/battle_drama_dispatch_add_window"
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.res_list = {
+        
+    }
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.click_index = 0
+end
+
+function BattleDramaDispatchAllWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_img = self.main_container:getChildByName("title_img")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.top_scroll = self.top_panel:getChildByName("scroll")
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.treasure_add = self.bottom_panel:getChildByName("treasure_add")
+    setTextMaxWidth(self.treasure_add,630,-10)
+    self.bottom_scroll = self.bottom_panel:getChildByName("scroll")
+    self.receive_btn = self.bottom_panel:getChildByName("receive_btn")
+    self.receive_txt = self.receive_btn:getChildByName("receive_txt")
+    self.receive_txt:setString(TI18N("语言_c_63"))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+end
+
+function BattleDramaDispatchAllWindow:register_event()
+    registerButtonEventListener(self.background, function()
+        _controller:openBattleDramaDispatchAllWindow(false)
+    end,false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        _controller:openBattleDramaDispatchAllWindow(false)
+    end,true, 2)
+    registerButtonEventListener(self.receive_btn, function()
+        if not self.top_list or not next(self.top_list) then
+            if self.type == 1 then
+                message(TI18N("语言_spr_det_1_16"))
+            else
+                message(TI18N("语言_spr_det_1_12"))
+            end
+            return
+        end
+        local fun = function()
+            local list = {}
+            if self.type == 1 then
+                for k, v in pairs(self.top_list or {}) do
+                    if v.annals_id ~= 0 then
+                        local _list = {}
+                        _list.pos = v.pos
+                        _list.id = v.annals_id
+                        table.insert(list, _list)
+                    end
+                end
+                if next(self.data.annals_list) or (not next(self.data.annals_list) and next(list)) then
+                    _controller:sender30502(list)
+                else
+                    message(TI18N("语言_spr_det_1_16"))
+                end 
+            elseif self.type == 2 then
+                for k, v in pairs(self.top_list or {}) do
+                    if v.sprite_id ~= 0 then
+                        local _list = {}
+                        _list.pos = v.pos
+                        _list.id = v.sprite_id
+                        table.insert(list, _list)
+                    end
+                end
+                if next(self.data.sprite_list) or (not next(self.data.sprite_list) and next(list)) then
+                    _controller:sender30501(list)
+                else
+                    message(TI18N("语言_spr_det_1_12"))
+                end 
+            end
+        end
+        
+        if self.type == 1 then 
+            local num = 0
+            for k, v in pairs(self.top_list or {}) do
+                if v.annals_id ~= 0 then
+                    num = num + 1
+                end
+            end
+            local data = _drama_model:getDispatchData()
+            if not data.sprite_list or not next(data.sprite_list) and num > 0 then
+                local str = TI18N("语言_spr_det_1_19")
+                CommonAlert.show( str, TI18N("语言_c_63"), function()
+                    fun()    
+                end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+            else
+                fun()
+            end
+        else
+            fun()
+        end
+    end,true, 2)
+    if not self.dispatch_click_top_event then
+        self.dispatch_click_top_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Dispatch_Click_Top_Event, function(pos)
+            if self.click_index ~= pos then
+                self.click_index = pos
+                GlobalEvent:getInstance():Fire(Battle_dramaEvent.Dispatch_Click_Back_Event,self.click_index)
+            end
+        end)
+    end
+    if not self.dispatch_click_bottom_event then
+        self.dispatch_click_bottom_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Dispatch_Click_Bottom_Event, function(id)
+            self:updateClickData(id)
+        end)
+    end
+end
+function BattleDramaDispatchAllWindow:updateClickData(id)
+    local is_repeat = false
+    if self.type == 1 then
+        for k,v in pairs(self.top_list or {}) do
+            if v.annals_id == id then
+                is_repeat = true
+                v.annals_id = 0
+                self.click_index = v.pos
+                break
+            end
+        end
+    elseif self.type == 2 then
+        for k,v in pairs(self.top_list or {}) do
+            if v.sprite_id == id then
+                is_repeat = true
+                v.sprite_id = 0
+                self.click_index = v.pos
+                break
+            end
+        end
+    end
+    
+    if not is_repeat then
+        if self.click_index == 0 then
+            message(TI18N("语言_spr_det_1_9"))
+            return
+        end
+        if self.type == 2 then
+            local cfg = Config.SpriteDetachData.data_sprite_info[self.data.camp_id]
+            if cfg and cfg[id] then
+                local type = cfg[id].type
+                for k,v in pairs(self.top_list or {}) do
+                    if v.sprite_id ~= 0 and cfg[v.sprite_id].type == type then
+                        message(TI18N("语言_spr_det_1_10"))
+                        return      
+                    end
+                end        
+            end
+        end
+        local status = false
+        for k,v in pairs(self.top_list or {}) do
+            if self.type == 1 then
+                if v.annals_id == id then
+                    v.annals_id = 0
+                    status = true
+                    self.click_index = v.pos
+                    break
+                end
+                if v.pos == self.click_index then
+                    v.annals_id = id
+                    status = true
+                    break
+                end
+            elseif self.type == 2 then
+                if v.sprite_id == id then
+                    v.sprite_id = 0
+                    status = true
+                    self.click_index = v.pos
+                    break
+                end
+                if v.pos == self.click_index then
+                    v.sprite_id = id
+                    status = true
+                    break
+                end
+            end
+        end
+        if not status then
+            local list = {}
+            list.pos = self.click_index
+            if self.type == 1 then
+                list.annals_id = id
+            elseif self.type == 2 then
+                list.sprite_id = id
+            end
+            self.top_list[list.pos] = list
+        end
+        if self.type == 1 then
+            local max_num = self.const_cfg.sprite_detach_slot2.val
+            for i = 1, max_num do
+                if not self.top_list[i] or self.top_list[i].annals_id == 0 then
+                    self.click_index = i
+                    break
+                end
+            end
+        elseif self.type == 2 then
+            local max_num = self.const_cfg.sprite_detach_slot.val
+            for i = 1, max_num do
+                if not self.top_list[i] or self.top_list[i].sprite_id == 0 then
+                    self.click_index = i
+                    break
+                end
+            end
+        end
+        choose_list = self.top_list
+    end
+    GlobalEvent:getInstance():Fire(Battle_dramaEvent.Dispatch_Click_Back_Event,self.click_index)
+    self:updateTopPanel()
+    GlobalEvent:getInstance():Fire(Battle_dramaEvent.Dispatch_Click_Bottom_Back_Event,self.top_list)
+end
+-- type 1魔导器 2通灵兽
+function BattleDramaDispatchAllWindow:openRootWnd(type)
+    self.type = type
+    self:setData()
+end
+
+function BattleDramaDispatchAllWindow:setData()
+    if self.type == 1 then
+        self.treasure_add:setString(TI18N("语言_spr_det_1_13"))
+        self.title_txt:setString(TI18N("语言_spr_det_1_15"))
+    else
+        self.treasure_add:setString(TI18N("语言_spr_det_1_8"))
+        self.title_txt:setString(TI18N("语言_spr_det_1_3"))
+    end
+    moveTextBg(self.title_txt,self.title_img,60,287)
+    self.data = _drama_model:getDispatchData()
+    if not self.data or not next(self.data) then return end
+    self.const_cfg = Config.SpriteDetachData.data_const[self.data.camp_id]
+    self.top_list = {}
+    if self.type == 1 then
+        for k,v in pairs(self.data.annals_list or {}) do
+            self.top_list[v.pos] = deepCopy(v)
+        end
+    elseif self.type == 2 then
+        for k,v in pairs(self.data.sprite_list or {}) do
+            self.top_list[v.pos] = deepCopy(v)
+        end
+    end
+    choose_list = self.top_list
+    self:updateTopPanel()
+    self:updateBottomPanel()
+end
+function BattleDramaDispatchAllWindow:updateTopPanel()
+    local max_num = 0
+    if self.type == 1 then
+        max_num = self.const_cfg.sprite_detach_slot2.val
+    elseif self.type == 2 then
+        max_num = self.const_cfg.sprite_detach_slot.val
+    end
+    local list = {}
+    for i=1,max_num do
+        local data = {}
+        if self.top_list[i] then
+            data = self.top_list[i]
+        end
+        if not next(data) then
+            data.pos = i
+            if self.click_index == 0 then
+                self.click_index = i
+            end
+        end
+        table.insert(list,data)
+    end
+    if not self.top_scrollview then
+        local setting = {
+            item_class = DispatchShowItem,
+            start_x = 3,
+            space_x = 6,
+            start_y = 10,
+            space_y = 4,
+            item_width = 300,
+            item_height = 104,
+            row = 1,
+            col = 2,
+            need_dynamic = true
+        }
+        self.top_scrollview = CommonScrollViewLayout.new(self.top_scroll,cc.p(0, 0),ScrollViewDir.vertical,ScrollViewStartPos.top,self.top_scroll:getContentSize(),setting)
+        self.top_scrollview:setSwallowTouches(false)
+    end
+    self.top_scrollview:setData(list)
+    self.top_scrollview:addEndCallBack(function()
+        if self.click_index == 0 then
+            self.click_index = 1
+        end
+        GlobalEvent:getInstance():Fire(Battle_dramaEvent.Dispatch_Click_Back_Event,self.click_index)
+    end)
+end
+function BattleDramaDispatchAllWindow:updateBottomPanel()
+    if not self.bottom_scrollview then
+        local setting = {
+            item_class = DispatchHaveItem,
+            start_x = 3,
+            space_x = 30,
+            start_y = 0,
+            space_y = 5,
+            item_width = 119,
+            item_height = 119,
+            row = 1,
+            col = 4,
+            need_dynamic = true
+        }
+        self.bottom_scrollview = CommonScrollViewLayout.new(self.bottom_scroll,cc.p(0, 0),ScrollViewDir.vertical,ScrollViewStartPos.top,self.bottom_scroll:getContentSize(),setting)
+        self.bottom_scrollview:setSwallowTouches(false)
+    end
+    local list = {}
+    if self.type == 1 then
+        local treasure_list = deepCopy(treasure_model:getTreasureList())
+        for k, v in pairs(treasure_list) do
+            local cfg = Config.NinjaTreasureData.data_base_info[v.item_bid]
+            v.quality = cfg.quality
+            v.need_id = cfg.need_id
+            table.insert(list,v)
+        end
+        local sort_func = SortTools.tableCommonSorter({{"quality", true},{"star", true}})
+	    table.sort(list, sort_func)
+    else
+        local cfg = Config.SpriteDetachData.data_sprite_info[self.data.camp_id]
+        -- 背包中所有的精灵
+        local elfin_data = BackpackController:getInstance():getModel():getAllBackPackArray(BackPackConst.item_tab_type.ELFIN) or {}
+        -- 古树中上阵的精灵
+        local elfin_bid_list = elfin_model:getElfinTreeElfinList()
+        local elfin_attach_list = elfin_model:getALLattchElfin()
+        -- print("附身中的精灵",vardump(elfin_attach_list))
+        --古树上的精灵
+        local dic_elfin_item_id = {}
+        for i,v in ipairs(elfin_bid_list) do
+            if v.item_bid ~= 0 then
+                dic_elfin_item_id[v.item_bid] = 1
+            end
+        end
+        for i,v in pairs(elfin_attach_list) do
+            dic_elfin_item_id[v] = 1
+        end
+        --计算 需要加上古树的精灵 和 需要减去的精灵
+        for _,v in pairs(elfin_data) do
+            if cfg[v.base_id] then
+                local vo = deepCopy(v)
+                if dic_elfin_item_id[vo.base_id] then --加上古树的精灵
+                    vo.quantity = vo.quantity + dic_elfin_item_id[vo.base_id]
+                    dic_elfin_item_id[vo.base_id] = nil
+                end
+                if vo.quantity > 0 then
+                    table.insert(list, vo)
+                end
+            end
+        end
+        for k,v in pairs(dic_elfin_item_id) do
+            if v then
+                local vo = GoodsVo.New(k)
+                vo.quantity = 1
+                if vo.quantity > 0 then
+                    table.insert(list, vo)
+                end
+            end
+        end
+        local sort_func = SortTools.tableCommonSorter({{"quality", true},{"eqm_jie", true},{"base_id", true}})
+	    table.sort(list, sort_func)
+    end
+    self.bottom_scrollview:setData(list)
+end
+function BattleDramaDispatchAllWindow:close_callback()
+    if self.dispatch_click_top_event then
+        GlobalEvent:getInstance():UnBind(self.dispatch_click_top_event)
+        self.dispatch_click_top_event = nil
+    end
+    if self.dispatch_click_bottom_event then
+        GlobalEvent:getInstance():UnBind(self.dispatch_click_bottom_event)
+        self.dispatch_click_bottom_event = nil
+    end
+    if self.top_scrollview then
+        self.top_scrollview:DeleteMe()
+        self.top_scrollview = nil
+    end
+    if self.bottom_scrollview then
+        self.bottom_scrollview:DeleteMe()
+        self.bottom_scrollview = nil
+    end
+    _controller:openBattleDramaDispatchAllWindow(false)
+end
+
+
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      魔导器单个
+-- Create: 2020-02-10
+-- --------------------------------------------------------------------
+DispatchShowItem = class("DispatchShowItem", function()
+    return ccui.Widget:create()
+end)
+
+function DispatchShowItem:ctor()
+	self.ctrl = TaskController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+end
+
+function DispatchShowItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("battledrama/dispatch_show_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self.size = cc.size(300,104)
+    self:setContentSize(self.size)
+    self:setAnchorPoint(0.5,0.5)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setTouchEnabled(true)
+    self.main_container:setSwallowTouches(false)
+    self.no_choose_panel = self.main_container:getChildByName("no_choose_panel")
+    self.no_tip = self.no_choose_panel:getChildByName("no_tip")
+    setTextMaxWidth(self.no_tip,100)
+    self.no_tip:setString(TI18N("语言_spr_det_1_11"))
+    self.choose_panel = self.main_container:getChildByName("choose_panel")
+    self.bg = self.choose_panel:getChildByName("bg")
+    self.bg_2 = self.choose_panel:getChildByName("bg_2")
+    self.node_panel = self.choose_panel:getChildByName("node_panel")
+    self.icon_node = self.node_panel:getChildByName("icon_node")
+    self.tip_1 = createRichLabel(24,cc.c3b(0x7c,0x55,0x36),cc.p(0,0.5),cc.p(150,78))
+    self.choose_panel:addChild(self.tip_1)
+    self.tip_2 = createRichLabel(24,cc.c3b(0x7c,0x55,0x36),cc.p(0,0.5),cc.p(150,78))
+    self.choose_panel:addChild(self.tip_2)
+    self.click_bg = self.main_container:getChildByName("click_bg")
+    self.click_bg:setVisible(false)
+end
+
+function DispatchShowItem:register_event(  )
+    registerButtonEventListener(self.main_container, function()
+        GlobalEvent:getInstance():Fire(Battle_dramaEvent.Dispatch_Click_Top_Event,self.pos)
+    end,false, 2)
+    if not self.dispatch_click_back_event then
+        self.dispatch_click_back_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Dispatch_Click_Back_Event, function(pos)
+            if self.pos == pos then
+                self.click_bg:setVisible(true)
+            else
+                self.click_bg:setVisible(false)
+            end
+        end)
+    end
+end
+function DispatchShowItem:setData(data)
+    local model_data = _drama_model:getDispatchData()
+    if model_data then
+        self.cfg = Config.SpriteDetachData.data_const[model_data.camp_id]
+    end
+    self.data = data
+    self.type = 0
+    self.id = 0
+    self.pos = data.pos
+    if data.sprite_id then
+        self.id = data.sprite_id
+        self.type = 2
+    end
+    if data.annals_id then
+        self.id = data.annals_id
+        self.type = 1
+    end
+	if self.id == 0 then
+        self.choose_panel:setVisible(false)
+        self.no_choose_panel:setVisible(true)
+    else
+        self.choose_panel:setVisible(true)
+        self.no_choose_panel:setVisible(false)
+        
+        if self.type == 1 then
+            if not self.icon then
+                self.icon = ccui.ImageView:create()
+                self.icon:setCascadeOpacityEnabled(true)
+                self.icon:setAnchorPoint(0.5,0.5)
+                self.icon:setPosition(0,0)--底板
+                self.icon_node:addChild(self.icon,3)
+            end
+            if self.icon then
+                self.icon:loadTexture(string.format("resource/ninja_treasure/treasure_item/%s.png",self.id),LOADTEXT_TYPE)
+            end
+            local cfg = Config.NinjaTreasureData.data_base_info[self.id]
+            loadSpriteTexture(self.bg,PathTool.getResFrame("sprite_detach", "detach_bg_"..1+cfg.quality),LOADTEXT_TYPE_PLIST)
+            loadSpriteTexture(self.bg_2,PathTool.getResFrame("sprite_detach", "detach_up_"..1+cfg.quality),LOADTEXT_TYPE_PLIST)
+            local treasure_cfg = Config.SpriteDetachData.data_annals_info[model_data.camp_id]
+            local treasure_data = treasure_model:getTreasureForId(self.id)
+            if self.cfg and treasure_cfg[self.id] and treasure_data and next(treasure_data) then
+                local txt = ""
+                local star = treasure_data.star
+                local num = self.cfg.sprite_detach_time.val
+                local item_id = self.cfg.sprite_detach_reward.val
+                local add_num = treasure_cfg[self.id].base_award + treasure_cfg[self.id].grow_award * (star-1)
+                local add_num_2 = (treasure_cfg[self.id].base_award_ratio + treasure_cfg[self.id].grow_award_ratio * (star-1))*0.1
+                local txt_2 = string.format("<img src=%s visible=true />%s%%",PathTool.getResFrame("common", "common_1086"),add_num_2)
+                if num > 1 then
+                    txt = string.format("<img src=%s scale=0.3 visible=true />%s/%sm",PathTool.getItemRes(item_id),add_num,num)
+                else
+                    txt = string.format("<img src=%s scale=0.3 visible=true />%s/m",PathTool.getItemRes(item_id),add_num)
+                end
+                self.tip_1:setString(txt)
+                self.tip_1:setVisible(false)
+                self.tip_2:setString(txt_2)
+                
+                if treasure_cfg[self.id].offset and next(treasure_cfg[self.id].offset) then
+                    local off_list = treasure_cfg[self.id].offset
+                    self.icon:setScale(off_list[1])
+                    self.icon:setPosition(cc.p(0+off_list[2],0+off_list[3]))
+                end
+            else
+                self.tip_1:setString("")
+                self.tip_2:setString("")
+            end
+        elseif self.type == 2 then
+            local cfg = Config.SpriteData.data_elfin_data(self.id)
+            if self.elfin_spine then
+                self.elfin_spine:removeFromParent()
+                self.elfin_spine = nil
+            end
+            if not self.elfin_spine then
+                self.elfin_spine = createEffectSpine( cfg.effect_id, cc.p(0,-115), cc.p(0.5, 0), true, PlayerAction.stand )
+                self.elfin_spine:setScale(0.6)
+                self.icon_node:addChild(self.elfin_spine)
+            end
+            local item_cfg = Config.ItemData.data_get_data(self.id)
+            loadSpriteTexture(self.bg,PathTool.getResFrame("sprite_detach", "detach_bg_"..1+item_cfg.quality),LOADTEXT_TYPE_PLIST)
+            loadSpriteTexture(self.bg_2,PathTool.getResFrame("sprite_detach", "detach_up_"..1+item_cfg.quality),LOADTEXT_TYPE_PLIST)
+            local sprite_cfg = Config.SpriteDetachData.data_sprite_info[model_data.camp_id]
+            if self.cfg and sprite_cfg[self.id] then
+                local txt = ""
+                local num = self.cfg.sprite_detach_time.val
+                local item_id = self.cfg.sprite_detach_reward.val
+                if num > 1 then
+                    txt = string.format("<img src=%s scale=0.3 visible=true />%s/%sm",PathTool.getItemRes(item_id),sprite_cfg[self.id].award,num)
+                else
+                    txt = string.format("<img src=%s scale=0.3 visible=true />%s/m",PathTool.getItemRes(item_id),sprite_cfg[self.id].award)
+                end
+                self.tip_1:setString(txt)
+                if sprite_cfg[self.id].offset and next(sprite_cfg[self.id].offset) then
+                    local off_list = sprite_cfg[self.id].offset
+                    self.elfin_spine:setScale(off_list[1])
+                    self.elfin_spine:setPosition(cc.p(0+off_list[2],-115+off_list[3]))
+                end
+            else
+                self.tip_1:setString("")
+            end
+            self.tip_2:setString("")
+        end
+    end
+end
+
+function DispatchShowItem:DeleteMe()
+	if self.dispatch_click_back_event then
+        GlobalEvent:getInstance():UnBind(self.dispatch_click_back_event)
+        self.dispatch_click_back_event = nil
+    end
+end
+
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      魔导器单个
+-- Create: 2020-02-10
+-- --------------------------------------------------------------------
+DispatchHaveItem = class("DispatchHaveItem", function()
+    return ccui.Widget:create()
+end)
+
+function DispatchHaveItem:ctor()
+	self.ctrl = TaskController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+end
+
+function DispatchHaveItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("battledrama/dispatch_have_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self.size = cc.size(119,119)
+    self:setContentSize(self.size)
+    self:setAnchorPoint(0.5,0.5)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+
+    self.elfin_container = self.main_container:getChildByName("elfin_container")
+    self.elfin_container:setVisible(false)
+
+    self.treasure_container = self.main_container:getChildByName("treasure_container")
+    self.treasure_container:setVisible(false)
+    self.bg = self.treasure_container:getChildByName("bg")
+    self.icon = self.treasure_container:getChildByName("icon")
+    self.star_con = self.treasure_container:getChildByName("star_con")
+
+    self.click_container = self.root_wnd:getChildByName("click_container")
+    self.click_container:setVisible(false)
+end
+
+function DispatchHaveItem:register_event(  )
+    registerButtonEventListener(self.main_container, function()
+        GlobalEvent:getInstance():Fire(Battle_dramaEvent.Dispatch_Click_Bottom_Event,self.id)
+    end,false, 2)
+    if not self.dispatch_click_bottom_back_event then
+        self.dispatch_click_bottom_back_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Dispatch_Click_Bottom_Back_Event, function(list)
+            self:updateClickPanel(list)
+        end)
+    end
+end
+function DispatchHaveItem:updateClickPanel(list)
+    local status = false
+    if self.type == 1 then
+        for k, v in pairs(list) do
+            if v.annals_id == self.id then
+                status = true
+                break
+            end
+        end
+    else
+        for k, v in pairs(list) do
+            if v.sprite_id == self.id then
+                status = true
+                break
+            end
+        end
+    end
+    self.click_container:setVisible(status)
+end
+function DispatchHaveItem:setData(data)
+    self.dispatch_list = _drama_model:getDispatchData()
+    self.elfin_cfg = Config.SpriteDetachData.data_sprite_info[self.dispatch_list.camp_id]
+    self.treasure_cfg = Config.SpriteDetachData.data_annals_info[self.dispatch_list.camp_id]
+    self.data = data
+    self.type = 0
+    self.id = 0
+    if self.data.base_id and self.elfin_cfg[self.data.base_id] then
+        self.type = 2
+        self.id = self.data.base_id
+    end
+    if self.data.item_bid and self.treasure_cfg[self.data.item_bid] then
+        self.type = 1
+        self.id = self.data.item_bid
+    end
+    if self.type == 1 then
+        self.treasure_container:setVisible(true)
+        self.elfin_container:setVisible(false)
+        loadSpriteTexture(self.bg, PathTool.getQualityBg(self.data.quality), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(self.icon, PathTool.getItemRes(self.data.need_id), LOADTEXT_TYPE)
+        self.star_setting = self:createStar(self.data.star,self.data.star,self.star_con,self.star_setting)
+    elseif self.type == 2 then
+        self.treasure_container:setVisible(false)
+        self.elfin_container:setVisible(true)
+        if not self.elfin_item then
+            self.elfin_item = BackPackItem.new(true,false)
+            self.elfin_item:setPosition(cc.p(self.size.width*0.5,self.size.height*0.5))
+            self.elfin_container:addChild(self.elfin_item)
+            self.elfin_item:setTouchEnabled(false)
+        end
+        self.elfin_item:setData(self.data)
+    end
+    local model_data = _drama_model:getDispatchData()
+    if not model_data or not next(model_data) then return end
+    local top_list = choose_list
+    self:updateClickPanel(top_list)
+end
+
+function DispatchHaveItem:createStar(num ,max_num, star_con, star_setting)
+	local num = num or 0
+    local star_setting = star_setting or {}
+	if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+	for i,v in pairs(star_setting.star_list) do
+        v:setVisible(false)
+    end
+	local _cStar = function(star_count, max_count, star_list,moveW)
+        local width = 15
+        local x = - max_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,max_count do
+            if not star_list[i] then 
+				local res = PathTool.getResFrame("common","common_90074")
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,i,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+			if i > star_count then
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90093"), LOADTEXT_TYPE_PLIST)	
+			else
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90074"), LOADTEXT_TYPE_PLIST)
+			end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+	_cStar(num,max_num, star_setting.star_list)
+	return star_setting
+end
+
+function DispatchHaveItem:DeleteMe()
+	if self.dispatch_click_bottom_back_event then
+        GlobalEvent:getInstance():UnBind(self.dispatch_click_bottom_back_event)
+        self.dispatch_click_bottom_back_event = nil
+    end
+end

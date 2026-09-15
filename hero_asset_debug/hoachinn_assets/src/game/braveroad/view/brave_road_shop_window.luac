@@ -1,0 +1,186 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 勇者之路副本关卡 shop
+--------------------------------- 
+local _controller = BraveRoadController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+
+BraveRoadShopWindow = BraveRoadShopWindow or BaseClass(BaseView)
+
+function BraveRoadShopWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "braveroad/brave_road_shop_window"
+
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.show_list = {}
+end
+
+function BraveRoadShopWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+	self.container = container
+    self:playEnterAnimatianByObj(container, 2)
+    local image_2 = container:getChildByName("image_2")
+	local win_title = container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_5084"))
+    moveTextBg(win_title,image_2,60,image_2:getContentSize().width)
+	self.close_btn = container:getChildByName("close_btn")
+
+	self.list_panel = container:getChildByName("list_panel")
+	self.res_label = container:getChildByName("res_label")
+    self.res_icon = container:getChildByName("res_icon")
+
+    self.label_limit = container:getChildByName("label_limit") 
+    self.label_limit:setString(TI18N("语言_c_5358"))
+	self.image_star = container:getChildByName("image_star")
+	self.label_star = container:getChildByName("label_star")
+
+	local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 2, -- y方向的间隔
+        item_width = 306, -- 单元的尺寸width
+        item_height = 143, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 2                         -- 列数，作用于垂直滚动类
+    }
+    self.item_scroll_view = CommonScrollViewSingleLayout.new(self.list_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, cc.size(self.list_panel:getContentSize().width, self.list_panel:getContentSize().height), setting, cc.p(0, 0))
+
+	self.item_scroll_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+	self.item_scroll_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+	self.item_scroll_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+end
+
+function BraveRoadShopWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, function (  )
+		_controller:openBraveRoadShopWindow(false)
+	end, true, 2)
+
+	registerButtonEventListener(self.background, function (  )
+		_controller:openBraveRoadShopWindow(false)
+	end, false, 2)
+
+	self:addGlobalEvent(MallEvent.Open_View_Event, function ( data )
+		if data.type == MallConst.MallType.BraveRoadShop then
+            local list = self:getConfig(data)
+            self.show_list =list
+            self.item_scroll_view:reloadData()
+        end
+	end)
+
+    if not self.role_lev_event and self.role_vo then
+        self.role_lev_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+            if key and key == "training_symbol" then 
+                self:updateResNum()
+            end
+        end)
+    end
+end
+
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function BraveRoadShopWindow:createNewCell()
+    local cell = BraveMallItem.new()--
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+
+--获取数据数量
+function BraveRoadShopWindow:numberOfCells()
+    if not self.show_list then return 0 end
+    return #self.show_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function BraveRoadShopWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.show_list[index]
+    if not data then return end
+    cell:setData(data)
+end
+
+
+--点击cell .需要在 createNewCell 设置点击事件
+function BraveRoadShopWindow:onCellTouched(cell)
+    MallController:getInstance():openMallBuyWindow(true, cell:getData())
+end
+
+function BraveRoadShopWindow:getConfig(data)
+    local item_list = {}
+    local config = Config.ExchangeData.data_shop_exchage_training
+    if config then
+        local list = deepCopy(data.item_list)
+        for a, j in pairs(config) do
+            if list and next(list or {}) ~= nil  then
+                for k, v in pairs(list) do --已经买过的限购物品
+                    if j.id == v.item_id then
+                        if v.ext[1].val then --不管是什么限购 赋值已购买次数就好了。。
+                            j.has_buy = v.ext[1].val
+                            table.remove(list, k)
+                        end
+                        break
+                    else
+                        j.has_buy = 0
+                    end
+                end
+            else
+                j.has_buy = 0
+            end
+            table.insert(item_list, j)
+        end
+    end
+    table.sort(item_list ,function (a,b)
+        if a.limit_count and a.limit_count > 0 and a.has_buy >= a.limit_count and (not b.limit_count or b.limit_count == 0 or b.has_buy < b.limit_count) then
+            return false
+        elseif b.limit_count and b.limit_count > 0 and b.has_buy >= b.limit_count and (not a.limit_count or a.limit_count == 0 or a.has_buy < a.limit_count) then
+            return true
+        else
+            return  a.order < b.order
+        end
+    end)
+    return item_list
+end
+
+function BraveRoadShopWindow:updateResNum(  )
+	if self.role_vo then
+        self.res_label:setString(BackpackController:getInstance():getModel():getItemNumByBid(41))
+        local item_config = Config.ItemData.data_get_data(41)
+        local res = PathTool.getItemRes(item_config.icon)
+        loadSpriteTexture(self.res_icon, res, LOADTEXT_TYPE)
+    end
+    self.label_star:setString(_model:getMonthStar())
+    self.image_star:setPositionX(self.label_star:getPositionX() - self.label_star:getContentSize().width)
+    self.label_limit:setPositionX(self.image_star:getPositionX() - self.image_star:getContentSize().width)
+end
+
+function BraveRoadShopWindow:openRootWnd(  )
+	MallController:getInstance():sender13401(MallConst.MallType.BraveRoadShop)
+	self:updateResNum()
+end
+
+function BraveRoadShopWindow:close_callback(  )
+	if self.item_scroll_view then
+        self.item_scroll_view:DeleteMe()
+        self.item_scroll_view = nil
+    end
+    if self.role_lev_event and self.role_vo then
+        self.role_vo:UnBind(self.role_lev_event)
+        self.role_lev_event = nil
+    end
+	_controller:openBraveRoadShopWindow(false)
+end

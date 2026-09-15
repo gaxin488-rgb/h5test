@@ -1,0 +1,601 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2019-04-10
+-- --------------------------------------------------------------------
+local _table_insert = table.insert
+
+HeavenHighModel = HeavenHighModel or BaseClass()
+
+function HeavenHighModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function HeavenHighModel:config()
+	self.left_challenge_count = 0  -- 剩余挑战次数
+	self.today_buy_count = 0	   -- 今日购买次数
+	self.chapter_list = {} 		   -- 章节数据
+	self.customs_list = {} 		   -- 关卡数据
+	self.max_pass_chapter_id = 0   -- 最大通关（普通通关）章节id
+	self.max_dun_id = 0 		   -- 最大通关关卡的配置副本id
+
+	self.daily_reward = {}         --天界副本每日奖励领取
+	self.daily_reward.flag = 0         --天界副本每日奖励领取
+	self.heaven_red_list = {}
+
+	self.heavenHigh_lLogin_red = false
+end
+
+function HeavenHighModel:clearData(  )
+	self:config()
+end
+
+function HeavenHighModel:getHeavenHighShield()
+	local shield_id = MainuiConst.FeaturesShield.heavenHigh
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	if table.indexof(nohideIds,shield_id) then
+		return true
+	end
+	return false
+end
+
+-- 设置剩余挑战次数
+function HeavenHighModel:setLeftChallengeCount( count )
+	self.left_challenge_count = count or 0
+	self:checkHeavenRedStatus()
+end
+-- 获取剩余挑战次数
+function HeavenHighModel:getLeftChallengeCount(  )
+	return self.left_challenge_count
+end
+
+-- 设置今日购买次数
+function HeavenHighModel:setTodayBuyCount( count )
+	self.today_buy_count = count or 0
+end
+-- 获取今日购买次数
+function HeavenHighModel:getTodayBuyCount(  )
+	return self.today_buy_count
+end
+-- 获取今日剩余购买次数
+function HeavenHighModel:getTodayLeftBuyCount(  )
+	local max_count = Config.DungeonHeavenAdvanceData.data_count_buy_length or 0
+	local left_count = max_count - self.today_buy_count
+	if left_count < 0 then left_count = 0 end
+	return left_count
+end
+
+-- 设置最大通关关卡副本id
+function HeavenHighModel:setMaxDunId( dun_id )
+	if not self.max_dun_id or self.max_dun_id < dun_id then
+		self.max_dun_id = dun_id
+	end
+end
+
+function HeavenHighModel:getMaxDunId(  )
+	return self.max_dun_id
+end
+function HeavenHighModel:setHeavenHighOpen(status)
+	self.heaven_high_open = status == 1
+	self:setHeavenHighItemRed()
+end
+function HeavenHighModel:getHeavenHighOpen(  )
+	return self.heaven_high_open or false
+end
+function HeavenHighModel:setHeavenHighItemRed()
+	local red_status = false
+	local cfg = Config.DungeonHeavenData.data_const
+	local need_id = cfg["level_notice_max"].val
+	local id = HeavenController:getInstance():getModel():getMaxDunId()
+	if id == need_id and not self:getHeavenHighOpen() then
+		red_status = true
+	end
+	MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.adventure, {bid = AdventureActivityConst.Red_Type.heaven_high_item, status = red_status})
+end
+-- 设置章节数据
+function HeavenHighModel:setChapterData( data )
+	self.chapter_list = {}
+	for k,cData in pairs(data) do
+		local chapter_vo = HeavenHighChapterVo.New()
+		chapter_vo:updateData(cData)
+		_table_insert(self.chapter_list, chapter_vo)
+	end
+	self:updateMaxPassChapterId()
+	self:checkHeavenRedStatus()
+end
+
+-- 更新章节数据
+function HeavenHighModel:updateChapterData( data )
+	local is_add = false
+	for _,cData in pairs(data) do
+		local is_have = false
+		for _,chapter_vo in pairs(self.chapter_list) do
+			if chapter_vo.id == cData.id then
+				is_have = true
+				chapter_vo:updateData(cData)
+			end
+		end
+		if not is_have then -- 新增
+			is_add = true
+			local chapter_vo = HeavenHighChapterVo.New()
+			chapter_vo:updateData(cData)
+			_table_insert(self.chapter_list, chapter_vo)
+		end
+	end
+	self:updateMaxPassChapterId()
+	self:checkHeavenRedStatus()
+	if is_add then
+		GlobalEvent:getInstance():Fire(HeavenHighEvent.Add_Chapter_Data_Event)
+	end
+end
+
+-- 更新某一章节数据
+function HeavenHighModel:updateOneChapterDataById( id, data )
+	for _,chapter_vo in pairs(self.chapter_list) do
+		if chapter_vo.id == id then
+			chapter_vo:updateData(data)
+			break
+		end
+	end
+	self:updateMaxPassChapterId()
+	self:checkHeavenRedStatus()
+end
+
+-- 是否有章节数据缓存
+function HeavenHighModel:checkIsHaveChapterCache(  )
+	if self.chapter_list and next(self.chapter_list) ~= nil then
+		return true
+	else
+		return false
+	end
+end
+
+-- 更新最大通关章节id
+function HeavenHighModel:updateMaxPassChapterId(  )
+	for _,chapter_vo in pairs(self.chapter_list) do
+		if chapter_vo.is_finish ~= HeavenHighConst.Chapter_Pass_Status.NotPass and chapter_vo.id > self.max_pass_chapter_id then
+			self.max_pass_chapter_id = chapter_vo.id
+		end
+	end
+end
+
+-- 获取某一章节的通关状态 HeavenHighConst.Chapter_Pass_Status
+function HeavenHighModel:getChapterPassStatus( chapter_id )
+	local pass_status = HeavenHighConst.Chapter_Pass_Status.NotPass
+	for _,chapter_vo in pairs(self.chapter_list) do
+		if chapter_vo.id == chapter_id then
+			pass_status = chapter_vo.is_finish
+		end
+	end
+	return pass_status
+end
+
+-- 根据章节id和星级奖励id获取奖励状态
+function HeavenHighModel:getChapterStarAwardStatus( chapter_id, award_id )
+	local award_status = 0
+	local chapter_vo = self:getChapterDataById(chapter_id)
+	if chapter_vo then
+		for k,v in pairs(chapter_vo.award_info) do
+			if v.id == award_id then
+				award_status = v.flag
+				break
+			end
+		end
+	end
+	return award_status
+end
+
+-- 获取最大通关章节id
+function HeavenHighModel:getMaxPassChapterId(  )
+	return self.max_pass_chapter_id
+end
+
+-- 获取当前开启的最大章节id
+function HeavenHighModel:getOpenMaxChapterId(  )
+	local chapter_id = 0
+	for k,chapter_vo in pairs(self.chapter_list) do
+		if chapter_id < chapter_vo.id then
+			chapter_id = chapter_vo.id
+		end
+	end
+	return chapter_id
+end
+
+-- 根据章节id获取章节数据
+function HeavenHighModel:getChapterDataById( id )
+	for _,chapter_vo in pairs(self.chapter_list) do
+		if chapter_vo.id == id then
+			return chapter_vo
+		end
+	end
+end
+
+-- 根据章节id判断该章节是否开启
+function HeavenHighModel:checkHeavenChapterIsOpen( chapter_id )
+	local config_data = Config.DungeonHeavenAdvanceData.data_chapter[chapter_id]
+	if not config_data then return false end
+
+	local is_open = true
+	local close_msg = ""
+	-- 先判断上一章节是否通关
+	if chapter_id > 1 then
+		local pre_pass_status = self:getChapterPassStatus(chapter_id - 1)
+		if pre_pass_status == HeavenHighConst.Chapter_Pass_Status.NotPass then
+			is_open = false
+			close_msg = TI18N("语言_c_3710")
+		end
+	end
+	for k,cond in pairs(config_data.cond_info) do
+		local chap_id = cond[1]
+		local star = cond[2]
+		local chap_vo = self:getChapterDataById(chap_id)
+		if not chap_vo or chap_vo.all_star < star then
+			is_open = false
+			if close_msg == "" then
+				close_msg = string.format(TI18N("语言_c_3711"), chap_id, star)
+			else
+				close_msg = close_msg .. string.format(TI18N("语言_c_3712"), chap_id, star)
+			end
+			break
+		end
+	end
+	close_msg = string.format(TI18N("语言_c_4722"),close_msg)
+	return is_open, close_msg
+end
+
+-- 设置关卡数据
+function HeavenHighModel:setCustomsData( data, chapter_id )
+	self:updateCustomsData(data, chapter_id)
+end
+
+-- 更新关卡数据
+function HeavenHighModel:updateCustomsData( data, chapter_id )
+	for _,cData in pairs(data) do
+		cData.chapter_id = chapter_id
+		local is_have = false
+		for _,customs_vo in pairs(self.customs_list) do
+			if customs_vo.id == cData.id and customs_vo.chapter_id == chapter_id then
+				is_have = true
+				customs_vo:updateData(cData)
+			end
+		end
+		if not is_have then -- 新增
+			local customs_vo = HeavenHighCustomsVo.New()
+			customs_vo:updateData(cData)
+			_table_insert(self.customs_list, customs_vo)
+		end
+	end
+end
+
+-- 根据章节id判断是否有关卡数据
+function HeavenHighModel:checkIsHaveCustomsCache( chapter_id )
+	local is_have = false
+	if self.customs_list then
+		local customs_num = 0
+		for _,customs_vo in pairs(self.customs_list) do
+			if customs_vo.chapter_id == chapter_id then
+				customs_num = customs_num + 1
+			end
+		end
+		if Config.DungeonHeavenAdvanceData.data_customs_num[chapter_id] == customs_num then
+			is_have = true
+		end
+	end
+	return is_have
+end
+
+-- 根据章节id获取该章节所有可以显示关卡数据(乱序)
+function HeavenHighModel:getAllCanShowCustomsDataById( chapter_id )
+	local all_customs = {}
+	for k,customs_vo in pairs(self.customs_list) do
+		if customs_vo.chapter_id == chapter_id and customs_vo.state ~= 0 then
+			_table_insert(all_customs, customs_vo)
+		end
+	end
+	return all_customs
+end
+
+-- 根据章节id和关卡id获取关卡数据
+function HeavenHighModel:getCustomsDataById( chapter_id, customes_id )
+	for _,customs_vo in pairs(self.customs_list) do
+		if customs_vo.id == customes_id and customs_vo.chapter_id == chapter_id then
+			return customs_vo
+		end
+	end
+end
+
+-- 根据章节id和关卡id获取是否为boss关
+function HeavenHighModel:getCustomsIsBossType( chapter_id, customes_id )
+	local is_boss = false
+	local chapter_cfg = Config.DungeonHeavenAdvanceData.data_customs[chapter_id]
+	if chapter_cfg and chapter_cfg[customes_id] then
+		is_boss = (chapter_cfg[customes_id].type == 1)
+	end
+	return is_boss
+end
+
+-- 根据关卡配置表唯一id判断该关卡是否通关
+function HeavenHighModel:checkCustomsIsPassByDunId( dun_id )
+	local is_pass = false
+	if dun_id <= self.max_dun_id then
+		is_pass = true
+	end
+	return is_pass
+end
+
+-- 根据章节id获取该章节最大星数
+function HeavenHighModel:getChapterMaxStarNum( chapter_id )
+	local max_star_num = 0
+	local cfg = Config.DungeonHeavenAdvanceData.data_customs[chapter_id]
+	if cfg then
+		for k, v in pairs(cfg) do
+			max_star_num = max_star_num + tableLen(v.unit_id)
+		end
+	end
+	return max_star_num
+end
+
+-- 缓存最后一次打开的章节id
+function HeavenHighModel:setHeavenLastShowChapterId( chapter_id )
+	self.last_show_chapter_id = chapter_id
+end
+
+function HeavenHighModel:getHeavenLastShowChapterId(  )
+	return self.last_show_chapter_id
+end
+
+-- 天界副本开启判断
+function HeavenHighModel:checkHeavenIsOpen( not_tips )
+	local role_vo = RoleController:getInstance():getRoleVo()
+	if role_vo == nil then 
+		return false 
+	end
+	local is_open = false
+	local world_lev_cfg = Config.DungeonHeavenAdvanceData.data_const["open_world_lev"]
+	local role_lev_cfg = Config.DungeonHeavenAdvanceData.data_const["open_lev"]
+	local open_lev_second_cfg = Config.DungeonHeavenAdvanceData.data_const["open_lev_second"]
+	local msg = ""
+	if world_lev_cfg and role_lev_cfg then
+		local world_lv = RoleController:getInstance():getModel():getWorldLev()
+		is_open = true
+		if world_lev_cfg.val > world_lv then
+			is_open = false
+			msg = world_lev_cfg.desc
+		elseif role_lev_cfg.val > role_vo.lev then
+			is_open = false
+			msg = role_lev_cfg.desc
+		end
+	end
+	-- 条件二（与条件一为或的关系）
+	if not is_open and open_lev_second_cfg then
+		is_open = true
+		if open_lev_second_cfg.val > role_vo.lev then
+			is_open = false
+			msg = open_lev_second_cfg.desc
+		end
+	end
+	if not is_open and not not_tips then
+		message(msg)
+	end
+	return is_open
+end
+
+--获取每日奖励数据
+function HeavenHighModel:setDailyReward( data )
+	self.daily_reward = data or {}
+	GlobalEvent:getInstance():Fire(HeavenHighEvent.Receive_Reward)
+end
+---------------- 红点相关
+function HeavenHighModel:updateHeavenRedStatus( bid, status )
+	local status = status or self.heavenHigh_lLogin_red
+	self.heaven_red_list[bid] = status
+
+	local red_status = self:getHeavenRedStatus()
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.adventure, {bid = AdventureActivityConst.Red_Type.heaven_high, status = red_status})
+    GlobalEvent:getInstance():Fire(HeavenHighEvent.Update_Heaven_Red_Status, bid, status)
+end
+
+function HeavenHighModel:getHeavenRedStatus(  )
+	local red_status = false
+	if not self:getHeavenHighShield() then return red_status end
+	for k,status in pairs(self.heaven_red_list) do
+		if status == true then
+			red_status = true
+			break
+		end
+	end
+	return red_status
+end
+
+function HeavenHighModel:getHeavenRedStatusByBid( bid )
+	local red_status = false
+	for k,status in pairs(self.heaven_red_list) do
+		if bid == k then
+			red_status = status
+			break
+		end
+	end
+	return red_status
+end
+function HeavenHighModel:checkHeavenHighIsOpen(  )
+	return HeavenHighController:getInstance():getModel():getHeavenHighOpen() and HeavenHighController:getInstance():getModel():getHeavenHighShield()
+end
+function HeavenHighModel:checkHeavenRedStatus(  )
+	if not self:checkHeavenIsOpen(true) then return end
+	
+	local cfg = Config.DungeonHeavenAdvanceData.data_customs
+	local cfgLen = tableLen(cfg)
+	local dunLen = tableLen(cfg[cfgLen])
+	local dun_id = cfg[cfgLen][dunLen].dun_id
+
+	-- 剩余挑战次数
+	local count_red_status = false
+	if self.left_challenge_count > 0 and self.max_dun_id < dun_id and self:checkHeavenHighIsOpen() then
+		count_red_status = true
+	end
+	self:updateHeavenRedStatus(HeavenHighConst.Red_Index.Count, count_red_status)
+
+	-- 章节奖励
+	local award_red_status = false
+	if self:checkHeavenHighIsOpen() then
+		for k,chapter_vo in pairs(self.chapter_list) do
+			if chapter_vo:getRedStatus() == true then
+				award_red_status = true
+				break
+			end
+		end
+	end
+	self:updateHeavenRedStatus(HeavenHighConst.Red_Index.Award, award_red_status)
+end
+
+function HeavenHighModel:canReceiveReward()
+	local status = false
+	if self.daily_reward then
+		if self.daily_reward.daily_reward == 1 then
+			status = true
+		end
+	end
+	self:updateHeavenRedStatus(HeavenHighConst.Red_Index.DialyReward, status)
+	return status
+end
+function HeavenHighModel:setBossForm(data)
+	self.boss_form = data
+    for i, v in pairs(self.boss_form.formations) do
+        v.formation_type=v.formation_type==0 and 1 or v.formation_type
+        local sub_id=v.order
+        --更新池子
+        local data_list = v.pos_info
+        for __, info in pairs(data_list) do
+            local hero_id = info.id
+            local hero_vo = HeroController:getInstance():getModel():getHeroById(hero_id)
+            if hero_vo then
+                hero_vo.point_id = sub_id
+                hero_vo.is_ui_select = true
+            end
+        end
+    end
+    GlobalEvent:getInstance():Fire(HeavenHighEvent.Update_Heaven_Fun_Form,data)
+end
+function HeavenHighModel:getBossForm()
+	return self.boss_form
+end
+--战令
+function HeavenHighModel:setOrderData(data)
+	self.order_data = data
+	self.order_awards = data.awards
+	self.order_buy = data.buy
+	self.order_end_time = data.end_time
+	GlobalEvent:getInstance():Fire(HeavenHighEvent.Order_Reward_Event)
+	self:setHeavenHighOrderRed()
+end
+function HeavenHighModel:getOrderData()
+	return self.order_data or {}
+end
+function HeavenHighModel:getOrderAwardsData()
+	return self.order_awards or {}
+end
+function HeavenHighModel:getReceiveFinishNext()
+	local cfg = Config.DungeonHeavenAdvanceData.data_task_reward
+	table.sort(self:getOrderAwardsData(), function(a,b) return a.id < b.id end)
+	local id = 0
+	for k, v in ipairs(self:getOrderAwardsData()) do
+		if v.award1 == 0 and v.award2 == 0 then
+			id = v.id
+			if cfg[id] then
+				return cfg[id]
+			end
+		end
+	end
+	return cfg[tableLen(cfg)]
+end
+function HeavenHighModel:getOrderRed()
+	for k, v in pairs(self:getOrderAwardsData()) do
+		if v.award1 == 1 or v.award2 == 1 then
+			return true
+		end
+	end
+	return false
+end
+function HeavenHighModel:getOrderReceive(index)
+	for k, v in ipairs(self:getOrderAwardsData()) do
+		if v.id == index then
+			return v
+		end
+	end
+	return {}
+end
+function HeavenHighModel:getReceiveFinish()
+	local cfg = Config.DungeonHeavenAdvanceData.data_task_reward
+	table.sort(self:getOrderAwardsData(), function(a,b) return a.id < b.id end)
+	local id = 1
+	for k, v in ipairs(self.order_awards) do
+		if v.award1 == 0 and v.award2 == 0 then
+			id = v.id - 1
+			if cfg[id] then
+				return id
+			end
+		end
+	end
+	return tableLen(cfg)
+end
+function HeavenHighModel:getOrderStatus()
+	return self.order_buy and self.order_buy == 1 or false
+end
+function HeavenHighModel:setTaskData(data)
+	self.task_data = data
+	self.task_reward_num = data.reward_num
+	self.task_star_num = data.star_num
+	self.challenge_num = data.challenge_num
+	self.task_tasks = data.tasks
+	table.sort(self.task_tasks,function(a,b) return a.id < b.id end)
+	GlobalEvent:getInstance():Fire(HeavenHighEvent.Task_Reward_Event)
+	self:setHeavenHighOrderRed()
+end
+function HeavenHighModel:getTaskData()
+	return self.task_data or {}
+end
+function HeavenHighModel:getTaskChallengeNum()
+	return self.challenge_num or 0
+end
+function HeavenHighModel:getTaskRewardNum()
+	return self.task_reward_num or 0
+end
+function HeavenHighModel:getTaskStarNum()
+	return self.task_star_num or 0
+end
+function HeavenHighModel:getTaskTasks()
+	return self.task_tasks or {}
+end
+function HeavenHighModel:getTaskRed()
+	local num = self:getTaskRewardNum()
+    local max_num = Config.DungeonHeavenAdvanceData.data_const["dungeons_war_order_scorelimit"].val
+	if num < max_num then
+		for k, v in pairs(self:getTaskTasks()) do
+			if v.state == 1 then
+				return true
+			end
+		end
+	end
+	return false
+end
+function HeavenHighModel:setHeavenHighOrderRed()
+	local status = self:getHeavenHighOrderRed()
+	self:updateHeavenRedStatus(HeavenHighConst.Red_Index.Order, status)
+end
+function HeavenHighModel:getHeavenHighOrderRed()
+	return self:getOrderRed() or self:getTaskRed()
+end
+
+function HeavenHighModel:setHeavenHighLoginRed(bl)
+	self.heavenHigh_lLogin_red = bl
+
+	self:checkHeavenRedStatus()
+end
+
+function HeavenHighModel:__delete()
+end

@@ -1,0 +1,516 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      冒险形象
+-- <br/> 2019年8月16日
+-- --------------------------------------------------------------------
+RoleDecorateTabMainPanel = class("RoleDecorateTabMainPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = RoleController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local role_vo = RoleController:getInstance():getRoleVo()
+
+local table_sort = table.sort
+local math_floor = math.floor
+local pos = {
+    [1] = cc.p(345, 524),
+    [2] = cc.p(460, 524),
+    [3] = cc.p(345, 490),
+    [4] = cc.p(460, 490)
+}
+
+function RoleDecorateTabMainPanel:ctor()
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+
+function RoleDecorateTabMainPanel:config()
+    -- self.size = cc.size(680,372.97)
+    -- self:setContentSize(self.size)
+    self.show_data = {}
+    self.select_id = 0
+    self.attr_list = {}
+end
+
+function RoleDecorateTabMainPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("roleinfo/role_decorate_tab_main_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg = self.main_container:getChildByName("bg")
+    self.spine_panel = self.main_container:getChildByName("spine_panel")
+    self.spine_node = self.spine_panel:getChildByName("spine_node")
+    self.box_bg = self.main_container:getChildByName("box_bg")
+    self.name = self.main_container:getChildByName("name")
+    self.name:setChangeScaleOffWidth(self.main_container:getContentSize().width - 208)
+    self.attr_1 = self.main_container:getChildByName("attr_1")
+    self.att_label = self.main_container:getChildByName("att_label")
+    self.att_label:setString(TI18N("语言_sec_2"))
+    setTextMaxWidth(self.att_label,130)
+    self.attr_2 = self.main_container:getChildByName("attr_2")
+    self.attr_1:setPositionX(self.att_label:getPositionX() - self.att_label:getContentSize().width * 0.5 - 10)
+    self.attr_2:setPositionX(self.att_label:getPositionX() + self.att_label:getContentSize().width * 0.5 + 10)
+    self.no_att_label = self.main_container:getChildByName("no_att_label")
+    setTextMaxWidth(self.no_att_label,240)
+    self.no_att_label:setString(TI18N("语言_sec_3"))
+    self.no_att_label:setVisible(false)
+    self.lock_1 = self.main_container:getChildByName("lock_1")
+    self.lock_label = self.main_container:getChildByName("lock_label")
+    self.lock_label:setString(TI18N("语言_sec_4"))
+    setTextMaxWidth(self.lock_label,130)
+    self.lock_2 = self.main_container:getChildByName("lock_2")
+    self.lock_1:setPositionX(self.lock_label:getPositionX() - self.lock_label:getContentSize().width * 0.5 - 10)
+    self.lock_2:setPositionX(self.lock_label:getPositionX() + self.lock_label:getContentSize().width * 0.5 + 10)
+    self.no_lock_label = self.main_container:getChildByName("no_lock_label")
+    setTextMaxWidth(self.no_lock_label,240)
+    self.no_lock_label:setString(TI18N("语言_sec_5"))
+    self.no_lock_label:setVisible(false)
+    self.scrollCon = self.main_container:getChildByName("scrollCon")
+
+    self.comfirm_btn = self.main_container:getChildByName("comfirm_btn")
+    self.comfirm_btn_label = self.comfirm_btn:getChildByName("label")
+    self.comfirm_btn_label:setString(TI18N("语言_c_1966"))
+    controller:sender23306()
+    self:setData()
+end
+
+--事件
+function RoleDecorateTabMainPanel:registerEvents()
+    registerButtonEventListener(self.comfirm_btn, function() self:onComfirmBtn() end ,true, REGISTER_BUTTON_SOUND_BUTTON_TYPY)
+    --接受数据
+	if self.updateEvent == nil then
+		self.updateEvent = GlobalEvent:getInstance():Bind(RoleEvent.UPDATE_MAIN_DECORATE_EVENT,function ()
+            self:setData()
+		end)
+	end
+end
+
+--确定
+function RoleDecorateTabMainPanel:onComfirmBtn()
+    local item_data = self.select_item:getData()
+    if item_data.has == 1 then
+        controller:sender23307(self.select_id)
+    else
+        if item_data.can_act == 1 then
+            controller:sender23309(self.select_id)
+        else
+            local config = Config.SourceData.data_source_data[item_data.jump_id]
+            if config then
+                BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+            else
+                message(item_data.txt)
+            end
+        end
+    end
+end
+
+function RoleDecorateTabMainPanel:setData()
+    local info_data = model:getMainDecorateInfo()
+    local nohideIds = model:getSeverShowIds("training_camp")
+    local config = Config.TrainingCampData.data_get_sec
+    local now_id = model:getMainDecorateNowUse()
+    self.show_data = {}
+    for k, v in pairs(config) do
+        if v.show == 0 and table.indexof(nohideIds,v.id) or v.show == 1 then
+            if info_data[v.id] then
+                v.data = info_data[v.id]
+                v.has = 1
+                v.can_act = 0
+            else
+                v.data = {}
+                v.has = 0
+                if v.open_item ~= 0 then
+                    v.can_act = BackpackController:getInstance():getModel():getItemNumByBid(v.open_item) >= 1 and 1 or 0
+                else
+                    v.can_act = 0
+                end
+            end
+            v.use = v.id == now_id and 1 or 0
+            table.insert(self.show_data,v)
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"can_act", true},{"use", true},{"has", true},{"sort", false}})
+    table.sort(self.show_data,sort_func)
+    self:updateList()
+end
+
+
+function RoleDecorateTabMainPanel:updateList()
+    if not self.scrollCon then return end
+    if self.list_view == nil then
+        local scroll_view_size = self.scrollCon:getContentSize()
+        local list_setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 0,
+            space_y = 0,
+            item_width = 118,
+            item_height = 130,
+            row = 0,
+            col = 5,
+            need_dynamic = true
+        }
+        self.list_view = CommonScrollViewSingleLayout.new(self.scrollCon, cc.p(0,0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, list_setting, cc.p(0, 0)) 
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end
+
+    self.list_view:reloadData(1)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function RoleDecorateTabMainPanel:createNewCell(width, height)
+    local cell = RoleMainItem.new()
+    cell:setTouchFunc(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function RoleDecorateTabMainPanel:numberOfCells()
+    return #self.show_data
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function RoleDecorateTabMainPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.show_data[index]
+    cell:setData(cell_data, index)
+
+    --设置解锁
+    if cell_data.has == 1 then
+        cell:showLock(false)
+    else
+        cell:showLock(true)
+    end
+
+    --使用中
+    if cell_data.use == 1 then
+        cell:showUseIcon(true)
+    else
+        cell:showUseIcon(false)
+    end
+
+    --使用中
+    if cell_data.can_act == 1 then
+        cell:showActIcon(true)
+    else
+        cell:showActIcon(false)
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function RoleDecorateTabMainPanel:onCellTouched(cell)
+    local index = cell.index
+    local cell_data = self.show_data[index]
+    if not cell_data then return end
+    if self.select_id == cell_data.id then return end
+    if self.select_item ~= nil then
+        self.select_item:setSelected(false)
+    end
+    self.select_id = cell_data.id
+    self.select_item = cell
+    self.select_item:setSelected(true)
+    self:updateMessage(cell_data)
+end
+
+function RoleDecorateTabMainPanel:updateMessage(data)
+    local num = 20
+    if judgingLanguage() then
+        num = 10
+    end
+    self.name:setString(transformTextToShort(data.name,num))
+    addEvt2showAllTextTips(self.name,data.name,num)
+    for k, v in pairs(self.attr_list) do
+        v:setVisible(false)
+    end
+    if not next(data.attr) then
+        self.no_att_label:setVisible(true)
+    else
+        local max_w = 0
+        self.no_att_label:setVisible(false)
+        for i=1,tableLen(data.attr) do
+            local attr = data.attr[i]
+            local label = self.attr_list[i]
+            if not label then
+                label = createRichLabel(20, cc.c4b(0x24,0x90,0x03,0xff), cc.p(0,1), pos[i])
+                self.main_container:addChild(label)
+                self.attr_list[i] = label
+            end
+            local name = Config.AttrData.data_key_to_name[attr[1]]
+            local is_per = PartnerCalculate.isShowPerByStr(attr[1])
+            if is_per then
+                label:setString(string_format("%s: %s%%", name, attr[2]/10))
+            else
+                label:setString(string_format("%s: %s", name, attr[2]))
+            end
+            -- if i%2 == 0 and self.attr_list[i - 1] then
+            --     label:setPositionX(self.attr_list[i - 1]:getPositionX() + self.attr_list[i - 1]:getContentSize().width + 10)
+            -- end
+            max_w = math.max(max_w,label:getContentSize().width)
+            label:setVisible(true)
+        end
+        
+        for i=1, tableLen(self.attr_list) do
+            self.attr_list[i]:setPositionX(461-max_w*0.5)
+            self.attr_list[i]:setPositionY(524-(i-1)*34)
+        end
+        -- for i=1, tableLen(self.attr_list), 2 do
+        --     if self.attr_list[i+1] then
+        --         local _w = self.attr_list[i]:getContentSize().width + self.attr_list[i+1]:getContentSize().width + 10
+        --         self.attr_list[i]:setPositionX(461 - _w*0.5)
+        --         self.attr_list[i+1]:setPositionX(self.attr_list[i]:getPositionX() + self.attr_list[i]:getContentSize().width + 10)
+        --     else
+        --         if i == 1 then
+        --             self.attr_list[i]:setPositionX(461-self.attr_list[i]:getContentSize().width*0.5)
+        --         else
+        --             self.attr_list[i]:setPositionX(self.attr_list[i-2]:getPositionX())
+        --         end
+        --     end
+        -- end
+    end
+    if data.has == 1 then
+        self.no_lock_label:setVisible(true)
+        if self.lock_tip then
+            self.lock_tip:setVisible(false)
+        end
+    else
+        self.no_lock_label:setVisible(false)
+        if not self.lock_tip then
+            self.lock_tip = createRichLabel(20, cc.c3b(0x68,0x45,0x2a), cc.p(0.5,1), cc.p(461,411),-4,nil,260)
+            self.main_container:addChild(self.lock_tip)
+        end
+        self.lock_tip:setVisible(true)
+        self.lock_tip:setString(data.txt)
+    end
+    if self.spine then
+        if not tolua.isnull(self.spine) then
+            self.spine:clearTracks()
+            self.spine:removeFromParent()
+            self.spine = nil
+        end
+    end
+    if self.spine_img then
+        self.spine_img:setVisible(false)
+    end
+    if data.resource == 0 then
+        if not self.spine then
+            self.spine = createEffectSpine(data.spine,cc.p(0,0),cc.p(0.5, 0),true,data.static_model)
+            self.spine_node:addChild(self.spine)
+        end
+        self.spine:setScale(data.spine_mv[1][1])
+        self.spine:setPosition(cc.p(data.spine_mv[1][2],data.spine_mv[1][3]))
+        self.spine:setAnimation(0, PlayerAction.idle, true)
+    else
+        if not self.spine_img then
+            self.spine_img = createSprite(PathTool.getResFrame("trainingcamp",data.spine), 0, 0, self.spine_node, cc.p(0.5, 0))
+        end
+        self.spine_img:setVisible(true)
+        self.spine_img:setScale(data.spine_mv[1][1])
+        self.spine_img:setPosition(cc.p(data.spine_mv[1][2],data.spine_mv[1][3]))
+    end
+    if data.data and data.data.expire_time and data.data.expire_time > GameNet:getInstance():getTime() then
+        if not self.time_txt then
+            self.time_txt = createRichLabel(20, 175, cc.p(0.5,0), cc.p(461,302))
+            self.main_container:addChild(self.time_txt)
+        end
+        self.time_txt:setVisible(true)
+        doStopAllActions(self.remain_time)
+        local setting = {}
+        setting.time_title = TI18N("语言_sec_6")
+        commonCountDownTime(self.time_txt,data.data.expire_time - GameNet:getInstance():getTime(),setting)
+    else
+        if self.time_txt then
+            doStopAllActions(self.remain_time)
+            self.time_txt:setVisible(false)
+        end
+    end
+    if data.has == 1 then
+        self.comfirm_btn_label:setString(TI18N("语言_c_1966"))
+    else
+        if data.can_act == 1 then
+            self.comfirm_btn_label:setString(TI18N("语言_c_6080"))
+        else
+            self.comfirm_btn_label:setString(TI18N("语言_c_804"))
+        end
+    end
+end
+function RoleDecorateTabMainPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+--移除
+function RoleDecorateTabMainPanel:DeleteMe()
+    if self.spine then
+        if not tolua.isnull(self.spine) then
+            self.spine:removeFromParent()
+            self.spine = nil
+        end
+    end
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+end
+
+
+-- --------------------------------------------------------------------
+-- 头像框子项
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+RoleMainItem = class("RoleMainItem", function()
+    return ccui.Widget:create()
+end)
+
+function RoleMainItem:ctor(index)
+    self.width = 85
+    self.height = 85
+    self.is_lock = false
+    self.is_use =false
+    self.is_act =false
+
+    self:setContentSize(cc.size(self.width,self.height))
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:configUI()
+end
+
+function RoleMainItem:setTouchFunc( value )
+    self.call_fun =  value
+end
+--[[
+@功能:创建视图
+@参数:
+@返回值:
+]]
+function RoleMainItem:configUI()
+    --底内框 
+    self.back = ccui.Widget:create()
+    self.back:setCascadeOpacityEnabled(true)
+    self.back:setContentSize(cc.size(100, 100))
+    self.back:setAnchorPoint(cc.p(0, 0))
+    self.back:setTouchEnabled(true)
+    self:addChild(self.back)
+
+    self.back:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            if self.call_fun then
+                self:call_fun(self.vo)
+            end
+        end
+    end)
+    
+    
+    self.player_head = PlayerHead.new(PlayerHead.type.circle)
+    self.player_head:setAnchorPoint(cc.p(0.5, 0.5))
+    self.player_head:setPosition(cc.p(self.width/2,55))
+    --self.player_head:setScale(0.8)
+    self.player_head:setTouchEnabled(false)
+    self:addChild(self.player_head)
+
+    --选择框
+    self.select = ccui.ImageView:create(PathTool.getResFrame("common","common_1060"), LOADTEXT_TYPE_PLIST)
+    self.select:setAnchorPoint(cc.p(0,0))
+    self.select:setPosition(cc.p(-14,-2))
+    self.select:setVisible(false)
+    self:addChild(self.select)
+    -- self.name = createLabel(22,Config.ColorData.data_color4[175],nil,self.width/2,-25,"name",self,0, cc.p(0.5,0))
+    -- self.name:setWidth(100)
+    
+
+    self:showLock(true)
+end
+
+--[[
+@功能:设置数据
+@参数:
+@返回值:
+]]
+function RoleMainItem:setData(data)
+    self.vo = data
+    self.player_head:setHeadRes(data.icon)
+end
+function RoleMainItem:setSelected(bool)
+    self.select:setVisible(bool)
+    if bool == true then 
+        local fadein = cc.FadeIn:create(0.7)
+        local fadeout = cc.FadeOut:create(0.7)
+        self.select:runAction(cc.RepeatForever:create(cc.Sequence:create(fadein,fadeout)))
+    else
+        doStopAllActions(self.select)
+    end
+end
+--锁定 激活
+function RoleMainItem:showLock(bool)
+    setChildUnEnabled(bool,self.player_head)
+    self.is_lock = bool 
+end
+
+--使用中
+function RoleMainItem:showUseIcon(bool)
+    self.is_use = bool 
+    if not self.use_icon and bool == false then return end 
+    if not self.use_icon then 
+        local res = PathTool.getResFrame("face","txt_cn_face_use")
+        self.use_icon = createImage(self, res, 60, 25, cc.p(0.5,0.5), true, 1, false)
+    end
+    self.use_icon:setVisible(bool)
+end
+
+--可激活
+function RoleMainItem:showActIcon(bool)
+    self.is_act = bool 
+    if not self.act_icon and bool == false then return end 
+    if not self.act_icon then 
+        local res = PathTool.getResFrame("common","txt_cn_common_30017")
+        self.act_icon = createImage(self, res, 60, 25, cc.p(0.5,0.5), true, 1, false)
+        self.act_icon:setScale(0.7)
+    end
+    self.act_icon:setVisible(bool)
+end
+
+function RoleMainItem:showActiveIcon(bool)
+    if bool and not self.active_icon then
+        local res = PathTool.getResFrame("common", "txt_cn_common_30017")
+        self.active_icon = createImage(self, res, 60, 25, cc.p(0.5,0.5), true, 1, false) 
+        self.active_icon:setScale(0.7)
+    end
+    if self.active_icon then
+        self.active_icon:setVisible(bool)
+    end
+end
+
+function RoleMainItem:getData( )
+    return self.vo
+end
+function RoleMainItem:getIsLock()
+    return self.is_lock
+end
+
+
+function RoleMainItem:DeleteMe()
+    if self.player_head then
+        self.player_head:DeleteMe()
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+    self.vo =nil
+end

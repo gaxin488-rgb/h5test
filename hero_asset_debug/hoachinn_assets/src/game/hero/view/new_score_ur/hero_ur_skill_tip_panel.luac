@@ -1,0 +1,275 @@
+-- --------------------------------------------------------------------
+-- 竖版神装装备穿戴
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-2-27
+-- --------------------------------------------------------------------
+HeroUrSkillTipPanel = HeroUrSkillTipPanel or BaseClass(BaseView)
+    
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+--@holy_data 神装方案数据 结构参考 协议25220
+function HeroUrSkillTipPanel:__init()
+    self.is_full_screen = false
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "hero/hero_ur_skill_tip_panel"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("hero","ultra_hero"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("hero","txt_cn_ur_fusion"), type = ResourcesType.single },
+    }
+end 
+
+function HeroUrSkillTipPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_panel = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_panel , 1)
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.top_panel = self.main_panel:getChildByName("top_panel")
+    self.skill_name = self.top_panel:getChildByName("skill_name")
+    self.skill_lev = self.top_panel:getChildByName("skill_lev")
+    self.skill_type_list = {}
+    self.look_panel = self.top_panel:getChildByName("look_panel")
+    self.look_txt = self.look_panel:getChildByName("look_txt")
+    setTextSpacing(self.look_txt,-6)
+    self.look_txt:setChangeScaleOffWidth(-9999)
+    self.look_txt:setString(TI18N("语言_par_ult_14"))
+    self.hero_panel = self.top_panel:getChildByName("hero_panel")
+    self.no_panel = self.hero_panel:getChildByName("no_panel")
+    self.have_panel = self.hero_panel:getChildByName("have_panel")
+    self.have_panel:setVisible(false)
+    self.no_panel:setVisible(false)
+    self.skill_scroll = self.main_panel:getChildByName("skill_scroll")
+    self.skill_scroll:setScrollBarEnabled(false)
+    self.tips_8_1 = self.main_panel:getChildByName("tips_8_1")
+    self.goto_btn = self.main_panel:getChildByName("goto_btn")
+    self.goto_txt = self.goto_btn:getChildByName("label")
+    setTextSpacing(self.goto_txt,-10)
+    self.goto_txt:setString(TI18N("语言_c_7250"))
+end
+
+function HeroUrSkillTipPanel:register_event()
+    registerButtonEventListener(self.background, function()
+        controller:openHeroUrSkillTipPanel(false)
+    end, false, 2)
+    registerButtonEventListener(self.close_btn, function()
+        controller:openHeroUrSkillTipPanel(false)
+    end, true, 2)
+    registerButtonEventListener(self.goto_btn, function()
+        controller:openHeroUrSkillTipPanel(false)
+        controller:openHeroUrEnableWindow(true,self.setting)
+    end, true, 2)
+    registerButtonEventListener(self.hero_panel, function()
+        controller:openHeroUrSkillTipPanel(false)
+        controller:openHeroUrEnableWindow(true,self.setting)
+    end, false, 2)
+    registerButtonEventListener(self.look_panel, function()
+        controller:openHeroUrSkillTipPanel(false)
+        controller:openHeroUrEnableWindow(true,self.setting)
+    end, false, 2)
+    self:addGlobalEvent(HeroEvent.Hero_UR_Score_Enable_Event, function(data) 
+        if data and self.hero_vo and data.pid and self.hero_vo.partner_id then
+            if data.pid == self.hero_vo.partner_id then
+                self:updateTopPanel()
+            end
+        end
+   end)
+end
+
+function HeroUrSkillTipPanel:openRootWnd(setting)
+    self.setting = setting or {}
+    self.hero_vo = self.setting.hero_vo or {}
+    self.skill_bid = self.setting.skill_id or 0
+    self.is_lock = self.setting.is_lock or false
+    self.look_type = self.setting.look_type or 0  --0技能查看 1预览
+    self.skill_cfg = Config.SkillData.data_get_skill(self.skill_bid)
+    self.group_cfg = Config.PartnerUltraData.data_ene_skill[self.hero_vo.bid] or {}
+    table.sort(self.group_cfg,function(a,b) return a.lev < b.lev end)
+    self:updateTopPanel()
+    self:updateSkillScroll()
+    local _h = self.skill_scroll:getContentSize().height+252
+    self.skill_scroll:setPositionY(109)
+    if self.look_type == 1 then
+        local txt = TI18N("语言_c_7263")
+        self.show_txt = createRichLabel(22,cc.c3b(0xff,0x15,0x15),cc.p(0.5,0),cc.p(self.main_panel:getContentSize().width*0.5,9),-6,nil,540)
+        self.show_txt:setHorizontalLayoutType(2)
+        self.show_txt:setString(txt)
+        self.main_panel:addChild(self.show_txt)
+        _h = self.skill_scroll:getContentSize().height+152 + self.show_txt:getContentSize().height + 10
+        self.skill_scroll:setPositionY(9+self.show_txt:getContentSize().height + 10)
+    end
+    self.main_panel:setContentSize(cc.size(self.main_panel:getContentSize().width,_h))
+    self.top_panel:setPositionY(_h-7)
+    self.close_btn:setPositionY(_h-9)
+    if self.show_txt then
+        self.show_txt:setPositionY(9)
+    end
+    if self.look_panel:isVisible() then
+        if not model:getUrSkillClick(self.hero_vo.bid) then
+            model:updateUrSkillClick(self.hero_vo.bid)
+        end
+    end
+end
+function HeroUrSkillTipPanel:updateTopPanel()
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true, false, false, 1)
+        self.top_panel:addChild(self.skill_item)
+        self.skill_item:setPosition(cc.p(72,64))
+    end
+    self.skill_item:setData(self.skill_cfg)
+    self.skill_name:setString(self.skill_cfg.name)
+    setTextMaxWidth(self.skill_name,280,-8)
+    self.skill_lev:setString(string.format(TI18N("语言_c_4520"),self.skill_cfg.level))
+    self.skill_lev:setPositionY(self.skill_name:getPositionY() - self.skill_name:getContentSize().height-1)
+    local type_list = {}
+    for k,v in pairs(self.group_cfg) do
+        if v.skill[1] == self.skill_bid then
+            type_list = v.desc
+        end
+    end
+    for k,v in pairs(self.skill_type_list) do
+        v:setVisible(false)
+    end
+    for k,v in pairs(type_list) do
+        if not self.skill_type_list[k] then
+            self.skill_type_list[k] = createSprite("", 154+(k-1)*72, 26, self.top_panel, cc.p(0, 0.5),LOADTEXT_TYPE)
+        end
+        loadSpriteTexture(self.skill_type_list[k], PathTool.getPlistImgForDownLoad("hero", "txt_cn_skill_desc_"..v), LOADTEXT_TYPE)
+        self.skill_type_list[k]:setVisible(true)
+    end
+    local use_bid = model:getHeroEnable(self.hero_vo.partner_id)
+    local use_hero_vo = model:getHeroById(use_bid)
+    local status = use_bid and use_bid ~= 0
+    if status then
+        self.have_panel:setVisible(true)
+        self.no_panel:setVisible(false)
+        if not self.have_item then
+            self.have_item = HeroExhibitionItem.new(0.9, false)
+            self.have_panel:addChild(self.have_item)
+            self.have_item:setPosition(60,60)
+            self.have_item:setTouchEnabled(false)
+        end
+        self.have_item:setData(use_hero_vo)
+    else
+        self.have_panel:setVisible(false)
+        self.no_panel:setVisible(true)
+    end
+    self.hero_panel:setVisible(self.look_type == 0)
+    self.tips_8_1:setVisible(self.look_type == 0)
+    self.goto_btn:setVisible(self.look_type == 0)
+    self.look_panel:setVisible(self.look_type == 1 and controller:openHeroMainInfoWindowIsOpen())
+end
+
+function HeroUrSkillTipPanel:updateSkillScroll()
+    if not self.skill_desc_list then
+        self.skill_desc_list = {}
+    end
+    local _h = 0
+    local buff_list = {}
+    local _buff_list = {}
+    for k,v in ipairs(self.group_cfg) do
+        local item = self:getSkillItem(v)
+        table.insert(self.skill_desc_list,item)  
+        self.skill_scroll:addChild(item)
+        _h = _h + item:getContentSize().height + 9
+        local cfg = Config.SkillData.data_get_skill(v.skill[1])
+        for _k,_v in pairs(cfg.buff_des or {}) do
+            for key,value in pairs(_v or {}) do
+                _buff_list[value] = 1
+            end
+        end
+    end
+    local buff_item = nil
+    if _buff_list and next(_buff_list) then
+        buff_item = createRichLabel(20,cc.c3b(0xff,0xff,0xff),cc.p(0,1),cc.p(0,0),nil,nil,531)
+        self.skill_scroll:addChild(buff_item)
+        for k,v in pairs(_buff_list) do
+            table.insert(buff_list,k)
+        end
+        local buff_desc_str = ""
+        if buff_list and next(buff_list) then
+            local buff_config = Config.SkillData.data_get_buff 
+            for i, v in ipairs(buff_list) do
+                local config = buff_config[v]
+                if config then
+                    if buff_desc_str ~= "" then
+                        buff_desc_str = buff_desc_str.."<div fontcolor=#c1b7ab>\n</div>"
+                    end
+                    local buff_desc = string.format("<div fontcolor=#ffeedd>【%s】</div><div fontcolor=#c1b7ab>\n%s</div>", config.name, config.desc)
+                    buff_desc_str = buff_desc_str..buff_desc
+                end
+            end
+        end
+        buff_item:setString(buff_desc_str)
+        _h = _h + buff_item:getContentSize().height + 50
+    end
+    if _h < self.skill_scroll:getContentSize().height then
+        self.skill_scroll:setContentSize(cc.size(self.skill_scroll:getContentSize().width,_h))
+    end
+    _h = math.max(_h,self.skill_scroll:getContentSize().height)
+    self.skill_scroll:setInnerContainerSize(cc.size(self.skill_scroll:getContentSize().width,_h))
+    for k,v in ipairs(self.skill_desc_list) do
+        v:setPositionY(_h)
+        _h = _h - v:getContentSize().height-9
+    end
+    if buff_item then
+        local line = createImage(self.skill_scroll,PathTool.getResFrame("common_2", "tips_8",false,"common"),275,_h-10,cc.p(0.5,0.5),true,nil,true)
+        line:setContentSize(cc.size(500,2))
+        buff_item:setPositionY(_h-30)
+    end
+    -- local line_2 = createImage(self.skill_scroll,PathTool.getResFrame("common_2", "tips_8",false,"common"),275,_h-buff_item:getContentSize().height-40,cc.p(0.5,0.5),true,nil,true)
+    -- line_2:setContentSize(cc.size(500,2))
+
+end
+--单个技能描述
+function HeroUrSkillTipPanel:getSkillItem(data)
+    local item = ccui.Layout:create()
+    item:setTouchEnabled(true)
+    item:setAnchorPoint(0,1)
+    item:setPosition(0, 0)
+    local res = PathTool.getResFrame("common","common_1_535", false, "common_1")
+    item.bg = createImage(item,res,0,0,cc.p(0,0),true,nil,true)
+    local cfg = Config.SkillData.data_get_skill(data.skill[1])
+    local str = "<div><img src=\'%s\' /> <div fontcolor=#FEEEBA>%s</div></div>"
+    if data.skill[1] > self.skill_bid or self.is_lock then
+        local str_parameter = {}
+        for k,v in ipairs(data.limit) do
+            if v[1] == "star" then
+                table.insert(str_parameter,v[2])
+            end
+        end
+        local need_str = LangStringFormat(data.txt,str_parameter)
+        local need_txt = createRichLabel(20,cc.c3b(0xff,0x15,0x15),cc.p(1,0),cc.p(547,8),nil,nil,531)
+        item:addChild(need_txt)
+        need_txt:setString(need_str)
+        item.need_txt = need_txt
+        str = "<div><img src=\'%s\' /> <div fontcolor=#c1b7ab>%s</div></div>"
+    end
+    local desc_str = string.format(str,PathTool.getPlistImgForDownLoad("hero", "txt_cn_level_"..cfg.level),cfg.des)
+    local desc_txt = createRichLabel(20,cc.c3b(0xff,0xff,0xff),cc.p(0,1),cc.p(10,0),nil,nil,531)
+    item:addChild(desc_txt)
+    item.desc_txt = desc_txt
+    desc_txt:setString(desc_str)
+    local _h = desc_txt:getContentSize().height + 26
+    if item.need_txt then
+        _h = desc_txt:getContentSize().height + item.need_txt:getContentSize().height + 21
+    end
+    item:setContentSize(cc.size(549, _h))
+    item.bg:setContentSize(cc.size(549, _h))
+    item.desc_txt:setPositionY(_h-10)
+    return item
+end
+function HeroUrSkillTipPanel:close_callback()
+    if self.have_item then
+        self.have_item:DeleteMe()
+        self.have_item = nil
+    end
+    controller:openHeroUrSkillTipPanel(false)
+end

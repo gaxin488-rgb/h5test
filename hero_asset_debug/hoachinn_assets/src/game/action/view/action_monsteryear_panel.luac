@@ -1,0 +1,207 @@
+--******** 文件说明 ********
+-- 
+-- @description: 皮肤购买
+-- @DateTime:    2019-05-10 09:49:04
+-- *******************************
+ActionMonsterYearPanel = class("ActionMonsterYearPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+function ActionMonsterYearPanel:ctor(bid)
+	self.holiday_bid = bid
+	self:loadResources()
+end
+
+function ActionMonsterYearPanel:loadResources()
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("actionyearmonster", "actionyearmonster_ch"), type = ResourcesType.plist},
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(
+        self.res_list,
+        function()
+            if self.configUI then
+                self:configUI()
+            end
+            if self.register_event then
+                self:register_event()
+            end
+        end
+    )
+end
+
+function ActionMonsterYearPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_monsteryear_panel"))
+    self.root_wnd:setPosition(-40,-82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.holiday_bg = self.main_container:getChildByName("bg")
+
+    self.Text_2 = self.main_container:getChildByName("Text_2")
+	self.Text_2:setVisible(false)
+	self.titleImg= self.main_container:getChildByName("Image_1")
+    self.titleImg:ignoreContentAdaptWithSize(true)
+    self.btn_buy = self.main_container:getChildByName("btn_buy")
+    self.btn_buy_text = self.btn_buy:getChildByName("Text_4")
+    self.btn_buy_text:setString(TI18N("语言_c_1567"))
+    self.time_text = self.main_container:getChildByName("time_text")
+    self.time_text:setString("")
+	self.main_container:getChildByName("title"):setString(TI18N("语言_c_21"))
+	self.time_lab = self.main_container:getChildByName("time_text_0")
+	self.time_lab:setString(TI18N("语言_c_13"))
+	self.main_container:getChildByName("desc"):setString(TI18N("语言_c_1566"))
+	local cost_panel=self.main_container:getChildByName("cost_panel")
+	self.cost_icon=cost_panel:getChildByName("cost_icon")
+	self.cost_txt=cost_panel:getChildByName("cost_txt")
+
+    self.rank_btn = self.main_container:getChildByName("rank_btn")
+    self.rank_btn:setVisible(false)
+    local rank_label = self.rank_btn:getChildByName("label")
+    rank_label:setChangeScaleOffWidth(-1000)
+    setTextMaxWidth(rank_label, 100, -8)
+    rank_label:setString(TI18N("语言_c_7615"))
+    self.rank_label = rank_label
+
+	local goods = self.main_container:getChildByName("goods")
+	local scroll_view_size = goods:getContentSize()
+    local setting = {
+        item_class = BackPackItem,
+        start_x = 0,
+        space_x = 2,
+        start_y = 2,
+        space_y = 0,
+        item_width = BackPackItem.Width,--*0.90,
+        item_height = BackPackItem.Height,--*0.90,
+        row = 1,
+        col = 0,
+        scale = 0.8
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(goods,cc.p(0,0),ScrollViewDir.horizontal,ScrollViewStartPos.top,scroll_view_size,setting)
+    self.item_scrollview:setSwallowTouches(false)
+
+    controller:cs16603(self.holiday_bid)
+end
+
+function ActionMonsterYearPanel:setHolidayBG(str_bg)
+    local res = PathTool.getPlistImgForDownLoad("welfare/welfare_banner", str_bg)
+    if not self.bg_load then
+        self.bg_load = loadSpriteTextureFromCDN(self.holiday_bg, res, ResourcesType.single, self.bg_load)
+    end
+end
+
+function ActionMonsterYearPanel:register_event()
+	if not self.skin_buy_event then
+        self.skin_buy_event = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE,function(data)
+            if not data then return end
+            if data.bid == self.holiday_bid then
+            	commonCountDownTime(self.time_text, data.remain_sec)
+                self:setData()
+            end
+        end)
+    end    
+    registerButtonEventListener(self.rank_btn, function()
+        if self.rank_btn.camp_id and self.rank_btn.game_type then
+            SmallGameController:getInstance():getModel():setCurrentGameType(self.rank_btn.game_type)
+            SmallGameController:getInstance():openSmallGameRankMainWindow(true,{ActionRankCommonType.feibiao,self.rank_btn.camp_id})
+        end
+    end ,true, 2)
+	registerButtonEventListener(self.btn_buy, function()
+		self:GoExchange()
+	end, true)
+end
+
+function ActionMonsterYearPanel:GoExchange()
+    -- ActionyearmonsterController:getInstance():sender28204()
+    if self.ismuti then
+       Actionyearmonster2Controller:getInstance():openActionyearmonster2ExchangeWindow(true)
+    else
+       ActionyearmonsterController:getInstance():openActionyearmonsterExchangeWindow(true)
+    end
+end	
+
+function ActionMonsterYearPanel:setData()
+	self.role_vo = RoleController:getInstance():getRoleVo()
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    local camp_id=tab_vo.camp_id 
+    self.ismuti=false
+	local cfg = Config.HolidayNianData.data_exchange_info[camp_id]
+    if not cfg then 
+        cfg = Config.HolidayNianCrossData.data_exchange_info[camp_id]
+        self.ismuti=true
+    end
+	if cfg  then
+		local id=cfg.item_id;
+        local num = self.role_vo:getActionAssetsNumByBid(id) 
+        self.cost_txt:setString(""..num)
+		local config = Config.ItemData.data_get_data(id)
+        if config then
+			local icon_res = PathTool.getItemRes(config.icon)
+			loadSpriteTexture(self.cost_icon, icon_res, LOADTEXT_TYPE)
+			self.cost_icon:setScale(0.4)
+        end
+		self.Text_2:setVisible(cfg.is_open==1)
+		self.Text_2:setString(cfg.act_desc)
+		local list=cfg.rewards
+        self.item_scrollview:setData(list)
+		self.item_scrollview:addEndCallBack(function()
+	        local list = self.item_scrollview:getItemList()
+	        for k,v in pairs(list) do
+	            v:setDefaultTip()
+	        end
+	    end)
+		local str_bg=cfg.act_bg
+		self:setHolidayBG(str_bg)
+		local res= PathTool.getResFrame("actionyearmonster_ch", cfg.act_name)
+		self.titleImg:loadTexture(res, LOADTEXT_TYPE_PLIST)
+        ActionyearmonsterController:getInstance():getModel().isshowMain=false
+
+        local minigame_info = cfg.minigame_jump
+        if minigame_info and next(minigame_info) then
+            local ___data = minigame_info[1]
+            local camp_id = ___data[1]
+            local icon_res = ___data[2]
+            local icon_name = ___data[3]
+            local game_type = ___data[4]
+            if icon_res and icon_res ~= "" then
+                self.rank_btn:loadTexture(PathTool.getResFrame("common", icon_res), LOADTEXT_TYPE_PLIST)
+            end
+            if icon_name and icon_name ~= "" then
+                self.rank_label:setString(icon_name)
+            end
+            self.rank_btn.camp_id = camp_id
+            self.rank_btn.game_type = game_type
+            self.rank_btn:setVisible(true)
+        end
+
+
+	end
+end
+
+function ActionMonsterYearPanel:DeleteMe()
+	if self.buy_skin_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.buy_skin_ticket)
+        self.buy_skin_ticket = nil
+    end
+	doStopAllActions(self.time_text)
+	if self.bg_effect then
+        self.bg_effect:clearTracks()
+        self.bg_effect:removeFromParent()
+        self.bg_effect = nil
+    end
+	if self.bg_load then
+		self.bg_load:DeleteMe()
+		self.bg_load = nil
+	end
+	if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.skin_buy_event then
+        GlobalEvent:getInstance():UnBind(self.skin_buy_event)
+        self.skin_buy_event = nil
+    end
+end

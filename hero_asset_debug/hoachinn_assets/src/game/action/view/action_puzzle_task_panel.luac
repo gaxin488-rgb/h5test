@@ -1,0 +1,462 @@
+--******** 文件说明 ********
+-- 
+-- @description: 拼图任务
+-- @DateTime:    2020-02-20
+-- *******************************
+ActionPuzzleTaskPanel = ActionPuzzleTaskPanel or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+function ActionPuzzleTaskPanel:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.panel_index = 0
+    self.tab_btn_list = {}
+    self.layout_name = "action/action_puzzle_task_panel"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("get_ninja", "get_ninja"), type = ResourcesType.plist}
+    }
+    self.finish_val = 0
+end
+
+function ActionPuzzleTaskPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)
+    self.hero_bg = self.main_container:getChildByName("hero_bg")
+    self.bg = self.main_container:getChildByName("bg")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_c_6958"))
+    self.show_task_panel = self.main_container:getChildByName("show_task_panel")
+    self.item_scroll = self.show_task_panel:getChildByName("item_scroll")
+    self.task_name_scroll = self.show_task_panel:getChildByName("task_name_scroll")
+    self.task_name_scroll:setScrollBarEnabled(false)
+    self.task_name = self.task_name_scroll:getChildByName("task_name")
+    setTextMaxWidth(self.task_name,270)
+    self.btn_get = self.show_task_panel:getChildByName("btn_get")
+    self.get_txt = self.btn_get:getChildByName("label")
+    self.get_txt:setString(TI18N("语言_c_7"))
+    self.btn_go = self.show_task_panel:getChildByName("btn_go")
+    self.go_txt = self.btn_go:getChildByName("label")
+    self.go_txt:setString(TI18N("语言_c_8"))
+    self.finish_img = self.show_task_panel:getChildByName("finish_img")
+    self.btn_get:setVisible(false)
+    self.btn_go:setVisible(false)
+    self.finish_img:setVisible(false)
+    self.tip_txt = self.main_container:getChildByName("tip_txt")
+    setTextMaxWidth(self.tip_txt,550,-10)
+    self.daily_panel = self.main_container:getChildByName("daily_panel")
+    self.limit_panel = self.main_container:getChildByName("limit_panel")
+    self.btn_close = self.main_container:getChildByName("btn_close")
+    self.btn_panel = self.main_container:getChildByName("btn_panel")
+    self.btn_list = {}
+    local txt_list = {
+        [1] = TI18N("语言_c_484"),
+        [2] = TI18N("语言_c_6961"),
+    }
+    for i=1,2 do
+        local item = self.btn_panel:getChildByName("tab_btn_"..i)
+        item.select_img = item:getChildByName("select_img")
+        item.normal_img = item:getChildByName("normal_img")
+        item.label = item:getChildByName("label")
+        item.label:setString(txt_list[i])
+        item.red_point = item:getChildByName("red_point")
+        item.red_point:setVisible(false)
+        item.index = i
+        self.tab_btn_list[i] = item
+    end
+    
+end
+
+function ActionPuzzleTaskPanel:register_event()
+    registerButtonEventListener(self.background, function()
+        controller:openActionPuzzleTaskPanel(false)
+	end, false)
+    registerButtonEventListener(self.btn_close, function()
+        controller:openActionPuzzleTaskPanel(false)
+	end, true)
+    registerButtonEventListener(self.btn_get, function()
+        local list = self.task_config[1][1]
+        if list and next(list) then
+            if list.jump_id and list.jump_id ~= 0 then
+                local config = Config.SourceData.data_source_data[list.jump_id]
+                if config then
+                    BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+                end
+            else
+                TaskController:getInstance():gotoTagertFun(list.progress[1])
+            end
+        end
+	end, true)
+    registerButtonEventListener(self.btn_go, function()
+        if self.show_task_list and next(self.show_task_list) then
+            controller:sender21619(self.holiday_bid,self.show_task_list.id)
+        end
+	end, true)
+    
+    for index, tab_btn in ipairs(self.tab_btn_list) do
+        registerButtonEventListener(tab_btn, function() self:changeTabIndex(tab_btn.index) end ,false, 2) 
+    end
+
+    if not self.update_puzzle_task_data then
+        self.update_puzzle_task_data = GlobalEvent:getInstance():Bind(ActionEvent.updatePuzzleTaskData ,function(bid)
+            if not bid or bid ~= self.holiday_bid then return end
+            -- self:setData()
+            self:openRootWnd(self.holiday_bid)
+        end)
+    end
+    self:addGlobalEvent(ActionEvent.UPDATE_HOLIDAY_SIGNLE, function(data)
+        if data.bid == self.holiday_bid then
+            self.finish_val = data.finish*0.01
+            self:updateShowTask()
+        end
+    end)
+end
+
+function ActionPuzzleTaskPanel:openRootWnd(holiday_bid)
+    self.holiday_bid = holiday_bid
+    controller:cs16603(self.holiday_bid)
+    self.camp_id = 0
+    local tab_vo = controller:getActionSubTabVo(holiday_bid)
+    if tab_vo then
+        self.camp_id = tab_vo.camp_id
+    end
+    local cfg = Config.HolidayPuzzleData.data_quest_list[self.camp_id]
+    if not cfg then return end
+    self.task_config = {}
+    local task_cfg = {}
+    --1特殊任务 2每日任务 3活动限时
+    for k, v in pairs(cfg) do
+        if not task_cfg[v.show_type] then
+            task_cfg[v.show_type] = {}
+        end
+        table.insert(task_cfg[v.show_type],v)
+    end
+    self.task_cfg = task_cfg
+    local _list = {}
+    for key, value in pairs(task_cfg) do
+        table.sort(value,function(a,b) return a.id < b.id end)
+        local num = #value
+        for i = 1, #value do
+            local data = model:getPuzzleTaskOneData(self.holiday_bid,value[i].id)
+            if data and data.finish and data.finish ~= 2 then
+                num = i
+                break
+            end
+        end
+        local list = value[num] or {}
+        table.insert(_list,list)
+    end
+    self.task_config = {}
+    --1特殊任务 2每日任务 3活动限时
+    for k, v in pairs(_list) do
+        if not self.task_config[v.type] then
+            self.task_config[v.type] = {}
+        end
+        v.holiday_bid = self.holiday_bid
+        table.insert(self.task_config[v.type],v)
+    end
+    self:setData()
+end
+function ActionPuzzleTaskPanel:setData()
+    if self.daily_scroll == nil then
+        local scroll_view_size = self.daily_panel:getContentSize()
+        local setting = {
+            item_class = ActionPuzzleTaskItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 589,               -- 单元的尺寸width
+            item_height = 104,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.daily_scroll = CommonScrollViewLayout.new(self.daily_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+        self.daily_scroll:setVisible(false)
+        self.daily_scroll:setData(self.task_config[2])
+    end
+    if self.limit_scroll == nil then
+        local scroll_view_size = self.limit_panel:getContentSize()
+        local setting = {
+            item_class = ActionPuzzleTaskItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 589,               -- 单元的尺寸width
+            item_height = 104,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.limit_scroll = CommonScrollViewLayout.new(self.limit_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+        self.limit_scroll:setVisible(false)
+        self.limit_scroll:setData(self.task_config[3])
+    end
+    self:updateShowTask()
+    if self.panel_index == 0 then
+        self:changeTabIndex(1)
+    end
+    self:updateTabRed()
+end
+--页签
+function ActionPuzzleTaskPanel:changeTabIndex(index)
+    if self.panel_index and self.panel_index == index then return end
+    if not self.limit_scroll or not self.daily_scroll then return end
+    self.panel_index = index
+    for k, v in pairs(self.tab_btn_list) do
+        if v.index == self.panel_index then
+            v.normal_img:setVisible(true)
+        else
+            v.normal_img:setVisible(false)
+        end
+    end
+    if self.panel_index == 1 then --日常
+        self.tip_txt:setString(TI18N("语言_c_6967"))
+        if self.daily_scroll then
+            self.daily_scroll:setVisible(true)
+        end
+        self.limit_scroll:setVisible(false)
+    elseif self.panel_index == 2 then --限时
+        self.tip_txt:setString(TI18N("语言_c_6968"))
+        if self.daily_scroll then
+            self.daily_scroll:setVisible(false)
+        end
+        self.limit_scroll:setVisible(true)
+    end
+end
+--设置显示任务
+function ActionPuzzleTaskPanel:updateShowTask()
+    local list = self.task_config and self.task_config[1] and self.task_config[1][1]
+    self.show_task_list = list
+    if not list or not next(list) then
+        self.show_task_panel:setVisible(false)
+        return
+    end
+    self.show_task_panel:setVisible(true)
+
+    if self.item_list then
+        for i,v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+
+    local data = model:getPuzzleTaskOneData(self.holiday_bid,list.id)
+
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 2
+    setting.max_count = 2
+    setting.is_center = false
+    setting.is_get_status = data and data.finish and data.finish == 2
+    setting.get_status_res = PathTool.getResFrame("get_ninja","txt_cn_get_ninja_lingqu")
+    self.item_list = commonShowSingleRowItemList(self.item_scroll, self.item_list, list.award, setting)
+
+    local desclist ={}
+    for i=1,tableLen(list.progress) do
+        if list.progress[i].cli_label == "evt_puzzle_pay" then
+            table.insert(desclist,1,self.finish_val)
+        else
+            if list.progress[i].target ~= 0 then
+                table.insert(desclist,1,list.progress[i].target_val)
+            end
+            if list.progress[i].param then
+                for j=1,tableLen(list.progress[i].param) do
+                    local _str =  ActivityTaskDescription(list.progress[i].param[j])
+                    for key, value in pairs(_str) do
+                        table.insert(desclist,1,value)
+                    end
+                end
+            end
+        end
+    end
+    local num_1 = 0
+    for k, v in pairs(self.task_cfg[1]) do
+        local list = model:getPuzzleTaskOneData(self.holiday_bid,v.id)
+        if list and list.finish and list.finish == 2 then
+            num_1 = num_1 + 1
+        end
+    end
+    table.insert(desclist,num_1)
+    local num = tableLen(self.task_cfg[1])
+    table.insert(desclist,num)
+    self.task_name:setString(LangStringFormat(list.task_desc,desclist))
+    local _h = math.max(self.task_name:getContentSize().height,self.task_name_scroll:getContentSize().height)
+    self.task_name_scroll:setInnerContainerSize(cc.size(self.task_name_scroll:getContentSize().width,_h))
+    if _h > self.task_name_scroll:getContentSize().height then
+        self.task_name_scroll:setTouchEnabled(true)
+    else
+        self.task_name_scroll:setTouchEnabled(false)
+    end
+    self.task_name:setPositionY(_h)
+    self.btn_get:setVisible(data and data.finish == 0)
+    self.btn_go:setVisible(data and data.finish == 1)
+    self.finish_img:setVisible(data and data.finish == 2)
+end
+function ActionPuzzleTaskPanel:updateTabRed()
+    for i = 1, 2 do
+        local status = false
+        local list = self.task_config[i+1]
+        if list and next(list) then
+            for k, v in pairs(list) do
+                if model:getPuzzleTaskRed(self.holiday_bid,v.id) then
+                    status = true
+                    break
+                end
+            end
+        end
+        self.tab_btn_list[i].red_point:setVisible(status)
+    end
+end
+function ActionPuzzleTaskPanel:close_callback()
+    if self.daily_scroll then
+        self.daily_scroll:DeleteMe()
+        self.daily_scroll = nil
+    end
+    if self.limit_scroll then
+        self.limit_scroll:DeleteMe()
+        self.limit_scroll = nil
+    end
+    if self.item_list then
+        for i,v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+    if self.update_puzzle_task_data then
+        GlobalEvent:getInstance():UnBind(self.update_puzzle_task_data)
+        self.update_puzzle_task_data = nil
+    end
+    controller:openActionPuzzleTaskPanel(false)
+end
+
+
+
+--子项
+ActionPuzzleTaskItem = class("ActionPuzzleTaskItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionPuzzleTaskItem:ctor()
+    self.goods_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function ActionPuzzleTaskItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_puzzle_task_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(589,104))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.item_scroll = self.main_container:getChildByName("item_scroll")
+    self.task_name = self.main_container:getChildByName("task_name")
+    setTextMaxWidth(self.task_name,250)
+    self.bar_bg = self.main_container:getChildByName("bar_bg")
+    self.schedule_bar = self.main_container:getChildByName("schedule_bar")
+    self.schedule_bar:setScale9Enabled(true)
+    self.bar_txt = self.main_container:getChildByName("bar_txt")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.get_txt = self.btn_get:getChildByName("label")
+    self.btn_go = self.main_container:getChildByName("btn_go")
+    self.go_txt = self.btn_go:getChildByName("label")
+    self.finish_img = self.main_container:getChildByName("finish_img")
+    self.get_txt:setString(TI18N("语言_c_7"))
+    self.go_txt:setString(TI18N("语言_c_8"))
+    self.btn_get:setVisible(false)
+    self.btn_go:setVisible(false)
+    self.finish_img:setVisible(false)
+end
+
+function ActionPuzzleTaskItem:setData(data)
+    if not data then
+        if not self.data then return end
+    else
+        self.data = data
+        self.camp_id = self.data.act_id
+    end
+
+    if not self.data or not next(self.data) then return end
+
+    if self.item_list then
+        for i,v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+
+    local task_data = model:getPuzzleTaskOneData(self.data.holiday_bid,self.data.id)
+    
+    local setting = {}
+    setting.scale = 0.7
+    setting.space_x = 2
+    setting.max_count = 2
+    setting.is_center = false
+    setting.is_get_status = task_data and task_data.finish and task_data.finish == 2
+    setting.get_status_res = PathTool.getResFrame("get_ninja","txt_cn_get_ninja_lingqu")
+    self.item_list = commonShowSingleRowItemList(self.item_scroll, self.item_list, self.data.award, setting)
+
+    local desclist ={}
+    for i=1,tableLen(self.data.progress) do
+        if self.data.progress[i].target ~= 0 then
+            table.insert(desclist,1,self.data.progress[i].target_val)
+        end
+        if self.data.progress[i].param then
+            for j=1,tableLen(self.data.progress[i].param) do
+                local _str =  ActivityTaskDescription(self.data.progress[i].param[j])
+                for key, value in pairs(_str) do
+                    table.insert(desclist,1,value)
+                end
+            end
+        end
+    end
+    self.task_name:setString(LangStringFormat(self.data.task_desc,desclist))
+    self.bar_txt:setString(string.format("%s/%s",task_data and task_data.value or 0,task_data and task_data.target_val or 0))
+    self.schedule_bar:setPercent((task_data and task_data.value or 0) / (task_data and task_data.target_val or 1)*100)
+    self.btn_get:setVisible(task_data and task_data.finish == 0)
+    self.btn_go:setVisible(task_data and task_data.finish == 1)
+    self.finish_img:setVisible(task_data and task_data.finish == 2)
+end
+
+function ActionPuzzleTaskItem:register_event( )
+
+    registerButtonEventListener(self.btn_get, function()
+        if self.data and next(self.data) then
+            if self.data.jump_id and self.data.jump_id ~= 0 then
+                local config = Config.SourceData.data_source_data[self.data.jump_id]
+                if config then
+                    BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+                end
+            else
+                TaskController:getInstance():gotoTagertFun(self.data.progress[1])
+            end
+        end
+	end, true)
+
+    registerButtonEventListener(self.btn_go, function()
+        if self.data and next(self.data) then
+            controller:sender21619(self.data.holiday_bid,self.data.id)
+        end
+	end, true)
+
+    if not self.update_puzzle_task_data then
+        self.update_puzzle_task_data = GlobalEvent:getInstance():Bind(ActionEvent.updatePuzzleTaskData ,function(bid)
+            if not bid or bid ~= self.data.holiday_bid then return end
+            self:setData()
+        end)
+    end
+end
+
+function ActionPuzzleTaskItem:DeleteMe()
+
+    if self.update_puzzle_task_data then
+        GlobalEvent:getInstance():UnBind(self.update_puzzle_task_data)
+        self.update_puzzle_task_data = nil
+    end
+end

@@ -1,0 +1,715 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-03-5 15:12:43
+-- @description    : 
+		-- up英雄选择界面
+---------------------------------
+local _controller = ActionController:getInstance()
+local _model = _controller:getModel()
+local _string_format = string.format
+local _table_insert = table.insert
+local table_sort = table.sort
+local table_insert = table.insert
+
+EliteOptionalSelectWindow = EliteOptionalSelectWindow or BaseClass(BaseView)
+
+function EliteOptionalSelectWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "elitesummon/summon_select_window"
+	self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("elitesummon","elitesummon"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("selectelitesummon","selectelitesummon"), type = ResourcesType.plist },
+    } 
+    self.cur_item_id = nil
+    self.upcur_item_id = nil
+	self.select_cell = nil
+	self.hero_data_list = {}
+    self.reward_list = {}
+    self.select_camp = 0
+    --阵营
+    self.select_camp = 0
+    --scrollview列表参数
+    self.col = 5 --列数
+    self.item_width     = 120  --item的宽高
+    self.item_height    = 120
+    self.cacheList = {} --对象池
+    self.cacheMaxSize = 0 --最大池数
+
+    -- 到时间显示的索引
+    self.time_show_index = 0
+    self.first_title_height = 50 --第一个的高度
+    self.title_height = 80 --职业名字的高
+    --列表职业对应信息
+    self.career_info_list = {}
+	
+end
+
+function EliteOptionalSelectWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+	local container = self.root_wnd:getChildByName("container")
+	container:getChildByName("win_title"):setString(TI18N("语言_c_3600"))
+	self.left_btn = container:getChildByName("left_btn")
+	self.left_btn:getChildByName("label"):setString(TI18N("语言_c_395"))
+	self.right_btn = container:getChildByName("right_btn")
+	self.right_btn:getChildByName("label"):setString(TI18N("语言_c_261"))
+	self.close_btn = container:getChildByName("close_btn")
+	self.hero_info_panel = container:getChildByName("hero_info_panel")
+    self.lay_scrollview=self.hero_info_panel:getChildByName("lay_scrollview")
+	self.hero_list1 = self.hero_info_panel:getChildByName("hero_list1")
+	self.name_txt = self.hero_info_panel:getChildByName("name_txt")
+    self.name_txt:setString(TI18N("语言_c_6763"))
+    setTextMaxWidth(self.name_txt,600)
+	local name_txt_0 = self.hero_info_panel:getChildByName("name_txt_0")
+    name_txt_0:setString(transformTextToShort(TI18N("语言_c_4513"),50))
+    addEvt2showAllTextTips(name_txt_0,TI18N("语言_c_4513"),50)
+	local camp_node = self.root_wnd:getChildByName("camp_node")
+	self.camp_btn_list = {}
+    self.camp_btn_list[0] = camp_node:getChildByName("camp_btn0")
+    self.camp_btn_list[HeroConst.CampType.eWater] = camp_node:getChildByName("camp_btn1")
+    self.camp_btn_list[HeroConst.CampType.eFire]  = camp_node:getChildByName("camp_btn2")
+    self.camp_btn_list[HeroConst.CampType.eWind]  = camp_node:getChildByName("camp_btn3")
+    self.camp_btn_list[HeroConst.CampType.eLight] = camp_node:getChildByName("camp_btn4")
+    self.camp_btn_list[HeroConst.CampType.eDark]  = camp_node:getChildByName("camp_btn5")
+    self.img_select = camp_node:getChildByName("img_select")
+    local x, y = self.camp_btn_list[0]:getPosition()
+    self.img_select:setPosition(x - 0.5, y + 1)
+end
+
+function EliteOptionalSelectWindow:register_event(  )	
+	registerButtonEventListener(self.right_btn, handler(self, self.onClickChooseBtn), true)
+
+	registerButtonEventListener(self.left_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	registerButtonEventListener(self.close_btn, function (  )
+		self:onClickCloseBtn()
+	end, true, 2)
+
+	
+	registerButtonEventListener(self.background, function ( )
+		self:onClickCloseBtn()
+	end, false, 2)
+
+	--阵营按钮
+    for select_camp, v in pairs(self.camp_btn_list) do
+        registerButtonEventListener(v, function() self:onClickBtnShowByIndex(select_camp) end ,true, 2)
+    end
+
+    if not self.reward_lists then
+        self.reward_lists = GlobalEvent:getInstance():Bind(EliteSummonEvent.SelectEliteSummon_Message,function(data)
+                self.reward_list = data.reward_list
+        end)
+    end
+end
+
+--显示根据类型 0表示全部
+function EliteOptionalSelectWindow:onClickBtnShowByIndex(select_camp)
+    if self.img_select and self.camp_btn_list[select_camp] then
+        local x, y = self.camp_btn_list[select_camp]:getPosition()
+        self.img_select:setPosition(x - 0.5, y + 1)
+    end
+    self:getIdList()
+    -- self:updateList(select_camp)
+    self:updateHeroList(select_camp)
+end
+
+function EliteOptionalSelectWindow:onClickCloseBtn(  )
+	_controller:openEliteOptionalSelectWindow(false)
+end
+
+function EliteOptionalSelectWindow:onClickChooseBtn(  )
+	if next(self.hero_data_list) == nil then
+		message(TI18N("语言_c_3601"))
+		return
+	end
+
+	if self.cur_item_id == nil or self.cur_item_id <= 0 then
+		message(TI18N("语言_c_3602"))
+		return 
+    end
+    local wishconfig = Config.RecruitHolidayHeroData.data_chose_info[self.camp_id]
+    local status = false
+    for k,v in pairs(wishconfig) do
+        if v.group_id == self.cur_item_id then
+            status = true
+        end
+    end
+    if status then
+        _controller:sender23271(self.holiday_bid,self.cur_item_id)
+    end
+	self:onClickCloseBtn()
+end
+
+
+function EliteOptionalSelectWindow:setData( )
+	--需要获取已选择up英雄id
+	local data = Config.RecruitHolidayHeroData.data_chose_info[self.camp_id]
+	if not data then
+		return
+	end
+    self.reward_list = data.reward_list
+
+    self:getIdList()	
+
+    -- self:updateList()
+	
+    self:updateHeroList()
+end
+function EliteOptionalSelectWindow:getIdList()
+    self.hero_data_list = {}
+	local temp_list = {}
+    local config =  Config.RecruitHolidayHeroData.data_chose_info[self.camp_id]
+    if config then
+        for k,v in pairs(config) do
+            local choose_sort = 99
+            if v.type == 1 then
+                choose_sort = 3
+            elseif v.type == 2 then
+                choose_sort = 4
+            elseif v.type == 3 then
+                choose_sort = 2
+            elseif v.type == 4 then
+                choose_sort = 1
+            end
+            _table_insert( temp_list, {id = v.group_id,sort = v.sort,type=v.type,choose_sort=choose_sort})
+        end
+	end
+	
+	table.sort(temp_list, SortTools.tableLowerSorter({"choose_sort","type","sort"}))
+	for i,v in pairs(temp_list) do
+        _table_insert( self.hero_data_list, v.id)
+    end
+end
+function EliteOptionalSelectWindow:openRootWnd(camp_id,group_id,holiday_bid)
+    self.camp_id = camp_id
+    self.cur_item_id = group_id or 0
+    self.holiday_bid = holiday_bid or 0
+	self:setData()
+end
+
+
+--内内部写一个无限的scrollview 
+function EliteOptionalSelectWindow:createHeroScrollView(size, x, y)
+    self.scrollview_size = size
+    self.list_view = createScrollView(size.width, size.height, x, y, self.lay_scrollview, ScrollViewDir.vertical) 
+    self.list_view:setAnchorPoint(cc.p(0.5, 0.5))
+    self.scrollview_container = self.list_view:getInnerContainer() 
+
+    self.cacheMaxSize = (math.ceil(size.height / self.item_height) + 1) * self.col
+    self.list_view:addEventListener(function(sender, eventType)
+        if eventType == ccui.ScrollviewEventType.containerMoved then
+            self:checkOverShowByVertical()
+        end
+    end)
+end
+
+--==============================--
+--desc1:竖直方向的监测判断
+--time:2018-07-20 03:11:13
+--@return 
+--==============================--
+function EliteOptionalSelectWindow:checkOverShowByVertical()
+    if not self.cellList then return end
+    local container_y = self.scrollview_container:getPositionY()
+    --计算 视图的上部分和下部分在self.container 的位置
+    local bot = -container_y
+    local top = self.scrollview_size.height + bot
+    local col_count = math.ceil(#self.cellList/self.col)
+    --下面因为 self.cellList 是一维数组 所以要换成二维来算
+    --活跃cell开始行数
+    local activeCellStartRow = 1
+    for i=1, col_count do
+        local index = 1 + (i-1)* self.col
+        local cell = self.cellList[index]
+        activeCellStartRow = i
+        if cell and cell.y - self.item_height * 0.5 <= top then
+            break
+        end
+    end
+    --活跃cell结束行数
+    local activeCellEndRow = col_count
+    if bot > 0 then
+        for i = activeCellStartRow, col_count do
+            local index = 1 + (i-1)* self.col
+            local cell = self.cellList[index]
+            if cell and cell.y + self.item_height * 0.5 < bot then
+                activeCellEndRow = i - 1
+                break
+            end
+        end
+    end
+    -- print("@保留--> top --> :"..top .." self.col:"..self.col)
+    -- print("@保留--> bot --> :"..bot )
+    -- print("@保留--> 开始行: "..activeCellStartRow.."@结束行: "..activeCellEndRow)
+    local max_count = self:numberOfCells()
+    for i=1, col_count do
+        if i >= activeCellStartRow and i <= activeCellEndRow then
+            for k=1, self.col do
+                local index = (i-1) * self.col + k
+                if not self.activeCellIdx[index] then
+                    if index <= max_count then
+                        self:updateCellAtIndex(index)
+                        self.activeCellIdx[index] = true
+                    end
+                end    
+            end
+        else
+            for k=1, self.col do
+                local index = (i-1) * self.col + k
+                if index <= max_count then
+                    self.activeCellIdx[index] = false
+                end
+            end
+        end
+    end
+end
+
+--更新职业的ui
+--title_pos_list 结构: title_pos_list[n] = {type = type, pos_y = xx}
+function EliteOptionalSelectWindow:updateCareerUI(title_pos_list, container_height, start_x)
+    for i,career_info in pairs(self.career_info_list) do
+        career_info.bg:setVisible(false)
+    end
+    local start_x  = start_x or 0
+    for i, info in pairs(title_pos_list) do
+        local type = info.type 
+        local pos_y = info.pos_y or 0
+        local name=info.name
+        -- if type==3 then name = TI18N("语言_rec_ho_ma_07_17") end
+        -- if type==4 then name = TI18N("测试") end
+        local bg_y 
+        container_height = math.max(container_height, self.scrollview_size.height)
+        if i == 1 then
+            bg_y = container_height - pos_y
+        else
+            bg_y = container_height - (pos_y + 25)
+        end
+
+        if self.career_info_list[i] == nil then
+            local career_info = {}
+            career_info.bg = createImage(self.list_view,PathTool.getResFrame("common","common_90025"), start_x,bg_y-10, cc.p(0, 1), true, 0, true)
+            career_info.bg:setContentSize(cc.size(600, 40))
+            career_info.label = createRichLabel(24,116,cc.p(0,0.5),cc.p(10,22),nil,nil,600)
+            career_info.bg:addChild(career_info.label)
+            self.career_info_list[i] = career_info
+        end
+        local career_info = self.career_info_list[i]
+        career_info.bg:setVisible(true)
+        career_info.bg:setPositionY(bg_y-10)
+        local num = 60
+        if judgingLanguage() then
+            num = 25
+        end
+        career_info.label:setString(transformTextToShort(name,num))
+        addEvt2showAllTextTips(career_info.label,name,num,nil,nil,nil,true,true)
+    end
+end
+
+function EliteOptionalSelectWindow:reloadData(container_height)
+    self.cellList = {}
+    self.activeCellIdx = {}
+    for k, v in pairs(self.cacheList) do
+        --相当于隐藏
+        v:setPositionX(-10000)
+    end
+    
+    local container_height = math.max(container_height, self.scrollview_size.height)
+    self.container_size = cc.size(self.scrollview_size.width, container_height)
+    self.list_view:setInnerContainerSize(self.container_size)
+    local number = self:numberOfCells()
+    if number == 0 then
+        return
+    end
+    for i = 1, number do
+        local data = self.hero_chosetype_list[i]
+        if data ~= nil then
+            local cell = nil 
+            if i <= self.time_show_index then
+                cell = self:getCacheCellByIndex(i)
+            end
+            local x = data.x
+            local y = container_height - data.y
+            local cellData = {cell = cell, x = x, y = y}
+            table_insert(self.cellList, cellData)
+        end
+    end
+        local maxRefreshNum = self.cacheMaxSize - self.col
+        local refreshNum = number < maxRefreshNum and number or maxRefreshNum
+        for i = 1, refreshNum do
+            local index = i
+            -- delayRun(self.list_view,index / display.DEFAULT_FPS,function ()
+            -- end)
+            if self.time_show_index < index then
+                self.time_show_index = index
+            end
+            self:updateCellAtIndex(index)
+            if self.time_show_index == refreshNum then
+                self.time_show_index = 9999
+            end
+            self.activeCellIdx[i] = true
+        end
+end
+
+function EliteOptionalSelectWindow:updateHeroList(select_camps)
+    local select_camp = select_camps or 0
+    if not self.list_view and not tolua.isnull(self.lay_scrollview) then
+        local size = self.lay_scrollview:getContentSize()
+        self:createHeroScrollView(size, size.width * 0.5, size.height * 0.5)
+    end
+    self.select_camp = select_camp  
+    local hero_new_list = {}
+    local list = {}
+    local wishconfig =  Config.RecruitHolidayHeroData.data_chose_info[self.camp_id]
+    if select_camp > 0 then 
+        for i,v in pairs(self.hero_data_list) do
+            local config = Config.ItemData.data_get_data(wishconfig[v].hero_id)
+            local id = config.effect[1].val[1]
+            local cfg = Config.PartnerData.data_partner_base[id]
+            if not cfg then return end
+            local camp_type = cfg.camp_type
+            if select_camp == camp_type then
+                _table_insert( hero_new_list, v)
+            end
+        end
+        self.hero_data_list = hero_new_list
+    end
+    local content_y = 0 
+    if not self.scrollview_size then
+        self.scrollview_size = self.lay_scrollview:getContentSize()
+    end
+    local start_x = (self.scrollview_size.width - self.item_width * self.col) * 0.5 
+    --获取下一个位置根据当前数量
+    local function _getNextPositionBySize(size)
+        local count = size % self.col 
+        if count == 0 then
+            --换行
+            content_y = content_y + self.item_height
+        end
+        local x = start_x + self.item_width * count + self.item_width * 0.5
+        local y = content_y + self.item_height * 0.5 
+        return x, y
+    end
+    local title_pos_list = {}
+    local type = nil
+    local _name = ""
+    self.hero_chosetype_list = {}
+    for i,v in pairs(self.hero_data_list) do
+        if type == nil then
+            type = wishconfig[v].type
+            _name = wishconfig[v].desc1
+            content_y = self.first_title_height - self.item_height 
+            table_insert(title_pos_list , {type = type, pos_y = 0,name = _name})
+        end
+        if type ~= wishconfig[v].type then
+            --算出多出的空位置 用{}去填补
+            local count = self.col - #self.hero_chosetype_list % self.col
+            if count < self.col and count ~= 0 then
+                for i=1,count do
+                    local x, y = _getNextPositionBySize(#self.hero_chosetype_list)
+                    table_insert(self.hero_chosetype_list, {x = x, y = y}) 
+                end
+            end
+            type = wishconfig[v].type
+            _name = wishconfig[v].desc1
+            table_insert(title_pos_list ,{type = type, pos_y = content_y + self.item_height,name = _name})
+            --遇到新职业..加title高度
+            content_y = content_y + self.title_height
+        end    
+        local x, y = _getNextPositionBySize(#self.hero_chosetype_list)
+        table_insert(self.hero_chosetype_list, {hero_id = wishconfig[v].hero_id, config = wishconfig[v].group_id, x = x, y = y,type = type,tips = tonumber(wishconfig[v].desc2)})
+    end
+    --内容的高度
+    local container_height 
+    if #self.hero_chosetype_list > 0 then
+        container_height  = content_y + self.item_height
+    else
+        container_height = 0
+    end
+    self.list_view:stopAutoScroll()
+    self:updateCareerUI(title_pos_list, container_height, start_x)
+    self:reloadData(container_height)
+    self:checkOverShowByVertical()
+end
+
+--获得格子下标对应的缓存itemCell
+function EliteOptionalSelectWindow:getCacheCellByIndex(index)
+    local cacheIndex = (index - 1) % self.cacheMaxSize + 1
+    if not self.cacheList[cacheIndex] then
+        local newCell = SummonSelectNewItem.new()
+        newCell:addCallBack(function() self:onCellTouched(newCell) end)
+        newCell:setAnchorPoint(cc.p(0.5, 0.5))
+        newCell:setPositionX(-10000)--隐藏
+        self.cacheList[cacheIndex] = newCell
+        self.list_view:addChild(newCell, 2)
+
+        return newCell
+    else
+        return self.cacheList[cacheIndex]
+    end
+end
+
+--更新格子，并记为活跃
+function EliteOptionalSelectWindow:updateCellAtIndex(index)
+    if index > self.time_show_index then
+        return
+    end
+    if not self.cellList[index] then return end
+    local cellData = self.cellList[index]
+    if cellData.cell == nil then
+        cellData.cell = self:getCacheCellByIndex(index)
+    end
+    cellData.cell:setPosition(cellData.x, cellData.y)
+    self:updateCellByIndex(cellData.cell, index)
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function EliteOptionalSelectWindow:updateCellByIndex( cell, index )
+    if index > self.time_show_index then
+        return
+    end
+    cell.index = index
+    local item_vo = self.hero_chosetype_list[index].config
+    local type = self.hero_chosetype_list[index].type
+    local tips = self.hero_chosetype_list[index].tips
+    local hero_id = self.hero_chosetype_list[index].hero_id
+	local data = {}
+    _table_insert( data, hero_id)
+    _table_insert( data, self.cur_item_id)
+    _table_insert( data, type)
+    _table_insert( data, tips)
+	_table_insert( data, item_vo)
+    if self.reward_list then
+        for i=1,tableLen(self.reward_list) do
+            if item_vo == self.reward_list[i].id then
+                cell:setLockSelected(true)
+            -- else
+            --     cell:setLockSelected(false) 
+            end
+        end
+    end
+    if item_vo then
+        cell:setVisible(true)
+        cell:setData(data, #self.hero_chosetype_list)
+        if self.cur_item_id and self.cur_item_id == item_vo then
+            cell:setSelected(true)
+            self.select_cell = cell
+        else
+            cell:setSelected(false)
+        end
+    else
+        cell:setVisible(false)
+	end
+end
+
+function EliteOptionalSelectWindow:createNewCell( width, height )
+    local cell = SummonSelectNewItem.new(width, height)
+    cell:addCallBack(function() 
+        self:onCellTouched(cell)
+    end)
+    return cell
+end
+
+function EliteOptionalSelectWindow:numberOfCells(  )
+    if not self.hero_chosetype_list then return 0 end
+    return #self.hero_chosetype_list
+end
+
+function EliteOptionalSelectWindow:onCellTouched( cell )
+    local isSelect = false
+    local item_vo = self.hero_chosetype_list[cell.index].config
+    if self.reward_list then
+        for i=1,tableLen(self.reward_list) do
+            if item_vo == self.reward_list[i].id then
+                return 
+            end
+        end
+    end
+    if self.cur_item_id and item_vo and item_vo == self.cur_item_id then
+        self.select_cell:setSelected(true)
+        return
+    end
+    if self.cur_item_id and self.select_cell then
+        self.select_cell:setSelected(false)
+        self.select_cell = nil
+        self.cur_item_id = nil
+    end
+    self.select_cell = cell
+    self.select_cell:setSelected(true)
+    self.cur_item_id = item_vo
+end 
+
+function EliteOptionalSelectWindow:close_callback(  )
+	if self.hero_list_view then
+		self.hero_list_view:DeleteMe()
+		self.hero_list_view = nil
+	end
+    if self.reward_lists then
+        GlobalEvent:getInstance():UnBind(self.reward_lists)
+        self.reward_lists = nil
+    end
+	_controller:openEliteOptionalSelectWindow(false)
+end
+
+
+SummonSelectNewItem = class("SummonSelectNewItem", function()
+    return ccui.Widget:create()
+end)
+
+function SummonSelectNewItem:ctor()
+	self.size = cc.size(120,120)
+	self:configUI(120, 120)
+	self:register_event()
+end
+
+function SummonSelectNewItem:configUI( width, height )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("elitesummon/summon_select_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:setContentSize(cc.size(width, height))
+	self:setTouchEnabled(false)
+    
+	self:addChild(self.root_wnd)
+	self.container = self.root_wnd:getChildByName("container")
+
+    self.item_node = BackPackItem.new(false, true, false, 1, nil, nil, false)
+    self.item_node:setPosition(cc.p(self:getContentSize().width*0.5, self:getContentSize().height*0.5))
+    self.container:addChild(self.item_node)
+    --角标
+    local res = PathTool.getResFrame("common","txt_cn_selectelitesummon_3")
+    self.special_icon = createImage(self.container,res,self.size.width,self.size.height,cc.p(1,1),true,5)
+    self.special_icon:setVisible(false)
+end
+--==============================--
+--desc1:设置选中状态
+--time:2017-07-03 09:07:12
+--@status:
+--@return 
+--==============================--
+function SummonSelectNewItem:setSelected(status)
+    if status then
+        if self.lay_select == nil then
+            self.lay_select = ccui.Layout:create()
+            self.lay_select:setAnchorPoint(cc.p(0.5,0.5))
+            self.lay_select:setContentSize(self.size)
+            self.lay_select:setPosition(self.size.width/2, self.size.height/2) 
+            self.lay_select:setTouchEnabled(false)
+            showLayoutRect(self.lay_select, 150)
+            local res = PathTool.getResFrame("common","common_1043")
+            createImage(self.lay_select,res,self.size.width/2,self.size.height/2,cc.p(0.5,0.5),true,1,false)
+
+            self:addChild(self.lay_select, 3)
+        else
+            self.lay_select:setVisible(true)
+        end
+    else
+        if self.lay_select then
+            self.lay_select:setVisible(false)
+        end
+    end
+end
+
+--==============================--
+--desc1:设置锁定状态
+--time:2017-07-03 09:07:12
+--@status:
+--@return 
+--==============================--
+function SummonSelectNewItem:setLockSelected(status)
+    if status then
+        if self.lay_selects == nil then
+            self.lay_selects = ccui.Layout:create()
+            self.lay_selects:setAnchorPoint(cc.p(0.5,0.5))
+            self.lay_selects:setContentSize(self.size)
+            self.lay_selects:setPosition(self.size.width/2, self.size.height/2) 
+            self.lay_selects:setTouchEnabled(false)
+            showLayoutRect(self.lay_selects, 150)
+            local res = PathTool.getResFrame("common","common_90009")
+            self.lay_selects:setTouchEnabled(false)
+            createImage(self.lay_selects,res,self.size.width/2,self.size.height/2,cc.p(0.5,0.5),true,1,false)
+
+            self:addChild(self.lay_selects, 3)
+        end
+        self.lay_selects:setVisible(true)
+    else
+        if self.lay_selects then
+            self.lay_selects:setVisible(false)
+            self.lay_selects:setTouchEnabled(true)
+            -- self:setTouchEnabled(true)
+        end
+    end
+end
+function SummonSelectNewItem:register_event(  )
+	self.item_node:addTouchEventListener(function (sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            if self.callback then
+                self.callback()
+                local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                    TipsManager:getInstance():showGoodsTips(self.data[1])
+                end))
+                self.sequence_action = self.item_node:runAction(action)
+                self.sequence_action:setTag(10086)
+            end
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+        end
+    end)
+end
+
+function SummonSelectNewItem:clearTimeTicket()
+    if self.sequence_action then
+        self.item_node:stopActionByTag(10086)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+function SummonSelectNewItem:addCallBack( callback )
+	self.callback = callback
+	if self.item_node then
+		self.item_node:addCallBack(callback)
+    end
+    
+end
+
+function SummonSelectNewItem:setData( data , total_len)
+    self.data = data
+	if self.item_node then
+		self.item_node:setBaseData(data[1], 1)
+        -- if total_len and total_len >= 6 then
+        --     self.item_node.scale = 0.8
+        --     self.item_node:setScale(0.8)
+        -- end
+	end
+	if data[1] == data[2] then
+		self:setSelected(true)
+	else
+		self:setSelected(false)
+	end
+    if data[4] == 0 then
+        self.special_icon:setVisible(false)
+    else
+        self.special_icon:setVisible(true)
+        local res = PathTool.getResFrame("selectelitesummon","txt_cn_selectelitesummon_"..data[4])
+        self.special_icon:loadTexture(res, LOADTEXT_TYPE_PLIST)
+    end
+end
+
+function SummonSelectNewItem:DeleteMe(  )
+    self:clearTimeTicket()
+	if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+end

@@ -1,0 +1,678 @@
+-- @Date:   2019-04-24 15:26:48
+-- @description:	--对对碰翻牌
+ActionDdpPanel = class("ActionDdpPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = ActionController:getInstance():getModel()
+
+function ActionDdpPanel:ctor(bid,id,remain_sec)
+    self.holiday_bid = bid
+    self.remain_sec = remain_sec
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local flop_cfg = Config.HolidayFlopData.data_flop_act_list[campid]
+    local banner_pic = flop_cfg.title
+    self.tab_list = {}
+    self.award_item_list = {}
+    self.arriveLuckly_label = {}
+    self.res_list = {
+        -- {path = PathTool.getPlistImgForDownLoad("pairtopair", pairtopair),type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("pairtopair", "txt_cn_pairtopair_1"),type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("pairtopair", "txt_cn_pairtopair_title_1"),type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("planesafkorderaction","planesafkorderaction"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("common","common_2"), type = ResourcesType.plist},
+    }
+    if banner_pic then
+        table.insert(self.res_list, {path = PathTool.getPlistImgForDownLoad("pairtopair", banner_pic),type = ResourcesType.single})
+    end
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function ActionDdpPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+    MonopolyController:getInstance():sender16811(ActionStorageBool2.DdpFirst)
+end
+
+function ActionDdpPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_ddp_panel"))
+    self.root_wnd:setPosition(cc.p(-40, -80))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.choose_index = 0
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg = self.main_container:getChildByName("bg")
+    -- 特效
+    -- self.effect_layer = self.main_container:getChildByName("effect_layer") -- 模型
+    self.banner = self.main_container:getChildByName("banner")
+    self.top_list = {}
+    self.help_btn = self.main_container:getChildByName("btn_rule")
+    self.time_txt = self.main_container:getChildByName("time_txt")
+    self.time_txt:setString(TI18N("语言_c_1242"))
+    self.act_time = self.main_container:getChildByName("act_time")
+    setItemXOneByOne({self.time_txt, self.act_time})
+    self.tab_view = self.main_container:getChildByName("tab_view")
+    self.tab_view:setScrollBarEnabled(false)
+    self.itembg = self.main_container:getChildByName("itembg")
+    self.title1 = self.main_container:getChildByName("title1")
+    self.title1:setString(TI18N("语言_c_5149"))
+    self.title2 = self.main_container:getChildByName("title2")
+    self.title2:setString(TI18N("语言_c_532"))
+
+    self.item_container1 = self.main_container:getChildByName("item_container1")
+    self.item_container1:setScrollBarEnabled(false)
+
+    self.item_container2 = self.main_container:getChildByName("item_container2")
+    self.item_container2:setScrollBarEnabled(false)
+
+    local scroll_view_size = self.item_container1:getContentSize()
+    local setting = {
+        item_class = BackPackItem, -- 单元类
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 10, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = BackPackItem.Width * 0.8, -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.8, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 0, -- 列数，作用于垂直滚动类型
+        scale = 0.8
+    }
+    self.item_scrollview1 = CommonScrollViewLayout.new(self.item_container1, cc.p(0, 0), ScrollViewDir.horizontal,
+        ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview1:setSwallowTouches(false)
+
+    local scroll_view_size2 = self.item_container2:getContentSize() -- self.item_container2:getContentSize()
+    local setting2 = {
+        item_class = BackPackItem, -- 单元类
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 10, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = BackPackItem.Width * 0.8, -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.8, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 0, -- 列数，作用于垂直滚动类型
+        scale = 0.8
+    }
+    self.item_scrollview2 = CommonScrollViewLayout.new(self.item_container2, cc.p(0, 0), ScrollViewDir.horizontal,
+        ScrollViewStartPos.top, scroll_view_size2, setting2)
+    self.item_scrollview2:setSwallowTouches(false)
+
+    self.btn_go = self.main_container:getChildByName("btn_go")
+    self.btn_go_label = self.btn_go:getChildByName("Text_8")
+    self.btn_go_label:setString(TI18N("语言_c_457"))
+
+    self.finish_img = self.main_container:getChildByName("finish_img")
+    self.finish_img:setVisible(false)
+    
+    self.progress_panel = self.main_container:getChildByName("progress_panel")
+    self.war_btn = self.progress_panel:getChildByName("war_btn")
+    self.war_txt = self.war_btn:getChildByName("war_txt")
+    setTextSpacing(self.war_txt,-10)
+    self.war_txt:setChangeScaleOffWidth(-1000)
+    self.progress = self.progress_panel:getChildByName("progress")
+	self.progress:setScale9Enabled(true)
+    self.action_panel = self.root_wnd:getChildByName("action_panel")
+    self.game_panel = self.action_panel:getChildByName("game_panel")
+    self.back_btn = self.action_panel:getChildByName("back_btn")
+    self.back_txt = self.action_panel:getChildByName("back_txt")
+    self.back_txt:setString(TI18N("语言_c_10"))
+    self.action_panel:setVisible(false)
+
+    controller:sender29600()
+    -- self:showEffect(true)
+    self:updatePanelRes()
+    -- self:updateTabView(true)
+end
+
+-- 人物特效 展示立绘 模型不要了
+-- function ActionDdpPanel:showEffect(status)
+--     local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+--     local campid = tabvo.camp_id -- 活动的唯一Id
+--     local flop_cfg = Config.HolidayFlopData.data_flop_act_list[campid]
+--     if status == false then
+--         if self.effect_1 then
+--             if not tolua.isnull(self.effect_1) then
+--                 self.effect_1:removeFromParent()
+--                 self.effect_1 = nil
+--             end
+--         end
+--     else
+--         if not tolua.isnull(self.effect_layer) then
+--             if not tolua.isnull(self.effect_1) then
+--                 self.effect_1:removeFromParent()
+--                 self.effect_1 = nil
+--             end
+--             local effectId = flop_cfg.character_animation
+--             self.effect_1 = createSpineByName(effectId, PlayerAction.show)
+--             self.effect_1:setPosition(cc.p(100, 350))
+--             self.effect_1:setScaleX(0.9)
+--             self.effect_1:setScaleY(0.9)
+--             self.effect_1:setAnimation(0, PlayerAction.show, true)
+--             self.effect_layer:addChild(self.effect_1)
+--         end
+--     end
+-- end
+--
+function ActionDdpPanel:updatePanelRes()
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local flop_cfg = Config.HolidayFlopData.data_flop_act_list[campid]
+    if flop_cfg then
+        local bg_res_str = flop_cfg.game_background_picture
+        local res = PathTool.getTargetRes("bigbg/action",bg_res_str,false,false)
+        if not self.background_load then
+            self.background_load = loadSpriteTextureFromCDN(self.bg, res, ResourcesType.single, self.background_load)
+        end
+        local banner_res_str = flop_cfg.title
+        local banner_res = PathTool.getPlistImgForDownLoad("pairtopair", banner_res_str)
+        if not self.banner_load then
+            self.banner_load = loadSpriteTextureFromCDN(self.banner, banner_res, ResourcesType.plist, self.banner_load)
+        end
+        
+        local award_back_picture = flop_cfg.award_back_picture
+        local banner_res = PathTool.getResFrame("pairtopair", award_back_picture)
+        self.itembg:loadTexture(banner_res, LOADTEXT_TYPE_PLIST)
+    end
+
+end
+-- 设置奖励列表
+function ActionDdpPanel:setItemData()
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local flop_cfg = Config.HolidayFlopData.data_flop_act_list[campid]
+    local mod_cfg = Config.HolidayFlopData.data_mod_info[flop_cfg.mod_id][self.choose_index]
+    if not mod_cfg then
+        local list = Config.HolidayFlopData.data_mod_info[flop_cfg.mod_id]
+        mod_cfg = list[#list]
+    end
+    local award_cfg = Config.HolidayFlopData.data_award_info[campid][mod_cfg.difficulty_id]
+    local reward_list = model:getDdpRewardList()
+    local reward_show = award_cfg.finish_award or {}
+    self.item_scrollview1:setData(reward_show)
+    self.item_scrollview1:addEndCallBack(function()
+        local list = self.item_scrollview1:getItemList()
+        for k, v in pairs(list) do
+            v:setDefaultTip()
+            if reward_list and reward_list[self.choose_index] and reward_list[self.choose_index].finish_award and reward_list[self.choose_index].finish_award == 1 then
+                v:setReceiveIcon(true)
+            else
+                v:setReceiveIcon(false)
+            end
+        end
+    end)
+
+    local reward_show2 = award_cfg.challenge_award or {}
+    self.item_scrollview2:setData(reward_show2)
+    self.item_scrollview2:addEndCallBack(function()
+        local list = self.item_scrollview2:getItemList()
+        for k, v in pairs(list) do
+            v:setDefaultTip()
+            if reward_list and reward_list[self.choose_index] and reward_list[self.choose_index].challenge_award and reward_list[self.choose_index].challenge_award == 1 then
+                v:setReceiveIcon(true)
+            else
+                v:setReceiveIcon(false)
+            end
+        end
+    end)
+end
+function ActionDdpPanel:updateTabView(status)
+    local self_y = self.tab_view:getInnerContainer():getPositionY()
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local flop_cfg = Config.HolidayFlopData.data_flop_act_list[campid]
+    local mod_cfg = Config.HolidayFlopData.data_mod_info[flop_cfg.mod_id]
+    if not next(self.tab_list) then
+        for i = 1, #mod_cfg do
+            local item = ActionDdpRewardItem.new()
+            item:setPositionX(0)
+            self.tab_view:addChild(item)
+            self.tab_list[i] = item
+        end
+    end
+    for i = 1, #mod_cfg do
+        self.tab_list[i]:setData(mod_cfg[i])
+    end
+    local data = model:getDdpRewardList()
+    local item_h = 93
+    local _h = math.max(self.tab_view:getContentSize().height,(#self.tab_list+0.4)*(item_h+6))
+    local _y = 0
+    self.tab_view:setInnerContainerSize(cc.size(self.tab_view:getContentSize().width,_h))
+    for i = 1, #self.tab_list do
+        if i <= self.choose_index then
+            self.tab_list[i]:setPositionY(_h-(i-1)*(self.tab_list[i]:getContentSize().height+6))
+        else
+            self.tab_list[i]:setPositionY(_h-(i-0.8)*(self.tab_list[i]:getContentSize().height+6))
+        end
+        if i == self.choose_index then
+            self.tab_list[i]:setScale(1.2)
+            _y = self.tab_list[i]:getPositionY()
+        else
+            self.tab_list[i]:setScale(1)
+        end
+    end
+    if status then
+        local scroll_y = self.tab_view:getContentSize().height - _y
+        if scroll_y > 0 then
+            scroll_y = 0
+        end
+        self.tab_view:getInnerContainer():setPositionY(scroll_y)
+    else
+        self.tab_view:getInnerContainer():setPositionY(self_y)
+    end
+    if mod_cfg[self.choose_index] then
+        setChildUnEnabled(false,self.btn_go)
+    else
+        setChildUnEnabled(true,self.btn_go)
+    end
+    if self.choose_index > #mod_cfg then
+        self.btn_go:setVisible(false)
+        self.finish_img:setVisible(true)
+        self.choose_index = #mod_cfg
+    else
+        self.btn_go:setVisible(true)
+        self.finish_img:setVisible(false)
+    end
+    self:setItemData()
+end
+
+function ActionDdpPanel:updateTimeInfo()
+    doStopAllActions(self.act_time)
+    local now_time = GameNet:getInstance():getTime()
+    local end_time = self.ddp_action_list.end_time
+    local left_time = end_time - now_time
+    controller:getModel():setCountDownTime(self.act_time, left_time)
+end
+
+function ActionDdpPanel:setVisibleStatus(status)
+    if not status then
+        if self.game_item then
+            self.game_item:DeleteMe()
+            self.game_item:removeFromParent()
+            self.game_item = nil
+        end
+        if self.action_panel then
+            self.action_panel:setVisible(false)
+        end
+        self:setVisible(false)
+    else
+        self:setVisible(true)
+    end
+    GlobalEvent:getInstance():Fire(ActionEvent.DdpHideBackEvent, true)
+end
+function ActionDdpPanel:register_event()
+    if not self.update_ddp_data_event then
+        self.update_ddp_data_event = GlobalEvent:getInstance():Bind(ActionEvent.UpdateDdpData, function()
+            self.ddp_action_list = model:getDdpList()
+            if not self.ddp_action_list or not next(self.ddp_action_list) then return end
+            self.activity_data = model:getDdpRewardList()
+            self.choose_index = #self.activity_data + 1
+            for i = 1, #self.activity_data do
+                if self.activity_data[i] and next(self.activity_data[i]) then
+                    if self.activity_data[i].finish_award == 0 or self.activity_data[i].challenge_award == 0 then
+                        self.choose_index = i
+                        break
+                    end
+                else
+                    self.choose_index = i
+                    break
+                end
+            end
+            self:updateTimeInfo()
+            self:updateTabView(true)
+            self:updateDdpProgress()
+            if self.game_item then
+                self.game_item:DeleteMe()
+                self.game_item:removeFromParent()
+                self.game_item = nil
+            end
+            self.action_panel:setVisible(false)
+            GlobalEvent:getInstance():Fire(ActionEvent.DdpHideBackEvent, true)
+            -- controller:openDdpGameWindow(false)
+        end)
+    end
+    if not self.change_ddp_event then
+        self.change_ddp_event = GlobalEvent:getInstance():Bind(ActionEvent.ChangeDdpEvent, function(index)
+            if not index then return end
+            self.choose_index = index
+            self:updateTabView(false)
+        end)
+    end
+    -- 帮助说明
+    registerButtonEventListener(self.help_btn, function(param, sender, event_type)
+        local config = Config.HolidayFlopData.data_const
+        local rule_txt = config["rule_txt"].val
+        TipsManager:getInstance():showCommonTips(rule_txt, sender:getTouchBeganPosition(), nil, nil, 500)
+    end, true, 1)
+    
+    -- 返回按钮
+    registerButtonEventListener(self.back_btn, function(param, sender, event_type)
+        self:ddpFinishGame()
+    end, true, 1)
+
+    if not self.ddp_game_fail_event then
+        self.ddp_game_fail_event = GlobalEvent:getInstance():Bind(ActionEvent.DdpGameFailEvent, function()
+            controller:openActionDdpFailPanel(true)
+            self:ddpFinishGame()
+        end)
+    end
+    registerButtonEventListener(self.btn_go, function(param, sender, event_type)
+        -- 开始游戏（传入choose_index）
+        local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+        local campid = tabvo.camp_id -- 活动的唯一Id
+        local flop_cfg = Config.HolidayFlopData.data_flop_act_list[campid]
+        local mod_info = Config.HolidayFlopData.data_mod_info[flop_cfg.mod_id][self.choose_index]
+        if not mod_info then
+            message(TI18N("语言_c_59"))
+            return
+        end
+        if not self.game_item then
+            self.game_item = ActionDdpGameWindow.new(campid, self.choose_index, self.holiday_bid)
+            self.game_panel:addChild(self.game_item, 5)
+        end
+        self.action_panel:setVisible(true)
+        GlobalEvent:getInstance():Fire(ActionEvent.DdpHideBackEvent, false)
+    end, true, 1)
+    
+    registerButtonEventListener(self.war_btn, function()
+        controller:openActionDdpOrderPanel(true)
+    end ,false, 2)
+end
+function ActionDdpPanel:ddpFinishGame()
+    if self.game_item then
+        self.game_item:DeleteMe()
+        self.game_item:removeFromParent()
+        self.game_item = nil
+    end
+    self.action_panel:setVisible(false)
+    
+    GlobalEvent:getInstance():Fire(ActionEvent.DdpHideBackEvent, true)
+end
+-- 刷新进度条显示
+function ActionDdpPanel:getDdpProgressData()
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local cfg = {}
+    local award_config = deepCopy(Config.HolidayFlopData.data_war_order_info[campid])
+    local score = model:getDdpWarScore()
+    local id = 0
+    for i = tableLen(award_config), 1, -1 do
+        if score >= award_config[i].score then
+            id = award_config[i].level
+            break
+        end
+    end
+    if id > tableLen(award_config) - 3 then
+        id = tableLen(award_config) - 3
+    end
+    for k, v in pairs(award_config) do
+        if v.level > id then
+            table.insert(cfg,v)
+            if tableLen(cfg) >= 3 then
+                break
+            end
+        end
+    end
+    return cfg
+end
+function ActionDdpPanel:updateDdpProgress()
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    local campid = tabvo.camp_id -- 活动的唯一Id
+    local flop_cfg = Config.HolidayFlopData.data_flop_act_list[campid]
+    if flop_cfg and flop_cfg.war_order_show == 0 then
+        self.progress_panel:setVisible(true)
+    else
+        self.progress_panel:setVisible(false)
+        return
+    end
+    local cfg = self:getDdpProgressData()
+    self:updateWarProgress(cfg)
+    self:setTurkeyWarBtnRed()
+    local cfg = flop_cfg.show_item[1]
+    if not self.war_item then
+        self.war_item = BackPackItem.new(true, false, false, 0.5)
+        self.war_btn:addChild(self.war_item)
+    end
+    self.war_item:setPosition(cc.p(30, 30))
+    self.war_item:setBaseData(cfg[1], cfg[2])
+    local war_str = ""
+    if flop_cfg and flop_cfg.war_order_out_title then
+        war_str = flop_cfg.war_order_out_title
+    end
+    self.war_txt:setString(war_str)
+end
+
+function ActionDdpPanel:setTurkeyWarBtnRed()
+    addRedPointToNodeByStatus(self.war_btn,model:getDdpWarRed(),10,10)
+end
+
+function ActionDdpPanel:updateWarProgress(award_config)
+    local score = model:getDdpWarScore()
+	local start_y = 80
+	local distance_y = 300
+	if award_config then
+        self.progress_panel:setVisible(true)
+		local offset_y = (distance_y - start_y + 0)/(#award_config-1)
+		for i,v in ipairs(award_config) do
+			local item = self.award_item_list[i]
+			local pos_y = start_y + (i-1)*offset_y
+			if item == nil then
+				item = BackPackItem.new(true, true, false, 0.5)
+				self.progress_panel:addChild(item)
+				self.award_item_list[i] = item
+            end
+            local item = self.award_item_list[i]
+            item:setPosition(cc.p(16.5, pos_y))
+            item:setData(v.free_award[1])
+            item:showNumLabel(true)
+            item:showRedPoint(false)
+            item:setDefaultTip(true)
+            item:setNumSacl(1.5)
+
+			if not self.arriveLuckly_label[i] and self.award_item_list[i] then
+				self.arriveLuckly_label[i] = createLabel(22,cc.c3b(0xf4,0xee,0xd3),cc.c3b(0x00,0x00,0x00),10,pos_y-40,"",self.progress_panel,2, cc.p(0.5,0.5))
+			end
+			if self.arriveLuckly_label[i] then
+				self.arriveLuckly_label[i]:setString(v.score)
+				self.arriveLuckly_label[i]:setScale(1)
+			end
+		end
+
+		-- 计算进度条
+		local last_times = 0
+		local progress_width = 300
+		local first_off = start_y-0 -- 0到第一个的距离
+		local distance = 0
+		for i,v in ipairs(award_config) do
+			if i == 1 then
+				if score <= v.score then
+					distance = (score/v.score)*first_off
+					break
+				else
+					distance = first_off
+				end
+			else
+				if score <= v.score then
+					distance = distance + ((score-last_times)/(v.score-last_times))*offset_y
+					break
+				else
+					distance = distance + offset_y
+				end
+			end
+			last_times = v.score
+		end
+		self.progress:setPercent(distance/progress_width*100)
+
+		if not self.num_label then
+			self.num_label = createLabel(22,cc.c3b(0xf4,0xee,0xd3),cc.c3b(0x00,0x00,0x00),55,-17,"",self.progress_panel,2, cc.p(1,0.5))
+		end
+		self.num_label:setString(TI18N("语言_c_489")..":"..score)
+	end
+end
+function ActionDdpPanel:DeleteMe()
+    doStopAllActions(self.act_time)
+    if self.update_ddp_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_ddp_data_event)
+        self.update_ddp_data_event = nil
+    end
+    if self.change_ddp_event then
+        GlobalEvent:getInstance():UnBind(self.change_ddp_event)
+        self.change_ddp_event = nil
+    end
+    if self.ddp_game_fail_event then
+        GlobalEvent:getInstance():UnBind(self.ddp_game_fail_event)
+        self.ddp_game_fail_event = nil
+    end
+
+    if self.background_load then
+        self.background_load:DeleteMe()
+        self.background_load = nil
+    end
+    if self.banner_load then
+        self.banner_load:DeleteMe()
+        self.banner_load = nil
+    end
+    if self.item_scrollview1 then
+        self.item_scrollview1:DeleteMe()
+        self.item_scrollview1 = nil
+    end
+    if self.item_scrollview2 then
+        self.item_scrollview2:DeleteMe()
+        self.item_scrollview2 = nil
+    end
+    if self.game_item then
+        self.game_item:DeleteMe()
+        self.game_item:removeFromParent()
+        self.game_item = nil
+    end
+end
+
+---------------------@ 子项
+
+ActionDdpRewardItem = class("ActionDdpRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionDdpRewardItem:ctor()
+    self.name_color = {
+        [1]=cc.c3b(0x4b,0xdd,0x2a),
+        [2]=cc.c3b(0x0e,0xff,0xb0),
+        [3]=cc.c3b(0x07,0xd9,0xff),
+        [4]=cc.c3b(0x54,0x80,0xff),
+        [5]=cc.c3b(0xea,0x39,0xff),
+        [6]=cc.c3b(0xff,0xc6,0x3e),
+        [7]=cc.c3b(0xff,0x0f,0x0f),
+    }
+    self.img_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function ActionDdpRewardItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_ddp_panel_item"))
+    self:addChild(self.root_wnd)
+    -- self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(168, 93))
+    self:setAnchorPoint(0, 1)
+
+    self.container = self.root_wnd:getChildByName("container")
+    self.container:setSwallowTouches(false)
+    self.item_bg = self.container:getChildByName("item_bg")
+    self.name = self.container:getChildByName("name")
+    self.tips = self.container:getChildByName("tips")
+    self.tip_txt = self.container:getChildByName("tip_txt")
+    self.num_x = CommonNum.new(27, self.container, 99999, - 2, cc.p(0.5, 0.5),4)
+    self.num = CommonNum.new(27, self.container, 99999, - 2, cc.p(0.5, 0.5),4)
+    self.num:setNum("+")
+    self.num_y = CommonNum.new(27, self.container, 99999, - 2, cc.p(0.5, 0.5),4)
+    self.num_x:setPosition(cc.p(14, 34))
+    self.num:setPosition(cc.p(42, 27))
+    self.num:setRotation(45)
+    self.num_y:setPosition(cc.p(59, 34))
+    self.num_x:setScale(0.8)
+    self.num_y:setScale(0.8)
+    self.num:setScale(0.8)
+end
+
+function ActionDdpRewardItem:register_event()
+    self.container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click =
+                    math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                    math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                GlobalEvent:getInstance():Fire(ActionEvent.ChangeDdpEvent, self.data.difficulty_id)
+            end
+            elseif event_type == ccui.TouchEventType.moved then
+            elseif event_type == ccui.TouchEventType.began then
+                self.touch_began = sender:getTouchBeganPosition()
+            elseif event_type == ccui.TouchEventType.canceled then
+            end
+    end)
+end
+
+function ActionDdpRewardItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    if self.name_color[self.data.difficulty_id] then
+        self.name:setTextColor(self.name_color[self.data.difficulty_id])
+    else
+        self.name:setTextColor(self.name_color[#self.name_color])
+    end
+    self.name:setString(data.difficulty_name)
+    self.tips:setVisible(model:getDdpIsClearance(self.data.difficulty_id))
+    self.tip_txt:setVisible(model:getDdpIsClearance(self.data.difficulty_id))
+    self.tip_txt:setChangeScaleOffWidth(self.container:getContentSize().width - 70)
+    local reward_list = model:getDdpRewardList()
+    if reward_list and reward_list[self.data.difficulty_id] and reward_list[self.data.difficulty_id].challenge_award and reward_list[self.data.difficulty_id].challenge_award == 1 then
+        self.tip_txt:setString(TI18N("语言_c_4993"))
+    else
+        self.tip_txt:setString(TI18N("语言_c_1065"))
+    end
+    self.num_x:setNum(self.data.dispose[1])
+    self.num_y:setNum(self.data.dispose[2])
+    self.item_bg:loadTexture(PathTool.getResFrame("pairtopair", data.banner))
+    if next(self.data.play_param) then
+        for k, v in pairs(self.data.play_param) do
+            if v and type(v) == "table" and v[1] == DdpSpecialType.Time then
+                if not self.timer_img then
+                    self.timer_img = createSprite(PathTool.getResFrame("pairtopair", "pairtopair_10"),0,16,self.container,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+                    table.insert(self.img_list,self.timer_img)
+                end
+            end
+        end
+    end
+	if next(self.img_list) then
+		for i=1, tableLen(self.img_list) do
+        	self.img_list[i]:setPositionX(58 + i*40)
+    	end
+	end
+end
+
+function ActionDdpRewardItem:DeleteMe()
+    
+    if self.num then
+        self.num:DeleteMe()
+    end
+    self.num = nil
+    self:removeAllChildren()
+    self:removeFromParent()
+end

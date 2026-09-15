@@ -1,0 +1,405 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      成长基金
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+ActionNewGrowFundPanel = class("ActionNewGrowFundPanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local controller = ActionController:getInstance()
+local welf_model = WelfareController:getInstance():getModel()
+
+function ActionNewGrowFundPanel:ctor(bid,type)
+	self.touch_buy_growfund = true
+	self.holiday_bid = bid
+	self.type = type
+	self.item_list = {}
+	self:configUI()
+	self:register_event()
+	if controller:getModel():getNewGrowFundFirst() and welf_model:getGrowNewFundHide() then
+		controller:sender16809(ActionStorageBool.NewGrowFund,1,"")
+	end
+end
+
+function ActionNewGrowFundPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_new_grow_fund_panel"))
+	self.root_wnd:setPosition(-40,-148)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0,0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+	self.buy_condition_txt = self.main_container:getChildByName("buy_condition_txt")
+	setTextMaxWidth(self.buy_condition_txt,700,-10)
+	self.buy_condition_txt:setString(TI18N("语言_c_6974"))
+	self.buy_condition_txt:setVisible(false)
+	self.days_txt = createRichLabel(24,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(600,30),-10,nil,230)
+	self.main_container:addChild(self.days_txt)
+	self.days_txt:setVisible(false)
+	self.challenge_btn = self.main_container:getChildByName("challenge_btn")
+	self.challenge_btn_label = self.challenge_btn:getChildByName("label")
+	self.challenge_btn:setVisible(false)
+
+	self.item = self.root_wnd:getChildByName("item")
+	self.item:setVisible(false)
+
+	self.goods_con = self.main_container:getChildByName("goods_con")
+
+	self.empty_tips = self.main_container:getChildByName("empty_tips")
+	self.empty_tips:getChildByName("label"):setString(TI18N("语言_c_6978"))
+
+    self.title_con = self.main_container:getChildByName("title_con")
+	self.title_img = self.title_con:getChildByName("title_img")
+	self.tip_img = self.title_con:getChildByName("tip_img")
+    self.btn_rule = self.title_con:getChildByName("btn_rule")
+    local res = PathTool.getTargetRes("bigbg/action","action_grow_fund_2_title",false,false)
+    if not self.resources_load then
+        self.resources_load = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(self.title_img) then
+                loadSpriteTexture(self.title_img, res, LOADTEXT_TYPE)
+            end
+        end)
+    end
+	local res = PathTool.getTargetRes("bigbg/action","txt_cn_action_grow_fund_2_title",false,false)
+    if not self.resources_load2 then
+        self.resources_load2 = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(self.tip_img) then
+                loadSpriteTexture(self.tip_img, res, LOADTEXT_TYPE)
+            end
+        end)
+    end
+end
+
+function ActionNewGrowFundPanel:register_event()
+    self.challenge_btn:addTouchEventListener(function(sender, event_type)
+		customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+			if self.charge_id then
+				local config = Config.ChargeData.data_charge_data[self.charge_id]
+				if config and self.touch_buy_growfund == true then
+					self.touch_buy_growfund = nil
+					sdkOnPay(config.val, nil, config.id, config.name)
+					if self.send_buy_growfund_ticket == nil then
+						self.send_buy_growfund_ticket = GlobalTimeTicket:getInstance():add(function()
+							self.touch_buy_growfund = true
+							if self.send_buy_growfund_ticket ~= nil then
+								GlobalTimeTicket:getInstance():remove(self.send_buy_growfund_ticket)
+								self.send_buy_growfund_ticket = nil
+							end
+						end,2)
+					end
+				end
+			end
+        end
+    end)
+	registerButtonEventListener(self.btn_rule, function(param,sender, event_type)
+		TipsManager:getInstance():showCommonTips(TI18N("语言_c_6977"), sender:getTouchBeganPosition(),nil,nil,500)
+    end ,false)
+    if not self.update_action_even_event then
+        self.update_action_even_event = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE,function(data)
+            if data.bid == self.holiday_bid then
+                self:createList(data)
+				self:checkTabIconStatus()
+            end
+        end)
+    end
+end
+
+function ActionNewGrowFundPanel:checkTabIconStatus(data)
+	--未激活的时候
+	if SysEnv:getInstance():getBool(SysEnv.keys.new_grow_fund_redpoint) then
+		controller:setHolidayStatus(self.holiday_bid, false)
+		if self.holiday_bid == ActionSpecialID.growNewFund then
+			WelfareController:getInstance():setWelfareStatus(ActionSpecialID.growNewFund, false)
+		end
+		SysEnv:getInstance():set(SysEnv.keys.new_grow_fund_redpoint, false)
+	end
+end
+
+function ActionNewGrowFundPanel:createList(data)
+	if tolua.isnull(self.challenge_btn) then return end
+	if data == nil or data.aim_list == nil then return end
+	local old_buy = keyfind('args_key', 1, data.args) and keyfind('args_key', 1, data.args).args_val == 1 or false --旧的钱包是否购买
+	self.charge_id = keyfind('args_key', 2, data.args) and keyfind('args_key', 2, data.args).args_val or 0 --充值id
+	local can_buy = (data.finish == FALSE and (next(data.aim_list) ~= nil) or not old_buy)
+	-- if self.challenge_btn_status ~= can_buy then
+		self.challenge_btn_status = can_buy
+		if can_buy == false then
+			setChildUnEnabled(true, self.challenge_btn) 
+			self.challenge_btn:setTouchEnabled(false) 
+			self.challenge_btn_label:disableEffect()
+			self.challenge_btn_label:setString(TI18N("语言_c_1640"))
+			self.challenge_btn:setVisible(true)
+			self.buy_condition_txt:setVisible(false)
+			self.days_txt:setVisible(true)
+			self.days_txt:setString(string.format(TI18N("语言_c_6975"),data.finish))
+		else
+			self.days_txt:setVisible(false)
+			if old_buy then
+				setChildUnEnabled(false, self.challenge_btn) 
+				self.challenge_btn:setTouchEnabled(true) 
+				self.challenge_btn_label:enableOutline(Config.ColorData.data_color4[277], 2)
+				local config = Config.ChargeData.data_charge_data[self.charge_id]
+				local val = 88
+				if config then
+					val = GetMoneyNum(config,"val")
+				end
+				local label_str = string.format(TI18N("语言_c_4441"),val)
+				self.challenge_btn_label:setString(label_str)
+				self.challenge_btn:setVisible(true)
+				self.buy_condition_txt:setVisible(false)
+			else
+				self.challenge_btn:setVisible(false)
+				self.buy_condition_txt:setVisible(true)
+			end
+		end
+	-- end
+
+	local item_list = {}
+	for i,v in ipairs(data.aim_list) do
+		v.sort_index = 0
+		if v.status == ActionStatus.un_finish then
+			v.sort_index = 1
+		elseif v.status == ActionStatus.finish then
+			v.sort_index = 0
+		elseif v.status == ActionStatus.completed then
+			v.sort_index = 2
+		end
+		v.finish = data.finish --已购买天数
+		v.old_buy = keyfind('args_key', 1, data.args).args_val == 1 --旧的钱包是否购买
+		table_insert(item_list, v)
+	end
+	local sort_func = SortTools.tableLowerSorter({"aim"})
+	table_sort(item_list, sort_func)
+	for i=1, tableLen(item_list) do
+		if item_list[i] then
+			item_list[i].index = i
+		end
+	end
+	if next(item_list) == nil then
+		self.empty_tips:setVisible(true)
+		if self.scroll_view then
+			self.scroll_view:setVisible(false)
+		end
+		self.days_txt:setVisible(false)
+		self.buy_condition_txt:setVisible(false)
+	else
+		local sort_func = SortTools.tableLowerSorter({"sort_index", "aim"})
+		table_sort(item_list, sort_func)
+		if self.scroll_view == nil then
+			local size = self.goods_con:getContentSize()
+			local setting = {
+				item_class = ActionNewGrowFundItem,
+				start_x = 8,
+				space_x = 4,
+				start_y = 4,
+				space_y = 2,
+				item_width = 678,
+				item_height = 90,
+				row = 0,
+				col = 1,
+				need_dynamic = true
+			}
+			self.scroll_view = CommonScrollViewLayout.new(self.goods_con, nil, nil, nil, size, setting)
+		end
+		local function callback(data)
+			if data and data.aim then
+				controller:cs16604(self.holiday_bid, data.aim, 0)
+			end
+		end
+		self.scroll_view:setData(item_list, callback, nil, self.item) 
+
+		self.empty_tips:setVisible(false)
+		self.scroll_view:setVisible(true)
+	end
+	local max_num = 0
+	for k, v in ipairs(item_list) do
+		local num = keyfind('aim_args_key', 4, v.aim_args).aim_args_val
+		max_num = math.max(max_num, num)
+	end
+	if data.finish > max_num then
+		self.days_txt:setVisible(false)
+	end
+end
+
+function ActionNewGrowFundPanel:setVisibleStatus(status)
+    self:setVisible(status)
+    if status then
+		if self.scroll_view == nil then
+        	ActionController:getInstance():cs16603(self.holiday_bid)
+		end
+		if controller:getModel():getNewGrowFundFirst() and welf_model:getGrowNewFundHide() then
+			controller:sender16809(ActionStorageBool.NewGrowFund,1,"")
+		end
+    end
+end
+
+function ActionNewGrowFundPanel:DeleteMe()
+	if self.update_action_even_event then
+		GlobalEvent:getInstance():UnBind(self.update_action_even_event)
+		self.update_action_even_event = nil
+	end
+	if self.send_buy_growfund_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.send_buy_growfund_ticket)
+        self.send_buy_growfund_ticket = nil
+    end
+	if self.scroll_view then
+		self.scroll_view:DeleteMe()
+	end
+	self.scroll_view = nil
+
+	if self.resources_load then
+		self.resources_load:DeleteMe()
+	end
+	self.resources_load = nil
+	if self.resources_load2 then
+		self.resources_load2:DeleteMe()
+	end
+	self.resources_load2 = nil
+end
+
+
+ActionNewGrowFundItem = class("ActionNewGrowFundItem", function()
+	return ccui.Layout:create()
+end)
+
+function ActionNewGrowFundItem:ctor()
+    self.is_completed = false
+end
+
+--==============================--
+--desc:设置扩展参数  {node = self.item, count = self.interaction_count} 
+--time:2018-07-16 09:40:01
+--@data:
+--@return 
+--==============================--
+function ActionNewGrowFundItem:setExtendData(node)	
+	if not tolua.isnull(node) and self.root_wnd == nil then
+		self.is_completed = true
+		local size = node:getContentSize()
+		self:setAnchorPoint(cc.p(0.5, 0.5))
+		self:setContentSize(size)
+		
+		self.root_wnd = node:clone()
+		self.root_wnd:setVisible(true)
+		self.root_wnd:setAnchorPoint(0.5, 0.5)
+		self.root_wnd:setPosition(size.width * 0.5, size.height * 0.5)
+		self:addChild(self.root_wnd)
+
+		self.title_bg = self.root_wnd:getChildByName("title_bg")
+		self.title = self.root_wnd:getChildByName("title")
+		setTextMaxWidth(self.title,160)
+
+		self.get_btn = self.root_wnd:getChildByName("get_btn")
+		self.get_btn_label = self.get_btn:getChildByName("label")
+		self.get_btn_label:setString(TI18N("语言_c_109"))
+
+		self.item_icon_1 = self.root_wnd:getChildByName("item_icon_1")
+		self.item_icon_2 = self.root_wnd:getChildByName("item_icon_2")
+		self.item_value_1 = self.root_wnd:getChildByName("item_value_1")
+		self.item_value_2 = self.root_wnd:getChildByName("item_value_2")
+
+		self.pass_icon = self.root_wnd:getChildByName("pass_icon")
+		self.ccondition_txt = self.root_wnd:getChildByName("ccondition_txt")
+		setTextMaxWidth(self.ccondition_txt,120,-4)
+		self.ccondition_txt:setVisible(false)
+
+		self:registerEvent()
+	end
+end
+
+function ActionNewGrowFundItem:registerEvent()
+    self.get_btn:addTouchEventListener(function(sender, event_type)
+		customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+			if self.call_back and self.data then
+				self.call_back(self.data)
+			end
+        end
+    end)
+end
+
+function ActionNewGrowFundItem:addCallBack(callback)
+	self.call_back = callback
+end
+
+function ActionNewGrowFundItem:setData(data)
+	if tolua.isnull(self.get_btn) then return end
+	if data then
+		self.data = data
+		self.title:setString(data.aim_str or "")
+		if data.status == ActionStatus.un_finish then
+			local need_day = keyfind('aim_args_key', 4, data.aim_args).aim_args_val
+			if data.finish > 0 and data.finish >= need_day then --已购买 满足登录天数
+				self.get_btn:setVisible(true)
+				setChildUnEnabled(true, self.get_btn) 
+				self.get_btn:setTouchEnabled(false) 
+				self.get_btn_label:disableEffect()
+				self.get_btn_label:setString(TI18N("语言_c_1154"))
+				self.ccondition_txt:setVisible(false)
+				self.pass_icon:setVisible(false)
+			else --未购买
+				self.get_btn:setVisible(false)
+				self.ccondition_txt:setVisible(true)
+				self.pass_icon:setVisible(false)
+				if data.index == 1 then
+					self.ccondition_txt:setString(TI18N("语言_c_6997"))
+				else
+					self.ccondition_txt:setString(string.format(TI18N("语言_c_6976"),need_day))
+				end
+			end
+			self.title_bg:setOpacity(255)
+		elseif data.status == ActionStatus.finish then
+			local need_day = keyfind('aim_args_key', 4, data.aim_args).aim_args_val
+			if data.finish > 0 and data.finish >= need_day then --已购买 满足登录天数
+				self.get_btn:setVisible(true)
+				setChildUnEnabled(false, self.get_btn) 
+				self.get_btn:setTouchEnabled(true) 
+				self.get_btn_label:enableOutline(Config.ColorData.data_color4[264],2) 
+				self.get_btn_label:setString(TI18N("语言_c_109"))
+				self.ccondition_txt:setVisible(false)
+				self.pass_icon:setVisible(false)
+			else --未购买
+				self.get_btn:setVisible(false)
+				self.ccondition_txt:setVisible(true)
+				if data.index == 1 then
+					self.ccondition_txt:setString(TI18N("语言_c_6997"))
+				else
+					self.ccondition_txt:setString(string.format(TI18N("语言_c_6976"),need_day))
+				end
+				self.pass_icon:setVisible(false)
+			end
+			self.title_bg:setOpacity(255)
+		elseif data.status == ActionStatus.completed then
+			self.title_bg:setOpacity(128)
+			self.get_btn:setVisible(false)
+			self.ccondition_txt:setVisible(false)
+			self.pass_icon:setVisible(true)
+		end
+
+		if data.item_list then
+			for i,v in ipairs(data.item_list) do
+				if self["item_icon_"..i] then
+					self["item_icon_"..i]:loadTexture(PathTool.getItemRes(v.bid), LOADTEXT_TYPE)
+				end
+				if self["item_value_"..i] then
+					self["item_value_"..i]:setString("x"..(v.num or 0))
+				end
+			end
+		end
+		
+	end
+end
+
+function ActionNewGrowFundItem:DeleteMe()
+	self:removeAllChildren()
+	self:removeFromParent()
+end 

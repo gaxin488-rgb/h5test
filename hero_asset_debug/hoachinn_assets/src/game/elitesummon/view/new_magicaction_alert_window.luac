@@ -1,0 +1,283 @@
+NewMagicActionAlertWindow = NewMagicActionAlertWindow or BaseClass(BaseView)
+local table_insert = table.insert
+local _controller = EliteSummonController:getInstance()
+local action_controller = ActionController:getInstance()
+local model = action_controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+function NewMagicActionAlertWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "elitesummon/new_magicaction_alert_window"
+    -- self.res_list = {
+    --     { path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"), type = ResourcesType.plist },
+    --     { path = PathTool.getPlistImgForDownLoad("hero", "hero"), type = ResourcesType.plist}
+    -- }
+    self.skill_item_list = {}
+end
+
+function NewMagicActionAlertWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_panel = self.main_container:getChildByName("main_panel")
+
+    self.model_icon = self.main_panel:getChildByName("model_icon")
+   
+    self.container = self.main_panel:getChildByName("container")
+    self.skill_container = self.container:getChildByName("skill_container")--技能列表
+    self.skill_container:setScrollBarEnabled(false)
+    self.skill_container:setTouchEnabled(false)
+    self.skill_container_size = self.skill_container:getContentSize()
+    self.hero_info = self.container:getChildByName("btn")
+    self.hero_name = self.hero_info:getChildByName("btn_txt")
+    self.hero_name:setTouchEnabled(true)
+    self.camp_icon = self.hero_info:getChildByName("title")
+    self.check_box = self.main_panel:getChildByName("checkbox")
+    self.tips_panel = self.container:getChildByName("tips_panel")
+    self.check_box:getChildByName("name"):setString(TI18N("语言_c_6054"))
+    local t_width = self.check_box:getChildByName("name"):getContentSize().width
+    self.check_box:setPositionX(self.check_box:getPositionX() - t_width)
+    self.time_txt = self.main_panel:getChildByName("time_txt")
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.exclusive_prop_node = self.main_panel:getChildByName("exclusive_prop_node")
+    self.exclusive_prop_node:setVisible(false)
+    local item = ExclusiveItem.new()
+    self.exclusive_prop_node:addChild(item)
+    self.exclusive_prop_node.itemIcon = item
+end
+
+function NewMagicActionAlertWindow:openRootWnd(bid)
+    MonopolyController:getInstance():sender16811(ActionStorageBool2.MagicSummon)
+    self.holiday_bid = bid
+	self.tab_vo = action_controller:getActionSubTabVo(bid)
+    local config = Config.RecruitHolidayMagicData.data_action[self.tab_vo.camp_id]
+    local check_box_status = _controller:getModel():getAlertStatus(self.tab_vo.camp_id)
+    self.check_box:setSelected(check_box_status)
+    if not config then return end
+    local show_info = config.flash_show
+    if show_info and show_info[1] then
+        local hero_id = show_info[1][1]
+        local res_id = show_info[1][2]
+        local scale = show_info[1][3]
+        local pos_x = show_info[1][4]
+        local pos_y = show_info[1][5]
+        self:setTitleInfo(hero_id,res_id,scale,pos_x,pos_y)
+        self:initSkill(hero_id)
+        self:setTime()
+        local status = _controller:getModel():getAlertStatus(self.tab_vo.camp_id)
+        if status == true then
+            self.check_box:setSelected(false)
+        else
+            self.check_box:setSelected(true)
+        end
+        self:updateExclusivePropItem(hero_id)
+    end
+end
+
+function NewMagicActionAlertWindow:updateExclusivePropItem(hero_id)
+    if not Config.PartnerSoulData then
+        require "config.partner_soul_data"
+    end
+    if not Config.PartnerSoulData then return end
+    local showsoul_limit_level = Config.PartnerSoulData.data_const["showsoul_limit_level"]
+    if showsoul_limit_level and showsoul_limit_level.val > role_vo.lev then return end
+    if not hero_id then return end
+    local h_cfg = Config.PartnerData.data_partner_base_fun(hero_id)
+    local horcruxes = h_cfg.horcruxes
+    local hro_cfg = Config.PartnerSoulData.data_soul_level[horcruxes]
+    local data = {id = horcruxes, lev = tableLen(hro_cfg), score_val = hro_cfg[tableLen(hro_cfg)].score}
+    local limit_cfg = Config.PartnerSoulData.data_const["entrance_lv"]
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("partner_soul_data")
+    if h_cfg.horcruxes_show == 0 and not table.indexof(nohideIds,horcruxes) then
+        self.exclusive_prop_node:setVisible(false)
+    else
+        if horcruxes and horcruxes ~= 0 and limit_cfg and limit_cfg.val <= role_vo.lev then
+            local unlock_star = Config.PartnerSoulData.data_const["open_star_condition"].val
+            local unlock_tower = Config.PartnerSoulData.data_const["open_tower_layers"].val
+            local now_tower = StartowerController:getInstance():getModel():getNowTowerId() or 0
+            self.exclusive_prop_node:setVisible(true)
+            local soul_base_cfg = Config.PartnerSoulData.data_base_info[horcruxes]
+            if not soul_base_cfg then
+                return
+            end
+            local quality = 0
+            if soul_base_cfg.quality >= 0 and soul_base_cfg.quality <= 5 then
+                quality = soul_base_cfg.quality
+            end
+            local res_id = PathTool.getQualityBg(soul_base_cfg.quality)
+
+            local item_data = {}
+            item_data.is_lock = false
+            item_data.bg = res_id
+            item_data.icon = PathTool.getSoulHorcruxIcon(soul_base_cfg.icon)
+            item_data.lev = data.lev
+            item_data.callback = function()
+                self:onClickExclusivePropItem(hero_id)
+            end
+            self.exclusive_prop_node.itemIcon:setData(item_data)
+        else
+            self.exclusive_prop_node:setVisible(false)
+        end
+    end
+end
+function NewMagicActionAlertWindow:onClickExclusivePropItem(hero_id)
+    if not hero_id then return end
+    local h_cfg = Config.PartnerData.data_partner_base_fun(hero_id)
+    local hro_cfg = Config.PartnerSoulData.data_soul_level[h_cfg.horcruxes]
+    hro_cfg = hro_cfg[tableLen(hro_cfg)]
+    local list = {}
+    list.bid = hero_id
+    list.star = 5
+    list.hid = h_cfg.horcruxes
+    list.h_lev = hro_cfg.lev
+    list.h_score = hro_cfg.score
+    local data = {panel_type = HERO_SOUL_TYPE, hero_vo = list, is_lock = false}
+    HeroController:getInstance():openExclusivePropsPanel(true, data)
+end
+function NewMagicActionAlertWindow:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        _controller:openNewSummonAlertWindow(false)
+    end, true, 2)
+    -- 七天登录信息
+    -- if self.update_status == nil then
+    --     self.update_status = GlobalEvent:getInstance():Bind(ActionEvent.ArtmisAction, function(data)
+	-- 		self.activityInfo = data
+    --         self:updateRewardList()
+    --         self.use_btn:setTouchEnabled(true)
+    --     end)
+    -- end
+    self:registerCheckBoxEvent(self.check_box)
+end
+function NewMagicActionAlertWindow:registerCheckBoxEvent(btn)
+    if not btn then return end
+	btn:addEventListener(function(sender,event_type)
+	    if event_type == ccui.CheckBoxEventType.selected then
+            playButtonSound2()
+            _controller:getModel():setAlertStatus(false,self.tab_vo.camp_id)
+	        btn:setSelected(true)
+	    elseif event_type == ccui.CheckBoxEventType.unselected then 
+            playButtonSound2()
+            _controller:getModel():setAlertStatus(true,self.tab_vo.camp_id)
+            btn:setSelected(false)
+	    end
+    end)
+end
+
+function NewMagicActionAlertWindow:initSkill(id)
+    local hero_id = getNorKey(id, 13)
+    local star_config = Config.PartnerData.data_partner_star(hero_id)
+    if star_config == nil then return end
+    local skill_list = {}
+    for i,v in ipairs(star_config.skills) do
+        -- 不是普通攻击 1表示普通攻击
+        if v[1] ~= 1 then
+            table_insert(skill_list, v)
+        end
+    end
+    --技能item的宽度
+    local item_width = 88 + 14
+    local total_width = item_width * #skill_list
+    local max_width = math.max(self.skill_container_size.width, total_width)
+    self.skill_container:setInnerContainerSize(cc.size(max_width, self.skill_container_size.height))
+    for i,v in ipairs(self.skill_item_list) do
+        v:setVisible(false)
+    end
+    local x = 0
+    if total_width > self.skill_container_size.width then
+        --技能的总宽度大于 显示的宽度 就从左往右显示
+        x = 0
+    else
+        --否则从中从中间显示
+        x = (self.skill_container_size.width - total_width) * 0.5
+    end
+    for i,skill in ipairs(skill_list) do
+        local config = Config.SkillData.data_get_skill(skill[2])
+        if config then
+            if self.skill_item_list[i] == nil then
+                self.skill_item_list[i] = {}
+                self.skill_item_list[i] = SkillItem.new(true,true,true,0.75, true)
+                self.skill_container:addChild(self.skill_item_list[i])
+            end
+            self.skill_item_list[i]:setData(config)
+            self.skill_item_list[i]:setVisible(true)
+            if self.skill_item_list[i] and self.skill_item_list[i].setSkillSubscript then
+                self.skill_item_list[i]:setSkillSubscript(Config.PartnerData.data_partner_base[id].hurt_type)
+            end
+            self.skill_item_list[i]:setPosition( x + item_width * (i - 1) + item_width * 0.5, 88/2 + 6)
+        else 
+            print(string_format("@技能表id: %s 没发现", tostring(skill.skill_bid)))
+        end
+    end
+end
+
+function NewMagicActionAlertWindow:setTime( )
+    doStopAllActions(self.time_txt)
+    local action_info = _controller:getModel():getNewEliteActionDataByCampid(self.tab_vo.camp_id)
+    local endtime = action_info.end_time
+    local start_time = action_info.start_time
+    local str_time = string.format("%s-%s",TimeTool.getMD4(start_time),TimeTool.getMD4(endtime))
+    self.time_txt:setString(TI18N("语言_c_267")..str_time)
+end
+-- 设置展示
+function NewMagicActionAlertWindow:setTitleInfo(hero_id,res_id,scale,pos_x,pos_y)
+    local bg_res = PathTool.getPlistImgForDownLoad("ninjacontract",res_id, false)
+    if self.model_icon then
+        self.item_load = loadSpriteTextureFromCDN(self.model_icon, bg_res, ResourcesType.single, self.item_load)
+        self.model_icon:setScale(scale) 
+        self.model_icon:setPositionX(pos_x) 
+        self.model_icon:setPositionY(pos_y) 
+    end
+    local heroInfocfg = Config.PartnerData.data_partner_base[hero_id]
+    local heroName = heroInfocfg and heroInfocfg.name or ""
+    self.hero_name:setString(transformTextToShort(heroName,15))
+    addEvt2showAllTextTips(self.hero_name,heroName,15)
+
+
+    local camp_type = heroInfocfg and heroInfocfg.camp_type or 1
+    local res = PathTool.getHeroCampTypeIcon(camp_type)
+    loadSpriteTexture(self.camp_icon, res, LOADTEXT_TYPE_PLIST)
+
+    local hero_type = heroInfocfg.type or 4
+    local profession_res = PathTool.getPartnerTypeIcon(hero_type)
+    if not self.profession_icon then
+        self.profession_icon = createSprite(profession_res, -57, 19, self.tips_panel, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+        -- self.camp_img:setScale(0.7)
+    else
+        loadSpriteTexture(self.profession_icon, profession_res, LOADTEXT_TYPE_PLIST)
+    end
+
+    local intro = heroInfocfg.introduce_str
+    local hero_type_txt = PartnerConst.Hero_Type[heroInfocfg.type] or "" --f1d740
+    if not self.hero_desc then
+        self.hero_desc = createLabel(22, cc.c4b(0xf1, 0xd7, 0x40, 0xff), cc.c4b(0x00, 0x00, 0x00, 0xff), -33, 19, "", self.tips_panel, 2, cc.p(0, 0.5))
+    end
+    self.hero_desc:setString(hero_type_txt)
+    self.hero_desc:setScale(1)
+    if not self.hero_intro then
+        self.hero_intro = createLabel(22, cc.c4b(0xf1, 0xd7, 0x40, 0xff), cc.c4b(0x00, 0x00, 0x00, 0xff), 80, 19, "", self.tips_panel, 2, cc.p(0, 0.5))
+        -- self.hero_intro:setTouchEnabled(true)
+    end
+    self.hero_intro:setString(transformTextToShort(intro,20))
+    addEvt2showAllTextTips(self.hero_intro,intro,20)
+    self.hero_intro:setScale(1)
+
+end
+
+function NewMagicActionAlertWindow:close_callback()
+
+    doStopAllActions(self.time_txt)
+    if self.update_item ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_item)
+        self.update_item = nil
+    end
+    if self.update_status ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_status)
+        self.update_status = nil
+    end
+
+    _controller:openNewSummonAlertWindow(false)
+end
+

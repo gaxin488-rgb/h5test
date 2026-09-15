@@ -1,0 +1,165 @@
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+
+ElfinAttachSelectItem = class("ElfinAttachSelectItem", function()
+    return ccui.Widget:create()
+end)
+
+function ElfinAttachSelectItem:ctor(...)
+	self.size = cc.size(119, 169)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("elfin/elfin_attach_select_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+	self._root = self.root_wnd:getChildByName("_root")
+
+	self._elfinNode = self._root:getChildByName("_elfinNode")
+	self._attachNode = self._root:getChildByName("_attachNode")
+	self._mask = self._attachNode:getChildByName("_mask")
+	self._curSelect = self._attachNode:getChildByName("_curSelect")
+	self._attachIcon = self._attachNode:getChildByName("_attachIcon")
+	self.item_bg = self._attachNode:getChildByName("item_bg")
+	self.item_bg:setVisible(false)
+	self._status = self._attachNode:getChildByName("_status")
+	setTextMaxWidth(self._status,119,-4)
+	self._ui = self
+	
+	local ui = self._ui
+	ui._status:setString(TI18N(""))
+
+	ui._elfinItem = BackPackItem.new(false, true, nil, nil, nil, false)
+	ui._elfinNode:addChild(self._ui._elfinItem)
+	ui._elfinItem:addTouchEventCb(function (sender, event_type)
+		customClickAction_2(ui._attachNode, event_type)
+	end)
+
+	ui._elfinItem:addBtnCallBack(handler(self, self._onClickItem))
+end
+
+function ElfinAttachSelectItem:setData(data)
+	self._data = data
+	self:refresh()
+end
+
+function ElfinAttachSelectItem:refresh()
+	if not self._data then
+		return
+	end
+	local ui = self
+	ui._elfinItem:setData({bid = self._data.id})
+	if self._data.in_bag then
+		local num =  self._data.bag_data.quantity
+		ui._elfinItem:setSelfNum(num)
+	end
+	ui._elfinItem:showItemQualityName(true)
+	self:_updateStatus()
+	-- local
+end
+
+function ElfinAttachSelectItem:_updateStatus()
+	if not self._data then
+		return
+	end
+	local ui = self
+	local status = _model:getAttachStatus(self._data.targetId, self._data.id)
+
+	ui._mask:setVisible(false)
+	ui._status:setString("")
+	ui._attachIcon:setVisible(false)
+	ui._curSelect:setVisible(false)
+	self.item_bg:setVisible(false)
+
+	if self._data.in_attch then
+		ui._mask:setVisible(true)
+		local show_attch_id = self._data.show_attch_id
+		-- local targetId = _model:getAttachSrc(self._data.id)
+		-- local use_id = _model:getAttachElfinById(self._data.targetId)
+		if show_attch_id == self._data.targetId then
+			ui._curSelect:setVisible(true)
+		else
+			ui._status:setString(TI18N("语言_c_d_235"))
+			ui._attachIcon:setVisible(true)
+			self.item_bg:setVisible(true)
+			local item_config = Config.ItemData.data_get_data(show_attch_id)
+			if item_config then
+				local head_icon = PathTool.getItemRes(item_config.icon)
+				ui._attachIcon:loadTexture(head_icon, LOADTEXT_TYPE)
+			end
+		end
+	end
+
+	if self._data.in_form then
+		ui._mask:setVisible(true)
+		ui._status:setString(TI18N("语言_c_d_238"))
+	end
+
+	-- if status == ElfinConst.AttachStatus.Cur then
+	-- 	ui._mask:setVisible(true)
+	-- 	ui._curSelect:setVisible(true)
+	-- elseif status == ElfinConst.AttachStatus.Attach then
+	-- 	ui._mask:setVisible(true)
+	-- 	ui._status:setString(TI18N("语言_c_d_235"))
+	-- 	local targetId = _model:getAttachSrc(self._data.id)
+		
+	-- 	if targetId then
+	-- 		ui._attachIcon:setVisible(true)
+	-- 		local item_config = Config.ItemData.data_get_data(targetId)
+	-- 		if item_config then
+	-- 			local head_icon = PathTool.getItemRes(item_config.icon, false)
+	-- 			ui._attachIcon:loadTexture(head_icon, LOADTEXT_TYPE)
+	-- 		end
+	-- 	end
+	-- elseif status == ElfinConst.AttachStatus.InTeam then
+	-- 	ui._mask:setVisible(true)
+	-- 	ui._status:setString(TI18N("语言_c_d_238"))
+	-- elseif status == ElfinConst.AttachStatus.NoActive then
+	-- 	ui._mask:setVisible(true)
+	-- 	ui._status:setString(TI18N("语言_c_d_239"))
+	-- end
+	self.status = status
+end
+
+
+function ElfinAttachSelectItem:_onClickItem()
+	if not self._data then
+		return
+	end
+
+	local use_id = _model:getAttachElfinById(self._data.targetId)
+	if use_id == self._data.id then
+		if self._data.in_attch then
+			local show_attch_id = self._data.show_attch_id
+			if show_attch_id == self._data.targetId then
+				local elfin_cfg = Config.SpriteData.data_elfin_data(self._data.id)
+				local skillCfg = Config.SkillData.data_get_skill(elfin_cfg.soul_skill)
+				if skillCfg then
+					TipsManager:getInstance():showElfinAttachSkillTips(skillCfg, self._data)
+					return
+				end
+			else
+				message(TI18N("语言_c_7345"))
+				return
+			end
+		else
+			message(TI18N("语言_c_7345"))
+			return
+		end
+	end
+
+
+	local elfin_cfg = Config.SpriteData.data_elfin_data(self._data.id)
+	local skillCfg = Config.SkillData.data_get_skill(elfin_cfg.soul_skill)
+	if skillCfg then
+		TipsManager:getInstance():showElfinAttachSkillTips(skillCfg, self._data)
+	end
+end
+
+function ElfinAttachSelectItem:DeleteMe( )
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+

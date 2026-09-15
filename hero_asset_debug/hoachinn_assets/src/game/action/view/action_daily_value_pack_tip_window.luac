@@ -1,0 +1,140 @@
+--******** 文件说明 ********
+-- 
+-- @description: 每日超值礼包购买弹窗
+-- @DateTime:    2020-02-20
+-- *******************************
+ActionDailyValuePackTipWindow = ActionDailyValuePackTipWindow or BaseClass(BaseView)
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local config = Config.HolidayGetninjaData
+function ActionDailyValuePackTipWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "action/action_daily_value_pack_tip_window"
+    self.res_list = {
+        -- {path = PathTool.getPlistImgForDownLoad("neworderaction", "neworderaction_banner_1"), type = ResourcesType.single}
+    }
+end
+
+function ActionDailyValuePackTipWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2) 
+    self.Image_1 = self.main_container:getChildByName("Image_1")
+    self.title = self.main_container:getChildByName("title")
+    self.price = self.main_container:getChildByName("price")
+    self.Image_3 = self.main_container:getChildByName("Image_3")
+    self.goods = self.main_container:getChildByName("goods")
+    self.btn_ok = self.main_container:getChildByName("btn_ok")
+    self.btn_ok_txt = self.btn_ok:getChildByName("Text_6")
+    self.btn_ok_txt:setString(TI18N("语言_c_85"))
+    self.btn_no = self.main_container:getChildByName("btn_no")
+    self.btn_no_txt = self.btn_no:getChildByName("Text_6")
+    self.btn_no_txt:setString(TI18N("语言_c_62"))
+end
+
+function ActionDailyValuePackTipWindow:setData(data)
+    self.data = data
+    self.title:setString(data.aim_str)
+    self.Image_1:setContentSize(cc.size(self.title:getContentSize().width + 100,62))
+    local chargeId = data.aim_args[6].aim_args_val
+    local chargeCfg = Config.ChargeData.data_charge_data[chargeId]
+    local price = string.format(TI18N("语言_c_4440"), (GetMoneyNum(chargeCfg, "val")))
+    self.price:setString(price)
+    local image_width = math.max(self.price:getContentSize().width + 100,self.Image_3:getContentSize().width)
+    self.Image_3:setContentSize(cc.size(image_width,40))
+    local list = {}
+    local is_show_up_icon = {}
+    local addnum = 0
+    if chargeId then
+        addnum = model:getNewYearMoppingUseNum(chargeId)
+    end
+    for key, value in pairs(deepCopy(self.data.item_list)) do
+        local data = {}
+        if value.bid == 3 then
+            value.num = value.num * (1 + addnum*0.1)
+            if addnum ~= 0 then
+                is_show_up_icon[key] = true
+            end
+        end
+        table.insert(data,1,value.bid)
+        table.insert(data,2,value.num)        
+        table.insert(list,key,data)
+    end
+    local setting = {}
+    setting.scale = 1
+    setting.space_x = 5
+    setting.max_count = 4
+    setting.is_center = true
+    setting.is_get_status = false
+    setting.is_show_up_icon = is_show_up_icon
+    if self.good_scrollview then
+        for i,v in pairs(self.good_scrollview) do
+            if v then
+                v:DeleteMe()
+            end
+        end
+        self.good_scrollview = nil
+    end
+    self.good_scrollview = commonShowSingleRowItemList(self.goods, self.good_scrollview, list, setting)
+end
+function ActionDailyValuePackTipWindow:register_event()
+    registerButtonEventListener(self.btn_ok, function()
+        self:changeWarn()
+    end,true, 1)
+    registerButtonEventListener(self.btn_no, function()
+        controller:openActionDailyValuePackTipWindow(false)
+    end,true, 1)
+    -- self:addGlobalEvent(ActionEvent.NewYearMoppingUp_Discount, function ()
+    --     self:changeWarn()
+    -- end)
+    if self.coupon_change_event == nil then
+        self.coupon_change_event = GlobalEvent:getInstance():Bind(ActionEvent.NewYearMoppingData,function(key ,value) 
+            if self.data then
+                self:setData(self.data)
+            end
+        end)
+    end   
+end
+function ActionDailyValuePackTipWindow:changeWarn()
+    local charge_list = Config.ChargeData.data_charge_data
+    local charge_id = self.data.aim_args[6].aim_args_val
+    -- local charge_id = 1865
+    if charge_id and charge_list[charge_id] then
+        local config = charge_list[charge_id]
+        sdkOnPay(config.val, nil, config.id, config.name)
+    end
+end
+function ActionDailyValuePackTipWindow:openRootWnd(data)
+    self.act_data = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.NewYearMoppingUp)
+    if self.act_data then
+        self.camp_id = self.act_data.camp_id
+        self.const_cfg = Config.HolidayNewYearData.data_const[self.camp_id]
+    end
+    self:setData(data)
+end
+
+function ActionDailyValuePackTipWindow:DeleteMe()
+    if self.coupon_change_event then
+        self.coupon_change_event = GlobalEvent:getInstance():UnBind(self.coupon_change_event)
+        self.coupon_change_event = nil
+    end
+    if self.good_scrollview then
+        for i,v in pairs(self.good_scrollview) do
+            if v then
+                v:DeleteMe()
+            end
+        end
+        self.good_scrollview = nil
+    end
+end
+
+function ActionDailyValuePackTipWindow:close_callback()
+    if self.coupon_change_event then
+        self.coupon_change_event = GlobalEvent:getInstance():UnBind(self.coupon_change_event)
+        self.coupon_change_event = nil
+    end
+    controller:openActionDailyValuePackTipWindow(false)
+end

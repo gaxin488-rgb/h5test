@@ -1,0 +1,672 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--      金装铸魂
+-- <br/> 2018年11月15日
+-- --------------------------------------------------------------------
+HeroHighHquipHabSoulPanel = class("HeroHighHquipHabSoulPanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeroHighHquipHabSoulPanel:ctor(parent)  
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function HeroHighHquipHabSoulPanel:config()
+    self.star_list = {}
+    self.is_can_act = false
+    self.select_item_list = {}
+    self.cell_data_list = {}
+
+    self.add_exp_num = 0 --所选道具加的经验总值
+    self.to_next_lv_exp = 0 --到下一等级需要的经验值
+    self.max_soul_level = 1 --当前星级能到的最大铸魂等级
+    self.max_exp = 0 --当前星级能到的最大铸魂等级所需经验值
+    self.max_soul_lv_cfg = {} --当前星级能到的最大铸魂等级 每一级需要的经验值
+end
+
+function HeroHighHquipHabSoulPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_high_equip_soul_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.name_bg = self.main_container:getChildByName("name_bg")
+    self.help_btn = self.main_container:getChildByName("help_btn")
+    self.preview_btn = self.main_container:getChildByName("preview_btn")
+    self.preview_btn:getChildByName("label"):setString(TI18N("语言_c_6821"))
+    self.equip_eff = self.main_container:getChildByName("equip_eff")
+    local equip_name = self.main_container:getChildByName("equip_name")
+    equip_name:setVisible(false)
+    local posx = equip_name:getPositionX()
+    local posy = equip_name:getPositionY()
+    self.equip_name = createRichLabel(22, cc.c4b(0xff, 0xdd, 0x68, 0xff), cc.p(0.5, 0.5), cc.p(posx,posy))
+    self.main_container:addChild(self.equip_name)
+
+    self.star_layer = self.main_container:getChildByName("star_layer")
+    for i = 1, 6, 1 do
+        local _star = {}
+        local star = self.star_layer:getChildByName("star_"..i)
+        local select = star:getChildByName("star_select")
+        local unselect = star:getChildByName("star_unselect")
+        _star.select = select
+        _star.unselect = unselect
+        self.star_list[i] = _star
+    end
+
+    self.equip_icon = self.main_container:getChildByName("equip_icon")
+
+    self.attr_panel = self.main_container:getChildByName("attr_panel")
+    self.bar = self.attr_panel:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.bar2 = self.attr_panel:getChildByName("bar2")
+    self.bar2:setScale9Enabled(true)
+    local exp = self.attr_panel:getChildByName("exp")
+    exp:setVisible(false)
+    local posx = exp:getPositionX()
+    local posy = exp:getPositionY()
+    self.exp = createRichLabel(18, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0.5, 0.5), cc.p(posx,posy))
+    self.attr_panel:addChild(self.exp)
+    self.now_lv = self.attr_panel:getChildByName("now_lv")
+    self.next_lv = self.attr_panel:getChildByName("next_lv")
+    self.attr_icon = self.attr_panel:getChildByName("attr_icon")
+    self.attr_name = self.attr_panel:getChildByName("attr_name")
+    self.now_attr = self.attr_panel:getChildByName("now_attr")
+    self.next_attr = self.attr_panel:getChildByName("next_attr")
+    self.add_exp = self.attr_panel:getChildByName("add_exp")
+    self.Sprite_17 = self.attr_panel:getChildByName("Sprite_17")
+    self.attr_panel:getChildByName("tips"):setString(TI18N("语言_c_6820"))
+
+    self.up_panel = self.main_container:getChildByName("up_panel")
+    self.tips = self.up_panel:getChildByName("tips")
+    self.tips:setString(TI18N("语言_c_6794"))
+    local left_tips_icon = self.up_panel:getChildByName("left_tips_icon")
+    local right_tips_icon = self.up_panel:getChildByName("right_tips_icon")
+    setLeftRightImg(left_tips_icon,self.tips,right_tips_icon,20)
+    self.plan_list = self.up_panel:getChildByName("plan_list")
+    self.tips1 = self.up_panel:getChildByName("tips1")
+    self.tips1:setString(TI18N("语言_c_6790"))
+    setTextMaxWidth(self.tips1, 660, -4)
+    self.tips1_0 = self.up_panel:getChildByName("tips1_0")
+    self.tips1_0:setString(TI18N("语言_c_2176"))
+    self.tips1_0:setVisible(false)
+
+    self.soul_btn = self.main_container:getChildByName("soul_btn")
+    self.soul_btn:getChildByName("label"):setString(TI18N("语言_c_6798"))
+
+    self.act_panel = self.main_container:getChildByName("active_panel")
+    self.act_panel:getChildByName("tips"):setString(TI18N("语言_c_6827"))
+    local left_tips_icon = self.act_panel:getChildByName("left_tips_icon")
+    local right_tips_icon = self.act_panel:getChildByName("right_tips_icon")
+    setLeftRightImg(left_tips_icon,self.act_panel:getChildByName("tips"),right_tips_icon,20)
+    self.act_panel:getChildByName("tips1"):setString(TI18N("语言_c_6828"))
+    self.act_list = self.act_panel:getChildByName("act_list")
+    self.act_btn = self.act_panel:getChildByName("act_btn")
+    self.act_btn:getChildByName("label"):setString(TI18N("语言_c_2904"))
+
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.plan_list:getContentSize()
+        local width = scroll_view_size.width / 4
+        local setting = {
+            start_x = 0, -- 第一个单元的X起点
+            space_x = 0, -- x方向的间隔
+            start_y = 0, -- 第一个单元的Y起点
+            space_y = 0, -- y方向的间隔
+            item_width = 130, -- 单元的尺寸width
+            item_height = 158, -- 单元的尺寸height
+            row = 1, -- 行数，作用于水平滚动类型
+            col = 4, -- 列数，作用于垂直滚动类型
+            once_num = 1 -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.plan_list, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+end
+
+function HeroHighHquipHabSoulPanel:createNewCell(width, height)
+    local cell = HeroHighEquipSoulItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+     return cell
+end
+ --获取数据数量
+function HeroHighHquipHabSoulPanel:numberOfCells()
+    if not self.cell_data_list then return 0 end
+    return #self.cell_data_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function HeroHighHquipHabSoulPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.cell_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+    cell:setExtend(self.select_item_list,self.equip_data)
+end
+function HeroHighHquipHabSoulPanel:onCellTouched(cell)
+    local data = cell:getSendData()
+    local item_id = data.item_id
+    self.select_item_list[item_id] = data
+    self:countTotalSelectExp()
+end
+
+function HeroHighHquipHabSoulPanel:countTotalSelectExp()
+    local total_exp = 0
+    for k, v in pairs(self.select_item_list) do
+       local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul_exp[v.item_id]
+       local exp = cfg
+       total_exp = exp * v.num + total_exp
+    end
+    self.add_exp_num = total_exp
+    if total_exp <= 0 then
+        self.add_exp:setString("")
+        local equip_bid = self.equip_data.config.id
+        local soul_lv = self.gold_info.soul_level
+        local soul_exp = self.gold_info.soul_exp
+        local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul 
+        local now_key = getNorKey(equip_bid, soul_lv)
+        local next_key = getNorKey(equip_bid, (soul_lv+1))
+        self.now_lv:setString(string.format(TI18N("语言_c_4520"), soul_lv))--("Lv"..soul_lv)
+        self.next_lv:setString(string.format(TI18N("语言_c_4520"), (soul_lv+1)))--("Lv".. (soul_lv+1))
+        local data = cfg(now_key)
+        self.attr_name:setString(TI18N("语言_c_6867"))
+        if data then
+            local _attr_val = data.star_attr_ratio
+            local need_exp = data.exp
+            self.exp:setString(string.format(TI18N("语言_c_7025"), soul_exp, need_exp))--
+            self.now_attr:setString((_attr_val/1000 * 100).."%")
+            self.bar:setPercent(soul_exp/need_exp *100)
+            self.bar2:setPercent(soul_exp/need_exp *100)
+        end
+        local next_data = cfg(next_key)
+        if next_data then
+            self.bar:loadTexture(PathTool.getResFrame("common_2","goldeqm_4"),LOADTEXT_TYPE_PLIST)
+            self.bar:setScale9Enabled(true)
+            local _attr_val = next_data.star_attr_ratio
+            self.next_attr:setString((_attr_val/1000 * 100).."%")
+        else
+            self.bar:setPercent(100)
+            self.bar:loadTexture(PathTool.getResFrame("common_2","goldeqm_20"),LOADTEXT_TYPE_PLIST)
+            self.bar:setScale9Enabled(true)
+            self.bar2:setPercent(100)
+            self.exp:setString("")
+            self.next_lv:setString(TI18N("语言_c_7028"))
+            local _attr_val = data.star_attr_ratio
+            self.next_attr:setString((_attr_val/1000 * 100).."%")
+        end
+        if (soul_lv+1) == self.max_soul_level  then
+            self.next_lv:setString(string.format(TI18N("语言_c_7026"), (soul_lv+1)))--("Lv"..(soul_lv+1).."(Max)")
+        end
+        self:setBreakStatus()
+    else
+        self.add_exp:setString(string.format(TI18N("语言_c_7027"), total_exp))--("EXP+"..total_exp)
+        if self.add_exp_num >= self.to_next_lv_exp then
+            -- self.bar:setPercent(100)
+            self.bar2:setPercent(100)
+        else
+            self.bar2:setPercent((self.add_exp_num+self.gold_info.soul_exp)/self.to_next_lv_exp*100)
+            -- self.bar:setPercent((self.add_exp_num+self.gold_info.soul_exp)/self.to_next_lv_exp*100)
+        end
+        if self.max_exp <= self.add_exp_num then
+            -- self.bar:loadTexture(PathTool.getResFrame("goldeqm","goldeqm_20"),LOADTEXT_TYPE_PLIST)
+            -- self.bar:setScale9Enabled(true)
+        else
+            -- self.bar:loadTexture(PathTool.getResFrame("goldeqm","goldeqm_4"),LOADTEXT_TYPE_PLIST)
+            -- self.bar:setScale9Enabled(true)
+        end
+
+        --实时计算一下升级结果
+        --计算一下加的等级
+        local _temp_num = self.add_exp_num + self.gold_info.soul_exp
+        local final_lv = self.gold_info.soul_level
+        local add_num = 0
+        for i = self.gold_info.soul_level, (self.max_soul_level-1) do
+            local need_num = self.max_soul_lv_cfg[i] or 0
+            add_num = add_num + need_num
+            if add_num <= _temp_num then
+                final_lv = i
+            else
+                break
+            end
+        end
+       -- print(final_lv,"^^^^^^^^^^^^^^^^^^^^^^^^")
+        if final_lv == (self.max_soul_level-1) then
+            self.next_lv:setString(string.format(TI18N("语言_c_7026"), (final_lv+1)))--("Lv"..(final_lv+1).."(Max)")
+        else
+            self.next_lv:setString(string.format(TI18N("语言_c_4520"), (final_lv+1)))--("Lv"..(final_lv+1))
+        end
+
+        local equip_bid = self.equip_data.config.id
+        local next_key = getNorKey(equip_bid, (final_lv+1))
+        local now_key = getNorKey(equip_bid, final_lv)
+        local next_data = Config.PartnerGoldeqmData.data_get_eqm_soul(next_key)
+        if next_data then
+            local _attr_val = next_data.star_attr_ratio
+            self.next_attr:setString((_attr_val/1000 * 100).."%")
+            -- self.exp:setString(string.format('<div fontcolor=#26952f outline=2,#000000>EXP</div><div fontcolor=#ffffff outline=2,#000000>+%s</div>', (_temp_num.."/"..self.to_next_lv_exp)))--
+        else
+            local soul_lv = self.gold_info.soul_level
+            local soul_exp = self.gold_info.soul_exp
+            local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul 
+            local now_key = getNorKey(equip_bid, soul_lv)
+            -- self.bar:setPercent(100)
+            self.bar2:setPercent(100)
+            -- self.exp:setString("")
+            self.next_lv:setString(TI18N("语言_c_7028"))
+            local _attr_val = cfg(now_key).star_attr_ratio
+            self.next_attr:setString((_attr_val/1000 * 100).."%")
+        end
+    end
+end
+
+--事件
+function HeroHighHquipHabSoulPanel:registerEvents()
+    registerButtonEventListener(self.soul_btn, function() self:onClickLevelUpBtn()  end ,true, 2)
+    registerButtonEventListener(self.act_btn, function() self:onClickActBtn()  end ,true, 2)
+    registerButtonEventListener(self.help_btn, function(param, sender, event_type) 
+        local str = Config.PartnerGoldeqmData.data_get_constant.des.val
+        TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition(), nil, nil, 500)
+    end ,true, 2)
+    registerButtonEventListener(self.preview_btn, function(param, sender, event_type) 
+        controller:openHighEquipSoulPreviewWindow(true,self.equip_data)
+    end ,true, 2)
+    if not self.up_level_event then
+        self.up_level_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_High_Equip_Soul_Event,
+            function()
+                self.select_item_list = {}
+                self:updateInfo()
+                -- self:countTotalSelectExp()
+            end)
+    end
+
+    if not self.select_event then
+        self.select_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_High_Equip_Soul_Select_Event,
+            function(data)
+                local item_id = data.item_id
+                local num = data.num
+                self.select_item_list[item_id] = {item_id=item_id,num=num}
+                self:countTotalSelectExp()
+                self.item_scrollview:reloadData()
+            end)
+    end
+
+    --物品道具增加 判断红点
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+            for i, item in pairs(temp_add) do
+                if self.item_id_list and table.indexof(self.item_id_list,item.base_id) then
+                    self:setRedStatus()
+                end
+            end
+        end)
+    end
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+            for i, item in pairs(temp_del) do
+                if self.item_id_list and table.indexof(self.item_id_list,item.base_id) then
+                    self:setRedStatus()
+                end
+            end
+        end)
+    end
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            for i, item in pairs(temp_list) do
+                if self.item_id_list and table.indexof(self.item_id_list,item.base_id) then
+                    self:setRedStatus()
+                end
+            end
+        end)
+    end
+end
+
+function HeroHighHquipHabSoulPanel:onClickActBtn(partner_id, equip_id)
+    if self.is_can_act then
+        controller:sender11447(self.partner_id, self.equip_data.id)
+    else
+        message(TI18N("语言_c_1539"))
+    end
+end
+
+function HeroHighHquipHabSoulPanel:onClickLevelUpBtn()
+    if self.add_exp_num <= self.max_exp then
+        if next(self.select_item_list) then
+            local equip_list = {}
+            local item_list = {}
+            for k, v in pairs(self.select_item_list) do
+                local item = Config.ItemData.data_get_data(v.item_id)
+                local a = {}
+                a.item_bid = v.item_id
+                a.item_num = v.num
+                table.insert(item_list,a)
+            end
+            controller:sender11444(self.partner_id, self.equip_data.id, item_list,equip_list)
+        else
+            message(TI18N("语言_c_6826"))
+        end
+    else
+        local function fun()
+            if next(self.select_item_list) then
+                local equip_list = {}
+                local item_list = {}
+                for k, v in pairs(self.select_item_list) do
+                    local item = Config.ItemData.data_get_data(v.item_id)
+                    local a = {}
+                    a.item_bid = v.item_id
+                    a.item_num = v.num
+                    table.insert(item_list,a)
+                end
+                controller:sender11444(self.partner_id, self.equip_data.id, item_list,equip_list)
+            else
+                message(TI18N("语言_c_6826"))
+            end
+        end
+        local a = self.add_exp_num - self.max_exp
+        local str = string.format(TI18N("语言_c_6804"),a)
+        CommonAlert.show(str,TI18N("语言_c_63") , fun, TI18N("语言_c_62"), nil, CommonAlert.type.rich, nil, nil, nil, true)
+    end
+end
+
+function HeroHighHquipHabSoulPanel:setData(equip_data, partner_id)
+    self.equip_data = equip_data
+    self.partner_id = partner_id
+    self:updateInfo()
+end
+function HeroHighHquipHabSoulPanel:updateInfo()
+    self.gold_info = BackpackController:getInstance():getModel():getGoldEquipData(self.equip_data.id)
+    if not self.gold_info then
+        return
+    end
+
+    local eqm_jie = self.gold_info.refine_level
+    local eqm_name = self.equip_data.config.name
+    self.equip_name:setString(string.format("<div outline=2,#3e1200>%s</div><div fontcolor=#13ff13 fontsize=26 outline=2,#3e1200> +%s</div>",eqm_name,eqm_jie))
+    local star = self.gold_info.star_level
+    
+    local equip_bid = self.equip_data.config.id
+    loadSpriteTexture(self.equip_icon, PathTool.getResFrame("goldeqm", "goldeqm_" .. equip_bid), LOADTEXT_TYPE_PLIST)
+    self:doEquipIconAction()
+    local soul_level = self.gold_info.soul_level
+    self:setStarPanel(star,soul_level)
+    if soul_level == 0 then --需要激活
+        self.act_panel:setVisible(true)
+        self.soul_btn:setVisible(false)
+        self.attr_panel:setVisible(false)
+        self.up_panel:setVisible(false)
+        self:setActInfo()
+    else
+        self.act_panel:setVisible(false)
+        self.soul_btn:setVisible(true)
+        self.attr_panel:setVisible(true)
+        self.up_panel:setVisible(true)
+        self:setUpInfo()
+    end
+end
+
+function HeroHighHquipHabSoulPanel:setUpInfo()
+    local equip_bid = self.equip_data.config.id
+    local soul_lv = self.gold_info.soul_level
+    local soul_exp = self.gold_info.soul_exp
+    local star_level = self.gold_info.star_level
+    local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul 
+    --根据装备星级取当前的铸魂等级上限
+    self.max_soul_level = 1
+    for i = 0, 10, 1 do
+        local key = getNorKey(equip_bid,i)
+        local soul_cfg_item = cfg(key)
+        if soul_cfg_item then
+            if soul_cfg_item.star ~= 0 and soul_cfg_item.star == star_level and soul_cfg_item.lev > (self.max_soul_level) then --
+                self.max_soul_level = soul_cfg_item.lev
+            end
+        else
+            break
+        end
+    end
+    self.max_soul_level = self.max_soul_level + 1
+    local max_exp = 0
+    local equip_bid = self.equip_data.config.id
+    self.max_soul_lv_cfg = {}
+    for i = self.gold_info.soul_level, (self.max_soul_level-1) do
+        local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul(getNorKey(equip_bid,i))
+        max_exp = cfg.exp + max_exp
+        self.max_soul_lv_cfg[i] = cfg.exp
+    end
+    max_exp = max_exp - self.gold_info.soul_exp
+    self.max_exp = max_exp
+
+
+    local now_key = getNorKey(equip_bid, soul_lv)
+    local next_key = getNorKey(equip_bid, (soul_lv+1))
+    self.now_lv:setString(string.format(TI18N("语言_c_4520"), (soul_lv)))--("Lv"..soul_lv)
+    self.next_lv:setString(string.format(TI18N("语言_c_4520"),(soul_lv+1)))--("Lv".. (soul_lv+1))
+    local data = cfg(now_key)
+    self.attr_name:setString(TI18N("语言_c_6867"))
+    if data then
+        local _attr_val = data.star_attr_ratio
+        local need_exp = data.exp
+        self.to_next_lv_exp = need_exp
+        self.exp:setString(string.format(TI18N("语言_c_7025"), soul_exp, need_exp))--(soul_exp.."/"..need_exp)
+        -- self.exp:setString(string.format('<div fontcolor=#26952f outline=2,#000000>EXP</div><div fontcolor=#ffffff outline=2,#000000> %s</div>', (soul_exp.."/"..need_exp)))--(soul_exp.."/"..need_exp)
+        self.now_attr:setString((_attr_val/1000 * 100).."%")
+        self.bar:setPercent(soul_exp/need_exp *100)
+        self.bar2:setPercent(soul_exp/need_exp *100)
+    end
+    local next_data = cfg(next_key)
+    if next_data then
+        local _attr_val = next_data.star_attr_ratio
+        self.next_attr:setString((_attr_val/1000 * 100).."%")
+        self.soul_btn:setVisible(true)
+        self.now_attr:setVisible(true)
+        self.Sprite_17:setVisible(true)
+        self.tips1_0:setVisible(false)
+    else
+        self.bar:setPercent(100)
+        self.bar2:setPercent(100)
+        -- self.exp:setString("")
+        self.exp:setString(string.format('<div fontcolor=#26952f outline=2,#000000>%s</div><div fontcolor=#ffffff outline=2,#000000> %s</div>', TI18N("语言_c_7029"),TI18N("语言_c_7028")))
+        self.next_lv:setString(TI18N("语言_c_7028"))
+        local _attr_val = data.star_attr_ratio
+        self.next_attr:setString((_attr_val/1000 * 100).."%")
+        self.now_attr:setVisible(false)
+        self.Sprite_17:setVisible(false)
+        self.soul_btn:setVisible(false)
+        self.tips1_0:setVisible(true)
+    end
+
+    if (soul_lv+1) == self.max_soul_level  then
+        self.next_lv:setString(string.format(TI18N("语言_c_7026"), (soul_lv+1)))--("Lv"..(soul_lv+1).."(Max)")
+    end
+
+    --升级材料列表
+    self.cell_data_list = {}
+    self.item_id_list = {}
+    local equip_type = self.equip_data.config.type
+    local soul_up_cfg = Config.PartnerGoldeqmData.data_get_eqm_soul_exp
+    for k, v in pairs(soul_up_cfg) do
+        local item_cfg = Config.ItemData.data_get_data(k)
+        --同部位的红装
+        if item_cfg.type == equip_type or (item_cfg.type ~= BackPackConst.item_type.WEAPON and item_cfg.type ~= BackPackConst.item_type.SHOE and item_cfg.type ~= BackPackConst.item_type.CLOTHES and item_cfg.type ~= BackPackConst.item_type.HAT) then
+            local own_num =  BackpackController:getInstance():getModel():getItemNumByBid(item_cfg.id)
+            if own_num == 0 then
+                own_num =  BackpackController:getInstance():getModel():getEquipItemNumByBid(item_cfg.id)
+            end
+            local _a = 0
+            if BackPackConst.checkIsEquip(item_cfg.type) then
+                _a = 1
+            end 
+            local _b = 0
+            if own_num > 0 then
+                _b = 1
+            end
+            table.insert(self.item_id_list,k)
+            table.insert(self.cell_data_list,{id=k,exp=v,max_lv=self.max_soul_level,max_exp=self.max_exp,own_num= _b, is_equip = _a,quality=item_cfg.eqm_star}) 
+        end
+    end
+    local sort_func = SortTools.tableCommonSorter({{"is_equip", false},{"own_num", true}, {"quality", false}})-- SortTools.tableUpperSorter({"own_num", "quality"})
+    table.sort(self.cell_data_list, sort_func)
+    self.item_scrollview:reloadData()
+
+    self:countTotalSelectExp()
+    self:setBreakStatus()
+    self:setRedStatus()
+end
+
+--到达铸魂当前等级上限的一些特殊处理
+function HeroHighHquipHabSoulPanel:setBreakStatus()
+    local equip_bid = self.equip_data.config.id
+    local soul_lv = self.gold_info.soul_level
+    local soul_exp = self.gold_info.soul_exp
+    local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul 
+    local now_key = getNorKey(equip_bid, soul_lv)
+    local next_key = getNorKey(equip_bid, (soul_lv+1))
+    local last_key = getNorKey(equip_bid, (soul_lv-1))
+    local next_data = cfg(next_key)
+    local now_data = cfg(now_key)
+    local last_data = cfg(last_key)
+    if next_data then
+        if soul_lv == self.max_soul_level  then --当前已是最大值
+            self.next_lv:setString(string.format(TI18N("语言_c_7026"), soul_lv))--("Lv"..(soul_lv).."(Max)")
+            self.now_lv:setString(string.format(TI18N("语言_c_4520"), soul_lv))--("Lv"..(soul_lv))
+            local _attr_val = now_data.star_attr_ratio
+            self.next_attr:setString((_attr_val/1000 * 100).."%")
+            local need_exp = last_data.exp
+            self.exp:setString(string.format('<div fontcolor=#26952f outline=2,#000000>%s</div><div fontcolor=#ffffff outline=2,#000000> %s</div>', TI18N("语言_c_7029"),TI18N("语言_c_7028")))--(need_exp.."/"..need_exp.."(Max)")
+            local _attr_val = last_data.star_attr_ratio
+            self.now_attr:setString((_attr_val/1000 * 100).."%")
+            self.bar:setPercent(100)
+            self.bar:loadTexture(PathTool.getResFrame("common_2","goldeqm_20"),LOADTEXT_TYPE_PLIST)
+            self.bar:setScale9Enabled(true)
+        else
+            self.bar:loadTexture(PathTool.getResFrame("common_2","goldeqm_4"),LOADTEXT_TYPE_PLIST)
+            self.bar:setScale9Enabled(true)
+        end
+    else
+        self.bar:loadTexture(PathTool.getResFrame("common_2","goldeqm_20"),LOADTEXT_TYPE_PLIST)
+        self.bar:setScale9Enabled(true)
+    end
+end
+
+--铸魂激活
+function HeroHighHquipHabSoulPanel:setActInfo()
+    local equip_bid = self.equip_data.config.id
+    local cfg = Config.PartnerGoldeqmData.data_get_eqm_soul 
+    local now_key = getNorKey(equip_bid, 0)
+    local data = cfg(now_key)
+    local unlock_item = data.unlock_item
+    if not self.act_item then
+        self.act_item = BackPackItem.new(false, true, false, 0.9, false, true,false)
+        self.act_list:addChild(self.act_item)
+    end
+    self.act_item:setPosition(cc.p(self.plan_list:getContentSize().width/2, self.plan_list:getContentSize().height/2+15))
+    self.act_item:setBaseData(unlock_item[1][1])
+    local item_cfg = Config.ItemData.data_get_data(unlock_item[1][1])
+    local own_num = BackpackController:getInstance():getModel():getItemNumByBid(unlock_item[1][1],BackPackConst.Bag_Code.EQUIPS)
+    self.act_item:setNeedNum2(unlock_item[1][2], own_num)
+    if unlock_item[1][2] <= own_num then
+        self.act_item:setNeedNumColor(cc.c4b(0x26, 0x95, 0x2f, 0xff))
+        self.is_can_act = true
+    else
+        self.act_item:setNeedNumColor(cc.c4b(0xff, 0x15, 0x15, 0xff))
+        self.is_can_act = false
+    end
+    self.act_item:setNeedNumBg(false)
+end
+
+function HeroHighHquipHabSoulPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+function HeroHighHquipHabSoulPanel:setStarPanel(star,soul_level)
+    local res = PathTool.getResFrame("common","common_90074")
+    if soul_level >=5 and soul_level<10 then
+        res =  PathTool.getResFrame("common","common_1_215",false,"common_1")
+    elseif soul_level >= 10 then
+        res =  PathTool.getResFrame("common","common_1_216",false,"common_1")
+    end
+
+    for i, v in ipairs(self.star_list) do
+        v.select:setVisible(false)
+        if i <= star then
+            v.select:setVisible(true)
+            loadSpriteTexture(v.select, res, LOADTEXT_TYPE_PLIST)
+        end
+    end
+end
+
+function HeroHighHquipHabSoulPanel:doEquipIconAction()
+    doStopAllActions(self.equip_icon)
+    local action = cc.Sequence:create(cc.MoveTo:create(1.5, cc.p(360, 902)),cc.MoveTo:create(1.5, cc.p(360, 882)),cc.MoveTo:create(1.5, cc.p(360, 862)),cc.MoveTo:create(1.5, cc.p(360, 882)))
+    self.equip_icon:runAction(cc.RepeatForever:create(action))
+
+    local equip_bid = self.equip_data.config.id
+    local cfg = Config.PartnerGoldeqmData.data_get_top_preview[equip_bid]
+    local eff_info = cfg.effect
+    local eff_list = string.split(eff_info,",")
+    if not self.eff then
+        self.eff = createEffectSpine(eff_list[1], cc.p(23, 23), cc.p(0.5, 0.5), true, eff_list[2])
+        self.equip_eff:addChild(self.eff)
+    end
+end
+--计算强化相关红点
+function HeroHighHquipHabSoulPanel:setRedStatus(status)
+    local gold_info = self.gold_info
+    local vo = {id = self.equip_data.config.id,
+        refine_level = gold_info.refine_level,
+        enchant_level = gold_info.enchant_level,
+        star_level = gold_info.star_level,
+        soul_level = gold_info.soul_level,
+    }
+    --local red_1 = HeroController:getInstance():getModel():checkGoldEqmCanUplv(vo)
+    -- local red_2 = HeroController:getInstance():getModel():checkGoldEqmCanUpStar(vo)
+    local red_3 = HeroController:getInstance():getModel():checkGoldEqmCanSoul(vo)
+    local status = red_3
+    addRedPointToNodeByStatus(self.soul_btn, status,5,5)
+    addRedPointToNodeByStatus(self.act_btn, status,5,5)
+end
+
+--移除
+function HeroHighHquipHabSoulPanel:DeleteMe()
+    doStopAllActions(self.equip_icon)
+    if self.eff then
+        self.eff:clearTracks()
+        self.eff:removeFromParent()
+        self.eff = nil
+    end
+    if self.up_level_event then
+        self.up_level_event = GlobalEvent:getInstance():UnBind(self.up_level_event)
+        self.up_level_event = nil
+    end
+    if self.select_event then
+        self.select_event = GlobalEvent:getInstance():UnBind(self.select_event)
+        self.select_event = nil
+    end
+    if self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():UnBind(self.del_goods_event)
+        self.del_goods_event = nil
+    end
+    if self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+end

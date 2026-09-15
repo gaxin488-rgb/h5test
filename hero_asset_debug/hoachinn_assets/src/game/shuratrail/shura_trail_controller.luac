@@ -1,0 +1,527 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      无尽试炼控制器
+-- <br/>Create: 2018-08-15
+-- --------------------------------------------------------------------
+Shura_trailController = Shura_trailController or BaseClass(BaseController)
+
+function Shura_trailController:config()
+    self.model = Shura_trailModel.New(self)
+    self.dispather = GlobalEvent:getInstance()
+    self.cache_buff_data = nil
+end
+
+function Shura_trailController:getModel()
+    return self.model
+end
+
+function Shura_trailController:registerEvents()
+    if self.battle_enter_event == nil then
+        self.battle_enter_event = GlobalEvent:getInstance():Bind(SceneEvent.ENTER_FIGHT, function(combat_type)
+            if combat_type == BattleConst.Fight_Type.Shura then
+                self:openShuraBattleView(true)
+            end
+        end)
+    end
+    -- 如果是竞技场退出战斗的话，并且也是存在当前请求打开竞技场面板的情况下，则打开竞技场面板
+    if self.battle_exit_event == nil then
+        self.battle_exit_event = GlobalEvent:getInstance():Bind(SceneEvent.EXIT_FIGHT, function(combat_type)
+            self:openShuraBattleView(false)
+            if combat_type == BattleConst.Fight_Type.Shura then
+                self:openShuraBuffView(false)
+            end
+        end)
+    end 
+end
+
+--==============================--
+--desc:
+--time:2018-09-06 04:15:42
+--@return 
+--==============================--
+function Shura_trailController:checkIsOpen(show_desc)
+    local open_config = Config.EndlessHighData.data_const.open_lev
+    if open_config == nil then return false end
+    local is_open = MainuiController:getInstance():checkIsOpenByActivate(open_config.val)
+    if show_desc == true and is_open == false then
+        message(open_config.desc)
+    end
+    return is_open
+end
+
+function Shura_trailController:checkNewEndLessIsOpen(show_desc)
+    local open_config = Config.EndlessHighData.data_const.shura_new_limit
+    if open_config == nil then return false end
+
+    local open_lev = Config.EndlessHighData.data_const.shura_new_limit_lev
+    if open_lev == nil then return false end
+    
+    local is_open = false
+    local base_data = self.model:getShuraData()
+    local rolevo = RoleController:getInstance():getRoleVo()
+    if base_data and rolevo then
+        local base_max_round = base_data.max_round or 0
+        local open_config_val = open_config.val or 0
+        local open_lev_val = open_lev.val or 0
+        local rolevo_val = rolevo.lev or 0
+        if base_max_round >= open_config_val and rolevo_val >= open_lev_val then
+            is_open = true
+        end
+    end
+    
+    if show_desc == true and is_open == false then
+        message(open_config.desc)
+    end
+    return is_open
+end
+
+
+function Shura_trailController:checkNewEndLessIsShow()
+    local open_lev = Config.EndlessHighData.data_const.shura_new_show_limit
+    if open_lev == nil then return false end
+    
+    local is_show = false
+    local rolevo = RoleController:getInstance():getRoleVo()
+    if rolevo and rolevo.lev >= open_lev.val then
+        is_show = true
+    end
+
+    return is_show
+end
+
+function Shura_trailController:registerProtocals()
+    self:RegisterProtocal(23915, "handle23915") -- 基础信息00
+    self:RegisterProtocal(23916, "handle23916") -- 挑战无尽01
+    self:RegisterProtocal(23917, "handle23917") --战斗界面信息02
+    self:RegisterProtocal(23918, "handle23918") --首通奖励展示03
+    self:RegisterProtocal(23919, "handle23919") --领取奖励通关奖励04
+    self:RegisterProtocal(23920, "handle23920") --已派出伙伴信息05
+    self:RegisterProtocal(23921, "handle23921") --领取奖励通关奖励06
+    self:RegisterProtocal(23922, "handle23922") --可雇佣伙伴列表信息07
+    self:RegisterProtocal(23923, "handle23923") --派出伙伴08
+    self:RegisterProtocal(23924, "handle23924") --雇佣伙伴09
+    self:RegisterProtocal(23925, "handle23925") --Buff列表10
+    self:RegisterProtocal(23926, "handle23926") --选择Buff11
+    self:RegisterProtocal(23927, "handle23927") --是否有可领取的首通奖励12
+    self:RegisterProtocal(23928, "handle23928") --查看排行榜13
+    self:RegisterProtocal(23929, "handle23929") --设置自动选择buff14
+end
+--协议相关
+function Shura_trailController:send23915()
+    local protocol = {}
+    self:SendProtocal(23915, protocol)
+end
+
+function Shura_trailController:handle23915(data)
+    if data then
+        self.model:setShuraData(data)
+        if NEEDCHANGEENTERSTATUS == 5 and not self.first_enter then
+            self.first_enter  = true
+            MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Shura)
+        end
+    end
+end
+
+function Shura_trailController:send23916(formation_type, pos_info, hallows_id, skill_bid)
+    local protocol = {}
+    protocol.formation_type = formation_type
+    protocol.pos_info = pos_info
+    protocol.hallows_id = hallows_id
+    protocol.skill_bid = skill_bid
+    self:SendProtocal(23916,protocol)
+end
+
+function Shura_trailController:handle23916(data)
+    message(data.msg)
+end
+
+function Shura_trailController:send23917()
+    local protocol = {}
+    self:SendProtocal(23917,protocol)
+end
+
+function Shura_trailController:handle23917(data)
+    self.model:setShuraBattleData(data)
+end
+
+function Shura_trailController:send23918()
+    local protocol = {}
+    self:SendProtocal(23918, protocol)
+end
+
+function Shura_trailController:handle23918(data)
+    if data then
+        self.model:setFirstData(data)
+    end
+end
+
+
+function Shura_trailController:send23919(id)
+    local protocol = {}
+    protocol.id = id
+    self:SendProtocal(23919, protocol)
+end
+
+function Shura_trailController:handle23919(data)
+    message(data.msg)
+    if data.code == 1 then
+        self:openShuraRewardTips(false)
+    end
+    self:send23918()
+    self:send23927()
+end
+
+
+function Shura_trailController:send23920()
+    local protocol = {}
+    self:SendProtocal(23920, protocol)
+end
+
+function Shura_trailController:handle23920(data)
+    if data then
+        self.model:setSendPartnerData(data)
+    end
+end
+
+
+function Shura_trailController:send23921()
+    local protocol = {}
+    self:SendProtocal(23921, protocol)
+end
+
+function Shura_trailController:handle23921(data)
+    if data then
+        self.model:setHasHirePartnerData(data)
+    end
+end
+
+
+function Shura_trailController:send23922()
+    local protocol = {}
+    self:SendProtocal(23922, protocol)
+end
+
+function Shura_trailController:handle23922(data)
+    if data then
+        self.model:setHirePartnerData(data)
+    end
+end
+
+function Shura_trailController:send23923(id)
+    local protocol = {}
+    protocol.id = id
+    self:SendProtocal(23923, protocol)
+end
+
+function Shura_trailController:handle23923(data)
+    message(data.msg)
+    if data.code == 1 then
+        GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_SENDPARTNER_SUCESS_DATA ,data)
+    end
+end
+
+
+function Shura_trailController:send23924(rid,srv_id,id,flag)
+    local protocol = {}
+    protocol.id = id
+    protocol.rid = rid
+    protocol.srv_id = srv_id
+    protocol.flag = flag
+    self:SendProtocal(23924, protocol)
+end
+
+function Shura_trailController:handle23924(data)
+    message(data.msg)
+end
+
+function Shura_trailController:send23925()
+    local protocol = {}
+    self:SendProtocal(23925, protocol)
+end
+
+function Shura_trailController:handle23925(data)
+    if data then
+        local is_open = false
+        if  MainuiController:getInstance():checkIsInShuraUIFight() then
+            self:openShuraBuffView(true,data)
+            is_open = true
+        end
+        if not is_open then
+            self.cache_buff_data = data
+        end
+    end
+end
+
+function Shura_trailController:send23926(buff_id)
+    local protocol = {}
+    protocol.buff_id = buff_id
+    self:SendProtocal(23926, protocol)
+end
+
+function Shura_trailController:handle23926(data)
+    message(data.msg)
+    if data.code == 1 then
+        self:openShuraBuffView(false)
+
+        -- 成功选择一个buff之后,也要移除掉提示
+		PromptController:getInstance():getModel():removePromptDataByTpye(PromptTypeConst.Shura_trail)
+    end
+end
+
+--是否有可领取的首通奖励
+function Shura_trailController:send23927()
+    local protocol = {}
+    self:SendProtocal(23927, protocol)
+end
+
+function Shura_trailController:handle23927(data)
+    self.model:setFirstStatus(data)
+end
+
+--查看排行榜
+function Shura_trailController:send23928()
+    local protocol = {}
+    if self.SendProtocal and type(self.SendProtocal) == "function" then
+        self:SendProtocal(23928, protocol)
+    end
+end
+
+function Shura_trailController:handle23928(data)
+    self.model:updateRankInfo(data)
+end
+
+--设置自动选择buff
+function Shura_trailController:send23929(click,pos)
+    local protocol = {}
+    protocol.click = click
+    protocol.pos = pos
+    self:SendProtocal(23929, protocol)
+end
+
+function Shura_trailController:handle23929(data)
+    if self.model and self.model.setShuraBUFFData then
+        self.model:setShuraBUFFData(data)
+    end
+end
+
+--请求排行榜数据
+function Shura_trailController:sendRankInfo()
+    delayOnce(function()
+        local data = self.model:getShuraData()
+        if data then
+            self:send23928()
+        end 
+    end,5)
+end
+
+--打开界面相关--
+--[[
+    @desc: 
+    author:{author}
+    time:2018-08-16 09:35:31
+    --@status: 打开主界面
+    @return:
+]]
+function Shura_trailController:openShuraMainWindow(status,is_first)
+    if status == true then
+        if self:checkIsOpen(true) == false then
+            return
+        end
+        if not self.shura_main_window then
+            self.shura_main_window = ShuraTrailMainWindow.New()
+        end
+        if self.shura_main_window and self.shura_main_window:isOpen() == false then
+            self.shura_main_window:open(is_first)
+        end
+    else 
+        if self.shura_main_window then 
+            self.shura_main_window:close()
+            self.shura_main_window = nil
+        end
+    end
+end
+
+--[[
+    @desc: 战斗界面
+    author:{author}
+    time:2018-08-16 11:35:45
+    --@args: 
+    @return:
+]]
+function Shura_trailController:openShuraBattleView(status)
+    if status == true then
+        if not self.shura_battle_view then
+            self.shura_battle_view = ShuraTrailBattleView.new()
+        end
+        if self.shura_battle_view and self.shura_battle_view:isOpen() == false then
+            self.shura_battle_view:open()
+
+            if self.cache_buff_data then --判断是否存在协议
+                self:openShuraBuffView(true, self.cache_buff_data)
+                self.cache_buff_data = nil
+            end
+        end
+    else 
+        if self.shura_battle_view then 
+            self.shura_battle_view:close()
+            self.shura_battle_view = nil
+        end
+    end
+end
+
+--[[
+    @desc: buff界面
+    author:{author}
+    time:2018-08-16 14:08:54
+    @return:
+]]
+function Shura_trailController:openShuraBuffView(status,data,is_force)
+    if status == true then
+        if not ShuraTrailBuffView then
+            require "game.shura_trail.view.shura_trail_buff_view"
+        end
+        if not self.shura_buff_window then
+            self.shura_buff_window = ShuraTrailBuffView.New()
+        end
+        data = data or self.cache_buff_data -- 可能在外面就调用这个时候直接用缓存的buff吧
+        if data == nil then return end
+        if self.shura_buff_window and self.shura_buff_window:isOpen() == false then
+            self.shura_buff_window:open(data)
+        end
+        -- 移除掉缓存的,因为可能在外面点击去.这个时候不移除掉再进入战斗的时候会又一次打开
+        self.cache_buff_data = nil
+    else
+        if self.shura_buff_window then
+            if is_force then -- 引导中强制关闭界面，这时重新取出buff数据缓存
+                self.cache_buff_data = self.shura_buff_window:getData()
+            end
+            self.shura_buff_window:close()
+            self.shura_buff_window = nil
+        end
+        self.cache_buff_data = nil
+    end
+end
+
+
+--[[
+    @desc: 排行榜界面
+    author:{author}
+    time:2018-08-16 16:04:40
+    @return:
+]]
+function Shura_trailController:openShuraRankView(status,type,shura_type)
+    if status == true then
+        if not self.shura_rank_window then
+            self.shura_rank_window = ShuraRankWindow.New(shura_type)
+        end
+        if self.shura_rank_window and self.shura_rank_window:isOpen() == false then
+            self.shura_rank_window:open()
+        end
+    else
+        if self.shura_rank_window then
+            self.shura_rank_window:close()
+            self.shura_rank_window = nil
+        end
+    end
+end
+
+--[[
+    @desc: 支援界面
+    author:{author}
+    time:2018-08-16 16:24:00
+    @return:
+]]
+function Shura_trailController:openShuraFriendHelpView(status)
+    if status == true then
+        if not self.shura_friendhelp_window then
+            self.shura_friendhelp_window = ShuraFriendHelpWindow.New()
+        end
+        if self.shura_friendhelp_window and self.shura_friendhelp_window:isOpen() == false then
+            self.shura_friendhelp_window:open()
+        end
+    else
+        if self.shura_friendhelp_window then
+            self.shura_friendhelp_window:close()
+            self.shura_friendhelp_window = nil
+        end
+    end
+end
+
+
+--[[
+    @desc: 奖励详情一览
+    author:{author}
+    time:2018-08-17 15:41:56
+    @return:
+]]
+
+function Shura_trailController:openShuraRewardWindow(status)
+    if status == true then
+        if not self.shura_reward_window then
+            self.shura_reward_window = ShuraRewardWindow.New()
+        end
+        if self.shura_reward_window and self.shura_reward_window:isOpen() == false then
+            self.shura_reward_window:open()
+        end
+    else
+        if self.shura_reward_window then
+            self.shura_reward_window:close()
+            self.shura_reward_window = nil
+        end
+    end
+end
+
+
+--[[
+    @desc: 战斗领取
+    author:{author}
+    time:2018-08-17 15:41:56
+    @return:
+]]
+
+function Shura_trailController:openShuraRewardTips(status,id)
+    if status == true then
+        if not self.shura_reward_tips then
+            self.shura_reward_tips = ShuraAwardsTips.New()
+        end
+        if self.shura_reward_tips and self.shura_reward_tips:isOpen() == false then
+            self.shura_reward_tips:open(id)
+        end
+    else
+        if self.shura_reward_tips then
+            self.shura_reward_tips:close()
+            self.shura_reward_tips = nil
+        end
+    end
+end
+
+--[[
+    下一玩法开启提示
+]]
+-- function Shura_trailController:openShuraOpenTips(status)
+--     if status == true then
+--         if not self.shura_open_tips then
+--             self.shura_open_tips = ShuraOpenTips.New()
+--         end
+--         if self.shura_open_tips and self.shura_open_tips:isOpen() == false then
+--             self.shura_open_tips:open()
+--         end
+--     else
+--         if self.shura_open_tips then
+--             self.shura_open_tips:close()
+--             self.shura_open_tips = nil
+--         end
+--     end
+-- end
+
+
+function Shura_trailController:__delete()
+    if self.model ~= nil then
+        self.model:DeleteMe()
+        self.model = nil
+    end
+end

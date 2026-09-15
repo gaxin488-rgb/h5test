@@ -1,0 +1,166 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-3-1 17:10:31
+-- @description    : 
+		-- 无尽试炼
+---------------------------------
+ShuraTrailMainWindow = ShuraTrailMainWindow or BaseClass(BaseView)
+
+local controller = Shura_trailController:getInstance()
+local model = controller:getModel()
+
+function ShuraTrailMainWindow:__init()
+	self.win_type = WinType.Full
+	self.is_full_screen = true
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("endless", "endless"), type = ResourcesType.plist},
+		{path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_51",true), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+		{path = PathTool.getPlistImgForDownLoad("ninja_treasure", "ninja_treasure/ninja_treasure"), type = ResourcesType.plist}
+	}
+	self.layout_name = "shuratrail/shuratrail_main_window"
+	self.panel_list = {}
+	self.tab_list = {}
+	self.cur_tab_index = Shura_trailEvent.Tab_Index.shura
+
+	local sys_ctrl = SysController:getInstance()
+    if sys_ctrl:newCheckProtocalIsCanRequest(MainuiConst.functionIdList.shuraTrail) then
+        controller:send23921()
+		controller:send23927()
+        sys_ctrl:setProtocalIsCanRequest(MainuiConst.functionIdList.shuraTrail)
+    end
+	model:setShuraLoginRed(false)
+end
+
+function ShuraTrailMainWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+	self.background:loadTexture(PathTool.getPlistImgForDownLoad("endless/endless_high", "endless_2"), LOADTEXT_TYPE)
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_container, 1)
+	local Image_1 = main_container:getChildByName("Image_1")
+	local Text_1 = Image_1:getChildByName("Text_1")
+	Text_1:setString(TI18N("语言_c_6253"))
+	setTextSpacing(Text_1, -8)
+	self.close_btn = main_container:getChildByName("close_btn")
+    
+	self.container = main_container:getChildByName("container")
+	self.top_panel = main_container:getChildByName("top_panel")
+	self.rank_bg_1 = self.top_panel:getChildByName("Image_8")
+	
+	self.bottom_panel = main_container:getChildByName("bottom_panel")
+	-- 适配
+	local top_off = display.getTop(main_container)
+	self.top_panel:setPositionY(top_off - 152)
+	local bottom_off = display.getBottom(main_container)
+	-- self.tab_container:setPositionY(bottom_off + 180)--(top_off - 128)
+	self.close_btn:setPositionY(bottom_off + 135)
+	self.bottom_panel:setPositionY(bottom_off + 200)--114)
+
+	self.bottom_panel:getChildByName("titile_lab_1"):setString(TI18N("语言_c_25"))
+	self.bottom_panel:getChildByName("titile_lab_2"):setString(TI18N("语言_c_30"))
+	local Image_30_1 = self.bottom_panel:getChildByName("Image_30_1")
+	local Image_31_1 = self.bottom_panel:getChildByName("Image_31_1")
+	local titile_lab_1 = self.bottom_panel:getChildByName("titile_lab_1")
+	local titile_lab_2 = self.bottom_panel:getChildByName("titile_lab_2")
+	local lab_size_W = titile_lab_1:getContentSize().width + 12 + 40
+	if lab_size_W < 237 then lab_size_W = 237 end
+	if lab_size_W > 310 then lab_size_W = 310 end
+	Image_30_1:setContentSize(lab_size_W,Image_30_1:getContentSize().height)
+	local lab_size_W = titile_lab_2:getContentSize().width + 12 + 40
+	if lab_size_W < 237 then lab_size_W = 237 end
+	if lab_size_W > 310 then lab_size_W = 310 end
+	Image_31_1:setContentSize(lab_size_W,Image_31_1:getContentSize().height)
+end
+
+function ShuraTrailMainWindow:register_event(  )
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickCloseBtn), nil, 2)
+
+	-- if not self.update_base_event then
+    --     self.update_base_event = GlobalEvent:getInstance():Bind(Shura_trailEvent.UPDATA_BASE_DATA,function()
+	-- 	-- self.update_base_event = GlobalEvent:getInstance():Bind(Endless_trailEvent.UPDATA_BASE_DATA,function()
+	-- 		self:updateTabShowStatus()
+    --     end)
+    -- end
+end
+
+function ShuraTrailMainWindow:setRankShow()
+    if RankController:getInstance():checkRankIsShow() then
+		self.rank_bg_1:setVisible(true)
+    else
+		self.rank_bg_1:setVisible(false)
+    end
+end
+
+
+-- 切换标签页
+function ShuraTrailMainWindow:changeSelectedTab( index )
+	if self.select_panel then
+		self.select_panel:addToParent(false)
+		self.select_panel = nil
+	end
+	self.select_panel = self.panel_list[index]
+	if self.select_panel == nil then
+		self.select_panel = ShuraTrailPanel.new()
+		if self.select_panel then
+			self.container:addChild(self.select_panel)
+			self.panel_list[index] = self.select_panel
+		end
+	end
+	if self.select_panel then
+		self.select_panel:addToParent(true)
+	end
+end
+
+
+function ShuraTrailMainWindow:openRootWnd(is_first)
+	MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.Shura)
+	local index = Shura_trailEvent.Tab_Index.shura
+	self:changeSelectedTab(index)
+	self:setRankShow()
+	controller:send23915()
+    if is_first then
+        self:playEnterEffect(is_first)
+    end
+end
+
+-- 播放开门进入特效
+function ShuraTrailMainWindow:playEnterEffect( status )
+    if status == true then
+        if not tolua.isnull(self.root_wnd) and self.enter_effect == nil then
+            self.enter_effect = createEffectSpine("E532295", cc.p(SCREEN_WIDTH*0.5,0), cc.p(0.5, 0.5), false, PlayerAction.action_1)-- 
+            self.enter_effect:setScale(display.getMaxScale())
+            self.root_wnd:addChild(self.enter_effect, 99)
+        elseif self.enter_effect then
+            self.enter_effect:setToSetupPose()
+            self.enter_effect:setAnimation(0, PlayerAction.action_1, false)
+        end
+	else
+		if self.enter_effect then
+            self.enter_effect:clearTracks()
+            self.enter_effect:removeFromParent()
+            self.enter_effect = nil
+        end
+	end
+end
+-----------------@ 按钮点击事件
+-- 关闭
+function ShuraTrailMainWindow:_onClickCloseBtn(  )
+	controller:openShuraMainWindow(false)
+end
+
+
+function ShuraTrailMainWindow:close_callback(  )
+	if self.update_base_event then
+        GlobalEvent:getInstance():UnBind(self.update_base_event)
+        self.update_base_event = nil
+	end
+	
+	for k, panel in pairs(self.panel_list) do
+        panel:DeleteMe()
+    end
+    self.panel_list = nil
+
+    controller:openShuraMainWindow(false)
+end

@@ -1,0 +1,352 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 奥运会排行榜合集
+-- *******************************
+OlympicGamesRank = class("OlympicGamesRank", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local moon_controller = MooncombatController:getInstance()
+local moon_model = moon_controller:getModel()
+local samll_controller = SmallGameController:getInstance()
+local samll_model = samll_controller:getModel()
+local color_text = {
+    [1] = cc.c4b(0x80,0xf7,0x31,0xff),
+    [2] = cc.c4b(0x64,0x32,0x23,0xff),
+}
+
+function OlympicGamesRank:ctor(bid,id,remain_sec)
+    self.holiday_bid = bid
+    self.remain_sec = remain_sec
+	moon_controller:send20906(1,100)
+    self.panelList = {}
+    self.timeValueList = {}
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("holiday_og_rank","holiday_og_rank_bg"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("holiday_og_rank","txt_cn_og_rank_1"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("holiday_og_rank","holiday_og_rank_2048"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("holiday_og_rank","holiday_og_rank_jump"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("holiday_og_rank","holiday_og_rank_xxl"), type = ResourcesType.single},
+	}
+    self.resources_load = ResourcesLoad.New(true)
+	self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+	end)
+end
+function OlympicGamesRank:loadResListCompleted(  )
+    self:configUI()
+	self:register_event()
+    self:setData()
+end
+
+function OlympicGamesRank:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/olympic_game_rank"))
+    self.root_wnd:setPosition(-40, -82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg = self.main_container:getChildByName("bg")
+    self.title = self.main_container:getChildByName("title")
+    self.rile_scroll = self.main_container:getChildByName("rile_scroll")
+    self.rile_scroll:setScrollBarEnabled(false)
+    self.rule_txt = createRichLabel(20,cc.c3b(0xff, 0xff, 0xff),cc.p(0,1),cc.p(0,699),nil,nil,300)
+    self.rile_scroll:addChild(self.rule_txt)
+    self.rank_panel = self.main_container:getChildByName("rank_panel")
+    self.detail_btn = self.rank_panel:getChildByName("detail_btn")
+    self.no_rank = self.rank_panel:getChildByName("no_rank")
+	self.no_rank:setString(TI18N("语言_c_438"))
+	self.no_rank:setVisible(false)
+    self.rank_list = self.rank_panel:getChildByName("rank_list")
+    local scroll_view_size = self.rank_list:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔 k, 
+        item_width = 295, -- 单元的尺寸width
+        item_height = 48, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+    }
+    self.rank_goods_item = CommonScrollViewSingleLayout.new(self.rank_list, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.rank_goods_item:setSwallowTouches(true)
+    self.rank_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),  ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.rank_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells), ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.rank_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex), ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    self.reward_panel = self.main_container:getChildByName("reward_panel")
+    self.reward_bg = self.reward_panel:getChildByName("reward_bg")
+    self.reward_title = self.reward_panel:getChildByName("reward_title")
+    self.reward_title:setString(TI18N("语言_c_728"))
+    autoSizeTitleBg(self.reward_title,self.reward_bg,60,410)
+    self.reward_scroll = self.reward_panel:getChildByName("reward_scroll")
+    self.reward_scroll:setScrollBarEnabled(false)
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.surplus_time:setPositionX(self.surplus_txt:getPositionX() + self.surplus_txt:getContentSize().width+5)
+    controller:getModel():setCountDownTime(self.surplus_time,self.remain_sec or 0)
+    self.game_panel = self.main_container:getChildByName("game_panel")
+    self.game_panel:setScrollBarEnabled(false)
+	self.item = self.root_wnd:getChildByName("item")
+	self.item_2 = self.root_wnd:getChildByName("item_2")
+    self:loadBannerImage()
+end
+--排行
+function OlympicGamesRank:createTaskCell()
+    local cell = OlympicGamesRankItem.new(self.item)
+    return cell
+end
+function OlympicGamesRank:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+function OlympicGamesRank:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+function OlympicGamesRank:loadBannerImage()
+    local str_banner = "holiday_og_rank_bg"
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    self.tab_vo = tab_vo
+    if tab_vo then
+        if tab_vo.aim_title and tab_vo.aim_title ~= "" then
+            str_banner = tab_vo.aim_title
+            local res = PathTool.getPlistImgForDownLoad("holiday_og_rank",str_banner)
+            loadSpriteTexture(self.bg,res, LOADTEXT_TYPE)
+        end
+
+        if tab_vo.reward_title and tab_vo.reward_title ~= "" then
+            str_banner = tab_vo.reward_title
+            local res = PathTool.getPlistImgForDownLoad("holiday_og_rank",str_banner)
+            loadSpriteTexture(self.title,res, LOADTEXT_TYPE)
+        end
+
+        if tab_vo.rule_str and tab_vo.rule_str ~= "" then
+            self.rule_txt:setString(tab_vo.rule_str)
+            local _h1 = self.rile_scroll:getContentSize().height
+            local _h2 = self.rule_txt:getContentSize().height
+            local _h = math.max(_h1,_h2)
+            self.rile_scroll:setInnerContainerSize(cc.size(self.rile_scroll:getContentSize().width,_h))
+            self.rule_txt:setPositionY(_h)
+            self.rile_scroll:setTouchEnabled(_h2 > _h1)
+        end
+
+    end
+
+
+end
+function OlympicGamesRank:register_event()
+	--排行榜
+	if not self.update_rank_event then
+		self.update_rank_event = GlobalEvent:getInstance():Bind(MooncombatEvent.Update_Summon_Rank_Event,function (data)
+			self:setRankInfo()
+		end)
+	end
+	registerButtonEventListener(self.detail_btn, function (  )
+        moon_controller:openMoonCombatSummonRankWindow(true,self.desc_cfg.holiday_id[1])
+	end, true,nil,nil,0.8)
+end
+
+function OlympicGamesRank:setData()
+	self:setRankInfo()
+    if self.tab_vo then
+        self.desc_cfg = Config.HolidayOgTurntableData.data_rank_desc[self.tab_vo.camp_id]
+        local data_list = self.desc_cfg.rewards_desc
+        local setting = {}
+        setting.scale = 0.8
+        setting.max_count = 4
+        setting.space_x = 25
+        setting.is_center = true
+        self.item_list = commonShowSingleRowItemList(self.reward_scroll, self.item_list, data_list, setting)
+
+        self:updateBtnPanel()
+    end
+end
+function OlympicGamesRank:updateBtnPanel()
+    local list = self.desc_cfg.rank_desc
+    if not self.btn_list then
+        self.btn_list = {}
+    end
+    local _w = math.max(#list*110,self.game_panel:getContentSize().width)
+    self.game_panel:setInnerContainerSize(cc.size(_w,self.game_panel:getContentSize().height))
+    for i=1,#list do
+        local temp = {}
+        temp.item = self.item_2:clone()
+        temp.item_img = temp.item:getChildByName("item_img")
+        temp.item_name = temp.item:getChildByName("item_name")
+        temp.item_name:setChangeScaleOffWidth(-9999)
+        setTextMaxWidth(temp.item_name,100,-10)
+        self.game_panel:addChild(temp.item)
+        self.btn_list[i] = temp
+        temp.item:setPosition(cc.p(_w-(i-0.5)*110,50))
+        local res = PathTool.getPlistImgForDownLoad("holiday_og_rank",list[i][1])
+        temp.item_img:loadTexture(res, LOADTEXT_TYPE)
+
+        temp.item_name:setString(list[i][2])
+
+        registerButtonEventListener(temp.item, function (  )
+            if list[i][3] == ActionRankCommonType.olympic_xxl then
+                samll_controller:openSmallGameRankMainWindow(true,{list[i][3],list[i][4]})
+            else
+                local index = 1
+                if list[i][3] == ActionRankCommonType.wxjump then
+                    index = SmallGameConstants.GAME_TYPE.JUMP
+                elseif list[i][3] == ActionRankCommonType.game2048 then
+                    index = SmallGameConstants.GAME_TYPE.GAME_2048
+                elseif list[i][3] == ActionRankCommonType.compose_battle then
+                    index = SmallGameConstants.GAME_TYPE.BACK
+                elseif list[i][3] == ActionRankCommonType.olympic_red_blue then
+                    index = SmallGameConstants.GAME_TYPE.REDBLUE
+                end
+                samll_model:setCurrentGameType(index)
+                -- print(vardump(list[i]))
+                if index == 3 then
+                    -- local act_vo = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.compose_battle)
+                    -- if not act_vo then return end
+                    ComposebattleController:getInstance():openRankWindow(true,list[i][4],list[i][3])
+                else
+                    samll_controller:openSmallGameRankMainWindow(true,{list[i][3],list[i][4]})
+                end
+            end
+        end, true)
+    end
+end
+function OlympicGamesRank:setRankInfo()
+	local rank_data = moon_model:getSummonRank()
+	if not rank_data then
+		return
+	end
+	if not self.my_rank_item then
+		self.my_rank_item = OlympicGamesRankItem.new(self.item)
+		self.rank_panel:addChild(self.my_rank_item)
+		self.my_rank_item:setPositionX(0)
+		self.my_rank_item:setPositionY(58)
+	end
+	local object = {}
+	object.idx = rank_data.my_idx
+	object.val1 = rank_data.my_val1
+	object.name = rank_data.name
+	self.my_rank_item:setData(object)
+
+	local rank_list = {}
+	local _temp_list = rank_data.rank_list
+	table.sort(_temp_list,function(a,b) return a.idx < b.idx end)
+	for i = 1, 6, 1 do
+		if _temp_list[i] then
+			table.insert(rank_list,_temp_list[i])
+		end
+	end
+	self.reward_list = deepCopy(rank_list)
+	self.rank_goods_item:reloadData()
+	if #self.reward_list >= 0 then
+		self.no_rank:setVisible(false)
+	else
+		self.no_rank:setVisible(true)
+	end
+end
+
+function OlympicGamesRank:DeleteMe()
+	if self.rank_goods_item then
+		self.rank_goods_item:DeleteMe()
+		self.rank_goods_item = nil
+	end
+	if self.update_rank_event then
+		GlobalEvent:getInstance():UnBind(self.update_rank_event)
+		self.update_rank_event = nil
+	end
+    if self then
+        self:removeAllChildren()
+        self:removeFromParent()
+    end
+end
+
+
+OlympicGamesRankItem = class("OlympicGamesRankItem", function()
+	return ccui.Layout:create()
+end)
+
+function OlympicGamesRankItem:ctor(node)
+	self.size = cc.size(218,50)
+	self:setExtralData(node)
+end
+
+function OlympicGamesRankItem:setExtralData(node)
+
+	if not tolua.isnull(node) and self.root_wnd == nil then
+		self.is_completed = true
+		local size = node:getContentSize()
+		self:setAnchorPoint(cc.p(0, 0.5))
+		self:setContentSize(size)
+
+		self.root_wnd = node:clone()
+		self.root_wnd:setVisible(true)
+		self.root_wnd:setAnchorPoint(0.5, 0.5)
+		self.root_wnd:setPosition(size.width * 0.5, size.height * 0.5)
+		self:addChild(self.root_wnd)
+
+		self.rank_img = self.root_wnd:getChildByName("rank_img")
+		self.name_txt = self.root_wnd:getChildByName("name_txt")
+		self.value_txt = self.root_wnd:getChildByName("value_txt")
+
+		self.no_rank = createRichLabel(20, cc.c4b(0xff,0xff,0xff,0xff), cc.p(0.5,0.5), cc.p(35,25), -4, nil, 60)
+		self.root_wnd:addChild(self.no_rank)
+		self.no_rank:setString(TI18N("语言_c_285"))
+	end
+
+end
+
+function OlympicGamesRankItem:setData(data)
+	if data then
+		local rank = data.idx
+		local val = data.val1
+		local role_name = data.name
+		if rank <=3 and rank ~= 0 then
+			self.rank_img:loadTexture(PathTool.getResFrame("common","common_300"..rank), LOADTEXT_TYPE_PLIST)
+            self.rank_img:ignoreContentAdaptWithSize(true)
+			self.rank_img:setVisible(true)
+			if self.rank_num then
+				self.rank_num:setVisible(false)
+			end
+			self.no_rank:setVisible(false)
+		else
+			if self.rank_num == nil then
+				self.rank_num = CommonNum.new(1, self.root_wnd, 1, -2, cc.p(0.5, 0.5))
+				self.rank_num:setPosition(35, 40)
+			end
+			self.rank_num:setVisible(true)
+			self.rank_num:setNum(rank)
+			self.rank_img:setVisible(false)
+			self.no_rank:setVisible(false)
+		end
+		if rank == 0 then
+			self.rank_num:setVisible(false)
+			self.rank_img:setVisible(false)
+			self.no_rank:setVisible(true)
+		end
+
+		self.name_txt:setString(role_name)
+		self.value_txt:setString(val)
+
+	end
+end
+
+function OlympicGamesRankItem:DeleteMe(  )
+	if self.free_item_list then
+		self.free_item_list:DeleteMe()
+		self.free_item_list = nil
+	end
+end

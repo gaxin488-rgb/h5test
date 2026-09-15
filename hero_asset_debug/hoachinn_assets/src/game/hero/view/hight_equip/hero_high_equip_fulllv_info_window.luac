@@ -1,0 +1,612 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description: 金色装备升级页面
+-- <br/>Create: 2018年11月14日
+--
+-- --------------------------------------------------------------------
+HeroHighEquipFulllvInfoWindow = HeroHighEquipFulllvInfoWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local role_vo = RoleController:getInstance():getRoleVo()
+local math_floor = math.floor
+
+function HeroHighEquipFulllvInfoWindow:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/hero_high_equip_info_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("holy_starup","holy_starup"), type = ResourcesType.plist },
+    }
+
+    self.win_type = WinType.Tips    
+    self.base_list = {}
+    self.suit_item_list = {}
+    self.random_item_list = {}
+    self.skill_item = {}
+    -- self.gemstone_list = {}
+
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.ohter_list = {}
+    self.cloth_type = 1
+    self.is_need = true
+
+    --道具配置
+    self.item_config = nil
+    --套装配置
+    self.suit_config = nil
+end
+
+function HeroHighEquipFulllvInfoWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+
+    -- 基础属性,名字,类型和评分等
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.score_title = self.base_panel:getChildByName("score_title")
+    self.score_title:setString(TI18N("语言_c_1742"))
+    self.equip_item =  BackPackItem.new(true,true,nil,1,false)
+    self.equip_item:setPosition(cc.p(72,68))
+    self.base_panel:addChild(self.equip_item)
+    self.name = self.base_panel:getChildByName("name")
+    setTextMaxWidth(self.name,230,-10)
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    -- self.power_label = CommonNum.new(1, self.base_panel, 1, - 2, cc.p(0, 0))
+    -- self.power_label:setPosition(cc.p(210, 16))
+    -- self.power_label:setNum(0)
+    -- self.power_label:setScale(0.8) 
+    -- setItemXOneByOne({self.score_title,self.power_label})
+    self.lv = self.base_panel:getChildByName("lv")
+    self.lv:setString("Lv.")
+
+    self.look_btn = self.base_panel:getChildByName("look_btn")
+    self.look_btn:setVisible(false)
+    self.suit_icon = self.base_panel:getChildByName("suit_icon")
+    self.suit_name = self.base_panel:getChildByName("suit_name")
+
+    self.full_bg = self.container:getChildByName("full_bg")
+    self.full_txt = self.full_bg:getChildByName("txt")
+    self.full_txt:setString(TI18N("语言_c_6809"))
+    local _width = self.full_txt:getContentSize().width
+    -- 基础属性
+    self.baseattr_panel = self.container:getChildByName("baseattr_panel")
+    self.baseattr_panel_height = self.baseattr_panel:getContentSize().height
+    self.baseattr_label = self.baseattr_panel:getChildByName("label")
+    self.baseattr_label:setString(TI18N("语言_c_1282"))
+
+    --镇魂属性
+    self.soul_panel = self.container:getChildByName("soul_panel")
+    self.soul_panel_height = self.soul_panel:getContentSize().height
+    self.soul_attr_name  = self.soul_panel:getChildByName("label")
+    self.soul_attr_name:setString(TI18N("语言_c_6799"))
+
+    --套装属性
+    self.suitattr_panel = self.container:getChildByName("suitattr_panel")
+    self.suitattr_panel_height = self.suitattr_panel:getContentSize().height
+    self.suitattr_name  = self.suitattr_panel:getChildByName("label")
+    self.suitattr_name:setString(TI18N("语言_c_5979"))
+    self.suitattr_tips  = self.suitattr_panel:getChildByName("label1")
+    self.suitattr_tips:setTouchEnabled(true)
+    self.suitattr_tips:setString(transformTextToShort(TI18N("语言_c_6806"),40))
+    addEvt2showAllTextTips(self.suitattr_tips,TI18N("语言_c_6806"),40,nil,nil,nil,true,true)
+
+    self.suitattr_name:setChangeScaleOffWidth(-1000)
+    setTextMaxWidth(self.suitattr_name,400)
+    --技能
+    self.skill_panel = self.container:getChildByName("skill_panel")
+    self.skill_panel:getChildByName("label"):setString(TI18N("语言_c_6805"))
+    self.skill_panel_height = self.skill_panel:getContentSize().height
+    -- 按钮部分
+    self.tab_panel = self.container:getChildByName("tab_panel")
+    self.tab_panel_height = self.tab_panel:getContentSize().height
+
+    self.tab_btn_3 = self.tab_panel:getChildByName("tab_btn_3")
+    self.tab_btn_3:setTitleText(TI18N("语言_c_2965"))
+    self.tab_btn_2 = self.tab_panel:getChildByName("tab_btn_2")
+    self.tab_btn_2:setTitleText(TI18N("语言_c_4967"))
+    self.tab_btn_1 = self.tab_panel:getChildByName("tab_btn_1")
+    self.tab_btn_1:setTitleText(TI18N("语言_c_2964"))
+
+    self.tab_btn_4 = self.tab_panel:getChildByName("tab_btn_4")
+    self.tab_btn_4:setTitleText(TI18N("语言_c_2959"))
+    self.tab_btn_4:setVisible(false)
+    self.tab_btn_5 = self.tab_panel:getChildByName("tab_btn_5")
+    self.tab_btn_txt_5 = self.tab_btn_5:getChildByName("Text_1")
+    self.tab_btn_txt_5:setString(TI18N("语言_c_3456"))
+    self.tab_btn_5:setVisible(false)
+    self.tab_btn_6 = self.tab_panel:getChildByName("tab_btn_6")
+    self.tab_btn_txt_6 = self.tab_btn_6:getChildByName("Text_1")
+    self.tab_btn_txt_6:setString(TI18N("语言_c_2958"))
+    self.tab_btn_6:setVisible(false)
+
+    self.item = self.root_wnd:getChildByName("item")
+
+    self.close_btn = self.container:getChildByName("close_btn")
+end
+
+function HeroHighEquipFulllvInfoWindow:register_event()
+
+    --来源
+    self.tab_btn_5:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn5(sender)
+        end
+    end)
+  
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 1) 
+    registerButtonEventListener(self.background, function() self:onClickCloseBtn() end ,false, 0) 
+
+end
+
+--关闭
+function HeroHighEquipFulllvInfoWindow:onClickCloseBtn()
+    controller:openHighEquipFullPreviewWindow(false)
+end
+
+--来源
+function HeroHighEquipFulllvInfoWindow:onTabBtn5(sender)
+    local cfg = Config.PartnerGoldeqmData.data_get_patch_compose
+    local suipian_id
+    for k, v in pairs(cfg) do
+        if v.gold_eqm_id == self.data.id then
+            suipian_id = v.id
+        end
+    end
+    if suipian_id then
+        local config = Config.ItemData.data_get_data(suipian_id)
+        BackpackController:getInstance():openTipsSource(true, config)
+        controller:openHighEquipFullPreviewWindow(false)
+    end
+end
+
+--[[
+    @desc: 打开时候附加的参数
+    author:{author}s
+    time:2019-05-19 19:48:51
+    --@object: {data=data, open_type=open_type, partner=partner}
+    @return:
+]]
+function HeroHighEquipFulllvInfoWindow:openRootWnd(object)
+   --{id=40118, lev1=5, lev2=400, attr1={{'atk',1477},{'atk_per',36}}, attr2=50},
+    self.data = object
+    self.full_bg:setVisible(true)
+    -- 因为传参不同,这边需要获取不同的配置数据
+    local item_config = Config.ItemData.data_get_data(self.data.id)
+    self.item_config = item_config
+    if self.item_config == nil then return end
+    self:initData()
+end
+
+function HeroHighEquipFulllvInfoWindow:initData()
+
+     --原本高度
+    local target_height  = self.container_init_size.height
+    -- 是否显示按钮部分
+    self:updateBtnList()
+    --基础信息
+    self:setBaseInfo()
+    --基础属性
+    local baseattr_height = self:setBaseAttrInfo()
+    
+    --铸魂属性
+    local soulattr_height = self:setSoulAttrInfo()
+    self.soul_panel:setPositionY(self.baseattr_panel:getPositionY() - baseattr_height - 5)
+
+    --是否显示套装属性-----------开始
+    local need_show_suitattr = false
+    local need_show_skill = nil
+    local suitattr_height = 0
+
+    if self.item_config.eqm_set ~= 0 then
+        self.suit_config = Config.PartnerEqmData.data_eqm_suit[self.item_config.eqm_set]
+        self.suit_id = self.item_config.eqm_set
+        if self.suit_config then
+            need_show_suitattr = true
+            table_sort( self.suit_config, function(a, b) return a.num < b.num end)
+        end
+    end
+    if need_show_suitattr then
+        suitattr_height, need_show_skill = self:setSuitAttrInfo()
+        self.suitattr_panel:setPositionY(self.soul_panel:getPositionY()- soulattr_height - 5)
+    end
+    --是否显示套装属性-----------结束
+    
+    --是否显示技能
+    if need_show_skill and next(need_show_skill) then
+        self.skill_panel:setPositionY(self.suitattr_panel:getPositionY()-suitattr_height-5)
+        self.skill_scroller = createScrollView(self.skill_panel:getContentSize().width, self.skill_panel:getContentSize().height-30, 0, 0, self.skill_panel, ccui.ScrollViewDir.vertical) 
+        self.skill_scroller:setTouchEnabled(false)
+        local _all_height = (120+2) * #need_show_skill
+        self.skill_scroller:setInnerContainerSize(cc.size(self.skill_panel:getContentSize().width, _all_height))
+        table_sort(need_show_skill, function(a, b) return a.act_num < b.act_num end)
+        for k, v in pairs(need_show_skill) do
+            local skill_id = v.skill_id
+            local config = Config.SkillData.data_get_skill(skill_id)
+            if config then
+                target_height = target_height + self.skill_panel_height
+                if self.skill_item[k] == nil then
+                    self.skill_item[k] = self:createSkillItem(self.skill_scroller)
+                end
+                self.skill_item[k].skill:showLockIcon(false)
+                self.skill_item[k].skill:setData(config)
+                self.skill_item[k].name:setString(config.name or "")
+                local temp_str = ""
+                if self.suit_id == 4018 then
+                    temp_str = TI18N("语言_c_6807")
+                elseif self.suit_id == 4019 then
+                    temp_str = TI18N("语言_c_6818")
+                end
+                -- self.skill_item[k].tips:setString(string.format(temp_str,v.act_num))
+                self.skill_item[k].tips:setString(transformTextToShort(string.format(temp_str,v.act_num), 25))
+                addEvt2showAllTextTips(self.skill_item[k].tips,string.format(temp_str,v.act_num),25,nil,nil,nil,true,true)
+
+                self.skill_item[k].desc:setString(config.des or "")
+                local skill_desc_height = self.skill_item[k].desc:getContentSize().height
+                local scroll_height = math.max(skill_desc_height,self.skill_item[k].desc_scroll:getInnerContainerSize().height)
+                self.skill_item[k].desc_scroll:setInnerContainerSize(cc.size(self.skill_item[k].desc_scroll:getInnerContainerSize().width, scroll_height))
+                self.skill_item[k].desc:setPositionY(scroll_height)
+                if skill_desc_height <= self.skill_item[k].desc_scroll:getContentSize().height then
+                    self.skill_item[k].desc_scroll:setTouchEnabled(false)
+                end
+                -- addEvt2showAllTextTips(self.skill_item[k].desc,config.des,60,nil,nil,nil,true,true)
+                self.skill_item[k].layer:setPositionX(315)
+                self.skill_item[k].layer:setPositionY(_all_height - (k-1)*125 - 60)
+            end
+        end
+    end
+end
+
+function HeroHighEquipFulllvInfoWindow:updateBtnList()
+    self.tab_btn_1:setVisible(false)
+    self.tab_btn_2:setVisible(false)
+    self.tab_btn_3:setVisible(false)
+    self.tab_btn_4:setVisible(false)
+    self.tab_btn_5:setVisible(true)
+    self.tab_btn_6:setVisible(false)
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2018-10-20 09:40:23
+--@return 
+--==============================--
+function HeroHighEquipFulllvInfoWindow:setBaseInfo()
+    if self.data == nil or self.item_config == nil then return end
+    local data = self.data
+    self.equip_item:setBaseData(self.item_config.id)
+
+    local name = self.item_config.name or ""
+    local str = name
+    -- local enchant = data.lev1 or 0
+    -- str = str .. "+" .. enchant
+    self.name:setString(str)
+
+    local quality = 0
+    if self.item_config.quality and self.item_config.quality >= 0 and self.item_config.quality <= 6 then
+        quality = self.item_config.quality
+    end
+    local background_res = PathTool.getResFrame("common_2", "tips_"..quality)
+    if quality == 6 then
+        background_res = PathTool.getResFrame("tips", "tips_20")
+    end
+    self.base_panel:loadTexture(background_res, LOADTEXT_TYPE_PLIST)
+    self.base_panel:setCapInsets(cc.rect(314, 45, 25, 48))
+    self.base_panel:setContentSize(cc.size(618, 138))
+    local color = BackPackConst.getWhiteQualityColorC4B(quality)
+    self.name:setTextColor(color) 
+
+    if self.item_config.type_desc then
+        self.equip_type:setString(TI18N("语言_c_1728")..self.item_config.type_desc)
+    end
+    self.score_title:setVisible(false)
+    local enchant_level = data.lev2
+    local refine_level = data.lev1
+    local key = getNorKey(self.item_config.id,refine_level)
+    local info = Config.PartnerGoldeqmData.data_get_eqm_refine(key)
+    local max_lv = info.enchant_max_lev
+    self.lv:setString(string.format(TI18N("语言_c_6812"), (enchant_level.."/"..max_lv)))
+    -- self.lv:setString("Lv."..enchant_level)
+    local res =  PathTool.getResFrame("common","common_1_216",false,"common_1")
+    self.equip_item:setStarCount(true, 6, res)
+    self.equip_item:setJieTxt(true, refine_level)
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2018-10-20 11:42:16
+--@return 
+--==============================--
+function HeroHighEquipFulllvInfoWindow:setBaseAttrInfo()
+    -- {id=40118, lev1=5, lev2=400, attr1={{'atk',1477},{'atk_per',36}}, attr2=50},
+    if not self.item_config then return end
+    local base_attr = self.data.attr1
+
+    local index = 1 
+    local _h = math.ceil(#base_attr/2) * 40 + 50
+    self.baseattr_panel:setContentSize(cc.size(630,_h))
+    self.baseattr_label:setPositionY(self.baseattr_panel:getContentSize().height - 33)
+    local _h = 5
+    for i,v in ipairs(base_attr) do
+        local attr_key = v[1]
+        local attr_val = v[2]
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if attr_name then
+            if not self.base_list[index] then 
+                self.base_list[index] = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, 28), nil, nil, 380)
+                self.baseattr_panel:addChild(self.base_list[index])
+            end
+            local label = self.base_list[index]
+            local _x = 40 + 300 * ((index-1) % 2)
+            local _y = 20 + math.floor((index-1)/2)*40
+            label:setPosition(cc.p(_x,_y))
+            if attr_name then
+                local icon = PathTool.getAttrIconByStr(attr_key)
+                local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                if is_per == true then
+                    attr_val = (attr_val*0.1).."%"
+                end
+                local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#c1b7ab> %s：</div><div fontcolor=#ffeedd>%s</div>", PathTool.getResFrame("common", icon), attr_name, attr_val)
+                label:setString(attr_str)
+                _h = _h + label:getContentSize().height +5
+            end
+            index = index + 1
+        end
+    end
+    return self.baseattr_panel:getContentSize().height
+end
+
+--设置铸魂属性
+function HeroHighEquipFulllvInfoWindow:setSoulAttrInfo()
+    if not self.soul_attr_txt then 
+        self.soul_attr_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(40, 28), nil, nil, 580)
+        self.soul_panel:addChild(self.soul_attr_txt)
+    end
+    self.soul_attr_txt:setString(string.format(TI18N("语言_c_6795"), (self.data.attr2.."%")))--(TI18N("语言_c_6795")..self.data.attr2.."%")
+    
+    local _h = self.soul_attr_name:getContentSize().height
+    _h = _h + self.soul_attr_txt:getContentSize().height + 50
+    self.soul_attr_name:setPositionY(_h - 20)
+    self.soul_attr_name:setPositionX(20)
+    self.soul_attr_txt:setPositionY(self.soul_attr_txt:getContentSize().height/2 + 20)
+    self.soul_panel:setContentSize(cc.size(630,_h))
+    return _h
+end
+
+--装备套装属性
+function HeroHighEquipFulllvInfoWindow:setSuitAttrInfo()
+    if not self.suit_config then return -1 end
+    if not self.item_config then return -1 end
+    --计算激活数量 (只有穿带才可能激活)
+    local act_count, cur_suit_config = self:getEquipActiveCount()
+    --套装列表
+    local suit_list = {}
+    local max_config = self.suit_config[#self.suit_config]
+    local max_count = max_config.num
+    local name = nil
+
+    for i,v in ipairs(self.suit_config) do
+        if name == nil then
+            name = v.name
+        end
+        if (v.attr and next(v.attr) ~= nil) then
+            local suit = {}
+            suit.count = v.num
+            if self.item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+                if cur_suit_config and cur_suit_config[v.num] then
+                    for _,cur_suit in ipairs(cur_suit_config[v.num]) do
+                        if cur_suit.num == v.num then
+                            suit.attr = cur_suit.attr[#cur_suit.attr] 
+                            suit.name =  cur_suit.abb_name
+                            suit.is_suit =  true
+                        end
+                    end
+                    if suit.attr == nil then
+                        suit.attr = v.attr[#v.attr]
+                        suit.name =  v.abb_name
+                    end
+                else
+                    suit.attr = v.attr[#v.attr] 
+                    suit.name =  v.abb_name
+                end
+            end
+            table_insert(suit_list, suit)
+        end
+    end
+    local count = #suit_list
+
+    for i,suit in ipairs(suit_list) do
+        if self.suit_item_list[i] == nil then
+            self.suit_item_list[i] = self:createattrItem(i, self.suitattr_panel)
+            self.suit_item_list[i].icon:setVisible(false)
+            self.suit_item_list[i].node:setPosition(0, 26-(i-1)*50)
+        end
+        
+        local type_str = type(suit.attr)
+        local attr_color = "c1b7ab"
+        local val_color = "ffeedd"
+        --是否激活
+        if act_count >= suit.count then
+            val_color = "8bff8e"
+            attr_color  = val_color
+        end 
+
+        if type_str == "table" then
+            --说明是属性
+            local attr_key = suit.attr[1]
+            local attr_val = suit.attr[2]
+            local attr_name = Config.AttrData.data_key_to_name[attr_key]
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val*0.1).."%"
+            end
+            local icon = PathTool.getAttrIconByStr(attr_key)
+            local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val)
+            self.suit_item_list[i].attr:setString(attr_str)
+        end
+
+        if suit.name then
+            local act_str = string_format("<div fontcolor=#%s>(%s%s%s)</div>",val_color, suit.name, suit.count,TI18N("语言_c_3054"))
+            self.suit_item_list[i].act_info:setString(act_str)
+        else
+            local act_str = string_format("<div fontcolor=#%s>(%s%s)</div>", val_color, suit.count, TI18N("语言_c_3054"))
+            self.suit_item_list[i].act_info:setString(act_str)
+        end
+
+    end
+
+    local all_skill_list = {}
+    for i, v in ipairs(self.suit_config) do
+        local act_num = v.num
+        for i, val in ipairs(v.skill) do
+            if not all_skill_list[val] then
+                all_skill_list[val] = {act_num = act_num}
+            end
+        end
+    end
+    local suit_id = self.suit_config[1].id
+    local cur_count = 0
+    if cur_suit_config then
+        for i,v in ipairs(cur_suit_config) do
+            if v[1].id == suit_id then
+                cur_count = cur_count + 1
+            end
+        end
+    end
+    local show_skill_id = {}
+    for k, v in pairs(all_skill_list) do
+        local id = k
+        local suit = {}
+        suit.skill_id = id
+        suit.is_suit = cur_count>=v.act_num
+        suit.act_num = v.act_num
+        table.insert(show_skill_id, suit)
+    end
+
+    return self.suitattr_panel_height + 50 *(count - 1), show_skill_id
+end
+
+--获取装备激活数量
+function HeroHighEquipFulllvInfoWindow:getEquipActiveCount()
+    if not self.partner_id or self.partner_id == 0 then
+        return 0
+    end
+    -- 套装数量
+    local count = 0
+    local equip_list = {}
+    if self.item_config.sub_type == BackPackConst.item_tab_type.EQUIPS then--普通装备 
+        if self.partner.eqms ~= nil then
+            --说明是网络返回的
+            for i,v in ipairs(self.partner.eqms) do
+                equip_list[v.type] = GoodsVo.New(v.base_id)
+            end
+        elseif self.partner.eqm_list ~= nil then
+            --说明是本地的 hero_vo
+            for k,v in pairs(self.partner.eqm_list) do
+                equip_list[k] = v
+            end
+        end
+
+        local suit_config = {}
+        for k, goodvo in pairs(equip_list) do
+            if goodvo.config then
+                if goodvo.config.eqm_set > 0 then
+                    count = count + 1
+                    local set_config = Config.PartnerEqmData.data_eqm_suit[goodvo.config.eqm_set]
+                    if set_config ~= nil then
+                        table_insert(suit_config, set_config)
+                    end
+                end
+            end
+        end
+        table_sort( suit_config, function(a, b) 
+                if a[1] and b[1] and a[1].id and b[1].id then
+                    return a[1].id > b[1].id
+                else
+                    return false
+                end
+            end)
+        return count, suit_config
+    end
+end
+
+function HeroHighEquipFulllvInfoWindow:createattrItem(index, parent)
+    if not parent then return end
+    local object = {}
+    object.node = ccui.Layout:create()
+    object.node:setAnchorPoint(cc.p(0, 0.5))
+    object.node:setContentSize(cc.size(360, 28))
+    object.node:setPosition(0, 26-(index-1)*40)
+    parent:addChild(object.node)
+    object.node:setTouchEnabled(true)
+    object.attr = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(40, 14), -2, nil, 280)
+    object.node:addChild(object.attr)
+    object.icon = createImage(object.node, PathTool.getResFrame("holy_starup","holy_starup_6"),0, 14, cc.p(0,0.5), true)
+    object.icon:setVisible(false)
+    object.act_info = createRichLabel(20, cc.c4b(0xff,0xee,0xdd,0xff), cc.p(1, 0.5), cc.p(580, 14), -10, nil, 380)
+    object.node:addChild(object.act_info)
+    return object
+end
+
+--==============================--
+--desc:创建技能显示单例
+--==============================--
+function HeroHighEquipFulllvInfoWindow:createSkillItem(parent)
+    local item = {}
+	local layer = ccui.Layout:create()
+    layer:setAnchorPoint(cc.p(0.5, 0.5))
+    layer:setContentSize(cc.size(630,120))
+    parent:addChild(layer)
+
+	local skill_item = self.item:clone()
+    layer:addChild(skill_item)
+    skill_item:setPositionX(315)
+    skill_item:setPositionY(60)
+    local node = skill_item:getChildByName("Node_4")
+    local skill = SkillItem.new(true,true,true,0.8)
+    node:addChild(skill)
+    skill:setPosition(23, 23)
+    local name = skill_item:getChildByName("title")-- createLabel(24,cc.c4b(0xfe,0xee,0xba,0xff),nil,140, 96,"",parent,1,cc.p(0,0))
+    local tips = skill_item:getChildByName("item_value_1")--createRichLabel(18,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(25, 115),4,nil,260)
+    local desc_scroll =  createScrollView(480,60,120,71,skill_item,ccui.ScrollViewDir.vertical)
+    desc_scroll:setAnchorPoint(cc.p(0,1))
+    local desc = createRichLabel(18,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(0, 71),4,nil,480)
+    desc_scroll:addChild(desc)
+
+    item.layer = layer
+    item.skill = skill
+    item.tips = tips
+    item.name = name
+    item.desc_scroll = desc_scroll
+    item.desc = desc
+    return item
+end
+
+--计算基础评分
+function HeroHighEquipFulllvInfoWindow:getBaseScore()
+    local base_attr = self.data.attr1
+     -- {id=40118, lev1=5, lev2=400, attr1={{'atk',1477},{'atk_per',36}}, attr2=50},
+    -- if not self.item_config or not self.item_config.ext or not self.item_config.ext[1] then return 0 end
+    -- local base_attr = self.item_config.ext[1][2] or {}
+    -- local num = PartnerCalculate.calculatePower(base_attr)
+    return PartnerCalculate.calculatePower(base_attr) 
+end
+
+function HeroHighEquipFulllvInfoWindow:close_callback()
+    if self.equip_item then 
+        self.equip_item:DeleteMe()
+        self.equip_item = nil
+    end
+    controller:openHighEquipFullPreviewWindow(false)
+end

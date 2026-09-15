@@ -1,0 +1,377 @@
+-- --------------------------------------------------------------------
+-- 英雄魂器tips
+-- 
+-- @author: cloud@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-xx-xx
+-- --------------------------------------------------------------------
+HorcruxTips = HorcruxTips or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local role_vo = RoleController:getInstance():getRoleVo()
+local math_floor = math.floor
+
+function HorcruxTips:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/horcrux_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist}, 
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.base_list = {}
+    self.strengthen_list = {}
+end
+
+function HorcruxTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+        -- self.background:setSwallowTouches(false)
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+    self:playEnterAnimatianByObj(self.container, 2)
+    -- 基础属性,名字,类型和评分等
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.score_title = self.base_panel:getChildByName("score_title")
+    self.score_title:setString(TI18N("评分: "))
+    self.horcrux_item =  HorcruxItem.new(false, 1, false, false)
+    self.horcrux_item:setPosition(cc.p(72,68))
+    self.base_panel:addChild(self.horcrux_item)
+    self.name = self.base_panel:getChildByName("name")
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    self.power_label = CommonNum.new(1, self.base_panel, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(240, 32))
+    self.power_label:setNum(0)
+    self.power_label:setScale(0.8) 
+
+    self.look_btn = self.base_panel:getChildByName("look_btn")
+
+    -- 基础属性
+    self.baseattr_panel = self.container:getChildByName("baseattr_panel")
+    self.baseattr_panel_height = self.baseattr_panel:getContentSize().height
+    self.baseattr_panel:getChildByName("label"):setString(TI18N("基础属性"))
+    self.strengthen_label = self.baseattr_panel:getChildByName("label_0")
+    self.strengthen_label:setString(TI18N("（强化后提升）"))
+    self.strengthen_label:setPositionX(130)
+
+    --强化效果
+    self.strengthen_panel = self.container:getChildByName("strengthen_panel")
+    self.strengthen_panel_height = self.strengthen_panel:getContentSize().height
+    self.strengthen_panel:getChildByName("label"):setString(TI18N("强化效果"))
+
+    -- 按钮部分
+    self.tab_panel = self.container:getChildByName("tab_panel")
+    self.tab_panel_height = self.tab_panel:getContentSize().height
+    self.tab_btn_1 = self.tab_panel:getChildByName("tab_btn_1")
+    self.tab_btn_1:setTitleText(TI18N("强化"))
+    self.tab_btn_1.need_str = ""
+
+    -- 描述部分
+    self.desc_panel = self.container:getChildByName("desc_panel")
+    self.scroll_view = self.desc_panel:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.scroll_size = self.scroll_view:getContentSize()
+    self.desc_label = createRichLabel(19, cc.c4b(0xa1,0x97,0x8b,0xff), cc.p(0, 1), cc.p(20, 64), 8, nil, 380) 
+    self.scroll_view:addChild(self.desc_label)
+
+    self.close_btn = self.container:getChildByName("close_btn")
+end
+
+function HorcruxTips:register_event()
+    -- 强化
+    self.tab_btn_1:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            self:onTabBtn1()
+        end
+    end)
+
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 1)
+    registerButtonEventListener(self.background, function() self:onClickCloseBtn() end ,false, 0)
+
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type)
+        local config = Config.HorcruxData.data_constant.horcrux_rule
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        end
+    end ,true, 2)
+
+    -- 英雄数据更新
+    self:addGlobalEvent(HeroEvent.Hero_Data_Update, function(hero_vo)
+        if not hero_vo or not self.horcrux_data then return end
+        if hero_vo.partner_id == self.horcrux_data.partner_id then
+            self.horcrux_data = {bid = hero_vo.bid,
+            horcrux_status = hero_vo.horcrux_status,
+            horcrux_lev = hero_vo.horcrux_lev,
+            partner_id = hero_vo.partner_id,
+            star = hero_vo.star}
+            self:initData()
+        end
+    end)
+end
+
+--关闭
+function HorcruxTips:onClickCloseBtn()
+    controller:openHorcruxTipsPanel(false)
+end
+
+--强化
+function HorcruxTips:onTabBtn1()
+    if self.horcrux_data then
+        controller:openHorcruxStrengtPanel(true, self.horcrux_data)
+    end
+    controller:openHorcruxTipsPanel(false)
+end
+
+--[[
+    @desc: 打开时候附加的参数
+    author:{author}
+    time:2020-06-22
+    --@object: {data=data, open_type=open_type, partner=partner, holy_data=holy_data}
+    @return:
+]]
+function HorcruxTips:openRootWnd(horcrux_data, open_type)
+    if horcrux_data == nil then return end
+    self.horcrux_data = horcrux_data
+    self.open_type = open_type or PartnerConst.HorcruxTips.other
+    self:initData()
+end
+
+function HorcruxTips:initData()
+     --原本高度
+    local target_height  = self.container_init_size.height
+
+    -- 显示基础属性部分
+    local need_show_base_attr = true
+    local base_attr_height = 0
+    if need_show_base_attr then
+        base_attr_height = self:setBaseAttrInfo()
+        if base_attr_height > 0 then
+            target_height = target_height + base_attr_height
+        else
+            base_attr_height = 0
+            self.baseattr_panel:setVisible(false)
+        end
+    else
+        base_attr_height = 0
+        self.baseattr_panel:setVisible(false)
+    end
+
+    -- 显示强化效果部分
+    local need_show_strengthen = true
+    local strengthen_height = 0
+    if need_show_strengthen then
+        strengthen_height = self:setStrengthenInfo()
+        if strengthen_height > 0 then
+            target_height = target_height + strengthen_height
+        else
+            strengthen_height = 0
+            self.strengthen_panel:setVisible(false)
+        end
+    else
+        strengthen_height = 0
+        self.strengthen_panel:setVisible(false)
+    end
+
+    -- 是否显示按钮部分
+    local need_show_btn = (self.open_type == PartnerConst.HorcruxTips.normal)
+    if need_show_btn then
+        self:updateBtnList()
+    else
+        target_height = target_height - self.tab_panel_height
+        self.tab_panel:setVisible(false)
+    end
+
+    if target_height ~= self.container_init_size.height then
+        self.container:setContentSize(cc.size(self.container_init_size.width, target_height))
+        local y = target_height - 4
+        self.base_panel:setPositionY(y) --基本信息
+        self.close_btn:setPositionY(y - 11)
+        y = y - self.base_panel:getContentSize().height 
+        if need_show_base_attr then
+            self.baseattr_panel:setPositionY(y) --基础属性
+            y = y - base_attr_height
+        end
+
+        if need_show_strengthen then --强化效果
+            self.strengthen_panel:setPositionY(y)
+            y = y -  strengthen_height
+        end
+
+        self.desc_panel:setPositionY(y) --描述buf(高度固定，可以滚动)
+        if need_show_btn then
+            y = y - self.desc_panel:getContentSize().height
+            self.tab_panel:setPositionY(y)
+        end
+    end
+    self:setBaseInfo()
+end
+
+function HorcruxTips:updateBtnList()
+    self.tab_btn_1:setTitleText(TI18N("强化"))
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2020-07-01
+--@return 
+--==============================--
+function HorcruxTips:setBaseInfo()
+    if self.horcrux_data == nil then return end
+    local partner_data = Config.PartnerData.data_partner_base[self.horcrux_data.bid]
+    local partner_horcrux_config = model:getPartnerHorcruxConfig(self.horcrux_data.bid)
+    local horcrux_attr_config = model:getHorcruxAttrConfig(self.horcrux_data.horcrux_lev)
+    if partner_data == nil or partner_horcrux_config == nil or horcrux_attr_config == nil then return end
+    self.horcrux_item:setData(self.horcrux_data)
+    local quality = partner_horcrux_config.quality or 0
+    local background_res = PathTool.getResFrame("tips", "tips_"..quality)
+    if self.record_background_res == nil or self.record_background_res ~= background_res then
+        self.record_background_res = background_res
+        loadSpriteTexture(self.base_panel, background_res, LOADTEXT_TYPE_PLIST) 
+    end
+    local color = BackPackConst.getEquipTipsColor(quality)
+    self.name:setTextColor(color) 
+    -- 魂器名字
+    self.name:setString(partner_horcrux_config.horcrux_name)
+    -- 专属英雄
+    local name_str = string_format(TI18N("%s专属"), partner_data.name)
+    self.equip_type:setString(name_str)
+    local score = horcrux_attr_config.score or 0
+    self.power_label:setNum(score)
+
+    -- 描述
+    self.desc_label:setString(partner_horcrux_config.horcrux_desc)
+    local label_siez = self.desc_label:getContentSize()
+    local max_height = math.max(label_siez.height, self.scroll_size.height)
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_size.width, max_height))
+    self.desc_label:setPositionY(max_height-10)
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2020-07-01
+--@return 
+--==============================--
+function HorcruxTips:setBaseAttrInfo()
+    local base_attr = model:getHorcruxAttrList(self.horcrux_data.bid, self.horcrux_data.horcrux_lev)
+    local line = 0
+    if base_attr == nil then return 0 end
+    for i, v in ipairs(base_attr) do
+        local attr_key = v[1][1]
+        local attr_val = v[1][2]
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if attr_name then
+            if not self.base_list[i] then
+                self.base_list[i] = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, 28), nil, nil, 380)
+                self.baseattr_panel:addChild(self.base_list[i])
+            end
+            if (i + 1) % 2 == 0 then
+                line = line + 1
+            end
+            local label = self.base_list[i]
+            local _x = 24 + ((i - 1) % 2) * 200
+            local _y = 28 - (line - 1) * 40 
+            label:setPosition(_x, _y)
+            local icon = PathTool.getAttrIconByStr(attr_key)
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val*0.1).."%"
+            end
+            local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#c1b7ab> %s: </div><div fontcolor=#ffeedd>%s</div>", PathTool.getResFrame("common", icon), attr_name, attr_val)
+            label:setString(attr_str)
+        end
+    end
+    self.strengthen_label:setVisible(not self:checkIsMax())
+    return self.baseattr_panel_height + 40 * (line - 1)
+end
+
+--==============================--
+--desc:设置强化效果
+--time:2020-07-01
+--@return 
+--==============================--
+function HorcruxTips:setStrengthenInfo()
+    if self.strengthen_list then
+        for i, v in ipairs(self.strengthen_list) do
+            self.strengthen_list[i]:removeFromParent()
+            self.strengthen_list[i] = nil
+        end
+    end
+    self.strengthen_list = {}
+    local strengthen_effect_data = model:getStrengthenDesc(self.horcrux_data.bid,self.horcrux_data.horcrux_lev)
+    local item_list_height = 0
+    if strengthen_effect_data then
+        for i, v in ipairs(strengthen_effect_data) do
+            local strengthen_item, item_height = self:createStrengthenItem(v)
+            local _x = 24
+            local _y = 26 - item_list_height - item_height / 2 - 20
+            item_list_height = item_list_height + item_height
+            strengthen_item:setPosition(_x, _y)
+            self.strengthen_panel:addChild(strengthen_item)
+            self.strengthen_list[i] = strengthen_item
+        end
+        return self.strengthen_panel_height + item_list_height
+    end
+    return 0
+end
+
+function HorcruxTips:createStrengthenItem(data)
+    if data == nil then return end
+    local item_size = cc.size(550, 40)
+    local layout = ccui.Widget:create()
+    layout:setAnchorPoint(0, 0.5)
+    local icon_path = PathTool.getResFrame("hero", "hero_info_65")
+    local text_color = cc.c4b(0xc1,0xb7,0xab,0xff)
+    local icon_scale = 0.8
+    if data.is_achieve then
+        icon_path = PathTool.getResFrame("hero", "hero_info_64")
+        text_color = cc.c4b(0x65,0xdf,0x74,0xff)
+        icon_scale = 0.9
+    end
+    local desc_label = createRichLabel(19, text_color, cc.p(0, 0.5), cc.p(30, 0), 8, nil, 320) 
+    desc_label:setString(data.desc_str)
+    item_size.height = math.max(item_size.height, desc_label:getContentSize().height + 15)
+    layout:setContentSize(cc.size(item_size.width, item_size.height))
+    layout:addChild(desc_label)
+    desc_label:setPositionY(item_size.height / 2)
+    
+    local icon = createImage(layout, icon_path, 15, item_size.height / 2 + desc_label:getContentSize().height / 2 + 3, cc.p(0.5, 1), true)
+    icon:setScale(icon_scale)
+    return layout, item_size.height
+end
+
+function HorcruxTips:checkIsMax()
+    if self.horcrux_data and self.horcrux_data.horcrux_lev then
+        local config = model:getHorcruxAttrConfig(self.horcrux_data.horcrux_lev + 1)
+        if config then
+            return false
+        end
+    end
+    return true
+end
+
+function HorcruxTips:close_callback()
+    if self.horcrux_item then 
+        self.horcrux_item:DeleteMe()
+        self.horcrux_item = nil
+    end
+    if self.power_label then 
+        self.power_label:DeleteMe()
+        self.power_label = nil
+    end
+
+    controller:openHorcruxTipsPanel(false)
+end

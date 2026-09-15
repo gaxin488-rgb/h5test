@@ -1,0 +1,223 @@
+-- --------------------------------------------------------------------
+-- 
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+RoleServerCell = class("RoleServerCell", function() 
+	return ccui.Widget:create()
+end)
+
+local controller = LoginController:getInstance()
+local model = controller:getModel()
+
+function RoleServerCell:ctor()
+	self.rolesNum = 0
+	self.roles = {}
+	self.scroll_h = 110
+	self.isOpenRoles = false
+
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("login/server_cell"))
+	self:addChild(self.root_wnd)
+
+	local size = self.root_wnd:getContentSize()
+    self:retain()
+	self:setContentSize(size)
+	self:setAnchorPoint(0,1)
+	self:setCascadeOpacityEnabled(true)
+	self.cell_w = size.width
+	self.cell_h = size.height
+
+	self.select_bg = self.root_wnd:getChildByName("select_bg")
+	self.state_icon = self.root_wnd:getChildByName("state_icon")
+	self.close_icon = self.root_wnd:getChildByName("close_icon")
+	self.icon_state = self.root_wnd:getChildByName("icon_state")
+	self.server_id = self.root_wnd:getChildByName("server_id")
+	self.server_name = self.root_wnd:getChildByName("server_name")
+	self.role_info = self.root_wnd:getChildByName("role_info")
+	self.role_lev = self.role_info:getChildByName("role_sum")
+end
+
+--==============================--
+--desc:设置服务器数据，以及当前角色信息
+--time:2018-06-25 07:04:13
+--@data:
+--@return 
+--==============================--
+function RoleServerCell:setBaseData(data, is_role)
+	if data == nil or data.v == nil then return end
+
+	self.data = data
+	self.idx = data.idx
+	local state_type = 1
+	if self.data.v.isClose and self.data.v.isClose ~= 0 then
+		state_type = 2
+		self.close_icon:setVisible(true)
+		self.state_icon:setVisible(false)
+	else
+		self.close_icon:setVisible(false)
+		if self.data.v.isRecommend and self.data.v.isRecommend ~= 0 then
+			state_type = 0
+			self.state_icon:setVisible(true)
+		else
+			self.state_icon:setVisible(false)
+		end
+	end
+	self.icon_state:loadTexture(PathTool.getResFrame("login2", "login2_100".. state_type), LOADTEXT_TYPE_PLIST)
+
+	-- 服务器名字可以提前设置
+	self.server_id:setString(self.data.v.srv_name)
+	self.server_name:setString("")
+
+	self.role_first = {}
+	self.role_first.isEmpty = true
+	local role_count = data.v.role_count or 0
+	if role_count > 0 then
+		self.role_lev:setVisible(false)
+		self.role_info:setVisible(false)
+	else
+		self.role_lev:setVisible(false)
+		self.role_info:setVisible(false)
+	end
+	self:ShowRoleInfo(nil)
+	self:updateRoleData(data.v.roles,true)
+end
+
+function RoleServerCell:GetSrvID()
+	if self.data and self.data.v and self.data.v.srv_id then
+		return self.data.v.srv_id
+	end
+	return 0
+end
+
+--==============================--
+--desc:更新具体角色数据
+--time:2018-06-25 07:08:29
+--@roles:
+--@return 
+--==============================--
+function RoleServerCell:updateRoleData(roles,isinit)
+	if roles then
+		self.roles = roles
+		self.rolesNum = #roles
+		table.sort(self.roles, function(a,b) return b.lev<a.lev end)
+		self:update(true)
+	end
+end
+
+function RoleServerCell:click_callback()
+	-- model:setCurSrv(self.data.v, true)
+end
+
+function RoleServerCell:update(isinit)
+	if #self.roles > 0 then
+		for i, v in ipairs(self.roles) do
+			if isinit then
+				self:ShowRoleInfo(v)
+			else
+				self:click_callback(v)
+			end
+			break
+		end
+	else
+		if isinit then
+			self:ShowRoleInfo(nil)
+		else
+			self:click_callback()
+		end
+	end
+end
+
+function RoleServerCell:ShowRoleInfo(role)
+	if role then
+		if self.roleBg == nil then
+			self.roleBg = PlayerHead.new(PlayerHead.type.square,0)
+			self.roleBg:setPosition(355,48)
+			self.roleBg:setAnchorPoint(cc.p(0.5,0.5))
+			-- self.roleBg:setScale(0.8)
+			self.roleBg:setHeadRes(50403)
+			self.root_wnd:addChild(self.roleBg)
+		end
+		self.roleBg:setHeadRes(role.face_id)
+		self.roleBg:setHeadResScale(0.75)
+		local res = PathTool.getResFrame("common", "common_7")
+		self.roleBg:showBg(res, cc.size(86,86))
+		self.roleBg:setHeadBgOffy(3)
+		
+		self.nameBg = createSprite(PathTool.getResFrame("common", "common_6"), 355,20, self.root_wnd, cc.p(0.5,0.5))
+		self.lvBg = createSprite(PathTool.getResFrame("common", "common_5"), 397, 88, self.root_wnd, cc.p(0.5,0.5))
+		if self.txt_name == nil then
+			self.txt_name = createLabel(19, cc.c4b(255,255,255,255), nil, 355, 22, "", self, 0, cc.p(0.5, 0.5))
+		end
+		if self.txt_lv == nil then
+			self.txt_lv = createLabel(19, cc.c4b(255,255,255,255), cc.c4b(0,0,0,255), 397, 88, "", self, 2, cc.p(0.5, 0.5))
+		end
+
+		local name_A = role.name or TI18N("语言_30319")
+		local lev_A = role.lev or "1"
+		local namestr = string.format("%s",name_A)
+		self.txt_name:setString(namestr)
+		self.txt_name:setWidth(110)
+		self.txt_name:setHeight(21)
+		self.txt_name:setHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+		self.txt_lv:setString(string.format("%s",lev_A))
+		self.roleBg:setVisible(true)
+		self.txt_name:setVisible(true)
+		self.txt_lv:setVisible(true)
+	else
+		if self.roleBg then self.roleBg:setVisible(false) end
+		if self.txt_name then self.txt_name:setVisible(false) end
+		if self.nameBg then self.nameBg:setVisible(false) end
+		if self.lvBg then self.lvBg:setVisible(false) end
+		if self.txt_lv then self.txt_lv:setVisible(false) end
+	end
+end
+
+function RoleServerCell:addCallBack(call_fun)
+	self.callBack = call_fun
+	self:setTouchEnabled(true)
+	self:addTouchEventListener(function(sender, eventType) 
+		if eventType == ccui.TouchEventType.ended then
+			if self.data == nil or self.data.v == nil then return end
+			-- if NEED_CHECK_CLOSE == true and (self.data.v.isClose or GameNet:getInstance():getTime() - self.data.v.open_time < 0) then
+			if NEED_CHECK_CLOSE == true and IsServerCloseFun(self.data.v.isClose) then
+				model:checkReloadServerData(self.data.v)
+			else
+				if self.callBack ~= nil then
+					self.callBack(self)
+				end
+			end
+		end
+	end)
+end
+
+function RoleServerCell:setSelected(status)
+	if self.select_bg then
+		self.select_bg:setVisible(status)
+	end
+	if status == true then
+		self.server_id:setTextColor(cc.c4b(162,62,1,255))
+		self.server_name:setTextColor(cc.c4b(162,62,1,255))
+	else
+		self.server_id:setTextColor(cc.c4b(104,69,42,255))
+		self.server_name:setTextColor(cc.c4b(104,69,42,255))
+	end
+end
+
+function RoleServerCell:clearLayout()
+	self:setSelected(false)
+	self:removeFromParent()
+end
+
+function RoleServerCell:DeleteMe()
+	self:removeAllChildren()
+	self:removeFromParent()
+	self:release()
+end
+
+function RoleServerCell:getData()
+	return self.data
+end

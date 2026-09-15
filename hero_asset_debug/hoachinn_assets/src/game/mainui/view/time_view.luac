@@ -1,0 +1,95 @@
+-- --------------------------------------------------------------------
+-- 时间详情
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+TimeView = TimeView or BaseClass(BaseView)
+
+local controller = MainuiController:getInstance()
+
+function TimeView:__init()
+    self.ctrl = StartowerController:getInstance()
+    self.layout_name = "mainui/time_view"
+    self.cur_type = 0
+    self.win_type = WinType.Tips  
+end
+
+function TimeView:open_callback()
+    self.mainContainer = self.root_wnd:getChildByName("main_container")
+    self.bg_img = self.mainContainer:getChildByName("bg_img")
+    self.bg_img:setScaleY(0)
+    self.time_panel = self.mainContainer:getChildByName("time_panel")
+    self.openingDays = self.bg_img:getChildByName("openingDays")
+    self.data_txt = self.time_panel:getChildByName("data_txt")
+    self.time_txt = self.time_panel:getChildByName("time_txt")
+
+
+    self.background = self.root_wnd:getChildByName("background")
+end
+
+function TimeView:register_event()
+    registerButtonEventListener(self.background, function()
+        controller:openTimeView(false)
+    end,true, 2)
+
+    -- 监听开服天数变化
+    if self.update_open_srv_day_event == nil then
+        self.update_open_srv_day_event = GlobalEvent:getInstance():Bind(RoleEvent.OPEN_SRV_DAY, function(openday) 
+            self.openingDays:setString(string.format(TI18N("语言_c_4877"),openday))
+        end)
+    end
+end
+
+function TimeView:openRootWnd()
+    local action = cc.Sequence:create(cc.ScaleTo:create(0.2, 1))
+    self.bg_img:runAction(action)
+    local openday = RoleController:getInstance():getModel():getOpenSrvDay()
+    self.openingDays:setString(string.format(TI18N("语言_c_4877"),openday))
+
+    local nowtime = GameNet:getInstance():getTime()
+    local timezone = InviteCodeController:getInstance():getModel():getServerTimeZone()--服务器时区
+    self.time_txt:setString(TimeTool.xsdate("%X",nowtime,timezone))
+    local y = TimeTool.xsdate("%Y",nowtime,timezone)
+    local m = TimeTool.xsdate("%m",nowtime,timezone)
+    local d = TimeTool.xsdate("%d",nowtime,timezone)
+    local str = string.format(TI18N("语言_c_4763"),y,m,d)
+    self.data_txt:setString(str)
+
+    self:showServerTime()
+end
+--计时器
+function TimeView:showServerTime()
+    if tolua.isnull(self.time_txt) then return end
+    if tolua.isnull(self.data_txt) then return end
+    doStopAllActions(self.time_txt)
+    doStopAllActions(self.data_txt)
+    self.time_txt:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+        -- self.time_txt:setString(TimeTool.getHMS(nowtime))
+        -- self.data_txt:setString(TimeTool.getYMD2(nowtime))--1年1月1日
+        local nowtime = GameNet:getInstance():getTime()
+        --local timezone = InviteCodeController:getInstance():getModel():getServerTimeZone()--服务器时区
+	local timezone = TimeTool.getTimeZone()
+	local Servertime = GameNet:getInstance():getSrvLocalTime()
+        self.time_txt:setString(TimeTool.xsdate("%X",Servertime,timezone))
+        local y = TimeTool.xsdate("%Y",nowtime,timezone)
+        local m = TimeTool.xsdate("%m",nowtime,timezone)
+        local d = TimeTool.xsdate("%d",nowtime,timezone)
+        --local str = string.format(TI18N("语言_c_4763"),y,m,d)
+	local str = string.format(TI18N("语言_c_4763"),d,m,y)
+        self.data_txt:setString(str)
+    end))))
+end
+
+function TimeView:close_callback()
+    doStopAllActions(self.time_txt) --停止计时器
+    doStopAllActions(self.data_txt) --停止计时器
+
+    if self.update_open_srv_day_event ~= nil then
+		GlobalEvent:getInstance():UnBind(self.update_open_srv_day_event)
+		self.update_open_srv_day_event = nil
+	end
+end

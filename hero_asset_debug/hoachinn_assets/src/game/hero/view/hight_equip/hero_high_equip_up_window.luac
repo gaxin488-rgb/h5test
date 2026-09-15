@@ -1,0 +1,287 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description: 金色装备升级页面
+-- <br/>Create: 2018年11月14日
+--
+-- --------------------------------------------------------------------
+HeroHighEquipUpWindow = HeroHighEquipUpWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_sort = table.sort
+local table_insert = table.insert
+
+function HeroHighEquipUpWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "hero/hero_high_equip_up_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("herobag","herobag"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("goldeqm","goldeqm"), type = ResourcesType.plist }
+    }
+
+end
+
+function HeroHighEquipUpWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.mainContainer = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.mainContainer , 1)  
+    self.bottom_bg = self.mainContainer:getChildByName("bottom_bg")
+
+    self.container = self.mainContainer:getChildByName("container")
+    local tab_container = self.mainContainer:getChildByName("tab_container")
+    self.tab_container = tab_container
+    local tab_btn_name = {
+        [1] = TI18N("语言_c_4967"),
+        [2] = TI18N("语言_c_5865"),
+        [3] = TI18N("语言_c_6798")
+    }
+    local tab_btn_type = {
+        [1] = 1,
+        [2] = 2,
+        [3] = 3,
+    }
+    self.tab_btn_list = {}
+
+    for i=1,3 do
+        local tab_btn = {}
+        local item = tab_container:getChildByName("tab_btn_"..i)
+        tab_btn.btn = item
+        tab_btn.index = tab_btn_type[i]
+        tab_btn.normal_img = item:getChildByName("normal_img")
+        tab_btn.select_img = item:getChildByName("select_img")
+        tab_btn.select_bg = item:getChildByName("select_bg")
+        tab_btn.select_bg:setVisible(false)
+        tab_btn.select_img:setVisible(false)
+        tab_btn.title = item:getChildByName("label")
+        tab_btn.title:getVirtualRenderer():setLineSpacing(-10)
+        -- tab_btn.title:setTextColor(cc.c4b(249,238,208,255))
+        -- tab_btn.title:enableOutline(cc.c4b(58,41,10,255), 2)
+        -- tab_btn.title:setFontSize(24)
+        -- tab_btn.title:setChangeScaleOffWidth(60)
+        tab_btn.title:setString(tab_btn_name[i])
+        tab_btn.red_point = item:getChildByName("red_point")
+        tab_btn.red_point:setVisible(false)
+        self.tab_btn_list[tab_btn.index] = tab_btn
+    end
+    setChildUnEnabled(true,self.tab_btn_list[3].btn)
+    self.soul_unlock = false
+    
+    self.close_btn = self.root_wnd:getChildByName("close_btn")
+    self.close_btn:ignoreContentAdaptWithSize(true)
+    self:adaptationScreen()
+
+    self.player_info_panel = PlayerInfoPanel.new()
+    self.mainContainer:addChild(self.player_info_panel)
+    local top_y = display.getTop(self.mainContainer)
+    self.player_info_panel:setPositionY(top_y)
+end
+
+function HeroHighEquipUpWindow:adaptationScreen()
+    --对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.mainContainer)
+    local bottom_y = display.getBottom(self.mainContainer)
+    self.bottom_bg:setPositionY(bottom_y)
+    self.tab_container:setPositionY(bottom_y+5)
+    self.close_btn:setPositionY(bottom_y+150)
+end
+
+function HeroHighEquipUpWindow:register_event()
+    for index, tab_btn in ipairs(self.tab_btn_list) do
+       registerButtonEventListener(tab_btn.btn, function() self:changeTabIndex(tab_btn.index) end ,false, 2) 
+    end
+    registerButtonEventListener(self.close_btn, function() 
+        controller:openHighEquipMainWindow(false)
+    end ,false, 2) 
+
+    --刷新数据
+    if not self.updateRedEvent then
+        self.updateRedEvent = GlobalEvent:getInstance():Bind(HeroEvent.Hero_High_Equip_Red_Event,function ()
+			self:updateTabRed()
+        end)
+    end
+    
+    if not self.updateEquipInfoEvent then
+        self.updateEquipInfoEvent = GlobalEvent:getInstance():Bind(BackpackEvent.BACKPACK_GOLDEQUIP_EVENT,function ()
+			self:updateTabInfo()
+            self:updateTabBtnStatus()
+        end)
+    end
+end
+
+function HeroHighEquipUpWindow:_onClickBtnClose()
+    controller:openHeroHighEquipUpWindow(false)
+end
+
+-- @index  1 表示 强化  2 表示 升星  3表示 铸魂
+function HeroHighEquipUpWindow:changeTabIndex(index)
+    if index == 3 then
+        if self.soul_unlock == false then
+            local soul_lv = Config.PartnerGoldeqmData.data_get_constant.forge_limit.val or 2
+            message(string.format(TI18N("语言_c_6822"),soul_lv))
+            return
+        end
+    end
+
+    if self.select_btn and self.select_btn.index == index then return end
+
+    if self.select_btn then 
+        self.select_btn.select_img:setVisible(false)
+        self.select_btn.select_bg:setVisible(false)
+        self.select_btn.normal_img:setVisible(true)
+        self.select_btn.title:setTextColor(cc.c4b(255,255,255,255))
+        self.select_btn.title:enableOutline(cc.c4b(0x00,0x00,0x00,0xff), 2)
+    end
+
+    self.select_btn = self.tab_btn_list[index]
+    if self.select_btn then 
+        self.select_btn.select_img:setVisible(true)
+        self.select_btn.select_bg:setVisible(true)
+        self.select_btn.normal_img:setVisible(false)
+        self.select_btn.title:setTextColor(cc.c4b(0xf5,0xd2,0x69,0xff))
+        self.select_btn.title:enableOutline(cc.c4b(0x18,0x01,0x01,0xff),2)
+    end
+
+    if index == 1 then --强化页签
+        if not self.equip_strength_panel then
+            self.equip_strength_panel = HeroHighEquipTabStrengthPanel.new()
+            self.equip_strength_panel:setPosition(cc.p(self.container:getContentSize().width/2, self.container:getContentSize().height/2))
+            self.container:addChild(self.equip_strength_panel)
+        end
+        self.equip_strength_panel:setData(self.equip_data,self.partner_id)
+        self.equip_strength_panel:setVisible(true)
+        if self.equip_up_star_panel then
+            self.equip_up_star_panel:setVisible(false)
+        end
+
+        if self.equip_soul_panel then
+            self.equip_soul_panel:setVisible(false)
+        end
+
+    elseif index == 2 then --升星页签
+        if not self.equip_up_star_panel then
+            self.equip_up_star_panel = HeroHighEquipTabUpstarPanel.new()
+            self.equip_up_star_panel:setPosition(cc.p(self.container:getContentSize().width/2, self.container:getContentSize().height/2))
+            self.container:addChild(self.equip_up_star_panel)
+        end
+        self.equip_up_star_panel:setData(self.equip_data,self.partner_id)
+        self.equip_up_star_panel:setVisible(true)
+        if self.equip_strength_panel then
+            self.equip_strength_panel:setVisible(false)
+        end
+        if self.equip_soul_panel then
+            self.equip_soul_panel:setVisible(false)
+        end
+    elseif index == 3 then --铸魂页签
+        if not self.equip_soul_panel then
+            self.equip_soul_panel = HeroHighHquipHabSoulPanel.new()
+            self.equip_soul_panel:setPosition(cc.p(self.container:getContentSize().width/2, self.container:getContentSize().height/2))
+            self.container:addChild(self.equip_soul_panel)
+        end
+        self.equip_soul_panel:setData(self.equip_data,self.partner_id)
+        self.equip_soul_panel:setVisible(true)
+        if self.equip_strength_panel then
+            self.equip_strength_panel:setVisible(false)
+        end
+        if self.equip_up_star_panel then
+            self.equip_up_star_panel:setVisible(false)
+        end
+    end
+end
+
+function HeroHighEquipUpWindow:openRootWnd(data,partner_id,index)
+    local index = index or 1
+    self.equip_data = data
+    self.partner_id = partner_id
+    self:changeTabIndex(index)
+    local equip_id = data.id
+    BackpackController:getInstance():sender11446(partner_id,equip_id)
+end
+
+function HeroHighEquipUpWindow:updateTabBtnStatus()
+    local gold_info = BackpackController:getInstance():getModel():getGoldEquipData(self.equip_data.id)
+    if not gold_info then return end
+    local srtar = gold_info.star_level or 0
+    local soul_lv = Config.PartnerGoldeqmData.data_get_constant.forge_limit.val or 2
+    if soul_lv > srtar then --未解锁
+        setChildUnEnabled(true,self.tab_btn_list[3].btn)
+        self.soul_unlock = false
+    else
+        setChildUnEnabled(false,self.tab_btn_list[3].btn)
+        self.soul_unlock = true
+    end
+end
+
+function HeroHighEquipUpWindow:updateTabInfo()
+    if self.equip_strength_panel then
+        self.equip_strength_panel:updateInfo()
+    end
+    if self.equip_up_star_panel then
+        self.equip_up_star_panel:updateInfo()
+    end
+    if self.equip_soul_panel then
+        self.equip_soul_panel:updateInfo()
+    end
+    self:updateTabRed()
+end
+
+function HeroHighEquipUpWindow:updateTabRed()
+    local gold_info = BackpackController:getInstance():getModel():getGoldEquipData(self.equip_data.id)
+    if not gold_info or not next(gold_info) then return end
+    local vo = {id = self.equip_data.config.id,
+        refine_level = gold_info.refine_level,
+        enchant_level = gold_info.enchant_level,
+        star_level = gold_info.star_level,
+        soul_level = gold_info.soul_level,
+    }
+    local red_1 = HeroController:getInstance():getModel():checkGoldEqmCanUplv(vo)
+    local red_2 = HeroController:getInstance():getModel():checkGoldEqmCanUpStar(vo)
+    local red_3 = HeroController:getInstance():getModel():checkGoldEqmCanSoul(vo)
+    -- local status = red_2 or red_1 or red_3
+    
+    addRedPointToNodeByStatus(self.tab_btn_list[1].btn,red_1,10,10)
+    addRedPointToNodeByStatus(self.tab_btn_list[2].btn,red_2,10,10)
+    addRedPointToNodeByStatus(self.tab_btn_list[3].btn,red_3,10,10)
+
+    -- if self.equip_strength_panel then
+    --     self.equip_strength_panel:setRedStatus(red_1)
+    -- end
+    -- if self.equip_up_star_panel then
+    --     self.equip_up_star_panel:setRedStatus(red_2)
+    -- end
+    -- if self.equip_soul_panel then
+    --     self.equip_soul_panel:setRedStatus(red_3)
+    -- end
+end
+
+function HeroHighEquipUpWindow:close_callback()
+    if self.equip_strength_panel then
+        self.equip_strength_panel:DeleteMe()
+        self.equip_strength_panel = nil
+    end
+    if self.equip_up_star_panel then
+        self.equip_up_star_panel:DeleteMe()
+        self.equip_up_star_panel = nil
+    end
+    if self.equip_soul_panel then
+        self.equip_soul_panel:DeleteMe()
+        self.equip_soul_panel = nil
+    end
+    if self.updateRedEvent then
+        GlobalEvent:getInstance():UnBind(self.updateRedEvent)
+        self.updateRedEvent = nil
+    end
+    if self.updateEquipInfoEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEquipInfoEvent)
+        self.updateEquipInfoEvent = nil
+    end
+    if self.player_info_panel then
+        self.player_info_panel:DeleteMe()
+        self.player_info_panel = nil
+    end
+    controller:openHighEquipMainWindow(false)
+end

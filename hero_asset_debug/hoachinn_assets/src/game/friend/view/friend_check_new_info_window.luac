@@ -1,0 +1,652 @@
+-- --------------------------------------------------------------------
+-- 竖版查看好友
+-- 
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+FriendCheckNewInfoWindow = FriendCheckNewInfoWindow or BaseClass(BaseView) 
+
+local elite_lev_data = Config.ArenaEliteData.data_elite_level
+function FriendCheckNewInfoWindow:__init()
+	self.ctrl = FriendController:getInstance()
+	self.model = self.ctrl:getModel()
+    self.is_full_screen = false  
+    self.win_type = WinType.Mini 
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG  
+    self.layout_name = "friend/friend_check_new_info"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("friendinfo","friendinfo"), type = ResourcesType.plist },
+    }
+    self.title_list = {}
+    self.title_eff_list = {} --动态称号
+    self.tab_list = {}
+    self.item_list = {}
+    self.honor_item_load = {}
+    self.elfin_list = {}
+    self.role_vo = RoleController:getInstance():getRoleVo()
+end
+
+function FriendCheckNewInfoWindow:open_callback(  )
+	self.background_container = self.root_wnd:getChildByName("background_container")
+    self.background = self.background_container:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+    self.title_panel = self.main_container:getChildByName("title_panel")
+    self.close_btn = self.title_panel:getChildByName("close_btn")
+    self.title_bg = self.title_panel:getChildByName("title_bg")
+    self.title_txt = self.title_panel:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_c_692"))
+    self.title_bg:setContentSize(cc.size(math.max(332,self.title_txt:getContentSize().width + 120),63))
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    for i=1,3 do
+        local title = self.top_panel:getChildByName("title_icon_"..i)
+        self.title_list[i] = title
+    end
+    self.head_node = self.top_panel:getChildByName("head_node")
+    self.head = PlayerHead.new(PlayerHead.type.circle)
+    self.head:setAnchorPoint(cc.p(0.5, 0.5))
+    self.head:setPosition(cc.p(0, 0))
+    self.head_node:addChild(self.head)
+    self.vip_img = self.top_panel:getChildByName("vip_img")
+    self.name = self.top_panel:getChildByName("name")
+    self.rank_bg = self.top_panel:getChildByName("rank_bg")
+    self.rank_title = self.top_panel:getChildByName("rank_title")
+    self.rank_title:setString(TI18N("语言_c_693"))
+    self.rank = self.top_panel:getChildByName("rank")
+    -- self.rank:setString(TI18N("语言_c_273"))
+    setItemXOneByOne({self.rank_title,self.rank})
+    self.guild_title = self.top_panel:getChildByName("guild_title")
+    self.guild_title:setString(TI18N("语言_c_694"))
+    self.guild = self.top_panel:getChildByName("guild")
+    self.guild:setString(TI18N("语言_c_273"))
+    setItemXOneByOne({self.guild_title,self.guild})
+    self.glory_btn = self.top_panel:getChildByName("glory_btn")
+    self.at_btn = self.top_panel:getChildByName("at_btn")
+    self.at_btn:setVisible(false)
+    self.lang_txt = self.top_panel:getChildByName("lang_txt")
+    if self.lang_txt then
+        setTextMaxWidth(self.lang_txt,140,-8)
+        self.lang_txt:setString("")
+    end
+    self.image_txt = self.top_panel:getChildByName("image_txt")
+    self.bot_panel = self.main_container:getChildByName("bot_panel")
+    self.ScrollView = self.bot_panel:getChildByName("ScrollView")
+    self.ScrollView:setTouchEnabled(false)
+    for i=1,4 do
+        local object = {}
+        local tab_btn = self.ScrollView:getChildByName("tab_btn_"..i)
+        tab_btn:setZoomScale(0)
+        if tab_btn then
+            tab_btn:loadTextures(PathTool.getResFrame("common","common_90030"), "", "", LOADTEXT_TYPE_PLIST)
+            local title = tab_btn:getChildByName("title")
+            setTextSpacing(title,-14)
+            if i == 1 then
+                title:setString(TI18N("语言_mis_06_8"))
+            elseif i == 2 then
+                title:setString(TI18N("语言_mis_06_9"))
+            elseif i == 3 then
+                title:setString(TI18N("语言_mis_06_10"))
+            elseif i == 4 then
+                title:setString(TI18N("语言_c_6267"))
+            end
+            object.tab_btn = tab_btn
+            object.label = title
+            object.label:setTextColor(cc.c3b(249, 238, 208))
+            object.label:enableOutline(cc.c4b(92,39,5,255), 2)
+            object.index = i
+            self.tab_list[i] = object
+        end
+    end
+    self.page_panel = self.bot_panel:getChildByName("page_panel")
+    self.btn_panel = self.main_container:getChildByName("btn_panel")
+    self.friend_btn = self.btn_panel:getChildByName("friend_btn")
+    self.friend_txt = self.friend_btn:getChildByName("label")
+    self.friend_txt:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    setTextMaxWidth(self.friend_txt, 135,-12)
+    self.pk_btn = self.btn_panel:getChildByName("pk_btn")
+    self.pk_txt = self.pk_btn:getChildByName("label")
+    self.pk_txt:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    setTextMaxWidth(self.pk_txt, 135,-12)
+    self.pk_txt:setString(TI18N("语言_c_691"))
+    self.black_btn = self.btn_panel:getChildByName("black_btn")
+    self.black_txt = self.black_btn:getChildByName("label")
+    self.black_txt:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    setTextMaxWidth(self.black_txt, 135,-12)
+    self.report_btn = self.btn_panel:getChildByName("report_btn")
+    self.report_txt = self.report_btn:getChildByName("label")
+    self.report_txt:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    setTextMaxWidth(self.report_txt, 135,-12)
+    self.report_txt:setString(TI18N("语言_c_698"))
+    self.self_btn_panel = self.main_container:getChildByName("self_btn_panel")
+    self.self_btn_panel:setVisible(false)
+    self.share_btn = self.self_btn_panel:getChildByName("share_btn")
+    self.share_txt = self.share_btn:getChildByName("label")
+    self.share_txt:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    setTextMaxWidth(self.share_txt, 135,-12)
+    self.share_txt:setString(TI18N("语言_c_6124"))
+    self.medal_btn = self.self_btn_panel:getChildByName("medal_btn")
+    self.medal_txt = self.medal_btn:getChildByName("label")
+    self.medal_txt:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    setTextMaxWidth(self.medal_txt, 135,-12)
+    self.medal_txt:setString(TI18N("语言_c_6123"))
+    self.title_btn = self.self_btn_panel:getChildByName("title_btn")
+    self.title_txt = self.title_btn:getChildByName("label")
+    self.title_txt:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    setTextMaxWidth(self.title_txt, 135,-12)
+    self.title_txt:setString(TI18N("语言_c_6122"))
+end
+
+function FriendCheckNewInfoWindow:register_event()
+	if self.close_btn then
+		self.close_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playCloseSound()
+				self.ctrl:openFriendCheckPanel(false)
+			end
+		end)
+	end
+	if self.background then
+		self.background:addTouchEventListener(function(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playCloseSound()
+				self.ctrl:openFriendCheckPanel(false)
+			end
+		end)
+	end
+	if self.glory_btn then
+		self.glory_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+			if event_type == ccui.TouchEventType.ended then
+				playButtonSound2()
+                local setting = {}
+                setting.role_type = RoleConst.role_type.eOther
+                setting.other_data = self.data
+                RoleController:getInstance():openRolePersonalSpacePanel(true, setting)
+			end
+		end)
+	end
+
+    if self.at_btn then
+        self.at_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                local role_vo = RoleController:getInstance():getRoleVo()
+                local const_data = Config.SayData.data_const
+                local lev = 30
+                local text = ""
+                if const_data and const_data["at_condition"] then
+                    lev = const_data["at_condition"].val
+                    text = const_data["at_condition"].desc
+                end
+                if role_vo.lev < lev then
+                    message(text)
+                    return
+                end
+                playButtonSound2()
+                if self.data and self.data.name then
+                    if self.flag == "chat_msg" then
+                        ChatController:getInstance():chatAtPeople(self.data.name, self.data.srv_id)
+                    elseif self.flag == "mainchatmsg" then
+                        MainuiController:getInstance():mainChatAtPeople(self.data.name, self.data.srv_id)
+                    end
+                    self.ctrl:openFriendCheckPanel(false)
+                end
+            end
+        end)
+    end
+    for k, object in pairs(self.tab_list) do
+        if object.tab_btn then
+             object.tab_btn:addTouchEventListener(function(sender, event_type)
+                 customClickAction_2(sender, event_type)
+                 if event_type == ccui.TouchEventType.ended and not self.is_show_egg_effect then
+                     playTabButtonSound()
+                     self:changeSelectedTab(object.index)
+                 end
+             end)
+         end
+     end
+    
+	--接受数据
+	if self.updateEvent == nil then
+		self.updateEvent = GlobalEvent:getInstance():Bind(RoleEvent.DISPATCH_PLAYER_VO_EVENT,function ( data )
+            if data and data.rid == self.rid and data.srv_id == self.srv_id then
+			    self:updateData(data)
+            end
+		end)
+	end
+    
+    if self.black_btn then
+        self.black_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                if self.data then
+                    if self.model:isBlack(self.data.rid,self.data.srv_id) then
+                        ChatController:getInstance():closeChatUseAction()
+                        self.ctrl:openFriendCheckPanel(false)
+                        self.ctrl:openFriendWindow(true,FriendConst.Type.BlackList)
+                    else
+                        local call_back = function()
+                            self.ctrl:addToBlackList(self.data.rid,self.data.srv_id)
+                            self.ctrl:openFriendCheckPanel(false)
+                        end
+                        local str = string.format(TI18N("语言_c_697"), self.data.name)
+                        CommonAlert.show(str, TI18N("语言_c_63"), call_back, TI18N("语言_c_62"), nil, CommonAlert.type.rich,nil)    
+                    end
+                end
+            end
+        end)
+    end
+    
+    if self.pk_btn then
+        self.pk_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                if self.data then
+                    if not BattleController:getInstance():getWatchReplayStatus() and not BattleController:getInstance():getModel():isInFight() then
+                        local is_province = 0
+                        if self.channel and self.channel == ChatConst.Channel.Cross then
+                            is_province = 1
+                        end
+                        BattleController:getInstance():csBattlePk(self.data.rid,self.data.srv_id,is_province)
+                    else
+                        message(TI18N("语言_c_696"))
+                    end
+                end
+            end
+        end)
+    end
+    if self.friend_btn then
+        self.friend_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                if self.data then
+                    if self.model:isFriend(self.data.srv_id,self.data.rid) then
+                        ChatController:getInstance():openChatPanel(ChatConst.Channel.Friend,"friend",self.data)
+                        --MainuiController:getInstance():openMianChatChannel(ChatConst.Channel.Friend,self.vo)
+                        self.ctrl:openFriendCheckPanel(false)
+                    else
+                        self.ctrl:addOther(self.data.srv_id,self.data.rid)
+                        self.ctrl:openFriendCheckPanel(false)
+                    end
+                end
+            end
+        end)
+    end
+
+    if self.share_btn then
+        self.share_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                local world_pos = sender:convertToWorldSpace(cc.p(0.5, 0))
+                self:onClickSharetBtn(world_pos)
+            end
+        end)
+    end
+    if self.medal_btn then
+        self.medal_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                local config = Config.RoomFeatData.data_const.badge_open_limit
+                if config then
+                    local lev = self.data.lev
+                    if lev < config.val then
+                        message(config.desc)
+                    else
+                        RoleController:getInstance():send25806(self.data.rid, self.data.srv_id)
+                    end 
+                end
+            end
+        end)
+    end
+    if self.get_honor_wall_event == nil then
+        self.get_honor_wall_event = GlobalEvent:getInstance():Bind(RoleEvent.ROLE_GET_HONOR_WALL_EVENT,function (data)
+            if not data then return end
+            local setting = {}
+            local dic_honor = {}
+            for i,v in ipairs(data.honor_badges) do
+                dic_honor[v.id] = v
+            end
+            local dic_use_honor_icon_list = {}
+            for i,v in ipairs(data.use_badges) do
+                if dic_honor[v.id] then
+                    dic_use_honor_icon_list[v.pos] = v
+                    dic_use_honor_icon_list[v.pos].time = dic_honor[v.id].time or 0
+                end
+            end
+            setting.use_honor_icon_list = deepCopy(dic_use_honor_icon_list)
+            local active_list = {}
+            local config_list = Config.RoomFeatData.data_honor_icon_info
+            for id,config in pairs(config_list) do
+                local data
+                if dic_honor[id] then --激活
+                    dic_honor[id].lock = 0
+                    dic_honor[id].config = config
+                    data = dic_honor[id]
+                    table.insert(active_list, data)
+                end
+            end
+            setting.active_list = active_list
+            RoleController:getInstance():openRoleSelectHonorListPanel(true, setting)
+        end)
+    end
+    if self.title_btn then
+        self.title_btn:addTouchEventListener(function(sender, event_type)
+            customClickAction_2(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                RoleController:getInstance():openRoleDecorateView(true, RoleConst.decoration_index.title)
+            end
+        end)
+    end
+
+    if self.info_red_event == nil then
+        self.info_red_event = GlobalEvent:getInstance():Bind(RoleEvent.UPDATE_RED_EVENT, function()  --
+            self:updateInFoRed()
+        end)
+    end
+
+    registerButtonEventListener(self.report_btn, handler(self, self.onClickReportBtn) ,true, 1)
+end
+function FriendCheckNewInfoWindow:updateInFoRed()
+    local red_status = RoleController:getInstance():getModel():getRedForTitle() or false
+    addRedPointToNodeByStatus( self.title_btn, red_status, 16, 13, nil)
+    
+    local red_status = RoleController:getInstance():getModel():getRedForMedal() or false
+    addRedPointToNodeByStatus( self.medal_btn, red_status, 16, 13, nil)
+end
+
+--分享
+function FriendCheckNewInfoWindow:onClickSharetBtn(world_pos)
+    local callback = function(btn_type, setting)
+        if not btn_type or not setting then return end
+        if self.root_wnd and (not tolua.isnull(self.root_wnd)) then
+            if btn_type == HeroConst.ShareBtnType.eHeroShareCross then
+                --跨服频道
+                RoleController:getInstance():send25821(ChatConst.Channel.Cross)
+            elseif btn_type == HeroConst.ShareBtnType.eHeroShareWorld then
+                --世界频道
+                RoleController:getInstance():send25821(ChatConst.Channel.World)
+            elseif btn_type == HeroConst.ShareBtnType.eHeroShareGuild then
+                --公会频道
+                RoleController:getInstance():send25821(ChatConst.Channel.Gang)
+            end
+        end
+    end
+    HeroController:getInstance():openHeroSharePanel(true, world_pos, callback, {offsetx = -60, offsety = 160, hero_vo = self.select_hero_vo})
+end
+
+function FriendCheckNewInfoWindow:onClickReportBtn()
+    if not self.data then return end
+    local role_lv_cfg = Config.RoleData.data_role_const.role_reported_lev_limit
+    local role_vo = RoleController:getInstance():getRoleVo() or {}
+    local lev = role_vo.lev or 0
+    if role_lv_cfg and lev < role_lv_cfg.val then
+        message(string.format(TI18N("语言_c_4720"),role_lv_cfg.val))
+        return
+    end
+    RoleController:getInstance():openRoleReportedPanel(true, self.data.rid, self.data.srv_id, self.data.name, self.data.vip_lev, self.data.account)
+end
+function FriendCheckNewInfoWindow:changeSelectedTab( index)
+	-- if self.cur_tab_index and self.cur_tab_index == index then return end
+    if self.tab_object then
+        self.tab_object.tab_btn:loadTextures(PathTool.getResFrame("common","common_90030"), "", "", LOADTEXT_TYPE_PLIST)
+        self.tab_object.label:setTextColor(cc.c3b(249, 238, 208))
+        self.tab_object = nil
+    end
+    self.tab_object = self.tab_list[index]
+    if self.tab_object then
+        self.tab_object.tab_btn:loadTextures(PathTool.getResFrame("common","common_90031"), "", "", LOADTEXT_TYPE_PLIST)
+        self.tab_object.label:setTextColor(cc.c3b(248, 239, 118))
+    end
+
+    self.cur_tab_index = index
+
+    if index == FriendConst.Tab_Index.Overview then
+        if self.line_up_panel then
+            self.line_up_panel:setVisible(false)
+        end
+        if self.treasure_panel then
+            self.treasure_panel:setVisible(false)
+        end
+        if self.rank_panel then
+            self.rank_panel:setVisible(false)
+        end
+        if not self.overview then
+            self.overview = FriendCheckOverview.new(self.data)
+            self.page_panel:addChild(self.overview)
+        end
+        self.overview:setVisible(true)
+    elseif index == FriendConst.Tab_Index.LineUp then
+        if self.rank_panel then
+            self.rank_panel:setVisible(false)
+        end
+        if self.treasure_panel then
+            self.treasure_panel:setVisible(false)
+        end
+        if self.overview then
+            self.overview:setVisible(false)
+        end
+        if not self.line_up_panel then
+            self.line_up_panel = FriendCheckLineUpPanel.new(self.data,self.type)
+            self.page_panel:addChild(self.line_up_panel)
+        end
+        self.line_up_panel:setVisible(true)
+
+    elseif index == FriendConst.Tab_Index.Rank then
+        if self.line_up_panel then
+            self.line_up_panel:setVisible(false)
+        end
+        if self.overview then
+            self.overview:setVisible(false)
+        end
+        if self.treasure_panel then
+            self.treasure_panel:setVisible(false)
+        end
+        if not self.rank_panel then
+            self.rank_panel = FriendCheckRankPanel.new(self.data)
+            self.page_panel:addChild(self.rank_panel)
+        end
+        self.rank_panel:setVisible(true)
+    elseif index == FriendConst.Tab_Index.Treasure then
+        if self.line_up_panel then
+            self.line_up_panel:setVisible(false)
+        end
+        if self.overview then
+            self.overview:setVisible(false)
+        end
+        if self.rank_panel then
+            self.rank_panel:setVisible(false)
+        end
+        if not self.treasure_panel then
+            self.treasure_panel = FriendCheckTreasurePanel.new(self.data)
+            self.page_panel:addChild(self.treasure_panel)
+        end
+        self.treasure_panel:setVisible(true)
+    end
+end
+--生存形象
+function FriendCheckNewInfoWindow:setShow(id)
+    local cfg = Config.LooksData.data_data[id]
+    if not cfg then return end
+    self.image_txt:setString(transformTextToShort(cfg.name,15))
+    addEvt2showAllTextTips(self.image_txt,cfg.name,15)
+    if not self.spine then
+        self.spine = BaseRole.new(BaseRole.type.role, id, nil)
+        self.spine:setAnimation(0,PlayerAction.show,true) 
+        self.spine:setCascade(true)
+        self.spine:setPosition(cc.p(490,200))
+        self.spine:setAnchorPoint(cc.p(0.5,0)) 
+        -- self.spine:setScale(0.8)
+        self.top_panel:addChild(self.spine) 
+        self.spine:setCascade(true)
+        self.spine:setOpacity(0)
+        local action = cc.FadeIn:create(0.2)
+        self.spine:runAction(cc.Sequence:create(action))
+    end
+end
+function FriendCheckNewInfoWindow:updateData( data )
+	self.data = data
+    local config = Config.RoomFeatData.data_const.badge_open_limit
+    if config then
+        local lev = data.lev
+        if lev < config.val then
+            setChildUnEnabled(true, self.medal_btn)
+        else
+            setChildUnEnabled(false, self.medal_btn)
+        end 
+    end
+    if self.data.rid == self.role_vo.rid and self.data.srv_id == self.role_vo.srv_id then
+        self.btn_panel:setVisible(false)
+        self.self_btn_panel:setVisible(true)
+    else
+        self.btn_panel:setVisible(true)
+        self.self_btn_panel:setVisible(false)
+    end
+    self:setShow(data.look_id)
+    self:setHonorShow(data.show_ids)
+    self.name:setString(transformNameByServ(data.name, data.srv_id))
+    setItemXOneByOne({self.name,self.vip_img},15)
+	self.head:setHeadRes(data.face_id, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+    --头像框
+    local vo = Config.AvatarData.data_avatar[data.avatar_bid]
+    if vo then
+        local res_id = vo.res_id or 1 
+        local res = PathTool.getTargetRes("headcircle","txt_cn_headcircle_"..res_id,false,false)
+        self.head:showBg(res,nil,false,vo.offy)
+    end
+    self.head:setLev(data.lev)
+
+    self.head:setSex(data.sex,cc.p(70,4))
+    local res = PathTool.getTargetRes("elitematch/elitematch_icon",elite_lev_data[self.data.elite_lev].name_ico,false,false)
+    loadSpriteTexture(self.rank, res, LOADTEXT_TYPE)
+    if data.gname ~= "" then
+		self.guild:setString(data.gname)
+    end
+    if IS_SHOW_LANG_CHAT and self.lang_txt and CHOOSE_LANG_STR_ARR then
+        if data.lang then
+            local lang = data.lang
+            if lang == LANGUAGE_ZH then
+                lang = LANGUAGE_EN
+            end
+            local langname = CHOOSE_LANG_STR_ARR[lang]
+            if langname then
+                self.lang_txt:setString(string.format(TI18N("语言_c_5147"),langname))
+            end
+        end
+    end
+    if self.model:isFriend(data.srv_id,data.rid) then
+    	self.friend_txt:setString(TI18N("语言_c_670"))
+    else
+    	self.friend_txt:setString(TI18N("语言_c_675"))
+    end
+
+    if self.model:isBlack(data.rid,data.srv_id) then
+    	self.black_txt:setString(TI18N("语言_c_662"))
+    else
+    	self.black_txt:setString(TI18N("语言_c_699"))
+    end
+    self:changeSelectedTab(self.cur_tab_index or FriendConst.Tab_Index.Overview)
+end
+function FriendCheckNewInfoWindow:setHonorShow(list)
+    if not list then return end
+    for i=1,3 do
+        if self.title_eff_list[i] then
+            self.title_eff_list[i]:clearTracks()
+            self.title_eff_list[i]:removeFromParent()
+            self.title_eff_list[i] = nil
+        end
+        if list[i] then
+            local cfg = Config.HonorData.data_title[list[i].honor_id]
+            if cfg and cfg.effect and cfg.effect ~= "" then
+                self.title_list[i]:setVisible(false)
+                if not self.title_eff_list[i] then
+                    self.title_eff_list[i] = createEffectSpine(cfg.effect,cc.p(self.title_list[i]:getPositionX(),self.title_list[i]:getPositionY()),cc.p(0.5,0.5),true,PlayerAction.action)
+                    self.top_panel:addChild(self.title_eff_list[i])
+                end
+            else
+                local res = PathTool.getTargetRes("honor","txt_cn_honor_"..cfg.res_id,false,false)
+                loadSpriteTexture(self.title_list[i], res, LOADTEXT_TYPE)
+                self.title_list[i]:setVisible(true)
+            end
+        else
+            local res = PathTool.getResFrame("common_1","common_1_411",false,false)
+            loadSpriteTexture(self.title_list[i], res, LOADTEXT_TYPE_PLIST)
+            self.title_list[i]:setVisible(true)
+        end
+    end
+end
+function FriendCheckNewInfoWindow:openRootWnd(data,index,type)
+    -- print("openRootWnd",vardump(data))
+    if data then
+        self.rid = data.rid
+        self.srv_id = data.srv_id
+        self.flag = data.flag  --从聊天窗口打开时需要显示@按钮
+        self.channel = data.channel -- 标记打开的聊天频道
+        self.type = type
+        if data and data.rid and data.srv_id then
+            RoleController:getInstance():requestRoleInfo( data.rid,data.srv_id )
+        end
+        if data.flag then
+            self.at_btn:setVisible(true)
+        end
+        self:updateInFoRed()
+    end
+    if index then
+        self.cur_tab_index = index
+    end
+end
+
+function FriendCheckNewInfoWindow:close_callback()
+    if self.overview then
+        self.overview:DeleteMe()
+        self.overview = nil
+    end
+
+    if self.line_up_panel then
+        self.line_up_panel:DeleteMe()
+        self.line_up_panel = nil
+    end
+
+    if self.rank_panel then
+        self.rank_panel:DeleteMe()
+        self.rank_panel = nil
+    end
+    
+    if self.treasure_panel then
+        self.treasure_panel:DeleteMe()
+        self.treasure_panel = nil
+    end
+
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+    if self.get_honor_wall_event then
+        GlobalEvent:getInstance():UnBind(self.get_honor_wall_event)
+        self.get_honor_wall_event = nil
+    end    
+    if self.info_red_event then
+        GlobalEvent:getInstance():UnBind(self.info_red_event)
+        self.info_red_event = nil
+    end
+    for k, object in pairs(self.title_eff_list) do
+        if object then
+            object:clearTracks()
+            object:removeFromParent()
+            object = nil
+        end
+    end
+	self.ctrl:openFriendCheckPanel(false)
+end

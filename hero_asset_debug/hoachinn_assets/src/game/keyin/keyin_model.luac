@@ -1,0 +1,583 @@
+-- --------------------------------------------------------------------
+-- --------------------------------------------------------------------
+KeyinModel = KeyinModel or BaseClass()
+
+function KeyinModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function KeyinModel:config()
+    self.keyin_data = {}
+end
+
+function KeyinModel:checkFunctionOpenStatus()
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+    local featuresId = Config.PartnerEngravedData.data_constant.open_model.val --屏蔽id
+    if not table.indexof(nohideIds, featuresId)  then -- not table.indexof(nohideIds,featuresId) or
+        return false
+    else
+        return true
+    end
+end
+
+function KeyinModel:checkSingleKeyinOpenStatus(keyin_id,hero_bid)
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("engraved_data")
+    -- print(vardump(nohideIds))
+    local partner_cfg = Config.PartnerData.data_partner_base[hero_bid]
+    if partner_cfg and partner_cfg.engraved_show == 0 and not table.indexof(nohideIds,hero_bid) then
+        -- 后台配置屏蔽的
+        return false
+    else
+        return true
+    end
+end
+
+--刻印是否达到解锁条件
+function KeyinModel:checkKeyinOpenStatus(ID,hero_vo)
+    local cfg = Config.PartnerEngravedData.data_get_open_lv[ID] 
+    if cfg then
+        local tree_lv = cfg.lv
+        local tree_star = cfg.star
+        local partner_star = cfg.partner_star
+        local now_tree_lv = HeroController:getInstance():getModel().resonate_cystal_lev
+        local now_tree_star = HeroController:getInstance():getModel().resonate_max_partner_lev or 0
+        if now_tree_lv >= tree_lv and now_tree_star >= tree_star and hero_vo.star >= partner_star then
+            return true
+        else
+            return false,tree_lv, tree_star, partner_star
+        end
+    end
+    return false
+end
+
+function KeyinModel:setKiyinData(data)
+    self.keyin_data[data.partner_id] = data
+
+    local hero_vo = HeroController:getInstance():getModel():getHeroById(data.partner_id)
+    if HeroCalculate.isCheckHeroRedPointByHeroVo(hero_vo) then
+        HeroCalculate.checkAllHeroRedPoint()
+    end
+end
+function KeyinModel:setKiyinListData(data)
+    if data.list and next(data.list) then
+        for k, v in pairs(data.list) do
+            self:setKiyinData(v)
+        end
+    end
+end
+
+function KeyinModel:shwoPowerChange(data)
+    local partner_id = data.partner_id
+    local keyin_data = self:getKiyinDataById(partner_id)
+    if keyin_data then
+        local old_power = 0 -- keyin_data.power
+        if keyin_data and keyin_data.power then
+            old_power = keyin_data.power
+        end
+        local power = data.power - old_power
+        if power > 0 then
+            GlobalMessageMgr:getInstance():showPowerMove(power,nil,old_power)
+        end
+    end
+end
+--根据英雄唯一id获取刻印数据
+function KeyinModel:getKiyinDataById(id)
+    return self.keyin_data[id]
+end
+--根据英雄唯一id和刻印位置获取对应位置信息
+function KeyinModel:getPosDataByIdandPos(partner_id,pos)
+    local data = self:getKiyinDataById(partner_id)
+    if data then
+        local engraved = data.engraved
+        if engraved and next(engraved) then
+            for k, v in pairs(engraved) do
+                if v.p_type == pos then
+                    return v
+                end
+            end
+        end
+    end
+    return
+end
+
+function KeyinModel:getTotalLvById(id)
+    local cfg = Config.PartnerEngravedData.data_lv_info[id]
+    local total_lv = 0
+    for k, v in pairs(cfg) do
+        local lv = #v
+        total_lv = total_lv + lv
+    end
+    return total_lv
+end
+
+--根据英雄唯一id获取当前刻印总等级
+function KeyinModel:getNowTotalKeyinLv(id)
+    local data = self:getKiyinDataById(id)
+    local total_lev = 0
+    if data then
+        local engraved = data.engraved
+        if engraved and next(engraved) then
+            for k, v in pairs(engraved) do
+                total_lev = v.p_lev + total_lev
+            end
+        end
+    end
+    return total_lev
+end
+
+--根据刻印id获取总刻印等级
+function KeyinModel:getAllLevById(id)
+    local cfg = Config.PartnerEngravedData.data_lv_info[id]
+    local total_lv = 0
+    if cfg and next(cfg) then
+        for k, v in pairs(cfg) do
+            local lv = tableLen(v)
+            total_lv = total_lv + lv
+        end
+    end
+    return total_lv
+end
+--根据刻印id获取每个位置的最大等级
+function KeyinModel:getPosMaxLevById(id,pos)
+    local cfg = Config.PartnerEngravedData.data_lv_info[id]
+    local pos_cfg = cfg[pos]
+    return #pos_cfg
+end
+
+--判断是否可升级
+function KeyinModel:getKeyinCanUplv2(partner_id,keyin_id,pos)
+    local cfg = Config.PartnerEngravedData.data_lv_info[keyin_id]
+    local pos_cfg = Config.PartnerEngravedData.data_pos_info
+    local hero_vo = HeroController:getInstance():getModel():getHeroById(partner_id)
+    local select_data = self:getPosDataByIdandPos(partner_id, pos)
+    if select_data then --已激活可升级
+        local lv = select_data.p_lev
+        local next_lv = lv + 1
+        local now_cfg = cfg[pos][lv]
+        local next_cfg = cfg[pos][next_lv]
+        if next_cfg then --未满级
+            local is_can_up = true
+            local unlock_type = next_cfg.unlock_type
+            if unlock_type == 1 then --指定天赋等级
+                local condition = next_cfg.condition
+                for k, v in pairs(condition) do
+                    local con_pos = v[1]
+                    local con_con = v[2]
+                    local _data = self:getPosDataByIdandPos(partner_id, con_pos)
+                    if _data then
+                        if _data.p_lev < con_con then
+                            is_can_up = false
+                            break
+                        end
+                    else
+                        local lv = 0
+                        if lv < con_con then
+                            is_can_up = false
+                            break
+                        end
+                    end
+                end
+            elseif unlock_type == 2 then --天赋总等级
+                local condition = next_cfg.condition[1]
+                local total_lv = self:getNowTotalKeyinLv(partner_id)
+                if total_lv < condition then
+                    is_can_up = false
+                end
+            elseif unlock_type == 3 then --当前英雄星级
+                local condition = next_cfg.condition[1]
+                local hero_star = hero_vo.star
+                if hero_star < condition then
+                    is_can_up = false
+                end
+            end
+            if is_can_up then
+                local status = self:checkSingleStarFuseRedPointByStarConfig(next_cfg,partner_id)
+                if status then
+                    return status
+                end
+            end
+        else --已满级
+            return false
+        end
+    else --未激活
+        return false
+    end
+end
+--判断是否可激活
+function KeyinModel:getKeyinCanUplv(partner_id,keyin_id,pos)
+    local cfg = Config.PartnerEngravedData.data_lv_info[keyin_id]
+    local pos_cfg = Config.PartnerEngravedData.data_pos_info
+    local select_data = self:getPosDataByIdandPos(partner_id, pos)
+    if select_data then --已激活可升级
+        return false
+    else --未激活
+        local lv = 1
+        local _cfg = cfg[pos][lv]
+        local unlock_type = _cfg.unlock_type
+        local is_can_up = true
+        if unlock_type == 1 then --指定天赋等级
+            local condition = _cfg.condition
+            for k, v in pairs(condition) do
+                local con_pos = v[1]
+                local con_con = v[2]
+                local _data = self:getPosDataByIdandPos(partner_id, con_pos)
+                if _data then
+                    if _data.p_lev < con_con then
+                        is_can_up = false
+                        break
+                    end
+                else
+                    is_can_up = false
+                    break
+                end
+            end
+        elseif unlock_type == 2 then --天赋总等级
+            local condition = _cfg.condition[1]
+            local total_lv = self:getNowTotalKeyinLv(partner_id)
+            if total_lv < condition then
+                is_can_up = false
+            end
+        elseif unlock_type == 3 then --英雄星级
+            local condition = _cfg.condition[1]
+            local hero_info = HeroController:getInstance():getModel():getHeroById(partner_id)
+            local star = hero_info.star
+            if star and star >= condition then
+                is_can_up = true
+            else
+                is_can_up = false
+            end
+        end
+        return is_can_up
+    end
+end
+--判断是否满级
+function KeyinModel:getKeyinFulllv(partner_id,keyin_id,pos)
+    local cfg = Config.PartnerEngravedData.data_lv_info[keyin_id]
+    local pos_cfg = Config.PartnerEngravedData.data_pos_info
+    local select_data = self:getPosDataByIdandPos(partner_id, pos)
+    local max_lv = self:getPosMaxLevById(keyin_id,pos)
+    if select_data and select_data.p_lev >= max_lv then --已满级
+        return true
+    else
+        return false
+    end
+end
+
+--强化后是否要弹技能解锁弹窗
+function KeyinModel:checkShowSkillUnlock(partner_id,old_lv)
+    local hero_vo = HeroController:getInstance():getModel():getHeroById(partner_id)
+    if not hero_vo then return end
+    -- local hero_data = self:getKiyinDataById(partner_id)
+    local now_lv = self:getNowTotalKeyinLv(hero_vo.partner_id)
+    local partner_cfg = Config.PartnerData.data_partner_base[hero_vo.bid]
+    local engraved_id = partner_cfg.engraved_id
+    local key
+    if old_lv then
+        for i = old_lv+1, now_lv do
+            local _key = getNorKey(hero_vo.bid,i)
+            if Config.PartnerEngravedData.data_get_skill[_key] then
+                key = _key
+                break
+            end
+        end
+    else
+        key = getNorKey(hero_vo.bid,now_lv)
+    end
+    if not key then return end
+    local cfg = Config.PartnerEngravedData.data_get_skill[key]
+    if cfg then
+        local skill_list = deepCopy(cfg.unlock) 
+        local function sortFunc( objA, objB )
+            return objA[1] < objB[1]
+        end
+        table.sort(skill_list, sortFunc)
+        local skill_id
+        for k, v in pairs(skill_list) do
+            local need_star = v[1]
+            local need_lv = v[2]
+            if need_star <= hero_vo.star and need_lv <= now_lv then
+                skill_id = v[3][1]
+                break
+            end
+        end
+        if skill_id then
+            local setting = {}
+            if cfg.skill_desc and cfg.skill_desc ~= "" then
+                setting.skill_desc = cfg.skill_desc
+            end
+            if cfg.skill_icon and cfg.skill_icon ~= "" then
+                setting.skill_icon = cfg.skill_icon
+            end
+            KeyinController:getInstance():openKeyinSkillUnlockWindow(true,skill_id,setting)
+        end
+    end
+end
+
+--- 红点逻辑
+--- 能不能激活，能不能升级
+function KeyinModel:checkRedPoint(partner_id)
+    local hero_vo = HeroController:getInstance():getModel():getHeroById(partner_id)
+    local partner_cfg = Config.PartnerData.data_partner_base[hero_vo.bid]
+    if partner_cfg then
+        local engraved_id = partner_cfg.engraved_id
+        local cfg = Config.PartnerEngravedData.data_lv_info[engraved_id]
+        if cfg then
+            for k, v in pairs(cfg) do
+                local pos = k
+                local status = self:checkActPoint(pos,engraved_id,partner_id)
+                if status then
+                    return status
+                end
+            end
+        end
+    end
+    return false
+end
+
+function KeyinModel:checkActPoint(pos,engraved_id,partner_id)
+    local cfg = Config.PartnerEngravedData.data_lv_info[engraved_id]
+    local hero_vo = HeroController:getInstance():getModel():getHeroById(partner_id)
+    local select_data = self:getPosDataByIdandPos(partner_id, pos)
+    if select_data then --已激活可升级
+        local lv = select_data.p_lev
+        local next_lv = lv + 1
+        local now_cfg = cfg[pos][lv]
+        local next_cfg = cfg[pos][next_lv]
+        if next_cfg then --未满级
+            local is_can_up = true
+            local unlock_type = next_cfg.unlock_type
+            if unlock_type == 1 then --指定天赋等级
+                local condition = next_cfg.condition
+                for k, v in pairs(condition) do
+                    local con_pos = v[1]
+                    local con_con = v[2]
+                    local _data = self:getPosDataByIdandPos(partner_id, con_pos)
+                    if _data then
+                        if _data.p_lev < con_con then
+                            is_can_up = false
+                            break
+                        end
+                    else
+                        local lv = 0
+                        if lv < con_con then
+                            is_can_up = false
+                            break
+                        end
+                    end
+                end
+            elseif unlock_type == 2 then --天赋总等级
+                local condition = next_cfg.condition[1]
+                local total_lv = self:getNowTotalKeyinLv(partner_id)
+                if total_lv < condition then
+                    is_can_up = false
+                end
+            elseif unlock_type == 3 then --当前英雄星级
+                local condition = next_cfg.condition[1]
+                local hero_star = hero_vo.star
+                if hero_star < condition then
+                    is_can_up = false
+                end
+            end
+            if is_can_up then
+                local status = self:checkSingleStarFuseRedPointByStarConfig(next_cfg,partner_id)
+                if status then
+                    return status
+                end
+            end
+        else --已满级
+            return false
+        end
+    else --未激活
+        local lv = 1
+        local _cfg = cfg[pos][lv]
+        local unlock_type = _cfg.unlock_type
+        local is_can_up = true
+        if unlock_type == 1 then --指定天赋等级
+            local condition = _cfg.condition
+            for k, v in pairs(condition) do
+                local con_pos = v[1]
+                local con_con = v[2]
+                local _data = self:getPosDataByIdandPos(hero_vo.partner_id, con_pos)
+                if _data then
+                    if _data.p_lev < con_con then
+                        is_can_up = false
+                        break
+                    end
+                else
+                    local lv = 0
+                    if lv < con_con then
+                        is_can_up = false
+                        break
+                    end
+                end
+            end
+        elseif unlock_type == 2 then --天赋总等级
+            local condition = _cfg.condition[1]
+            local total_lv = self:getNowTotalKeyinLv(hero_vo.partner_id)
+            if total_lv < condition then
+                is_can_up = false
+            end
+        elseif unlock_type == 3 then --当前英雄星级
+            local condition = _cfg.condition[1]
+            local hero_star = hero_vo.star
+            if hero_star < condition then
+                is_can_up = false
+            end
+        end
+        if is_can_up then
+            local status = self:checkSingleStarFuseRedPointByStarConfig(_cfg,partner_id)
+            if status then
+                return status
+            end
+        end
+    end
+    return false
+end
+
+function KeyinModel:checkSingleStarFuseRedPointByStarConfig(star_config, partner_id)
+    if not star_config then return false end
+    local hero_item_data_list={}
+    local index = 1
+    --特定条件数据 结构 dic_the_conditions[bid][星级] = 数量
+    local dic_the_conditions = {}
+    --随机条件 dic_random_conditions[阵营][星级] = 数量
+    local dic_random_conditions = {}
+    --标志已用
+    local dic_hero_id = {}
+
+    -- 本体卡 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    local hero_vo = HeroController:getInstance():getModel():getHeroById(partner_id)
+    local self_cost_cfg = star_config.expend1--star_config.expend1
+    local extend1 = {}
+    local need_count = 0
+    if self_cost_cfg and self_cost_cfg[1] then
+        local self_need_star = self_cost_cfg[1][1]
+        local cost_self_num = self_cost_cfg[1][2]
+        extend1 = {{hero_vo.bid,self_need_star,cost_self_num}}
+    end
+    if extend1 and next(extend1) then
+        local bid, star, count = extend1[1][1], extend1[1][2], extend1[1][3]
+        dic_the_conditions[bid] = {}
+        dic_the_conditions[bid][star] = count
+        need_count = count
+        index = index + 1
+    end
+
+    --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+    for i,expend in ipairs(star_config.expend2) do
+        local camp, star, count = expend[1], expend[2], expend[3]
+        if dic_random_conditions[camp] == nil then
+            dic_random_conditions[camp] = {}
+        end
+        if dic_random_conditions[camp][star] == nil then
+            dic_random_conditions[camp][star] = count
+        else
+            dic_random_conditions[camp][star] = dic_random_conditions[camp][star] + count
+        end
+        need_count = need_count + count 
+        index = index + 1
+    end
+    
+    --额外的道具 {{10063,2}}
+    local enough_item = true
+    local extral_cost = star_config.cost_num
+    for i, item in ipairs(extral_cost) do
+        local item_id = item[1]
+        local need_num = item[2]
+        local own_num = BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+        if own_num < need_num then
+            enough_item = false
+            break
+        end
+    end
+
+    --获取列表
+    local model = HeroController:getInstance():getModel()
+    local total_count = model:getHeroListByMatchInfo(dic_the_conditions, dic_random_conditions, dic_hero_id)
+    return (total_count >= need_count) and enough_item, need_count, total_count
+end
+--某个忍者的刻印是否开启(筛选用)
+function KeyinModel:heroIsOpen(hero_vo)
+    local role_vo = RoleController:getInstance():getRoleVo()
+    local keyin_base_cfg = Config.PartnerEngravedData.data_constant
+    local partner_cfg = Config.PartnerData.data_partner_base[hero_vo.bid]
+    local engraved_id = partner_cfg.engraved_id
+    if role_vo and role_vo.lev >= keyin_base_cfg.tab_order.val then --到达指定等级后显示底部页签
+        local fun_open_status = KeyinController:getInstance():getModel():checkFunctionOpenStatus() --功能是否屏蔽
+        if fun_open_status then
+            local keyin_open = KeyinController:getInstance():getModel():checkSingleKeyinOpenStatus(engraved_id,hero_vo.bid) --单个刻印是否屏蔽
+            if keyin_open then
+                return true
+            else
+                return false
+            end
+        else
+            return false
+        end
+    else
+        return false
+    end
+end
+-- function  KeyinModel:checkRedPointById(hero_vo,star_config)
+--     if not star_config then return false end
+
+--     local hero_item_data_list  ={}
+
+--     --特定条件数据 结构 dic_the_conditions[bid][星级] = 数量
+--     local dic_the_conditions = {}
+--     --随机条件 dic_random_conditions[阵营][星级] = 数量
+--     local dic_random_conditions = {}
+--     --标志已用
+--     local dic_hero_id = {}
+--     dic_hero_id[hero_vo.partner_id] = 1
+
+--     local need_count = 0
+--     --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+--     for i,expend in ipairs(star_config.expend1) do
+--         local bid, star, count = expend[1], expend[2], expend[3]
+--         if dic_the_conditions[bid] == nil then
+--             dic_the_conditions[bid] = {}
+--         end
+--         if dic_the_conditions[bid][star] == nil then
+--             dic_the_conditions[bid][star] = count
+--         else
+--             dic_the_conditions[bid][star] = dic_the_conditions[bid][star] + count
+--         end
+--         need_count = need_count + count 
+--     end
+
+--     --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+--     for i,expend in ipairs(star_config.expend2) do
+--         local camp, star, count = expend[1], expend[2], expend[3]
+--         if dic_random_conditions[camp] == nil then
+--             dic_random_conditions[camp] = {}
+--         end
+--         if dic_random_conditions[camp][star] == nil then
+--             dic_random_conditions[camp][star] = count
+--         else
+--             dic_random_conditions[camp][star] = dic_random_conditions[camp][star] + count
+--         end
+--         need_count = need_count + count 
+--     end
+
+--     --道具是否足够
+--     local item_enough = true
+--     for k, v in pairs(star_config.cost_num) do
+--         local item_id = v[1]
+--         local item_num = v[2]
+--         local own_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_id)
+--         if own_num < item_num then
+--             item_enough = false
+--             break
+--         end
+--     end
+
+--     --获取列表
+--     local model = HeroController:getInstance():getModel()
+--     local total_count = model:getHeroListByMatchInfo(dic_the_conditions, dic_random_conditions, dic_hero_id)
+--     return (total_count >= need_count) and item_enough
+-- end
+
+function KeyinModel:__delete()
+end

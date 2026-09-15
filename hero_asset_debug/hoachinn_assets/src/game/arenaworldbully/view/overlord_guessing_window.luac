@@ -1,0 +1,666 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-08-13 15:36:39
+-- @description    : 
+		-- 时空争霸赛   争霸赛  竞猜主页面
+---------------------------------
+OverlordGuessingWindow = class("OverlordGuessingWindow",function()
+    return ccui.Layout:create()
+end)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+
+function OverlordGuessingWindow:ctor()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/overlord_guessing_window"))
+
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 初始化数据
+    self:initElfinData()
+
+    -- 资源加载
+    local res_list = {}
+    table.insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function OverlordGuessingWindow:loadResListCompleted( )
+	self:initView()
+    self:registerEvent()
+    controller:sender14521()
+    self:setData()
+end
+
+
+-- 初始化数据
+function OverlordGuessingWindow:initElfinData(  )
+    self.guess_item_list = {}
+    self.guess_index = 1 --正在竞猜的索引
+    self.bet_list = {} --竞猜的列表
+    self.scroll_list = {}
+    self.sort_txt_list = {TI18N("语言_c_255"),TI18N("语言_c_1187")}
+    self.scroll_Status = false
+end
+
+-- 初始化界面
+function OverlordGuessingWindow:initView(  )
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.reward_node = self.main_container:getChildByName("reward_node")
+    self.reward_txt = self.reward_node:getChildByName("reward_txt")
+    self.reward_txt:setString(TI18N("语言_c_6619"))
+    self.time_panel = self.main_container:getChildByName("time_panel")
+    self.time_txt = self.main_container:getChildByName("time_txt")
+    self.time_txt:setString(TI18N("语言_c_13"))
+    self.time_value = self.main_container:getChildByName("time_value")
+    self.guess_btn = self.main_container:getChildByName("guess_btn")
+    self.guess_txt = self.guess_btn:getChildByName("label")
+    self.guess_txt:setString(TI18N("语言_c_543"))
+    self.click_img = self.main_container:getChildByName("click_img")
+	local cfg = Config.ArenaTimeWarpData.data_const["guess_option"].val
+    for i = 1, 4 do
+        local item = self.main_container:getChildByName("guess_panel_"..i)
+        item.choose_panel = item:getChildByName("choose_panel")
+        item.choose_panel:setSwallowTouches(false)
+        item.player_panle = item:getChildByName("player_panle")
+        item.player_panle:setSwallowTouches(false)
+        item.player_panle:setVisible(false)
+        item.rank_bg = item.player_panle:getChildByName("rank_bg")
+        item.rank_bg:setZOrder(9)
+        item.player_rank = item.rank_bg:getChildByName("rank_txt")
+        item.rank_txt = item:getChildByName("rank_txt")
+        if cfg[i][1] == cfg[i][2] then
+            item.rank_txt:setString(string.format(TI18N("语言_c_1082"),cfg[i][1]))
+        else
+            item.rank_txt:setString(string.format(TI18N("语言_c_1082"),string.format("%s-%s",cfg[i][1],cfg[i][2])))
+        end
+        item.odds_bg = item:getChildByName("odds_bg")
+        item.odds_bg:setVisible(false)
+        item.odds_txt = item:getChildByName("odds_txt")
+        item.odds_txt = createRichLabel(16,cc.c3b(0xff,0xff,0xff),cc.p(0.5,0.5),cc.p(70,25))
+        item:addChild(item.odds_txt)
+        item.odds_txt:setVisible(false)
+        item.index = i
+        self.guess_item_list[i] = item
+    end
+    self.info_panel = self.main_container:getChildByName("info_panel")
+    if not self.rank_view then
+        local scroll_view_size = self.info_panel:getContentSize()
+        local setting = {
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 4,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            item_width = 158,               -- 单元的尺寸width
+            item_height = 268,              -- 单元的尺寸height
+            delay = 1,
+            row = 1,                        -- 行数，作用于水平滚动类型
+            col = 0,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true
+        }
+        -- local size = self.info_panel:getContentSize()
+        self.rank_view = CommonScrollViewSingleLayout.new(self.info_panel, cc.p(scroll_view_size.width * 0.5, scroll_view_size.height * 0.5) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0.5,0.5))
+
+        self.rank_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.rank_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.rank_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.preview_txt = createRichLabel(22,cc.c3b(0xff,0xf1,0xc5),cc.p(0.5,0.5),cc.p(150,38),nil,nil)
+    self.preview_txt:setHorizontalLayoutType(3)
+    self.main_container:addChild(self.preview_txt)
+    self.preview_txt:setString(string.format(TI18N("语言_c_6620"),PathTool.getResFrame("common", "common_1093")))
+    self.preview_txt:addTouchLinkListener(function()
+        self:onClickPreviewTxt()
+    end, { "click", "href" })
+    self.select_lay = self.main_container:getChildByName("select_lay")
+    self.Image_2 = self.select_lay:getChildByName("Image_2")
+    self.open_cho_btn = self.select_lay:getChildByName("open_cho_btn")
+    self.close_cho_btn = self.select_lay:getChildByName("close_cho_btn")
+    self.close_cho_btn:setVisible(false)
+    self.choose_txt = self.select_lay:getChildByName("choose_txt")
+    self.choose_txt:setString("")
+    self.scroll = self.select_lay:getChildByName("scroll")
+    self.scroll:setVisible(false)
+    self:setLineUp(self.sort_txt_list[2])
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function OverlordGuessingWindow:createNewCell(width, height)
+    local cell = OverlordGuessingItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function OverlordGuessingWindow:numberOfCells()
+    return self.rank_list and #self.rank_list or 0
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function OverlordGuessingWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.rank_list[index]
+    if data then
+        cell:setData(data,self.guess_index)
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function OverlordGuessingWindow:onCellTouched(cell)
+    if model:getOverIsGuess(model:getLookZone()) then
+        message(TI18N("语言_c_2778"))
+        return
+    end
+    if self.bet_list then
+        local index = cell.index
+        local list = self.rank_list[index]
+        if list then
+            local status = true
+            local bet_rank = 0
+            for k, v in pairs(self.bet_list) do
+                if v.rank_score == list.rank_score then
+                    bet_rank = v.bet_rank
+                    status = false
+                end
+            end
+            local callBack = function()
+                local data = {}
+                data.rid = list.rid
+                data.srvid = list.srv_id
+                data.bet_rank = self.guess_index
+                data.rank_score = list.rank_score
+                self.bet_list[self.guess_index] = data
+                self:setGuessPanel()
+            end
+            if status then
+                callBack()
+            else
+                if bet_rank == self.guess_index then
+                    self.bet_list[bet_rank] = {}
+                    self:setGuessPanel()
+                else
+                    local str = TI18N("语言_c_6621")
+                    CommonAlert.show( str, TI18N("语言_c_63"), function()
+                        if self.bet_list then
+                            self.bet_list[bet_rank] = {}
+                            callBack()
+                        end
+                    end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_6622"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+                end
+            end
+        end
+    end
+end
+function OverlordGuessingWindow:registerEvent(  )
+    for k, v in pairs(self.guess_item_list) do
+        registerButtonEventListener(v, function (  )
+            self:onClickGuessItem(v.index)
+        end, false)
+    end
+    registerButtonEventListener(self.guess_btn, function (  )
+        if model:getStatus() ~= ArenaworldbullyConst.stage.guess then
+            message(TI18N("语言_c_6623"))
+            return
+        end
+        if model:getOverIsGuess(model:getLookZone()) then
+            message(TI18N("语言_c_2778"))
+            return
+        end
+        local backpack = function()
+            if tableLen(self.bet_list) == 4 then
+                local list = {}
+                for k, v in pairs(self.bet_list) do
+                    local _list = {}
+                    _list.rid = v.rid
+                    _list.srvid = v.srvid
+                    _list.bet_rank = v.bet_rank
+                    list[k] = _list
+                end
+                controller:sender14522(model:getOverGroupId(model:getLookZone()),list,model:getLookZone())
+            else
+                message(TI18N("语言_c_6624"))
+            end
+        end
+        local str = TI18N("语言_c_6625")
+        CommonAlert.show( str, TI18N("语言_c_63"), function()
+            backpack() 
+        end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_6626"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+    end, false)
+    
+    self.open_cho_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(true)
+        end
+    end)
+    self.close_cho_btn:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(false)
+        end
+    end)
+    self.Image_2:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(not self.scroll_Status)
+        end
+    end)
+    if self.update_over_guess_rank_data == nil then
+        self.update_over_guess_rank_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverGuessRankData, function()
+            self.bet_list = deepCopy(model:getOverGuessData(model:getLookZone()))
+            self:setGuessRankPanel()
+        end)
+    end
+    if self.update_over_guess_update_data == nil then
+        self.update_over_guess_update_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverGuessUpdateData, function()
+            self.bet_list = deepCopy(model:getOverGuessData(model:getLookZone()))
+            self:setGuessRankPanel()
+        end)
+    end
+    if self.update_overlord_data == nil then
+        self.update_overlord_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverlordData, function()
+            self:setData()
+        end)
+    end
+    
+    if self.update_preselection_data == nil then
+        self.update_preselection_data = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateArenaworldbullyRed, function()
+            self:updateGuessRed()
+            self:updateGuessRewardRed()
+        end)
+    end
+end
+function OverlordGuessingWindow:clickChooseBtn(status)
+    self.scroll_Status = status
+    if status then
+        self.open_cho_btn:setVisible(false)
+        self.close_cho_btn:setVisible(true)
+        self.scroll:setVisible(true)
+    else
+        self.open_cho_btn:setVisible(true)
+        self.close_cho_btn:setVisible(false)
+        self.scroll:setVisible(false)
+    end
+end
+function OverlordGuessingWindow:setChooseTxt(index,txt)
+    local item = ccui.Layout:create()
+    item:setAnchorPoint(cc.p(0.5, 0))
+    item:setContentSize(cc.size(200, 35))
+    local res = PathTool.getResFrame("elitetournamen","elitetournamen_10029")
+    local bg = createImage(item,res,0,0,cc.p(0,0),true,1,true)
+    bg:setContentSize(cc.size(200,35))
+    bg:setTouchEnabled(true)
+    bg:addTouchEventListener(function(sender, event_type)
+        if ccui.TouchEventType.ended == event_type then
+            self:clickChooseBtn(false)
+            self:setLineUp(txt)
+            self:setGuessRankPanel(index)
+        end
+    end)
+    local label = createLabel(22,cc.c3b(0xff,0xfc,0xa5),cc.c3b(0x00,0x00,0x00),105,15,txt,item,nil,cc.p(0.5,0.5))
+    label:setZOrder(2)
+    return item
+end
+
+function OverlordGuessingWindow:setLineUp(txt)
+    self.choose_txt:setString(txt)
+    self.scroll:setInnerContainerSize(cc.size(200,tableLen(self.sort_txt_list) * 35))
+    self.scroll:setContentSize(cc.size(200,math.min(100,tableLen(self.sort_txt_list) * 35)))
+    for key, value in pairs(self.scroll_list) do
+        value:removeFromParent()
+        value = nil
+    end
+    self.scroll_list = {}
+    for key, value in pairs(self.sort_txt_list) do
+        local item = self:setChooseTxt(key,value)
+        self.scroll:addChild(item)
+        item:setPosition(cc.p(100,self.scroll:getInnerContainerSize().height - key * 35))
+        table.insert(self.scroll_list,item)
+    end
+end
+function OverlordGuessingWindow:updateGuessRed()
+    addRedPointToNodeByStatus(self.guess_btn,model:getBetRedForZone(model:getLookZone()),10,10)
+end
+function OverlordGuessingWindow:updateGuessRewardRed()
+    if self.guess_icon then
+        addRedPointToNodeByStatus(self.guess_icon,model:getRedForIndex(ArenaworldbullyConst.RedType.GuessReward),10,10)
+    end
+end
+function OverlordGuessingWindow:onClickPreviewTxt()
+    controller:openOverlordPreviewWindow(true)
+end
+
+function OverlordGuessingWindow:onClickGuessItem(index)
+    self.guess_index = index
+    self.click_img:setPosition(self.guess_item_list[index]:getPositionX(), self.guess_item_list[index]:getPositionY()+20)
+    if self.bet_list[index] and self.bet_list[index].rank_score then
+        self.rank_view:selectCellByIndex(self.bet_list[index].rank_score)
+    end
+    GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateOverGuessEvent,self.guess_index)
+end
+
+function OverlordGuessingWindow:setData(  )
+    if not self.guess_icon then
+        self.guess_icon = BackPackItem.new(true,true,nil,0.55)
+        self.guess_icon:setPosition(cc.p(4,31))
+        self.reward_node:addChild(self.guess_icon)
+    end
+    local item_data = {}
+    item_data[1] = Config.ArenaTimeWarpData.data_const["happy_coin_item"].val
+    item_data[2] = model:getOverBetReward()
+    self.guess_icon:setData(item_data)
+    local longBack = function()
+        local config = Config.ItemData.data_get_data(item_data[1])
+        BackpackController:getInstance():openTipsSource(true, config)
+    end
+    self.guess_icon:addLongTimeTouchCallback(longBack)
+    local callBack = function()
+        if item_data[2] > 0 then
+            controller:sender14528()
+        else
+            message(TI18N("语言_c_6627"))
+        end    
+    end
+    self.guess_icon:addCallBack(callBack)
+    if item_data[2] > 0 then
+        setChildUnEnabled(false,self.guess_icon)
+        self.guess_icon:showStrTips(true, TI18N("语言_c_988"))
+        if not self.play_effect then
+            self.play_effect = createEffectSpine(Config.EffectData.data_effect_info[263], cc.p(self.guess_icon:getContentSize().width * 0.5, self.guess_icon:getContentSize().height * 0.5), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+            self.guess_icon:addChild(self.play_effect)
+        end
+        self.play_effect:setVisible(true)
+    else
+        setChildUnEnabled(true,self.guess_icon)
+        self.guess_icon:showStrTips(false)
+        if self.play_effect then
+            self.play_effect:setVisible(false)
+        end
+    end
+    if model:getStatus() then
+        if model:getStatus() == ArenaworldbullyConst.stage.guess then
+            local end_time = model:getSignUpEndTime()
+            if end_time then
+                setCountDownTime(self.time_value,end_time - GameNet:getInstance():getTime())
+            end
+            -- self.time_value:setColor(cc.c3b(0x3f,0xff,0x05))
+        elseif model:getStatus() < ArenaworldbullyConst.stage.guess then
+            self.time_value:setString(TI18N("语言_c_6628"))
+            -- self.time_value:setColor(cc.c3b(0x3f,0xff,0x05))
+        elseif model:getStatus() > ArenaworldbullyConst.stage.guess then
+            self.time_value:setString(TI18N("语言_c_6629"))
+            -- self.time_value:setColor(cc.c3b(0xff,0xff,0xff))
+        end
+    end
+    self:updateGuessRed()
+    self:updateGuessRewardRed()
+end
+--竞猜列表
+function OverlordGuessingWindow:setGuessPanel()
+    -- if not next(self.bet_list) then return end
+    for i = 1, 4 do
+        local item = self.guess_item_list[i]
+        local list = self.bet_list[i]
+        if list and next(list) then
+            local rank_list = model:getOverGuessRankList(model:getLookZone())[list.rank_score]
+            item.choose_panel:setVisible(false)
+            item.player_panle:setVisible(true)
+            item.odds_bg:setVisible(true)
+            item.odds_txt:setVisible(true)
+            if not item.player_node then
+                item.player_node = PlayerHead.new(PlayerHead.type.circle)
+                item.player_panle:addChild(item.player_node)
+                -- item.player_node:setZOrder(0)
+                item.player_node:setScale(0.9)
+                item.player_node:setPosition(cc.p(item.player_panle:getContentSize().width*0.5,item.player_panle:getContentSize().height*0.5))
+            end
+            item.player_node:setHeadRes(rank_list.face_id, false, LOADTEXT_TYPE, rank_list.face_file, rank_list.face_update_time)
+	        item.player_node:setLev(rank_list.lev)
+            item.player_rank:setString(list.rank_score)
+            local index = 0
+            local cfg = Config.ArenaTimeWarpData.data_rate_list
+            for k, v in pairs(cfg) do
+                if v.min <= rank_list.rank_score and v.max >= rank_list.rank_score then
+                    index = k
+                end
+            end
+            local num = Config.ArenaTimeWarpData.data_rate_list[index].rate[list.bet_rank][2]
+            local res = PathTool.getItemRes(Config.ArenaTimeWarpData.data_const["happy_coin_item"].val)
+            item.odds_txt:setString(string.format(TI18N("<img src=\'%s\' scale=0.3 />%s"),res,num))
+        else
+            item.choose_panel:setVisible(true)
+            item.player_panle:setVisible(false)
+            item.odds_bg:setVisible(false)
+            item.odds_txt:setVisible(false)
+        end
+    end
+    model:setOverGuessData(self.bet_list,model:getLookZone())
+    if model:getOverIsGuess(model:getLookZone()) then
+        setChildUnEnabled(true,self.guess_btn)
+        addRedPointToNodeByStatus(self.guess_btn,false,10,10)
+        self.guess_btn:setTouchEnabled(false)
+        self.guess_txt:setString(TI18N("语言_c_2778"))
+    else
+        setChildUnEnabled(false,self.guess_btn)
+        self.guess_btn:setTouchEnabled(true)
+        self.guess_txt:setString(TI18N("语言_c_543"))
+    end
+    GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateOverGuessEvent,self.guess_index)
+end
+--竞猜排行列表
+function OverlordGuessingWindow:setGuessRankPanel(index)
+    self:setGuessPanel()
+    local _index = index or 2
+    self.rank_list = deepCopy(model:getOverGuessRankList(model:getLookZone()))
+    if _index == 1 then
+        table.sort(self.rank_list,function(a,b) return a.rank_score < b.rank_score end)
+    else
+        table.sort(self.rank_list,function(a,b) return a.power > b.power end)
+    end
+    -- if next(self.rank_list) then
+    --     self.rank_view:reloadData(1,nil,true)
+    -- end
+    -- if next(self.bet_list) then
+    --     delayRun(self.rank_view,0.2,function()
+    --         self:onClickGuessItem(self.guess_index)
+    --     end)
+    -- end
+    if self.rank_list then
+        self.rank_view:reloadData(1,nil,true)
+    end
+    if self.bet_list then
+        delayRun(self.rank_view,0.2,function()
+            self:onClickGuessItem(self.guess_index)
+        end)
+    end
+    self:updateGuessRed()
+    self:updateGuessRewardRed()
+end
+
+function OverlordGuessingWindow:DeleteMe(  )
+    if self.update_over_guess_rank_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_over_guess_rank_data)
+        self.update_over_guess_rank_data = nil
+    end
+    if self.update_over_guess_update_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_over_guess_update_data)
+        self.update_over_guess_update_data = nil
+    end
+    if self.update_overlord_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_overlord_data)
+        self.update_overlord_data = nil
+    end
+    
+    if self.update_preselection_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_preselection_data)
+        self.update_preselection_data = nil
+    end
+    if self.rank_view then
+        self.rank_view:DeleteMe()
+    end
+    self.rank_view = nil
+end
+
+
+
+--子项
+OverlordGuessingItem = class("OverlordGuessingItem", function()
+    return ccui.Widget:create()
+end)
+
+function OverlordGuessingItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function OverlordGuessingItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/overlord_guessing_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(158,268))
+	self:setTouchEnabled(true)
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+    self.click_bg = self.main_container:getChildByName("click_bg")
+    self.click_bg:setVisible(false)
+    self.rank_bg = self.main_container:getChildByName("rank_bg")
+    self.rank_txt = self.rank_bg:getChildByName("rank_txt")
+	self.choose_icon = self.main_container:getChildByName("choose_icon")
+    self.choose_icon:setVisible(false)
+	self.head_node = self.main_container:getChildByName("head_node")
+	self.name = self.main_container:getChildByName("name")
+	self.score_txt = self.main_container:getChildByName("score_txt")
+	self.power_txt = self.main_container:getChildByName("power_txt")
+	self.region_icon = self.main_container:getChildByName("region_icon")
+	self.info_btn = self.main_container:getChildByName("info_btn")
+end
+
+function OverlordGuessingItem:register_event( )
+    self.info_btn:addTouchEventListener(function(sender, event_type)
+        FriendController:getInstance():openFriendCheckPanel(true, {srv_id = self.data.srv_id, rid = self.data.rid},FriendConst.Tab_Index.LineUp,PartnerConst.Fun_Form.WorldOverlord)
+    end)
+    self.main_container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                doStopAllActions(self.background)
+                self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+            elseif self.long_touch_type == LONG_TOUCH_END_TYPE then
+                --事件触发了就不处理点击事件了
+                return
+            end
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click =
+                    math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+                    math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                if self.call_back then
+                    self:call_back()
+                end
+            end
+        elseif event_type == ccui.TouchEventType.moved then
+            if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                local touch_began = self.touch_began
+                local touch_move = sender:getTouchMovePosition()
+                if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 20 or math.abs(touch_move.y - touch_began.y) > 20) then 
+                    --移动大于20了..表示取消长点击效果
+                    doStopAllActions(self.main_container)
+                    self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+                end 
+            end
+        elseif event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+            doStopAllActions(self.main_container)
+            self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+            delayRun(self.main_container, 0.6, function ()
+                if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                    FriendController:getInstance():openFriendCheckPanel(true, {srv_id = self.data.srv_id, rid = self.data.rid},FriendConst.Tab_Index.LineUp,PartnerConst.Fun_Form.WorldOverlord)
+                end
+                self.long_touch_type = LONG_TOUCH_END_TYPE
+            end)
+        elseif event_type == ccui.TouchEventType.canceled then
+            if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+                doStopAllActions(self.main_container)
+                self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+            end
+        end
+    end)
+
+    if self.update_overlord_event == nil then
+        self.update_overlord_event = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverGuessEvent, function(index)
+            if self.updateItem then
+                self:updateItem(index)
+            end
+        end)
+    end
+end
+
+function OverlordGuessingItem:setData(data,index)
+    self.data = data
+    self.rank_txt:setString(data.rank_score)
+    self.choose_icon:setVisible(false)
+    if not self.head_icon then
+        self.head_icon = PlayerHead.new(PlayerHead.type.circle)
+        self.head_node:addChild(self.head_icon)
+    end
+    self.head_icon:setHeadRes(data.face_id, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+    self.head_icon:setLev(data.lev)
+    self.name:setString(transformNameByServ(data.name, data.srvid))
+    self.score_txt:setString(string.format(TI18N("语言_c_4495"),data.score))
+    self.power_txt:setString(MoneyTool.moneyFormat(data.power))
+    local cfg = Config.ArenaTimeWarpData.data_nation[data.nation]
+	if cfg then
+		local res = PathTool.getTargetRes("time_warp/region",cfg.icon,false)
+        loadSpriteTexture(self.region_icon,res,LOADTEXT_TYPE)
+    end
+    self:updateItem(index)
+end
+function OverlordGuessingItem:updateItem(index)
+    local list = model:getOverGuessData(model:getLookZone())[index]
+    if list and self.data and list.rank_score == self.data.rank_score then
+        self.click_bg:setVisible(true)
+    else
+        self.click_bg:setVisible(false)
+    end
+    local list = model:getOverGuessData(model:getLookZone())
+    local status = false
+    for k, v in pairs(list) do
+        if v and self.data and v.rank_score == self.data.rank_score then
+            status = true
+            break
+        end 
+    end
+    if status then
+        self.choose_icon:setVisible(true)
+    else
+        self.choose_icon:setVisible(false)
+    end
+end
+function OverlordGuessingItem:addCallBack(call_back)
+    self.call_back = call_back
+end
+function OverlordGuessingItem:DeleteMe()
+    if self.update_overlord_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_overlord_event)
+        self.update_overlord_event = nil
+    end
+end

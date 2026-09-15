@@ -1,0 +1,351 @@
+-- --------------------------------------------------------------------
+-- z装备新版tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+TreasureFragmentsTips = TreasureFragmentsTips or BaseClass(BaseView)
+
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+local back_controller = BackpackController:getInstance()
+local back_model = back_controller:getModel()
+
+function TreasureFragmentsTips:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "treasure/treasure_fragments_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+end
+
+function TreasureFragmentsTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+        self.background:setSwallowTouches(true)
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+    self.base_panel = self.container:getChildByName("base_panel")  
+    self.name = self.base_panel:getChildByName("name")
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    self.info_panel = self.container:getChildByName("info_panel")
+    self.info_label = self.info_panel:getChildByName("label") 
+    self.info_label:setString(TI18N("语言_c_6065"))
+    self.bar_bg = self.info_panel:getChildByName("bar_bg")
+    self.bar = self.info_panel:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.bar_num = self.info_panel:getChildByName("bar_num")
+    self.star_con = self.info_panel:getChildByName("star_con")
+    self.desc_panel = self.container:getChildByName("desc_panel")
+    self.line = self.desc_panel:getChildByName("line")
+    self.scroll_view = self.desc_panel:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.tab_panel = self.container:getChildByName("tab_panel")
+    self.source_btn = self.tab_panel:getChildByName("source_btn")
+    self.source_txt = self.source_btn:getChildByName("label")
+    self.source_txt:setString(TI18N("语言_c_6079"))
+    self.break_btn = self.tab_panel:getChildByName("break_btn")
+    self.break_txt = self.break_btn:getChildByName("label")
+    self.break_txt:setString(TI18N("语言_c_6148"))
+    self.goto_btn = self.tab_panel:getChildByName("goto_btn")
+    self.goto_txt = self.goto_btn:getChildByName("label")
+    self.goto_txt:setString(TI18N("语言_c_7"))
+    self.close_btn = self.container:getChildByName("close_btn")
+end
+
+function TreasureFragmentsTips:register_event()
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 1) 
+    registerButtonEventListener(self.background, function() self:onClickCloseBtn() end ,false, 0) 
+    registerButtonEventListener(self.source_btn, function() self:onClickSourceBtn() end ,false, 0) 
+    registerButtonEventListener(self.break_btn, function() self:onClickBreakBtn() end ,false, 0) 
+    registerButtonEventListener(self.goto_btn, function() self:onClickGotoBtn() end ,false, 0) 
+end
+--前往
+function TreasureFragmentsTips:onClickGotoBtn()
+    local id = 0
+    local item_config = Config.ItemData.data_get_data(self.data.id)
+    if item_config and item_config.effect and item_config.effect[1] and item_config.effect[1].val then
+        id = item_config.effect[1].val
+        local cfg = Config.NinjaTreasureData.data_base_info[id]
+        local status = true
+        if next(cfg.show_limit) then
+            if cfg.show_limit[1][1] == "tree_lev" then
+                status = HeroController:getInstance():getModel():checkEnoughResLev(cfg.show_limit[1][2])
+            end
+        end
+        if status then
+            if TreasureController:getInstance():getTreasureMainWindowIsOpen() then
+                local list = {}
+                list.is_book = false
+                list.is_btn = true
+                local vo = TreasureVo.New()
+                local treasure_list = TreasureController:getInstance():getModel():getTreasureForId(cfg.id)
+                if treasure_list then
+                    vo:setUpData(treasure_list)
+                else
+                    vo:updataData(cfg.id)
+                end
+
+                TreasureController:getInstance():openTreasureTips(true, vo, list)
+                TreasureController:getInstance():openTreasureBagWindow(false)
+                controller:openTreasureFragmentsTips(false)
+            else
+                if TreasureController:getInstance():getModel():IsTreasureLev() then
+                    MainSceneController:getInstance():handleSceneStatus(true)
+                    TreasureController:getInstance():openTreasureMainWindow(true)
+                    local list = {}
+                    list.is_book = false
+                    list.is_btn = true
+                    local vo = TreasureVo.New()
+                    local treasure_list = TreasureController:getInstance():getModel():getTreasureForId(cfg.id)
+                    if treasure_list then
+                        vo:setUpData(treasure_list)
+                    else
+                        vo:updataData(cfg.id)
+                    end
+                    TreasureController:getInstance():openTreasureTips(true, vo, list)
+                    controller:openTreasureFragmentsTips(false)
+                else
+                    message(Config.NinjaTreasureData.data_constant.open_lev.desc)
+                end
+            end
+            
+        else
+            message(string.format(TI18N("语言_c_6319"),cfg.show_limit[1][2]))
+        end
+    end
+end
+--来源
+function TreasureFragmentsTips:onClickSourceBtn()
+    local item_config = Config.ItemData.data_get_data(self.data.id)
+    BackpackController:getInstance():openTipsSource(true, item_config)
+end
+--分解
+function TreasureFragmentsTips:onClickBreakBtn()
+    local vo = BackpackController:getInstance():getModel():getVoForId(self.data.id)
+    BackpackController:getInstance():openItemSellPanel(true, vo, BackPackConst.Bag_Code.TREASURE)
+    controller:openTreasureFragmentsTips(false)
+end
+--关闭
+function TreasureFragmentsTips:onClickCloseBtn()
+    controller:openTreasureFragmentsTips(false)
+end
+
+function TreasureFragmentsTips:openRootWnd(data,list)
+    self.data = data 
+    local list = list or {}
+    self.is_book = list.is_book or false -- 是否是图鉴
+    self.is_btn = list.is_btn or false  -- 是否显示按钮
+    self.is_bag = list.is_bag or false  -- 是否显示按钮
+    local item_config = Config.ItemData.data_get_data(self.data.id)
+    local btn_list = {}
+    table.insert(btn_list,self.source_btn)
+    self.goto_btn:setVisible(true)
+    table.insert(btn_list,self.goto_btn)
+    if self.is_bag and next(item_config.value) then
+        -- self.source_btn:setPositionX(286)
+        table.insert(btn_list,self.break_btn)
+        self.break_btn:setVisible(true)
+    else
+        -- self.source_btn:setPositionX(204)
+        self.break_btn:setVisible(false)
+    end
+    local _x = self.tab_panel:getContentSize().width / tableLen(btn_list)
+    for k,v in pairs(btn_list) do
+        v:setPositionX(_x*(k-0.5))
+    end
+    self:initData()
+end
+function TreasureFragmentsTips:initData()
+    self:setBasePanel()
+    self:setInfoPanel()
+    self:setDescPanel()
+    self:setBtnPanel()
+end
+
+--基础信息
+function TreasureFragmentsTips:setBasePanel()
+    local background_res = PathTool.getResFrame("common_2", "tips_"..self.data.quality)
+    loadSpriteTexture(self.base_panel,background_res,LOADTEXT_TYPE_PLIST)
+    -- self.base_panel:loadTexture(background_res,LOADTEXT_TYPE_PLIST)
+    self.treasure_item = TreasureItem.new(false,1,false,false,false)
+    self.base_panel:addChild(self.treasure_item)
+    self.treasure_item:setPosition(cc.p(72,68))
+    self.treasure_item:setData(self.data)
+    self.name:setChangeScaleOffWidth(-1000)
+    setTextMaxWidth(self.name,240,-10)
+    self.name:setString(self.data.name)
+    local color = BackPackConst.getEquipTipsColor(self.data.quality)
+    self.name:setTextColor(color)
+    self.equip_type:setPositionY(self.name:getPositionY() - self.name:getContentSize().height)
+    self.equip_type:setString(TI18N("语言_c_6066"))
+    self.equip_type:setTextColor(color)
+    -- return self.base_panel:getContentSize().height
+    self:updateStarInfo()
+end
+function TreasureFragmentsTips:updateStarInfo()
+    local id = 0
+    local star = 0
+    if self.data.effect and self.data.effect[1] and self.data.effect[1].val then
+        id = self.data.effect[1].val
+    end
+    if id == 0 then return end
+
+    local list = model:getTreasureForId(id)
+
+    local own_num = back_model:getBackPackItemNumByBid(self.data.id)
+    if list then
+        star = list.star
+        local cfg = Config.NinjaTreasureData.data_star_info[id][star]
+        if cfg and cfg.cost and next(cfg.cost) then
+            local cost_num = 0
+            for k,v in pairs(cfg.cost) do
+                if v[1] == self.data.id then
+                    cost_num = v[2]
+                end
+            end
+            self.bar_num:setString(own_num.."/"..cost_num)
+            self.bar:setPercent(own_num/cost_num * 100)
+        else
+            self.bar_num:setString(TI18N("语言_c_4543"))
+            self.bar:setPercent(100)
+        end
+
+    else
+        local cfg = Config.NinjaTreasureData.data_base_info[id]
+        self.bar_num:setString(own_num.."/"..cfg.item_num)
+        self.bar:setPercent(own_num/cfg.item_num * 100)
+    end
+    local star_cfg = Config.NinjaTreasureData.data_star_info[id]
+    self.star_setting = self:createStar(star,tableLen(star_cfg),self.star_con,self.star_setting)
+end
+
+function TreasureFragmentsTips:createStar(num ,max_num, star_con, star_setting)
+	local num = num or 0
+    local star_setting = star_setting or {}
+	if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+	for i,v in pairs(star_setting.star_list) do
+        v:setVisible(false)
+    end
+	local _cStar = function(star_count, max_count, star_list,moveW)
+        local width = 20
+        -- local x = - max_count * width * 0.5 + width * 0.5
+        local x = 0
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,max_count do
+            if not star_list[i] then 
+				local res = PathTool.getResFrame("common","common_90074")
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,max_count-i,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+			if i > star_count then
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90093"), LOADTEXT_TYPE_PLIST)	
+			else
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90074"), LOADTEXT_TYPE_PLIST)
+			end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+	_cStar(num,max_num, star_setting.star_list)
+	return star_setting
+end
+--信息
+function TreasureFragmentsTips:setInfoPanel()
+    local id = 0
+    if self.data.effect and self.data.effect[1] and self.data.effect[1].val then
+        id = self.data.effect[1].val
+    end
+    local list = model:getTreasureForId(id)
+    local str = "<div fontcolor=#FEEEBA>%s<div fontcolor=#FFFFFF>%s</div></div>"
+    self.lv_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0), cc.p(14, 155), -4, nil, 470)
+    if list and list.lv  then
+        self.lv_txt:setString(string.format(str,TI18N("语言_c_2255"),list.lv))
+    else
+        self.lv_txt:setString(string.format(str,TI18N("语言_c_2255"),TI18N("语言_c_6067")))
+    end
+    self.star_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0), cc.p(14, 125), -4, nil, 470)
+    if list and list.star then
+        self.star_txt:setString(string.format(str,TI18N("语言_c_6068"),list.star))
+    else
+        self.star_txt:setString(string.format(str,TI18N("语言_c_6068"),TI18N("语言_c_6067")))
+    end
+    local wake_str = "<div fontcolor=%s>%s</div>"
+    self.wakeup_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0), cc.p(14, 95), -4, nil, 470)
+    if list and list["break"] == 1 then
+        self.wakeup_txt:setString(string.format(wake_str,"#FF0000",TI18N("语言_c_6111")))
+    else
+        local awake_info = Config.NinjaTreasureData.data_awake_info[id]
+	    if not awake_info then
+            self.wakeup_txt:setString(string.format(wake_str,"#FF0000",TI18N("语言_c_6258")))
+        else
+            self.wakeup_txt:setString(string.format(wake_str,"#FF0000",TI18N("语言_c_6069")))
+        end
+    end
+    self.far_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0), cc.p(14, 65), -4, nil, 470)
+    local num = back_model:getBackPackItemNumByBid(self.data.id)
+    self.far_txt:setString(TI18N("语言_c_6070"))
+    self.info_panel:addChild(self.lv_txt)
+    self.info_panel:addChild(self.star_txt)
+    self.info_panel:addChild(self.wakeup_txt)
+    self.info_panel:addChild(self.far_txt)
+end
+
+--描述
+function TreasureFragmentsTips:setDescPanel()
+    self.desc_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0,1), cc.p(0, 0), -4, nil, 400)
+    self.scroll_view:addChild(self.desc_txt)
+    self.desc_txt:setString(self.data.use_desc)
+    if self.desc_txt:getContentSize().height > self.scroll_view:getContentSize().height then
+        self.scroll_view:setBounceEnabled(true)
+    else
+        self.scroll_view:setBounceEnabled(false)
+    end
+    local _height = math.max(self.desc_txt:getContentSize().height,self.scroll_view:getContentSize().height)
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_view:getContentSize().width,_height))
+    self.desc_txt:setPositionY(_height)
+end
+
+--按钮
+function TreasureFragmentsTips:setBtnPanel()
+    local id = 0
+    if self.data.effect and self.data.effect[1] and self.data.effect[1].val then
+        id = self.data.effect[1].val
+    end
+    local cfg = Config.NinjaTreasureData.data_base_info[id]
+    local str = ""
+    self.act_tip = createLabel(22,cc.c3b(0xff,0x00,0x00),nil,self.tab_panel:getContentSize().width*0.5,70,str,self.tab_panel,nil,cc.p(0.5,0.5))
+    local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+    if cfg and next(cfg.open_limit) and tree_lev < cfg.open_limit[1][2] then
+        self.act_tip:setVisible(true)
+        self.source_btn:setPositionY(30)
+        self.break_btn:setPositionY(30)
+        self.goto_btn:setPositionY(30)
+        self.act_tip:setString(string.format(TI18N("语言_c_6222"),cfg.open_limit[1][2]))
+    else
+        self.source_btn:setPositionY(40)
+        self.break_btn:setPositionY(40)
+        self.goto_btn:setPositionY(40)
+        self.act_tip:setVisible(false)
+    end
+end
+
+function TreasureFragmentsTips:close_callback()
+    controller:openTreasureFragmentsTips(false)
+end

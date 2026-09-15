@@ -1,0 +1,373 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 传奇忍者
+-- @DateTime:    2019-05-10 09:49:04
+-- *******************************
+ActionLegendTrialSkinFightInfo = ActionLegendTrialSkinFightInfo or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionLegendTrialSkinFightInfo:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.is_full_screen = false
+    self.win_type = WinType.Big
+    self.layout_name = "legendtrial/action_legend_trial_fight_info"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("planes", "planes_map"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("planes", "planes_info"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("planes","big_bg_2"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("planes","big_bg_3"), type = ResourcesType.single},
+    }
+end
+
+function ActionLegendTrialSkinFightInfo:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    local image_title = self.main_container:getChildByName("image_title")
+    local win_title = self.main_container:getChildByName("win_title")
+    win_title:setString(TI18N(""))
+    autoSizeTitleBg(win_title, image_title)
+    self.image_title = image_title
+    self.win_title = win_title
+
+    self.record_img = self.main_container:getChildByName("record_img")
+    self.record_img:getChildByName("name_txt_1"):setString(TI18N("语言_c_5208"))
+
+    self.tips_txt = self.main_container:getChildByName("tips_txt")
+    self.tips_txt:setString(TI18N("语言_c_5209"))
+
+    local desc_bg = self.main_container:getChildByName("desc_bg")
+    self.des_scrollview = desc_bg:getChildByName("des_scrollview")
+    self.des_scrollview:setScrollBarEnabled(false)
+    self.des_scrollview.size = self.des_scrollview:getContentSize()
+    self.name_txt_2 = self.des_scrollview:getChildByName("name_txt_2")
+    self.name_txt_2:ignoreContentAdaptWithSize(true)
+    self.name_txt_2:setTextAreaSize(cc.size(510, 0))
+
+    local left_bg_1 = self.main_container:getChildByName("left_bg_1")
+    local right_bg_1 = self.main_container:getChildByName("right_bg_1")
+    loadSpriteTexture(left_bg_1, PathTool.getPlistImgForDownLoad("planes","big_bg_3"), LOADTEXT_TYPE)
+    loadSpriteTexture(right_bg_1, PathTool.getPlistImgForDownLoad("planes","big_bg_2"), LOADTEXT_TYPE)
+
+    self.left_role_panel = self.main_container:getChildByName("panel_role_left")
+    local panel_size = self.left_role_panel:getContentSize()
+    --9位置
+    self.left_position_list = {}
+    self.left_bg_list = {}
+    self.left_hero_list = {}
+    for i=1,9 do
+        local item_bg = self.left_role_panel:getChildByName("pos_bg_" .. i)
+        local pos_x, pos_y = item_bg:getPosition()
+        table.insert(self.left_position_list, cc.p(pos_x, pos_y - 5))
+        table.insert(self.left_bg_list, item_bg)
+        item_bg:setVisible(false)
+    end
+    local pos = {2,4,6,7,9} --
+    for index=1,5 do
+        self.left_hero_list[index] = HeroExhibitionItem.new(0.6, true)
+        self.left_hero_list[index]:setPosition(self.left_position_list[pos[index]])
+        self.left_role_panel:addChild(self.left_hero_list[index])
+        self.left_hero_list[index]:addCallBack(function(_, data)
+            self:onClickItem(data, "left")
+        end)
+        self.left_bg_list[pos[index]]:setVisible(true)
+    end
+    self.right_role_panel = self.main_container:getChildByName("panel_role_right")
+    self.right_position_list = {}
+    self.right_bg_list = {}
+    self.right_hero_list = {}
+    for i=1,9 do
+        local item_bg = self.right_role_panel:getChildByName("pos_bg_" .. i)
+        local pos_x, pos_y = item_bg:getPosition()
+        table.insert(self.right_position_list, cc.p(pos_x, pos_y - 5))
+        table.insert(self.right_bg_list, item_bg)
+        item_bg:setVisible(false)
+    end
+    for index=1,5 do
+        self.right_hero_list[index] = HeroExhibitionItem.new(0.6, true)
+        self.right_hero_list[index]:setPosition(self.right_position_list[pos[index]])
+        self.right_role_panel:addChild(self.right_hero_list[index])
+        self.right_hero_list[index]:addCallBack(function(_,data)
+            self:onClickItem(data, "right")
+        end)
+        self.right_bg_list[pos[index]]:setVisible(true)
+    end
+
+    -- 精灵
+    self.tree_lv_left = self.main_container:getChildByName("tree_lv_left")
+    self.tree_lv_right = self.main_container:getChildByName("tree_lv_right")
+    self.left_elfin_panel = self.main_container:getChildByName("left_elfin_panel")
+    self.right_elfin_panel = self.main_container:getChildByName("right_elfin_panel")
+    self.left_elfin_item_list = {}
+    self.right_elfin_item_list = {}
+
+    --reward
+    self.main_container:getChildByName("award_txt"):setString(TI18N("语言_c_11"))
+    self.reward_panel = self.main_container:getChildByName("reward_panel")
+    local panel_size = self.reward_panel:getContentSize()
+    local scroll_view_size = cc.size(panel_size.width, panel_size.height+10)
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 15,                    -- x方向的间隔
+        start_y = 10,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.8,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.8,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.8
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.reward_panel, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+
+    self.btn_embattle = self.main_container:getChildByName("btn_embattle")
+    self.btn_embattle:getChildByName("label"):setString(TI18N("语言_c_1389"))
+end
+function ActionLegendTrialSkinFightInfo:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn), false, 2)
+    registerButtonEventListener(self.main_container, handler(self, self.onClickCloseBtn), false, 2)
+    registerButtonEventListener(self.record_img, handler(self, self.onClickRecord), true, 2)
+    registerButtonEventListener(self.btn_embattle, handler(self, self.onClickEmbattleBtn), true)
+
+    if not self.point_info_event then
+        self.point_info_event = GlobalEvent:getInstance():Bind(ActionEvent.Update_LegendTrial_point_info,function (data)
+            if not data then return end
+            self:setData(data)
+        end)
+    end
+    if not self.hero_sp_skill_get_event then
+        self.hero_sp_skill_get_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Sp_Skill_Get_Event,function (data)
+            if not data then return end
+            local _data = deepCopy(data)
+            if _data.type == self.data.camp_id then
+                self.sp_data = _data
+            end
+        end)
+    end
+end
+
+function ActionLegendTrialSkinFightInfo:onClickItem(item_data, state)
+    if not item_data then
+        return 
+    end
+    if state == "left" then
+        controller:sender29132(self.data.bid, self.data.info.id, item_data.partner_id)
+    else
+        controller:sender29133(self.data.bid, self.data.info.id, item_data.partner_id)
+    end
+end
+
+function ActionLegendTrialSkinFightInfo:onClickRecord()
+    local tab_vo = controller:getActionSubTabVo(ActionRankCommonType.legend_trialskin)
+    if not tab_vo or tab_vo.remain_sec <= 0 then
+        message(TI18N("语言_c_1472"))
+        return
+    end
+    controller:openLegendTrialVedioPanel(true, {bid = self.data.bid, id = self.data.info.id})
+end
+
+function ActionLegendTrialSkinFightInfo:onClickCloseBtn()
+    controller:openActionLegendTrialSkinFightInfo(false)
+end
+
+function ActionLegendTrialSkinFightInfo:onClickEmbattleBtn()
+    if not self.pointData then
+        return
+    end
+    local tab_vo = controller:getActionSubTabVo(ActionRankCommonType.legend_trialskin)
+    if not tab_vo or tab_vo.remain_sec <= 0 then
+        message(TI18N("语言_c_1472"))
+        return
+    end
+    local setting = {
+        pointData = self.pointData,
+        info = self.data.info,
+        holiday_bid = self.data.bid,
+        camp_id = self.data.camp_id,
+        sp_data = self.sp_data
+    }
+    HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.LegendTrialSkin, setting, HeroConst.FormShowType.eFormFight)
+end
+
+function ActionLegendTrialSkinFightInfo:openRootWnd(data)
+    self.data = data
+    controller:sender29131(data.bid, data.info.id)
+    local rewards = {}
+    for i, v in ipairs(data.info.reward) do
+        rewards[#rewards + 1] = {bid = v.base_id, num = v.num}
+    end
+    self.item_scrollview:setData(rewards)
+	self.item_scrollview:addEndCallBack(function()
+        local item_list = self.item_scrollview:getItemList()
+        for k,v in pairs(item_list) do
+            v:setDefaultTip()
+			v:setSwallowTouches(false)
+			v:setGotIcon(self.data.info.pass >= 1)
+        end
+	end)
+end
+
+
+function ActionLegendTrialSkinFightInfo:setData(data)
+    self.pointData = data
+    HeroController:getInstance():sender11217(self.data.camp_id,{id=self.pointData.id})
+    self:updateHeroForm(self.left_hero_list, self.left_position_list, data.pos_info, "left", self.left_bg_list, data.formation_type)
+    self:updateHeroForm(self.right_hero_list, self.right_position_list, data.a_list, "right", self.right_bg_list, data.a_formation_type)
+    self:updateElfinList(data, self.left_elfin_panel, self.left_elfin_item_list, "left")
+    -- self:updateElfinList(data, self.right_elfin_panel, self.right_elfin_item_list, "right")
+    self.right_elfin_panel:setVisible(false)
+    self.tree_lv_right:setVisible(false)
+
+    local actionInfo = ActionController:getInstance():getActionSubTabVo(self.data.bid)
+    local data_fb_config = Config.HolidayLegendNinjaSkinData.data_fb
+    if actionInfo then
+        if data_fb_config and data_fb_config[actionInfo.camp_id] then
+            self.name_txt_2:setString(data_fb_config[actionInfo.camp_id][data.id].desc)
+        end
+    end
+    local x_size = self.name_txt_2:getContentSize()
+    local t_height = self.des_scrollview.size.height
+    if x_size.height + 10 > self.des_scrollview.size.height then
+        self.des_scrollview:setInnerContainerSize(cc.size(self.des_scrollview.size.width, x_size.height + 10))
+        t_height = x_size.height + 10
+    end
+    self.name_txt_2:setPositionY(t_height/2)
+    if actionInfo then
+        if data_fb_config and data_fb_config[actionInfo.camp_id] then
+            self.win_title:setString(data_fb_config[actionInfo.camp_id][data.id].name)
+        end
+    end
+    autoSizeTitleBg(self.win_title, self.image_title)
+end
+-- 左右  都使用
+function ActionLegendTrialSkinFightInfo:updateHeroForm(hero_list, position_list, pos_info, station, bg_list, form_type)
+    for i, v in ipairs(bg_list) do
+        v:setVisible(false)
+    end
+
+    for index = 1, 5 do
+        local info = pos_info[index]
+        local hero_item = hero_list[index]
+        if info then
+            hero_item:setPosition(position_list[info.pos])
+            if info.partner_id and info.partner_id ~= 0 then
+                local hero_vo = model:getPoolHeroVoById(self.pointData.id, info.partner_id)
+                if station == "right" then
+                    hero_vo = HeroVo.New()
+                    hero_vo.use_skin=info.skin_id
+                    hero_vo:updateHeroVo(info)
+                end
+                
+                if hero_vo then
+                    hero_item:setData(hero_vo)
+                    hero_item:setVisible(true)
+                else
+                    hero_item:setVisible(false)
+                end
+            else
+                hero_item:setVisible(false)
+            end
+        else
+            hero_item:setVisible(false)
+        end
+        local pos = self:getFormPosByIndex(form_type, index)
+        bg_list[pos]:setVisible(true)
+    end
+end
+
+-- 更新精灵
+function ActionLegendTrialSkinFightInfo:updateElfinList(data, elfin_panel, elfin_item_list, station)
+    if not elfin_panel then return end
+    if not data then return end
+    local plan_id = data.plan_id
+    local plan_data = data.plan_list[plan_id] or {}
+    for i, v in ipairs(data.plan_list) do
+        if v.id == plan_id then
+            plan_data = v
+            break
+        end
+    end
+    local elfin_bid_list = plan_data.plan_sprites or {}
+    local elfin_panel = elfin_panel
+    local elfin_item_list = elfin_item_list
+    local function getElfinBidByPos( pos )
+        if station == "right" then
+            return nil
+        end 
+        local elfin_bid
+        for k,v in pairs(elfin_bid_list) do
+            if v.pos == pos then
+                elfin_bid = v.item_bid
+                break
+            end
+        end
+        return elfin_bid
+    end
+    for i=1,4 do
+        local elfin_item = elfin_item_list[i]
+        if elfin_item == nil then
+            elfin_item = SkillItem.new(true, true, true, 0.5)
+            local size = elfin_panel:getContentSize()
+            local pos_x =SkillItem.Width*0.5/2 + (i - 1)*(SkillItem.Width*0.5 + 6)
+            elfin_item:setPosition(cc.p(pos_x, size.height/2))
+            elfin_panel:addChild(elfin_item)
+            elfin_item_list[i] = elfin_item
+        end
+        local item_bid = getElfinBidByPos(i)
+        if item_bid then
+            local bid = item_bid or 0
+            elfin_item:showLockIcon(false)
+            local elfin_cfg = Config.SpriteData.data_elfin_data(bid)
+            if bid == 0 or not elfin_cfg then
+                elfin_item:setData()
+            else
+                local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+                if skill_cfg then
+                    elfin_item:setData(skill_cfg)
+                end
+            end
+        else
+            elfin_item:setData()
+            -- elfin_item:showLockIcon(true)
+        end
+    end
+    if station == "left" then
+        self.tree_lv_left:setString(string.format(TI18N("语言_c_2589"), plan_data.lev or 0))
+    else
+        self.tree_lv_right:setString(string.format(TI18N("语言_c_2589"), 0))
+    end
+end
+
+-- 根据阵法类型和index，获取对应的位置
+function ActionLegendTrialSkinFightInfo:getFormPosByIndex( form_type, index )
+    local pos = 1
+    local formation_config = Config.FormationData.data_form_data[form_type]
+    if formation_config then
+        for k,v in pairs(formation_config.pos) do
+            if v[1] == index then
+                pos = v[2]
+                break
+            end
+        end
+    end
+    return pos
+end
+
+function ActionLegendTrialSkinFightInfo:close_callback()
+    if self.point_info_event then
+        GlobalEvent:getInstance():UnBind(self.point_info_event)
+        self.point_info_event = nil
+    end
+    if self.hero_sp_skill_get_event then
+        GlobalEvent:getInstance():UnBind(self.hero_sp_skill_get_event)
+        self.hero_sp_skill_get_event = nil
+    end
+    controller:openActionLegendTrialSkinFightInfo(false)
+end

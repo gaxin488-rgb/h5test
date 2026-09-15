@@ -1,0 +1,537 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-11-01
+-- --------------------------------------------------------------------
+ArenaworldbullyModel = ArenaworldbullyModel or BaseClass()
+
+function ArenaworldbullyModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function ArenaworldbullyModel:config()
+	self.total_info = {}      --个人信息(预告/报名/领奖/关闭) 14500过来的
+	self.preselectionInfo = {}      -- 个人信息(预选赛) 14503过来的
+	self.preselection_red_list = {} --预选赛红点
+	self.overlord_red_list = {}
+	self.red_list = {}
+end
+function ArenaworldbullyModel:setTotalInfo(data)
+	self.total_info = data
+	self.status = data.status
+	self.period = data.period
+	self.status_end_time = data.status_end_time
+	self.signup_state = data.signup_state
+	self.nation = data.nation
+	self.max_power = data.max_power
+	self:checkCrossarenaPrompt()
+	GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateSelfData,data)
+end
+--获取历史最高战力
+function ArenaworldbullyModel:getMaxPower()
+	return self.max_power or 0
+end
+--功能状态  
+-- 0:预告 1:报名 2:预选赛-休战 3:预选赛-战斗 4:争霸赛-准备 5:争霸赛-竞猜 
+-- 6:争霸赛-匹配 7:争霸赛-战斗 8:争霸赛-战斗结算 9:争霸赛-结算 10:领奖 11:关闭 99:结束
+function ArenaworldbullyModel:getStatus()
+	return self.status
+end
+--争霸赛禁止布阵状态
+function ArenaworldbullyModel:getNoFormStatus()
+	local status = self:getStatus()
+	if status ~= ArenaworldbullyConst.stage.guess and status ~= ArenaworldbullyConst.stage.match and status ~= ArenaworldbullyConst.stage.battle then
+		return true
+	end
+	return false
+end
+--预选赛赛季
+function ArenaworldbullyModel:getPeriod()
+	return self.period ~= 0 and self.period or 1
+end
+--预选赛赛季报名状态
+-- 0不可报名,1可报名,2已报名
+function ArenaworldbullyModel:getSignupState()
+	return self.signup_state
+end
+--预选赛地区
+function ArenaworldbullyModel:getnation()
+	return self.nation
+end
+--当前阶段结算时间
+function ArenaworldbullyModel:getSignUpEndTime()
+	return self.status_end_time
+end
+-----------------------预选赛----------------------------------
+function ArenaworldbullyModel:setPreselectionInfo(data)
+	self.preselectionInfo = data
+	self.period = data.period
+	self.status = data.status
+	self.status_end_time = data.status_end_time
+	self.nation = data.nation
+	self.pre_srv_id = data.srv_id
+	self.pre_group = data.group
+	self.pre_room = data.room
+	self.pre_rank = data.rank
+	self.pre_score = data.score
+	self.pre_can_combat_num = data.can_combat_num
+	self.pre_buy_combat_num = data.buy_combat_num
+	self.pre_period_reward = data.period_reward
+	self.pre_room_list = data.room_list
+	self.combat_num = data.combat_num
+	GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdatePreselectionData,data)
+end
+--今天已挑战次数
+function ArenaworldbullyModel:getBattleNum()
+	return self.combat_num
+end
+--预选赛赛季录像主服服务器id
+function ArenaworldbullyModel:getPreSrvId()
+	return self.pre_srv_id
+end
+--分组id
+function ArenaworldbullyModel:getPreGroupId()
+	return self.pre_group or 0
+end
+--获取本人参与的预选赛是否是跨服   预选赛分组 0是本服 否则是跨服
+function ArenaworldbullyModel:getSelfIsCross()
+	return self:getPreGroupId() ~= 0
+end
+--预选赛据点id
+function ArenaworldbullyModel:getPreRoomId()
+	return self.pre_room or 1
+end
+--预选赛名次
+function ArenaworldbullyModel:getPreRank()
+	return self.pre_rank or 0
+end
+--预选赛积分
+function ArenaworldbullyModel:getPreScore()
+	return self.pre_score or 0
+end
+--预选赛今天可挑战次数
+function ArenaworldbullyModel:getPreCanCombatNum()
+	return self.pre_can_combat_num or 0
+end
+--预选赛今天已购买挑战次数
+function ArenaworldbullyModel:getPreBuyCombatNum()
+	return self.pre_buy_combat_num or 0
+end
+--赛季奖励(据点奖励, 0:不可领 1:未领取 2:已领取)
+function ArenaworldbullyModel:getPrePeriodReward()
+	return self.pre_period_reward
+end
+--预选赛据点列表
+function ArenaworldbullyModel:getPreRoomList()
+	return self.pre_room_list or {}
+end
+--预选赛据点数据
+function ArenaworldbullyModel:getPreRoomDataForId(id)
+	for k, v in pairs(self:getPreRoomList()) do
+		if v.id == id then
+			return v
+		end
+	end
+	return {}
+end
+--预选赛据点是否解锁
+function ArenaworldbullyModel:getPreRoomLockForId(id)
+    local index = self:getSelfIsCross() and 2 or 1
+	local cfg = Config.ArenaTimeWarpData.data_room_info[index][id]
+    if self:getPreScore() >= cfg.unlock_score and (cfg.unlock_rank == 0 or self:getPreRank() <= cfg.unlock_rank) then
+		return true
+	end
+	return false
+end
+
+-- 分组第一点赞次数上限
+function ArenaworldbullyModel:getIsFabulousNumMax()
+	return false
+end
+
+-------------------争霸赛------------------------
+-- 争霸赛个人信息
+function ArenaworldbullyModel:setOverlordInfo(data)
+	self.period = data.period
+	self.status = data.status
+	self.status_end_time = data.status_end_time
+	self.nation = data.nation
+	self.pre_srv_id = data.srv_id
+	self.over_order = data.order
+	self.rank_champion = data.rank_champion
+	self.bet_reward = data.bet_reward
+	self.is_open = data.is_open
+	GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateOverlordData)
+end
+--争霸赛现在进行的哪组(开战顺序)
+function ArenaworldbullyModel:getOverChampionOrder()
+	return self.over_order or 1
+end
+--争霸赛现在进行的哪组
+function ArenaworldbullyModel:getOverGroupId(zone)
+	local cfg = Config.ArenaTimeWarpData.data_group
+	for k,v in pairs(cfg) do
+		if v.zone == zone and v.champion_order == self:getOverChampionOrder() then
+			return v.id
+		end	
+	end
+	return 1
+end
+-- 争霸赛竞猜奖励数量
+function ArenaworldbullyModel:getOverBetReward()
+	return self.bet_reward or 0
+end
+-- 争霸赛是否开启   0:未开启 1:开启 2:未开启-人数不足
+function ArenaworldbullyModel:getOverIsOpen()
+	return self.is_open or 1
+end
+--争霸赛排名
+function ArenaworldbullyModel:getOverRank()
+	return self.rank_champion or 0
+end
+
+-- 忍者大师赛竞猜信息
+function ArenaworldbullyModel:setOverGuessInfo(data)
+	if not self.bet_red_list then
+		self.bet_red_list = {}
+	end
+	for group_k, group_v in pairs(data.group_bet_list) do
+		local zone = Config.ArenaTimeWarpData.data_group[group_v.group].zone
+		local list = {}
+		for k, v in pairs(group_v.bet_list) do
+			list[v.bet_rank] = v
+		end
+		if not self.bet_list then
+			self.bet_list = {}
+		end
+		self.bet_list[zone] = list
+		if next(self.bet_list[zone]) then
+			self:setOverIsGuess(true,zone)
+		else
+			self:setOverIsGuess(false,zone)
+		end
+		local list_1 = {}
+		for k, v in pairs(group_v.rank_list) do
+			list_1[v.rank_score] = v
+		end
+		if not self.rank_list then
+			self.rank_list = {}
+		end
+		self.rank_list[zone] = list_1
+		if not next(group_v.bet_list) and tableLen(group_v.rank_list) >= 4 then
+			self.bet_red_list[zone] = true
+		else
+			self.bet_red_list[zone] = false
+		end
+	end
+	GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateOverGuessRankData)
+end
+--获取竞猜战区红点
+function ArenaworldbullyModel:getBetRedForZone(zone)
+	if self.status == ArenaworldbullyConst.stage.guess and self.signup_state == 2 and self.bet_red_list and self.bet_red_list[zone] then
+		return true
+	end 
+	return false
+end
+--竞猜列表
+function ArenaworldbullyModel:setOverGuessData(data,zone)
+	local list = {}
+	for k, v in pairs(data) do
+		if v.bet_rank then
+			list[v.bet_rank] = v
+		end
+	end
+	if not self.bet_list then
+		self.bet_list = {}
+	end
+	self.bet_list[zone] = data
+end
+function ArenaworldbullyModel:getOverGuessData(zone)
+	if self.bet_list and self.bet_list[zone] then
+		return self.bet_list[zone]
+	end
+	return {}
+end
+function ArenaworldbullyModel:getOverGuessRankList(zone)
+	if self.rank_list and self.rank_list[zone] then
+		return self.rank_list[zone]
+	end
+	return {}
+end
+function ArenaworldbullyModel:setOverIsGuess(status,zone)
+	if not self.is_guess then
+		self.is_guess = {}
+	end
+	self.is_guess[zone] = status
+end
+function ArenaworldbullyModel:getOverIsGuess(zone)
+	if self.is_guess and self.is_guess[zone] then
+		return self.is_guess[zone]
+	end
+	return false
+end
+
+--当前赛程
+function ArenaworldbullyModel:setOverMatchData(data)
+	self.group_pk_list = {}
+	for k, v in pairs(data.group_pk_list or {}) do
+		local cfg = Config.ArenaTimeWarpData.data_group[v.group]
+		self.group_pk_list[cfg.zone] = v
+	end
+	self.status = data.status
+	self.status_end_time = data.status_end_time
+end
+--争霸赛现在进行的哪组
+function ArenaworldbullyModel:getOverGroupIdForZone(zone)
+	if self.group_pk_list[zone] and self.group_pk_list[zone].group then
+		return self.group_pk_list[zone].group
+	end
+	return 1
+end
+--争霸赛现在进行轮次
+function ArenaworldbullyModel:getOverGroundId(zone)
+	if self.group_pk_list[zone] and self.group_pk_list[zone].step then
+		return self.group_pk_list[zone].step
+	end
+	return 1
+end
+--争霸赛赛程列表
+function ArenaworldbullyModel:getOverPkList(zone)
+	if self.group_pk_list[zone] and self.group_pk_list[zone].pk_list then
+		return self.group_pk_list[zone].pk_list
+	end
+	return {}
+end
+--争霸赛现在进行轮次的状态
+function ArenaworldbullyModel:getOverGroundStatusId(zone)
+	if self.group_pk_list[zone] and self.group_pk_list[zone].group_state then
+		return self.group_pk_list[zone].group_state
+	end
+	return 1
+end
+-----------------战令 任务--------------------
+--返回战令是否开启
+function ArenaworldbullyModel:getOrderIsOpen()
+	local list = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.ArenaworldbullyOrder)
+	if list and next(list) and list.remain_sec > 0 then
+		return true
+	end
+	return false
+end
+function ArenaworldbullyModel:setOrderData(data)
+    if not self.order_data or tableLen(data.quest_list) ~= 1 then
+        table.sort(data.quest_list, function (a,b)
+            return a.id<b.id
+        end)
+        self.order_data = data
+    else
+        for key, value in pairs(self.order_data.quest_list) do
+            if value.id == data.quest_list[1].id then
+                self.order_data.quest_list[key] = data.quest_list[1]
+            end
+        end
+        self.order_data.is_charge=data.is_charge
+    end
+end
+function ArenaworldbullyModel:getOrderData()
+	return self.order_data or {}
+end
+function ArenaworldbullyModel:getOrderStatus()
+	return self.order_data and self.order_data.is_charge >= 1
+end
+function ArenaworldbullyModel:getCurOrderReceive()
+	local curid=self:getReceiveFinishNext()
+    if self.order_data and self.order_data.quest_list then
+        for i,v in pairs(self.order_data.quest_list) do
+            if  v.id == curid then
+                return v
+            end
+        end
+    end
+    return nil
+end
+function ArenaworldbullyModel:getOrderStatusNum()
+    return self.order_data and self.order_data.is_charge or 0
+end
+function ArenaworldbullyModel:getReceiveFinish()
+	if self.order_data then
+		for key, value in pairs(self.order_data.quest_list) do
+			if value.finish == 0 then
+				return value.id-1
+			end
+		end
+		local key=table.maxn(self.order_data.quest_list)
+		return self.order_data.quest_list[key].id
+	end
+end
+function ArenaworldbullyModel:getOrderReceive(id)
+    if self.order_data and self.order_data.quest_list then
+        return self.order_data.quest_list[id] or nil
+    end
+    return nil
+end
+function ArenaworldbullyModel:getReceiveFinishNext()
+	if self.order_data then
+		for key, value in pairs(self.order_data.quest_list) do
+			if value.finish == 0 then
+				return value.id
+			end
+		end
+		local key=table.maxn(self.order_data.quest_list)
+		return self.order_data.quest_list[key].id
+	end
+end
+--可领取最大索引值
+function ArenaworldbullyModel:canReceiveMax(index,camp_id)
+    local dataconfig = Config.MonopolyOrderData.data_constant
+    if not dataconfig or not dataconfig[camp_id] then 
+        return false
+    end
+    local end_day = Config.MonopolyOrderData.data_constant[camp_id].open_day
+    local end_time = self:getOrderData().end_time
+    local cur_time = GameNet:getInstance():getTime()
+    if end_time - cur_time <= 86400 * end_day then
+        return true
+    else
+        local cfg= Config.MonopolyOrderData.data_quest_list[camp_id][index]
+        if not cfg then return false end
+        local day = cfg.login_day
+        if self.order_data.day >= day then
+            return true
+        else
+            return false
+        end
+    end
+end
+
+
+-----------------红点--------------------
+function ArenaworldbullyModel:updateArenaworldbullyRed(data)
+	for k, v in pairs(data.red_point_list) do
+		self.red_list[v.type] = v.code > 0
+		MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.arenaworldBully, {bid = v.type,status = v.code > 0})
+	end
+	GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateArenaworldbullyRed)
+end
+
+--预选赛页签红点
+function ArenaworldbullyModel:getPreselectionRed()
+	for k, v in pairs(self.red_list) do
+		if k == ArenaworldbullyConst.RedType.Challenge or k == ArenaworldbullyConst.RedType.Strongpoint then
+			if v then
+				return true
+			end
+		end
+	end
+	return false
+end
+function ArenaworldbullyModel:getBtnTurntableRed()
+	local item_bid = Config.DialData.data_const["time_warp_item"].val
+	local num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_bid) or 0
+    return num > 0
+end
+function ArenaworldbullyModel:getRedForIndex(index)
+	return self.red_list[index] or false
+end
+
+function ArenaworldbullyModel:updateRankList(data)
+	self.top_rank_list = data.rank_list
+	self.rank_red_list = {}
+	local status = false
+	if self:getStatus() ~= ArenaworldbullyConst.stage.preview and self:getStatus() ~= ArenaworldbullyConst.stage.signUp then
+		local cfg = Config.ArenaTimeWarpData.data_group
+		for k, v in pairs(self.top_rank_list) do
+			if v.worship_status == 0 then
+				status = true
+				self.rank_red_list[cfg[v.group].zone] = true
+			end
+		end
+	end
+	MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.arenaworldBully, {bid = ArenaworldbullyConst.RedType.Worship,status = status})
+	GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateArenaworldbullyRed)
+end
+function ArenaworldbullyModel:getRankRed(zone)
+	if self.rank_red_list and self.rank_red_list[zone] then
+		return true
+	end
+	return false
+end
+function ArenaworldbullyModel:getRankList()
+	return self.top_rank_list or {}
+end
+--争霸赛页签红点
+function ArenaworldbullyModel:getOverlordRed()
+	for k, v in pairs(self.red_list) do
+		if k == ArenaworldbullyConst.RedType.Guess or k == ArenaworldbullyConst.RedType.GuessReward or k == ArenaworldbullyConst.RedType.FirstReward or k == ArenaworldbullyConst.RedType.OverlordForm then
+			if v then
+				return true
+			end
+		end
+	end
+	local list = self:getRankList()
+	for k, v in pairs(list) do
+		if v.worship_status == 0 then
+			return true
+		end
+	end
+	return self:getBtnTurntableRed()
+end
+--检测是否要显示气泡
+function ArenaworldbullyModel:checkCrossarenaPrompt()
+	if self:getSignupState() == ArenaworldbullyConst.SingUpType.canRegister then
+        PromptController:getInstance():getModel():addPromptData({type = PromptTypeConst.Arenaworldbully})
+    else
+        PromptController:getInstance():getModel():removePromptDataByTpye(PromptTypeConst.Arenaworldbully)
+    end
+end
+--查看功能是否屏蔽
+function ArenaworldbullyModel:isHideArenaworldbully()
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	local featuresId = MainuiConst.FeaturesShield.WorldBully
+    if table.indexof(nohideIds,featuresId) then
+		return true
+	end
+	return false
+end
+--功能是否开启
+function ArenaworldbullyModel:isOpenArenaworldbully()
+	if not self:isHideArenaworldbully() then return false end
+	local open_config = Config.ArenaTimeWarpData.data_const
+    if open_config == nil then return false end
+	local role_vo = RoleController:getInstance():getRoleVo()
+	local world_lev = RoleController:getInstance():getModel():getWorldLev() or 0
+	if role_vo.lev < open_config.character_level.val or world_lev < open_config.world_level.val then 
+		return false
+	end
+	return true
+end
+--获取分组属于哪个战区
+function ArenaworldbullyModel:getZoneForGroup(group)
+	local cfg = Config.ArenaTimeWarpData.data_group
+	local zone = 0
+	if cfg and cfg[group] then
+		return cfg[group].zone
+	end
+	return zone
+end
+--当前看的是哪个战区
+function ArenaworldbullyModel:setLookZone(zone)
+	self.look_zone = zone
+	
+	GlobalEvent:getInstance():Fire(ArenaworldbullyEvent.UpdateZone)
+end
+function ArenaworldbullyModel:getLookZone()
+	return self.look_zone or 1
+end
+function ArenaworldbullyModel:getZoneName(zone)
+	local list = Config.ArenaTimeWarpData.data_const.theater_name.val
+	local zone = zone or ArenaworldbullyController:getInstance():getLookZone()
+	return TI18N(list[zone]) or ""
+end
+function ArenaworldbullyModel:__delete()
+end

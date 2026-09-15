@@ -1,0 +1,160 @@
+--******** 文件说明 ********
+-- 
+-- @description: 冒险战令购买进阶卡
+-- @DateTime:    2019-06-24 20:08:18
+-- *******************************
+MonopolyWarOrderBuyCardWindow = MonopolyWarOrderBuyCardWindow or BaseClass(BaseView)
+
+local controller = MonopolyController:getInstance()
+local model = controller:getModel()
+function MonopolyWarOrderBuyCardWindow:__init()
+    self.is_full_screen = true
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "monopoly/monopoly_war_order_buy_card_window"
+end
+
+function MonopolyWarOrderBuyCardWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(main_container , 2)
+    local baseCfg = Config.DungeonData.data_drama_const
+    self.title = main_container:getChildByName("Text_3")
+
+    self.title_bg= main_container:getChildByName("title_bg")
+    -- local title_width = main_container:getChildByName("Text_3"):getContentSize().width
+    -- local title_bg_width = math.max(title_width+130, 266)
+    -- self.title_bg:setContentSize(cc.size(title_bg_width,44))
+    
+    self.title_1 = main_container:getChildByName("Text_3_0")
+    setTextMaxWidth(self.title_1,250)
+    setTextSpacing(self.title_1,-10)
+    self.title_2 = main_container:getChildByName("Text_3_1")
+    setTextSpacing(self.title_2,-10)
+    -- self.Text_3_1_0 = main_container:getChildByName("Text_3_1_0")
+    --(font_size,text_color,line_color,x,y,text_content,parent_wnd,line_num, anchorpoint,font)
+    self.label_lock = createLabel(20, cc.c4b(0xfe,0xde,0x6e,0xff),cc.c4b(0x53,0x2d,0x1d,0xff),325,135,nil,main_container,2, cc.p(0.5,0.5))
+    self.label_lock:setWidth(400)
+    local str = string.format(baseCfg.dungeon_pass_introduce.desc)
+    -- main_container:addChild(label_lock)
+    -- local orderId = baseCfg.dungeon_pass.val
+    self.btn_change = main_container:getChildByName("btn_change")
+    self.btn_close = main_container:getChildByName("btn_close")
+    self.goods_1 = main_container:getChildByName("goods_1")
+    self.goods_1:setScrollBarEnabled(false)
+    self.goods_2 = main_container:getChildByName("goods_2")
+    self.goods_2:setScrollBarEnabled(false)
+end
+
+function MonopolyWarOrderBuyCardWindow:setData()
+	if self.cfg and self.cfg.desc_reward and self.cfg.rmb_reward then
+		local data_list = self.cfg.rmb_reward or {}
+		local setting = {}
+		setting.scale = 0.7
+        setting.space_x = 3
+		setting.max_count = 4
+		setting.is_center = true
+		self.item_list1 = commonShowSingleRowItemList(self.goods_1, self.item_list1, data_list, setting)
+
+		local data_list = self.cfg.desc_reward or {}
+		local setting = {}
+		setting.scale = 0.7
+		setting.max_count = 4
+		setting.is_center = true
+		self.item_list2 = commonShowSingleRowItemList(self.goods_2, self.item_list2, data_list, setting)
+	end
+end
+
+function MonopolyWarOrderBuyCardWindow:register_event()
+    if not self.update_order_event then --更新战令解锁信息
+        self.update_order_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.BattleDrama_Top_Update_Data, function(data)
+            if model:getOrderStatus() ~= 0 then
+                if not tolua.isnull(self.btn_change) then
+                    self.btn_change:setTouchEnabled(false)
+                    setChildUnEnabled(true, self.btn_change)
+                end
+                if not tolua.isnull(self.btn_change_label) then
+                    self.btn_change_label:disableEffect(cc.LabelEffect.OUTLINE)
+                end
+            end
+        end)
+    end
+
+	registerButtonEventListener(self.btn_close, function()
+        controller:openMonopolyWarOrderBuyCardWindow(false)
+    end,true, 2)
+
+    registerButtonEventListener(self.background, function()
+        controller:openMonopolyWarOrderBuyCardWindow(false)
+    end,false, 2)
+
+    registerButtonEventListener(self.btn_change, function()
+        self:changeWarn()
+    end,true, 1)
+end
+
+function MonopolyWarOrderBuyCardWindow:changeWarn()
+    local act_status = model:getOrderStatus()
+    if act_status == 1 then
+    else
+        local chargeId = self.cfg.recharge_id
+        local cdata = Config.ChargeData.data_charge_data[chargeId]
+        sdkOnPay(cdata.val, nil, cdata.id, cdata.name)
+    end        
+end
+function MonopolyWarOrderBuyCardWindow:openRootWnd(comp_id)
+    self.comp_id=comp_id
+    self.cfg = Config.MonopolyOrderData.data_constant[self.comp_id]
+    if not self.cfg then
+        return
+    end
+    self.title:setString(self.cfg.name)
+    autoSizeTitleBg(self.title,self.title_bg)
+    self.title_1:setString(self.cfg.txt1)
+    self.title_2:setString(self.cfg.txt2)
+    self.title_2:setPositionX(325)
+    self.label_lock:setString(self.cfg.txt3)
+    self.label_lock:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    local chargeId = self.cfg.recharge_id
+    local cdata = Config.ChargeData.data_charge_data[chargeId]
+    local val = 198
+    if cdata then
+        val = GetMoneyNum(cdata,"val")
+    end
+    self.btn_change_label = self.btn_change:getChildByName("Text_6")
+    self.btn_change_label:setString(string.format(TI18N("语言_c_4441"),val))
+
+    if model:getOrderStatus() == 1 then
+        if not tolua.isnull(self.btn_change_label) then
+            self.btn_change:setTouchEnabled(false)
+            setChildUnEnabled(true, self.btn_change)
+            self.btn_change_label:disableEffect(cc.LabelEffect.OUTLINE)
+        end
+    end
+    self:setData()
+end
+
+function MonopolyWarOrderBuyCardWindow:close_callback()
+	if self.image_bg_load then
+        self.image_bg_load:DeleteMe()
+    end
+    self.image_bg_load = nil
+	if self.item_list1 then
+        for i,v in pairs(self.item_list1) do
+            v:DeleteMe()
+        end
+        self.item_list1 = nil
+    end
+    if self.update_order_event then
+        GlobalEvent:getInstance():UnBind(self.update_order_event)
+        self.update_order_event = nil
+    end
+    if self.item_list2 then
+        for i,v in pairs(self.item_list2) do
+            v:DeleteMe()
+        end
+        self.item_list2 = nil
+    end
+	controller:openMonopolyWarOrderBuyCardWindow(false)
+end

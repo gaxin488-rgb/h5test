@@ -1,0 +1,533 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 升星战令页面
+-- @DateTime:    2021-5-6
+-- *******************************
+ActionUpstarOrderPanel = class("ActionUpstarOrderPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local max_lv = 5
+function ActionUpstarOrderPanel:ctor(bid)
+    self.holiday_bid = bid
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("actioneightlogin", "actioneightlogin"),type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("crossground", "crossground"),type = ResourcesType.plist},
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        self:loadResListCompleted()
+    end)
+end
+
+function ActionUpstarOrderPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionUpstarOrderPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_upstar_order_panel"))
+    self.root_wnd:setPosition(-40, -82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.name_bg = self.main_container:getChildByName("name_bg")
+    self.hero_name = self.name_bg:getChildByName("hero_name")
+    self.icon_img = self.main_container:getChildByName("icon_img")
+    self.btn_open_lock = self.main_container:getChildByName("btn_open_lock")
+    self.btn_open_lock:getChildByName("name"):setString(TI18N("语言_c_2680"))
+    self.btn_tips = self.main_container:getChildByName("btn_tips") -- 帮助说明
+    self.Image_7 = self.main_container:getChildByName("Image_7")
+    self.Image_7:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    local time_tips = self.main_container:getChildByName("time_txt")
+    time_tips:setString(TI18N("语言_c_748"))
+    self.act_time = self.main_container:getChildByName("act_time") -- 活动时间
+    local time_pos_x = time_tips:getPositionX() + time_tips:getContentSize().width + 5
+    self.act_time:setPositionX(time_pos_x)
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.tipsbg = self.main_container:getChildByName("tipsbg")
+    self.tips = self.main_container:getChildByName("tips")
+    -- setTextMaxWidth(self.tips,650)
+    self.goods_item = self.main_container:getChildByName("goods_list")
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0,
+        space_x = 0,
+        start_y = 5,
+        space_y = 4,
+        item_width = 680,
+        item_height = 120,
+        row = 0,
+        col = 1
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,
+                                 ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),
+        ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),
+        ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),
+        ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    if self.holiday_bid == ActionRankCommonType.upstar_order then
+        controller:sender28314()
+        controller:sender28316()
+    elseif self.holiday_bid == ActionRankCommonType.copyupstar_order then
+        controller:sender28324()
+        controller:sender28326()
+    end
+end
+
+-- 奖励列表
+function ActionUpstarOrderPanel:createTaskCell()
+    local cell = ActionUpstarOrderItem.new()
+    return cell
+end
+
+function ActionUpstarOrderPanel:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function ActionUpstarOrderPanel:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    local is_last = false
+    if index == tableLen(self.reward_list) then
+        is_last = true
+    end
+    cell:setData(cell_data,is_last)
+end
+
+function ActionUpstarOrderPanel:setHolidayBG()
+    local campId = self.activityData.camp_id
+    local baseConfig = Config.HolidayStarplanOrderData.data_holiday_const[campId]
+    local str_bg = "txt_cn_starplan_banner_1"
+    if baseConfig.banner then
+        str_bg = baseConfig.banner
+    end
+    local res = PathTool.getPlistImgForDownLoad("starplan/banner", str_bg)
+    if not self.bg_load then
+        self.bg_load = loadSpriteTextureFromCDN(self.image_bg, res, ResourcesType.single, self.bg_load)
+    end
+
+    local order_icon_name = baseConfig.order_icon
+    loadSpriteTexture(self.icon_img, PathTool.getResFrame("starplan", order_icon_name), LOADTEXT_TYPE_PLIST)
+end
+
+function ActionUpstarOrderPanel:register_event()
+    if not self.skin_buy_event then
+        self.skin_buy_event = GlobalEvent:getInstance():Bind(ActionEvent.UpStarOrder, function(data,bid)
+            if data and bid == self.holiday_bid then
+                self.activityData = data
+                self:setData(data)
+                self:setHolidayBG()
+                self:setActTimeInfo()
+            end
+        end)
+    end
+    if not self.upstar_end_warn then
+        self.upstar_end_warn = GlobalEvent:getInstance():Bind(ActionEvent.UpStarOrderEndWarn, function(data)
+            if not data then
+                return
+            end
+            if data.cur_day == 7 or data.cur_day <= 3 then
+                if data.is_pop == 1 then
+                    local callback = function()
+                        controller:openBuyCardView(true, self.activityData.camp_id)
+                    end
+                    local info = self.activityData.flag ~= 0
+                    controller:openUpStarEndWarnView(true, data.cur_day,info,callback)
+                end
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.btn_tips, function(param, sender, event_type)
+        local campId = self.activityData.camp_id
+        local baseConfig = Config.HolidayStarplanOrderData.data_holiday_const[campId]
+        if baseConfig then
+            local str = string.format(baseConfig.rule,baseConfig.partner_name,baseConfig.partner_name)
+            TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition())
+        end
+    end, true, 2, nil, nil, 2)
+
+    registerButtonEventListener(self.btn_open_lock, function()
+        controller:openBuyCardView(true, self.activityData.camp_id)
+    end, true, 2, nil, nil, 2)
+end
+
+function ActionUpstarOrderPanel:setData(data)
+    local campId = data.camp_id
+    local baseConfig = Config.HolidayStarplanOrderData.data_holiday_const[campId]
+    local hero_name = baseConfig.partner_name
+    self.hero_name:setString(hero_name)
+    local config = deepCopy(Config.HolidayStarplanOrderData.data_task_list[campId])
+    if not config or not baseConfig then
+        return
+    end
+    self.reward_list = {}
+    for i, v in pairs(config) do
+        if self.reward_list[v.id] == nil then
+            local a = {
+                cfg = v
+            }
+            self.reward_list[v.id] = a
+        else
+            self.reward_list[v.id].cfg = v
+        end
+        local process = v.progress
+        if process[3] > max_lv then
+            max_lv = process[3]
+        end
+    end
+    for i, v in pairs(data.award_list) do
+        if self.reward_list[v.id] then
+            self.reward_list[v.id].serverdata = v
+            self.reward_list[v.id].flag = self.activityData.flag
+            self.reward_list[v.id].bid = self.holiday_bid
+        end
+    end
+    
+    self.reward_goods_item:reloadData()
+    self:setTitleInfo()
+    self:stepos()
+end
+function ActionUpstarOrderPanel:stepos()
+    local y = 1
+    for i, v in ipairs(self.reward_list) do
+        if v.flag == 0 then --未激活
+            if v.serverdata.status == 0 then
+                y = v.cfg.id
+                break
+            end
+        else
+            if v.serverdata.status == 0 then
+                y = v.cfg.id
+                break
+            end
+        end
+    end
+    self:jumpToMoveByY(120 * (y - 2))
+end
+
+function ActionUpstarOrderPanel:jumpToMoveByY(y)
+    if not y then
+        return
+    end
+    local pos = y
+    if pos < 0 then
+        pos = 0
+    end
+
+    local len = #self.reward_list or 1
+    local scroll_view_size = self.reward_goods_item:getContentSize()
+    local pos_per = pos * 100 / (len * 120 - scroll_view_size.height)
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_goods_item:scrollToPercentVertical(pos_per, 0.5, true)
+end
+
+function ActionUpstarOrderPanel:setTitleInfo()
+    local flag = self.activityData.flag
+    if flag ~= 0 then -- 说明战令已解锁
+        setChildUnEnabled(false, self.icon_img)
+        self.btn_open_lock:setVisible(false)
+    else
+        setChildUnEnabled(true, self.icon_img)
+        self.btn_open_lock:setVisible(true)
+    end
+end
+
+function ActionUpstarOrderPanel:setActTimeInfo()
+    doStopAllActions(self.act_time)
+    local actInfo = controller:getActionSubTabVo(self.holiday_bid)
+    controller:getModel():setCountDownTime(self.act_time,actInfo.remain_sec)
+    local w1 = self.main_container:getChildByName("time_txt"):getContentSize().width
+    local w2 = self.act_time:getContentSize().width
+    local twidth = w1 + w2 + 20
+    self.time_bg:setContentSize(cc.size(twidth,30))
+    local campId = self.activityData.camp_id
+    local baseConfig = Config.HolidayStarplanOrderData.data_holiday_const[campId]
+    self.tips:setString(baseConfig.title)
+    local tips_width = self.tips:getContentSize().width
+    local tips_height = self.tips:getContentSize().height
+    self.tipsbg:setContentSize(cc.size(tips_width + 20,tips_height))
+end
+
+function ActionUpstarOrderPanel:DeleteMe()
+    if self.bg_load then
+        self.bg_load:DeleteMe()
+        self.bg_load = nil
+    end
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.skin_buy_event then
+        GlobalEvent:getInstance():UnBind(self.skin_buy_event)
+        self.skin_buy_event = nil
+    end
+    if self.upstar_end_warn then
+        GlobalEvent:getInstance():UnBind(self.upstar_end_warn)
+        self.upstar_end_warn = nil
+    end
+end
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      升星战令子界面
+-- Create: 2018-06-28
+-- --------------------------------------------------------------------
+ActionUpstarOrderItem = class("ActionUpstarOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionUpstarOrderItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionUpstarOrderItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_upstar_gift_item"))
+    self:addChild(self.root_wnd)
+    self:setAnchorPoint(0, 0)
+    self:setContentSize(cc.size(680, 120))
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setTouchEnabled(true)
+    self.main_container:setSwallowTouches(false)
+
+    self.bg = self.main_container:getChildByName("bg")
+
+    self.hero_layer = self.main_container:getChildByName("hero_layer")
+    self.starbg = self.hero_layer:getChildByName("starbg")
+    self.background = self.hero_layer:getChildByName("background")
+    self.star_num = self.starbg:getChildByName("star_num")
+    self.tempbg = self.hero_layer:getChildByName("Sprite_8")
+    self.tempbg_b = self.hero_layer:getChildByName("Sprite_9")
+    self.free_layer = self.main_container:getChildByName("free_layer")
+    self.free_layer:setSwallowTouches(true)
+
+    -- self.limit_label = self.main_container:getChildByName("limit_label")
+    -- self.limit_label:setVisible(false)
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.btn_get:setPositionY(60)
+    self.get_btn_label = self.btn_get:getChildByName("Text_5")
+
+    self.item_srcoller = self.main_container:getChildByName("goods_item")
+    self.item_srcoller:setVisible(true)
+    self.srcoll_con = self.main_container:getChildByName("goods_con")
+    self.srcoll_con:setVisible(false)
+    self.buy_img = self.main_container:getChildByName("buy_img")
+    self.buy_img:setVisible(false)
+end
+
+function ActionUpstarOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local flag = self.data.flag -- 战令的购买状态
+        local get_status = self.data.serverdata.status
+        if flag ~= 0 then -- 战令已解锁
+            if get_status == 1 or get_status == 2 then
+                if self.data.bid == ActionRankCommonType.upstar_order then
+                    ActionController:getInstance():sender28315()
+                elseif self.data.bid == ActionRankCommonType.copyupstar_order then
+                    ActionController:getInstance():sender28325()
+                end
+            end
+        else
+            if get_status == 1 then
+                if self.data.bid == ActionRankCommonType.upstar_order then
+                    ActionController:getInstance():sender28315()
+                elseif self.data.bid == ActionRankCommonType.copyupstar_order then
+                    ActionController:getInstance():sender28325()
+                end
+            elseif get_status == 2 then
+                ActionController:getInstance():openBuyCardView(true, self.data.cfg.camp_id)
+            end
+        end
+    end, true)
+end
+
+function ActionUpstarOrderItem:setData(data,is_last)
+    self.data = data
+    self.is_last = is_last
+    -- 条件部分
+    local flag = data.flag -- 战令的购买状态
+    
+    if not self.head_icon then
+        self.head_icon = createImage(self.hero_layer, nil, 42, 34, cc.p(0.5, 0.5), false, 1, false)
+    end
+    self.star_con = ccui.Widget:create()
+    self.star_con:setZOrder(3)
+    self.star_con:setPosition(cc.p(55,10))
+    self.head_icon:addChild(self.star_con)
+    self.star_setting = model:createStar(data.cfg.progress[3],self.star_con,self.star_setting)
+    if not self.head_icon_bg then 
+		self.head_icon_bg = createImage(self.head_icon,PathTool.getResFrame("crossground","crossground_1002"), 0,0, cc.p(0,0),true,9998,true)
+		
+		self.head_icon_bg:setCapInsets(cc.rect(14,14,1,1))
+		self.head_icon_bg:setContentSize(cc.size(119,119))
+	end
+    -- self.star_num:setString(TI18N("语言_hol_sta_or_02_"..(data.cfg.progress[3] - 4)))--(data.cfg.progress[3] .. "星")
+    self.star_num:setString(data.cfg.title)--(data.cfg.progress[3] .. "星")
+    self:setQualityImg(data.cfg.progress[3])
+    self:setHeadImg(data.cfg.progress[2])
+    self.tempbg:setVisible(true)
+    -- 免费部分
+    local freeGiftData = data.serverdata.awards1
+    if not self.freeItem then
+        self.freeItem = BackPackItem.new(false, true, false, 0.7, false, true)
+        self.freeItem:setPositionY(50)
+        self.freeItem:setPositionX(50)
+        self.free_layer:addChild(self.freeItem)
+    end
+    self.freeItem:setBaseData(freeGiftData[1].item_id, freeGiftData[1].item_count)
+    self.freeItem:showOrderWarLock(true) -- 上锁
+    self.freeItem:showOrderWarLockBg(true)
+    self.freeItem:IsGetStatus(false)
+
+    local get_status = data.serverdata.status
+    -- 0不能领 1可以领取 2领了一部分 3全领了
+    self.get_btn_label:setString(TI18N("语言_c_8"))
+    if get_status == 0 then
+        self.head_icon_bg:setVisible(true)
+        self.tempbg:setVisible(false)
+        self.tempbg_b:setVisible(true)
+    else
+        self.head_icon_bg:setVisible(false)
+        self.tempbg:setVisible(true)
+        self.tempbg_b:setVisible(false)
+    end
+    if self.is_last then
+        self.tempbg:setVisible(false)
+        self.tempbg_b:setVisible(false)
+    end
+    if data.cfg.progress[3] >=  max_lv then
+        self.tempbg:setVisible(false)
+        self.tempbg_b:setVisible(false)
+    end
+    addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+    self.freeItem:setCommonStatus(false)
+    if flag ~= 0 then --已购买
+        if get_status == 0 then
+            self.btn_get:setTouchEnabled(false)
+            setChildUnEnabled(true, self.btn_get)
+        elseif get_status == 1 then
+            self.btn_get:setTouchEnabled(true)
+            addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            setChildUnEnabled(false, self.btn_get)
+            self.freeItem:showOrderWarLock(false) -- 上锁
+            self.freeItem:showOrderWarLockBg(false)
+            self.freeItem:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_available"))
+        elseif get_status == 2 then
+            self.btn_get:setTouchEnabled(true)
+            addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            setChildUnEnabled(false, self.btn_get)
+            self.freeItem:showOrderWarLock(false) -- 上锁
+            self.freeItem:showOrderWarLockBg(false)
+            self.freeItem:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_available"))
+        elseif get_status == 3 then
+            self.btn_get:setTouchEnabled(false)
+            setChildUnEnabled(true, self.btn_get)
+            self.get_btn_label:setString(TI18N("语言_c_15"))
+            self.freeItem:showOrderWarLock(false) -- 上锁
+            self.freeItem:showOrderWarLockBg(false)
+            self.freeItem:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_get"))
+        end
+    else -- 未解锁的时候只存在 0 1 3三种状态
+        if get_status == 0 then -- 不可领
+            self.btn_get:setTouchEnabled(false)
+            setChildUnEnabled(true,self.btn_get)
+        elseif get_status == 1 then
+            self.btn_get:setTouchEnabled(true)
+            addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            setChildUnEnabled(false, self.btn_get)
+            self.freeItem:showOrderWarLock(false) -- 上锁
+            self.freeItem:showOrderWarLockBg(false)
+            self.freeItem:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_available"))
+        elseif get_status == 2 then -- 继续领取 转到解锁页面
+            self.btn_get:setTouchEnabled(true)
+            setChildUnEnabled(false, self.btn_get)
+            self.get_btn_label:setString(TI18N("语言_c_2684"))
+            self.freeItem:showOrderWarLock(false) -- 上锁
+            self.freeItem:showOrderWarLockBg(false)
+            self.freeItem:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_get"))
+        elseif get_status == 3 then
+            self.btn_get:setTouchEnabled(false)
+            setChildUnEnabled(true, self.btn_get)
+            self.get_btn_label:setString(TI18N("语言_c_15"))
+            self.freeItem:showOrderWarLock(false) -- 上锁
+            self.freeItem:showOrderWarLockBg(false)
+            self.freeItem:setCommonStatus(true, nil, PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_get"))
+        end
+    end
+    -- 付费购买部分
+    local list = {}
+    for k, v in pairs(data.serverdata.awards2 or {}) do
+        local vo = {}
+        table.insert(vo, v.item_id)
+        table.insert(vo, v.item_count)
+        table.insert(list, vo)
+    end
+    local is_locak_status = true
+    local is_get_status = false
+    if flag ~= 0 then
+        if get_status == 1 or get_status == 2 then
+            is_locak_status = false
+        end
+        if get_status == 3 then
+            is_get_status = true
+        end
+    end
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.max_count = 3
+    setting.lock = is_locak_status
+    setting.is_lock_bg = is_locak_status
+    setting.is_tip = true
+    setting.is_get_status = is_get_status
+    setting.get_status_res = PathTool.getResFrame("actioneightlogin", "txt_cn_eight_login_get")
+    self.item_list = commonShowSingleRowItemList(self.item_srcoller, self.item_list, list, setting)
+
+end
+
+function ActionUpstarOrderItem:setQualityImg(quality)
+    local res_id = PathTool.getQualityBg(quality)
+    self.background:loadTexture(res_id, LOADTEXT_TYPE_PLIST)
+end
+function ActionUpstarOrderItem:setHeadImg(head_icon)
+    local res = PathTool.getHeadIcon(head_icon)
+    self.head_icon:loadTexture(res, LOADTEXT_TYPE)
+    self.head_icon:setScale(0.68)
+    self.head_icon_bg:setContentSize(self.head_icon:getContentSize())
+end
+
+function ActionUpstarOrderItem:DeleteMe()
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.item_list = nil
+    if self.freeItem then
+        self.freeItem:DeleteMe()
+        self.freeItem = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

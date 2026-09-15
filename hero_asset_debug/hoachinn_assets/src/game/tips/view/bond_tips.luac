@@ -1,0 +1,257 @@
+-- --------------------------------------------------------------------
+-- 技能tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+
+BondTips = BondTips or BaseClass(BaseView) 
+
+local string_format = string.format
+
+function BondTips:__init( ... )
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "tips/bond_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+    self.win_type = WinType.Tips   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.random_item_list = {}
+end
+
+--[[
+@功能:构建UI
+@参数:
+@返回值:
+]]
+function BondTips:open_callback( ... )
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.base_name = createRichLabel(22,cc.c3b(0xff,0x9c,0x97),cc.p(0,0.5),cc.p(146,102))
+    self.base_panel:addChild(self.base_name)
+    self.score_title = self.base_panel:getChildByName("score_title")
+    self.score_title:setString(TI18N("语言_c_1742"))
+    self.power_label = CommonNum.new(1, self.base_panel, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(210, 32))
+    self.power_label:setNum(0)
+    self.power_label:setScale(0.8) 
+    setItemXOneByOne({self.score_title,self.power_label})
+    --随机属性
+    self.randomattr_panel = self.container:getChildByName("randomattr_panel")
+    self.randomattr_panel_height = self.randomattr_panel:getContentSize().height
+    self.randomattr_name  = self.randomattr_panel:getChildByName("label")
+    self.randomattr_name:setString(TI18N("语言_c_2942"))
+    self.pre_btn = self.randomattr_panel:getChildByName("pre_btn")
+    self.pre_btn:getChildByName("label"):setString(TI18N("语言_c_3048"))
+
+    self.baseattr_panel = self.container:getChildByName("baseattr_panel")
+    self.label = self.baseattr_panel:getChildByName("label")
+    self.label:setString(TI18N("语言_c_6215"))
+    self.skill_panel = self.container:getChildByName("skill_panel")
+    self.skill_name = self.skill_panel:getChildByName("name")
+    setTextMaxWidth(self.skill_name,240,-10)
+    self.skill_type = self.skill_panel:getChildByName("type")
+    setTextMaxWidth(self.skill_type,240,-10)
+    self.desc_panel = self.container:getChildByName("desc_panel")
+    self.line = self.desc_panel:getChildByName("line")
+    self.scroll_view = self.desc_panel:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.cd_panel = self.container:getChildByName("cd_panel")
+    self.cd_txt = self.cd_panel:getChildByName("label")
+    self.cd_txt:setString("")
+    self.close_btn = self.container:getChildByName("close_btn")
+end
+
+function BondTips:register_event()
+    if self.background then 
+        self.background:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                self:close()
+            end
+        end)
+    end
+    if self.close_btn then 
+        self.close_btn:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                self:close()
+            end
+        end)
+    end
+    registerButtonEventListener(self.pre_btn, function(param,sender, event_type) 
+        local bond_lev = self.data.b_lev
+        local data = deepCopy(Config.PartnerBondSkillData.data_base_info[self.data.bsid][bond_lev])
+        if data then
+            TipsManager:getInstance():showCommonTips(data.tips_info,sender:getTouchBeganPosition())
+        end
+    end ,true, 2)
+end
+
+--[[
+@功能:设置技能信息
+@参数:Config.Skill   ,  Config.RoleCareerSkill
+@返回值:
+]]
+function BondTips:updateVo( data)
+    self.max_height = self.base_panel:getContentSize().height + self.baseattr_panel:getContentSize().height
+    self.bind_id = data.bsid
+    local cfg = deepCopy(Config.PartnerBondSkillData.data_base_info[self.bind_id])
+    if cfg then
+        cfg = cfg[data.b_lev]
+    end
+    if not cfg then return end
+    self.hero_id = cfg.partner_id
+    local hero_cfg = Config.PartnerData.data_partner_base[self.hero_id]
+    if not self.hero_item then
+        self.hero_item = HeroExhibitionItem.new()
+        self.hero_item:setTouchEnabled(false)
+        self.base_panel:addChild(self.hero_item)
+        self.hero_item:setPosition(cc.p(70,70))
+    end
+    self.hero_item:setHeadImg(self.hero_id)
+    self.hero_item:setLev()
+    self.hero_item.star_con:setVisible(false)
+    if hero_cfg then
+        self.hero_item:setQualityImg(6)
+        self.hero_item:setCampImg(hero_cfg.camp_type)
+        self.base_name:setString(string.format("%s[%s]",hero_cfg.name,HeroConst.CareerName[hero_cfg.type]))
+    end
+    self.power_label:setNum(data.b_score)
+
+    self:setRandomattrPanel()
+    
+    local skill_cfg = Config.SkillData.data_get_skill(cfg.skill_ids[1])
+    if not self.skill_item then
+        self.skill_item = SkillItem.new(true,false,true,0.8, true)
+        self.skill_panel:addChild(self.skill_item)
+        self.skill_item:setPosition(cc.p(70,50))
+    end
+    self.skill_item:setData(skill_cfg)
+    self.skill_name:setString(skill_cfg.name..string.format(TI18N("语言_c_4520"),data.b_lev))
+    if skill_cfg.type == "active_skill" then 
+        self.skill_type:setString(TI18N("语言_c_1729"))
+    else 
+        self.skill_type:setString(TI18N("语言_c_1730")) 
+    end
+    self.max_height = self.max_height + self.skill_panel:getContentSize().height
+    if not self.skill_desc then
+        self.skill_desc = createRichLabel(22,cc.c4b(0xfe,0xee,0xba,0xff),cc.p(0,1),cc.p(22,10),0,nil,370)
+        self.scroll_view:addChild(self.skill_desc)
+    end
+    self.skill_desc:setString(skill_cfg.des)
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_view:getContentSize().width,math.max(self.scroll_view:getContentSize().height,self.skill_desc:getContentSize().height)))
+    self.skill_desc:setPositionY(self.scroll_view:getInnerContainerSize().height)
+    self.max_height = self.max_height + self.desc_panel:getContentSize().height
+    self.max_height = self.max_height + self.cd_panel:getContentSize().height
+    if skill_cfg.cd == 0 then
+        self.cd_txt:setString(TI18N("语言_c_1731"))
+    else
+        self.cd_txt = string_format(TI18N("语言_c_4894"), TI18N("语言_c_1732"),skill_cfg.cd, TI18N("语言_c_1733") )
+    end
+    self:updatePosition()
+end
+
+function BondTips:updatePosition()
+    self.container:setContentSize(cc.size(422,self.max_height))
+    self.base_panel:setPositionY(self.max_height)
+    self.randomattr_panel:setPositionY(self.base_panel:getPositionY() - self.base_panel:getContentSize().height)
+    self.baseattr_panel:setPositionY(self.randomattr_panel:getPositionY() - self.randomattr_panel:getContentSize().height)
+    self.skill_panel:setPositionY(self.baseattr_panel:getPositionY() - self.baseattr_panel:getContentSize().height)
+    self.desc_panel:setPositionY(self.skill_panel:getPositionY() - self.skill_panel:getContentSize().height)
+    self.cd_panel:setPositionY(self.desc_panel:getPositionY() - self.desc_panel:getContentSize().height)
+    self.close_btn:setPositionY(self.max_height)
+end
+
+function BondTips:setRandomattrPanel()
+    local _h = 50
+    local list = {}
+    for k, v in pairs(self.data.b_attr) do
+        if v.pos < 100 then
+            table.insert(list,v)
+        end
+    end
+    table.sort(list,function(a,b) return a.pos < b.pos end)
+    _h = _h + tableLen(list) * 40
+    self.max_height = self.max_height + _h
+    self.randomattr_panel:setContentSize(cc.size(self.randomattr_panel:getContentSize().width,_h))
+    local _y = _h - self.randomattr_name:getContentSize().height*0.5 - 10
+    self.randomattr_name:setPositionY(_y)
+    self.pre_btn:setPositionY(_y)
+    for i=1,tableLen(list) do
+        if self.random_item_list[i] == nil then
+            self.random_item_list[i] = self:createattrItem(i, self.randomattr_panel)
+        end
+        local attr_key = Config.AttrData.data_id_to_key[list[i].attr_id]
+        local attr_val = list[i].attr_val or 0
+        local attr_pos = list[i].pos or 0
+        local attr_str = ""
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+        if is_per == true then
+            attr_val = (attr_val*0.1).."%"
+        end
+        local icon = PathTool.getAttrIconByStr(attr_key)
+        local attr_color = "c1b7ab"
+        local val_color = "ffeedd"
+        local ext_str = ""
+        local attr_val11 = list[i].attr_val or 0
+        local quality = HeroController:getInstance():getModel():getBondQualityByItemIdAttrKey(self.data.bsid, self.data.b_lev, attr_key, list[i].attr_val)
+        val_color = BackPackConst.getBlackQualityColorStr(quality)
+        local max_count = HeroController:getInstance():getModel():getBondMaxAttrByItemIdAttrKey(self.data.bsid, self.data.b_lev, attr_key)
+        if attr_val11 >= max_count then
+            ext_str = "(max)"
+        end
+        attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#%s> %s：</div><div fontcolor=#%s>%s%s</div>", PathTool.getResFrame("common", icon), attr_color, attr_name, val_color, attr_val, ext_str)
+        self.random_item_list[i].attr:setString(attr_str)
+        self.random_item_list[i].node:setPositionY((tableLen(list) - i) * 40 + 10)
+    end
+end
+
+function BondTips:createattrItem(index, parent)
+    if not parent then return end
+    local object = {}
+    object.node = ccui.Layout:create()
+    object.node:setAnchorPoint(cc.p(0, 0))
+    object.node:setContentSize(cc.size(360, 28))
+    object.node:setPosition(30, 26-(index-1)*40)
+    parent:addChild(object.node)
+    object.node:setTouchEnabled(true)
+    object.attr = createRichLabel(20, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(0, 14), -2, nil, 280)
+    object.node:addChild(object.attr)
+    return object
+end
+
+function BondTips:getContentSize()
+    return self.root_wnd:getContentSize()
+end
+
+--[[
+@功能:打开技能tips
+@参数:
+@返回值:
+]]
+function BondTips:openRootWnd( config)
+    self.data = config
+    self:updateVo(config)
+
+    delayRun(self.root_wnd, 114, function()
+        TipsManager:getInstance():hideTips()
+    end)
+end
+
+function BondTips:close_callback( ... )
+end

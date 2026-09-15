@@ -1,0 +1,127 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-02-19 15:36:39
+-- @description    : 
+		-- 个人信息排行榜
+---------------------------------
+FriendCheckTreasurePanel = class("FriendCheckTreasurePanel",function()
+    return ccui.Layout:create()
+end)
+
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _table_sort = table.sort
+local _string_format = string.format
+
+function FriendCheckTreasurePanel:ctor(data)
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("friend/friend_check_treasure_panel"))
+    self.data = data
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    -- 资源加载
+    local res_list = {}
+    _table_insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function FriendCheckTreasurePanel:loadResListCompleted()
+	self:initView()
+    self:registerEvent()
+    if self.data and self.data.rid and self.data.srv_id then
+        RoleController:getInstance():send16818(self.data.rid,self.data.srv_id)
+    end
+end
+
+
+-- 初始化界面
+function FriendCheckTreasurePanel:initView(  )
+	self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.item_panel = self.main_panel:getChildByName("item_panel")
+end
+
+function FriendCheckTreasurePanel:registerEvent(  )
+    --接受数据
+	if self.updateEvent == nil then
+		self.updateEvent = GlobalEvent:getInstance():Bind(RoleEvent.UPDATE_TREASURE_EVENT,function ( data )
+            if data and self.data and data.rid == self.data.rid and data.srv_id == self.data.srv_id then
+                local list = {}
+                for k, v in pairs(data.lists) do
+                    local vo = TreasureVo.New()
+                    vo:setUpData(v)
+                    vo.isother = true
+                    table.insert(list,vo)
+                end
+                table.sort(list,SortTools.tableCommonSorter({{"quality", true},{"lev", true},{"star", true},{"id", true}}))
+                self:updatePage(list)
+            end
+		end)
+	end
+end
+
+function FriendCheckTreasurePanel:updatePage(list)
+    if self.item_view == nil then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            item_class = TreasureItem,      -- 单元类
+            start_x = 20,                  -- 第一个单元的X起点
+            space_x = 12,                    -- x方向的间隔
+            start_y = 10,                    -- 第一个单元的Y起点
+            space_y = 15,                   -- y方向的间隔
+            item_width = 119*0.9,               -- 单元的尺寸width
+            item_height = 119*0.9,              -- 单元的尺寸height
+            scale = 0.9,
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 5   
+        }
+        self.item_view = CommonScrollViewLayout.new(self.item_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    self.min_size = tableLen(list)
+    --背包最小显示数量 写死20
+    if self.min_size <= 20 then
+        self.min_size = 20
+    end
+    self.col_size = 5
+    local min_size = self.min_size
+    local item_sum = #list
+    if item_sum < min_size then
+        --补全 剩下 
+        for i=1,min_size-item_sum do
+            table.insert(list, {})
+        end
+    else
+        local lacking = 0
+        if item_sum % self.col_size ~= 0 then
+            lacking = self.col_size - (item_sum % self.col_size)
+        end
+        if lacking ~= 0 then
+            for i=1,lacking do --补全不足一行的
+                table.insert(list, {})
+            end
+        end
+    end
+    self.item_view:setData(list)
+end
+
+
+function FriendCheckTreasurePanel:DeleteMe(  )
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+end

@@ -1,0 +1,258 @@
+----------------------------
+-- 
+-- @Date:   2019-12-12 14:52:22
+-- @Description:   编年藏宝阁自选
+----------------------------
+ActionSkinLotteryPanelChose = ActionSkinLotteryPanelChose or BaseClass(BaseView)
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+
+function ActionSkinLotteryPanelChose:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+    self.item_num = 0
+    self.pond_list = {}
+	self.layout_name = "action/action_skin_lottery_panel_chose"
+end
+
+function ActionSkinLotteryPanelChose:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.main_container = self.root_wnd:getChildByName("container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.image_title = self.main_container:getChildByName("image_title")
+    self.win_title = self.main_container:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6568"))
+    self.image_title:setContentSize(cc.size(self.win_title:getContentSize().width + 100,63))
+    self.image_bottom = self.main_container:getChildByName("image_bottom")
+    self.right_btn = self.main_container:getChildByName("right_btn")
+    self.right_label = self.right_btn:getChildByName("label")
+    self.right_label:setString(TI18N("语言_c_3"))
+    self.left_btn = self.main_container:getChildByName("left_btn")
+    self.left_label = self.left_btn:getChildByName("label")
+    self.left_label:setString(TI18N("语言_act_02_5"))
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.list_info_panel = self.main_container:getChildByName("list_info_panel")
+    self.name_txt = self.list_info_panel:getChildByName("name_txt")
+    self.name_txt:setString(TI18N("语言_c_6569"))
+    self.hero_list = self.list_info_panel:getChildByName("hero_list")
+
+    self.reward_item_1 = BackPackItem.new(true, true, false, 1)
+    self.reward_item_1:setDefaultTip()
+    self.reward_item_1:setPosition(cc.p(self.main_container:getContentSize().width*0.5,398))
+    self.main_container:addChild(self.reward_item_1)
+
+end
+function ActionSkinLotteryPanelChose:register_event()
+    registerButtonEventListener(self.background, function()
+        self:clickClose()
+    end,false, 1)
+    registerButtonEventListener(self.close_btn, function()
+        self:clickClose()
+    end,true, 1)
+    registerButtonEventListener(self.right_btn, function()
+        if self.choose_id ~= 0 then
+            controller:sender26618(self.choose_id)
+        end
+        self:clickClose()
+    end,true, 1)
+    registerButtonEventListener(self.left_btn, function()
+        self:clickClose()
+    end,true, 1)
+    if not self.update_option_event then
+        self.update_option_event = GlobalEvent:getInstance():Bind(WelfareEvent.Optional_Select_Data,function (data)
+            self.choose_id = data.choose_id
+            self:setData()
+        end)
+    end  
+    if not self.Optional_Int then
+        self.Optional_Int = GlobalEvent:getInstance():Bind(WelfareEvent.Optional_Int,function (data)
+            self.item_num = self.item_num + 1
+            if self.pond_list and self.pond_list[self.select_num] and self.item_num >= tableLen(self.pond_list[self.select_num]) then
+                self.item_num = 0
+            end
+        end)
+    end 
+end
+
+function ActionSkinLotteryPanelChose:openRootWnd(camp_id,choose_id)
+    self.camp_id = camp_id
+    self.choose_id = choose_id
+    self:setData()
+end
+
+function ActionSkinLotteryPanelChose:setData()
+    self.pond_list = {}
+    if self.choose_id ~= 0 then
+        local cfg = Config.HolidaySkinDrawData.data_lottery_stock[self.choose_id]
+        if cfg[1].reward_id ~= 0 then
+            self.reward_item_1:setBaseData(cfg[1].reward_id,cfg[1].num)
+        end
+    end
+    local choose_cfg = Config.HolidaySkinDrawData.data_get_lottery[self.camp_id]
+    for key,value in pairs(choose_cfg.lottery_ids) do
+        local stock_cfg = deepCopy(Config.HolidaySkinDrawData.data_lottery_stock[value])
+        if stock_cfg then
+            stock_cfg[1].choose_id = value
+            table.insert(self.pond_list,stock_cfg[1])
+        end
+    end
+    self:updateRewardScroll(self.pond_list)
+end
+
+function ActionSkinLotteryPanelChose:updateRewardScroll(list)
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.hero_list:getContentSize()
+        local setting = {
+            item_class = ActionSkinLotteryPanelChoseItem,
+            start_x = 30,                     -- 第一个单元的X起点
+            space_x = 20,                     -- x方向的间隔
+            start_y = 10,                     -- 第一个单元的Y起点
+            space_y = 5,                     -- y方向的间隔
+            item_width = 120,                -- 单元的尺寸width
+            item_height = 148,               -- 单元的尺寸height
+            col = 4,                         -- 列数，作用于垂直滚动类型
+        }
+        self.item_scrollview = CommonScrollViewLayout.new(self.hero_list,cc.p(0,0),ScrollViewDir.vertical,ScrollViewStartPos.top,scroll_view_size,setting)
+        self.item_scrollview:setSwallowTouches(false)
+    end
+    self.item_scrollview:setData(list)
+end
+
+function ActionSkinLotteryPanelChose:clickClose()
+    controller:openActionSkinLotteryPanelChose(false)
+end
+
+function ActionSkinLotteryPanelChose:close_callback()
+    if self.reward_item_1 then 
+        self.reward_item_1:DeleteMe()
+        self.reward_item_1 = nil
+    end
+    if self.update_option_event then
+        GlobalEvent:getInstance():UnBind(self.update_option_event)
+        self.update_option_event = nil
+    end
+    if self.Optional_Int then
+        GlobalEvent:getInstance():UnBind(self.Optional_Int)
+        self.Optional_Int = nil
+    end
+    if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+    controller:openActionSkinLotteryPanelChose(false)
+end
+
+
+--------------------------@ item
+ActionSkinLotteryPanelChoseItem = class("ActionSkinLotteryPanelChoseItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionSkinLotteryPanelChoseItem:ctor(width, height)
+	self.size = cc.size(width,height)
+	self:configUI(width, height)
+	self:register_event()
+end
+
+function ActionSkinLotteryPanelChoseItem:configUI( width, height )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_optional_gift_chose_item"))
+    self:setAnchorPoint(cc.p(0, 0))
+    self:setContentSize(cc.size(width, height))
+	self:setTouchEnabled(false)
+    
+    GlobalEvent:getInstance():Fire(WelfareEvent.Optional_Int)
+	self:addChild(self.root_wnd)
+	self.container = self.root_wnd:getChildByName("container")
+    self.Node_1 = self.container:getChildByName("Node_1")
+    self.select = self.container:getChildByName("select")
+    self.select_1 = self.container:getChildByName("select_1")
+    self.select:setVisible(false)
+
+    self.item_node = BackPackItem.new(false, true, false, 1, nil, nil, false)
+    self.Node_1:addChild(self.item_node)
+end
+--==============================--
+--desc:设置选中状态
+--time:2017-07-03 09:07:12
+--@status:
+--==============================--
+function ActionSkinLotteryPanelChoseItem:setSelected(status)
+    if status then
+        self.select:setVisible(true)
+    else
+        self.select:setVisible(false)
+    end
+end
+function ActionSkinLotteryPanelChoseItem:clearTimeTicket()
+    if self.sequence_action then
+        self.item_node:stopActionByTag(10086)
+        self.sequence_action = nil
+    end
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+end
+function ActionSkinLotteryPanelChoseItem:register_event(  )
+    -- registerButtonEventListener(self.item_node, function()
+    self.item_node:addTouchEventListener(function (sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            GlobalEvent:getInstance():Fire(WelfareEvent.Optional_Select_Data,self.data)
+            local action = cc.Sequence:create(cc.DelayTime:create(0.3), cc.CallFunc:create(function() 
+                local config = Config.ItemData.data_get_data(self.data.reward_id)
+                if config == nil then return end
+                if config and config.sub_type == 7 then
+                    TreasureController:getInstance():openTreasureFragmentsTips(true, config, {})
+                else
+                    TipsManager:getInstance():showGoodsTips(self.data.reward_id)
+                end
+            end))
+            self.sequence_action = self.item_node:runAction(action)
+            self.sequence_action:setTag(10086)
+        elseif event_type == ccui.TouchEventType.canceled then
+            self:clearTimeTicket()
+        elseif event_type == ccui.TouchEventType.ended then
+            self:clearTimeTicket()
+        end
+    end)
+    if not self.update_option_event then
+        self.update_option_event = GlobalEvent:getInstance():Bind(WelfareEvent.Optional_Select_Data,function (data)
+            if data["_index"] == self.data["_index"] then
+                self:setSelected(true)
+            else
+                self:setSelected(false)
+            end
+        end)
+    end
+end
+
+function ActionSkinLotteryPanelChoseItem:setData(data)
+    self.data = data
+	if self.item_node then
+        local list = {}
+        list.bid = data.reward_id
+        list.num = data.num
+        self.item_node:setData(list,nil,true)
+        local cfg = Config.ItemData.data_get_data(data.reward_id)
+        if cfg and cfg.type == BackPackConst.item_type.HERO_HUN then
+            self.item_node:initCamp(cfg.camp_type)
+        end
+	end
+end
+
+function ActionSkinLotteryPanelChoseItem:DeleteMe(  )
+    self:clearTimeTicket()
+    if self.update_option_event then
+        GlobalEvent:getInstance():UnBind(self.update_option_event)
+        self.update_option_event = nil
+    end
+    if self.update_sele then
+        GlobalEvent:getInstance():UnBind(self.update_sele)
+        self.update_sele = nil
+    end
+    if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+end

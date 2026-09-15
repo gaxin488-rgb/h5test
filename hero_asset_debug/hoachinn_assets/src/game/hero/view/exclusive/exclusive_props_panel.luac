@@ -1,0 +1,529 @@
+-- --------------------------------------------------------------------
+-- 竖版专属忍具tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2021-xx-xx
+-- --------------------------------------------------------------------
+ExclusivePropsPanel = ExclusivePropsPanel or BaseClass(BaseView)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+function ExclusivePropsPanel:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/exclusive_props_panel"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+
+    self.win_type = WinType.Tips    
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.base_list = {}
+    self.skill_list = {}
+    self.tab_list = {}
+    self.pros_btn_list = {}
+end
+
+function ExclusivePropsPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+    self.container_init_size.height = self.container_init_size.height + 15
+    -- 基础属性,名字,类型和评分等
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.base_panel:getChildByName("score_title"):setString(TI18N("语言_c_1742"))
+    local score_title = self.base_panel:getChildByName("score_title")
+    self.base_bg = self.base_panel:getChildByName("icon_bg")
+    self.base_icon = self.base_panel:getChildByName("icon")
+    self.base_lev = self.base_panel:getChildByName("label_lev")
+    self.name = self.base_panel:getChildByName("name")
+    setTextMaxWidth(self.name,320,-8)
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    self.equip_type:setChangeScaleOffWidth(self.base_panel:getContentSize().width - 250)
+    self.power_label = CommonNum.new(1, self.base_panel, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(score_title:getPositionX() + score_title:getContentSize().width + 5 , 32))
+    self.power_label:setNum(0)
+    self.power_label:setScale(0.8)
+
+    self.node_item = self.base_panel:getChildByName("node_item")
+    local item = ExclusiveItem.new()
+    self.node_item:addChild(item)
+    self.itemIcon = item
+    self.btn_panel = self.container:getChildByName("btn_panel")
+    self.btn_panel:setVisible(false)
+    local tab_txt = {
+        [1] = TI18N("语言_c_6277"),
+        [2] = TI18N("语言_c_6554")
+    }
+    for i=1,2 do
+        local item = self.btn_panel:getChildByName("tab_btn_"..i)
+        item.unselect_bg = item:getChildByName("unselect_bg")
+        item.select_bg = item:getChildByName("select_bg")
+        if i == 2 then
+            item.unselect_bg:setVisible(true)
+            item.select_bg:setVisible(false)
+        else
+            item.unselect_bg:setVisible(false)
+            item.select_bg:setVisible(true)
+        end
+        item.title = item:getChildByName("title")
+        item.title:setString(tab_txt[i])
+        item.index = i
+        self.pros_btn_list[i] = item
+    end
+    -- 基础属性
+    self.baseattr_panel = self.container:getChildByName("baseattr_panel")
+    self.baseattr_panel:getChildByName("label"):setString(TI18N("语言_c_1282"))
+    self.baseattr_panel:getChildByName("label"):getChildByName("label_1"):setString(TI18N("语言_c_4964"))
+    ccui.Helper:doLayout(self.baseattr_panel:getChildByName("label"))
+
+    --强化效果
+    self.strengattr_panel = self.container:getChildByName("strengattr_panel")
+    self.strengattr_panel.line = self.strengattr_panel:getChildByName("line")
+    self.strengattr_panel.label = self.strengattr_panel:getChildByName("label")
+    self.strengattr_panel.label:setString(TI18N("语言_c_4966"))
+    self.strengattr_panel.scroll = self.strengattr_panel:getChildByName("scroll")
+    self.strengattr_panel.scroll:setScrollBarEnabled(false)
+    -- 按钮容器
+    self.tab_panel = self.container:getChildByName("tab_panel")
+    --btn 强化
+    self.streng_btn = self.tab_panel:getChildByName("tab_btn_1")
+    self.streng_btn:setTitleText(TI18N("语言_c_4967"))
+
+    self.label_lock = self.tab_panel:getChildByName("label_lock")
+    self.label_lock:ignoreContentAdaptWithSize(true)
+    self.label_lock:setTextAreaSize(cc.size(475, 0))
+    setTextSpacing(self.label_lock)
+    self.label_lock:setString(TI18N("语言_c_4968"))
+
+    self.label_max = self.tab_panel:getChildByName("label_max")
+    self.label_max:ignoreContentAdaptWithSize(true)
+    self.label_max:setTextAreaSize(cc.size(475, 0))
+    setTextSpacing(self.label_max)
+    self.label_max:setString(TI18N("语言_c_4969"))
+
+    self.label_story = self.tab_panel:getChildByName("label_story")
+    self.label_story:ignoreContentAdaptWithSize(true)
+    self.label_story:setTextAreaSize(cc.size(475, 0))
+
+    self.img_rule = self.container:getChildByName("img_rule")
+    self.close_btn = self.container:getChildByName("close_btn")
+end
+
+function ExclusivePropsPanel:register_event()
+    registerButtonEventListener(self.streng_btn, handler(self, function()
+        self:clickStrengBtn(sender)
+        controller:openExclusivePropsPanel(false)
+    end) ,true, 2)
+    registerButtonEventListener(self.background, handler(self, function()
+        controller:openExclusivePropsPanel(false)
+    end) ,false, 1)
+    registerButtonEventListener(self.close_btn, handler(self, function()
+        controller:openExclusivePropsPanel(false)
+    end) ,true, 1)
+    registerButtonEventListener(self.img_rule, function(param, sender, event_type)
+        local config
+        if self.data.panel_type == HERO_SOUL_TYPE then
+            config = Config.PartnerSoulData.data_const["game_rule1"]
+        else
+            config = Config.PartnerHeartData.data_const["game_rule1"]
+        end
+        -- TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        TipsManager:getInstance():showAdventureBuffTipsScroll(config.desc, sender:getTouchBeganPosition(),nil,nil,420,false,730)
+    end ,true, 2)
+    for k, object in pairs(self.pros_btn_list) do
+		if object then
+			object:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					playTabButtonSound()
+					self:changeSelectedTab(object.index)
+				end
+			end)
+		end
+    end
+end
+
+-- 切换标签页
+function ExclusivePropsPanel:changeSelectedTab( index )
+	if self.tab_object ~= nil and self.tab_object.index == index then return end
+    if index == 2 then
+        if controller:getModel():getProsIsShield() and controller:getModel():getOneProsIsShield(self.hero_vo) and not self.data.other_view then
+            controller:openExclusivePropsPanel(false)
+            TipsManager:getInstance():showProsTips(self.data,true)
+        else
+            local txt = TI18N("语言_c_1891")
+            message(txt)
+        end
+    end
+end
+function ExclusivePropsPanel:clickStrengBtn()
+    local setting = {}
+    setting.data = self.data
+    setting.index = MainuiConst.pros_type.soul
+    controller:openHeroProsPanel(true,setting)
+end
+
+function ExclusivePropsPanel:updateProsIcon()
+    local status = HeroCalculate.checkSingleHeroProsRedPoint(self.hero_vo)
+    addRedPointToNodeByStatus(self.pros_btn_list[2], status, 5, 5)
+end
+
+function ExclusivePropsPanel:openRootWnd(data)
+    self.data = data
+    self.hero_vo = data.hero_vo or {}
+    self.config = data.config
+    local hero_vo = data.hero_vo
+    self.base_data = nil
+    self.show_model_type = data.show_model_type
+    if data.panel_type == HERO_SOUL_TYPE then
+        if self.config then
+            local max_lev = math.min(controller:getModel():getHorcruxesMaxLev(),tableLen(Config.PartnerSoulData.data_soul_level[self.config.horcruxes]))
+            self.base_data = {id = self.config.horcruxes, lev = data.lev or max_lev, score_val = controller:getModel():getHorcruxesScore(self.config.horcruxes, HERO_SOUL_TYPE, max_lev)}
+            if self.base_data.lev == 0 then
+                self.base_data.lev = 1
+            end
+        else
+            local h_cfg = Config.PartnerData.data_partner_base_fun(self.hero_vo.bid)
+            local max_lev = tableLen(Config.PartnerSoulData.data_soul_level[h_cfg.horcruxes])
+            self.base_data = {id = (hero_vo.hid == 0 and h_cfg.horcruxes or hero_vo.hid), lev = hero_vo.h_lev or max_lev, score_val = controller:getModel():getHorcruxesScore(h_cfg.horcruxes, HERO_SOUL_TYPE, max_lev)}
+            if self.base_data.lev == 0 then
+                self.base_data.lev = 1
+            end
+        end
+        self.base_cfg = Config.PartnerSoulData.data_base_info[self.base_data.id]
+        local data_soul_level = Config.PartnerSoulData.data_soul_level[self.base_data.id]
+        if data_soul_level then
+            self.lev_cfg = data_soul_level[self.base_data.lev]
+        end
+    elseif data.panel_type == HERO_HEART_TYPE then
+        if self.config then
+            self.base_data = {id = self.config.alterheart, lev = data.lev or 10, score_val = controller:getModel():getHorcruxesScore(self.config.alterheart, HERO_HEART_TYPE, 10)}
+        else
+            local h_cfg = Config.PartnerData.data_partner_base_fun(self.hero_vo.bid)
+            self.base_data = {id = (hero_vo.aid == 0 and h_cfg.alterheart or hero_vo.aid), lev = hero_vo.a_lev or 1, score_val = hero_vo.a_score or 500}
+            if self.base_data.lev == 0 then
+                self.base_data.lev = 1
+            end
+        end
+        self.base_cfg = Config.PartnerHeartData.data_base_info[self.base_data.id]
+        local data_soul_level = Config.PartnerHeartData.data_soul_level[self.base_data.id]
+        if data_soul_level then
+            self.lev_cfg = data_soul_level[self.base_data.lev]
+        end
+    end
+    if not self.base_cfg or not self.base_data then
+        controller:openExclusivePropsPanel(false)
+        return
+    end
+    if self.base_data and self.base_data.lev == 1 then
+        self.base_data.score_val = self.base_cfg.score
+    end
+    self:updateBtn() 
+    self:setBaseInfo()
+    self:setBaseAttrInfo()
+    self:setStrengInfo()
+    self:dolyoutUI()
+    self:updateProsIcon()
+    self:changeSelectedTab(1)
+end
+
+function ExclusivePropsPanel:updateBtn()
+    local lock_str = ""
+    if self.data.panel_type == HERO_SOUL_TYPE then
+        local unlock_star = Config.PartnerSoulData.data_const["open_star_condition"].val
+        local unlock_tower = Config.PartnerSoulData.data_const["open_tower_layers"].val
+        local now_tower = StartowerController:getInstance():getModel():getNowTowerId() or 0
+        self.label_lock:setVisible((not self.config) and (not ((self.hero_vo.star >= unlock_star) and (now_tower >= unlock_tower))) )
+        lock_str = (Config.PartnerSoulData.data_const["open_star_condition"].desc..','.. Config.PartnerSoulData.data_const["open_tower_layers"].desc)
+        self.streng_btn:setVisible((not self.config) and ((self.hero_vo.star >= unlock_star) and (now_tower >= unlock_tower) and self.show_model_type == HeroConst.BagTab.eBagHero))
+        self.label_max:setVisible(false)
+        -- local max_lv = controller:getModel():getHorcruxesMaxLev()
+        -- if (self.base_data and self.base_data.lev > 1 and not Config.PartnerSoulData.data_soul_level[self.base_data.id][self.base_data.lev + 1]) or (self.base_data.lev >= max_lv) then
+        --     self.streng_btn:setVisible(false)
+        --     self.label_max:setVisible(true)
+        -- end
+        if not self.data.other_view then
+            local is_redpoint = HeroCalculate.checkSingleHeroHorcruxStringRedPoint(self.hero_vo)
+            addRedPointToNodeByStatus(self.streng_btn, is_redpoint, 5, 5)
+        end
+        if controller:getModel():getProsIsShield() and not self.data.other_view and controller:getModel():getOneProsIsShield(self.hero_vo) then
+            self.btn_panel:setVisible(true)
+        else
+            self.btn_panel:setVisible(false)
+        end
+    else
+        local unlock_lev = Config.PartnerHeartData.data_const["heartskill_unlock"].val
+        self.label_lock:setVisible((not self.config) and (not ((self.hero_vo.lev >= unlock_lev))) )
+        lock_str = Config.PartnerHeartData.data_const["heartskill_unlock"].desc
+        self.streng_btn:setVisible((not self.config) and (self.hero_vo.lev >= unlock_lev)) 
+        self.label_max:setVisible(false)
+        if self.base_data and self.base_data.lev > 1 and not Config.PartnerHeartData.data_soul_level[self.base_data.id][self.base_data.lev + 1] then
+            self.streng_btn:setVisible(false)
+            self.label_max:setVisible(true)
+        end
+        if not self.data.other_view then
+            local is_redpoint = HeroCalculate.checkSingleHeroHeartStringRedPoint(self.hero_vo)
+            addRedPointToNodeByStatus(self.streng_btn, is_redpoint, 5, 5)
+        end
+        self.btn_panel:setVisible(false)
+    end
+    if self.label_lock:isVisible() then
+        self.label_lock:setString(lock_str)
+    end
+    self.label_lock:setVisible(self.label_lock:isVisible() and not self.data.other_view)
+    self.label_max:setVisible(self.label_max:isVisible() and not self.label_lock:isVisible() and not self.data.other_view)
+    self.streng_btn:setVisible(self.streng_btn:isVisible() and not self.data.other_view)
+end
+
+function ExclusivePropsPanel:dolyoutUI()
+    local total_height = self.base_panel:getContentSize().height
+    total_height = total_height + self.baseattr_panel:getContentSize().height
+    if self.strengattr_panel:isVisible() then
+        total_height = total_height + self.strengattr_panel:getContentSize().height
+    end
+    if self.tab_panel:isVisible() then
+        total_height = total_height + self.tab_panel:getContentSize().height
+    end
+    local btn_height = 0
+    if self.btn_panel:isVisible() then
+        btn_height = self.btn_panel:getContentSize().height
+    end
+    total_height = total_height + btn_height
+    local size = self.container:getContentSize()
+    self.container:setContentSize(cc.size(size.width, total_height))
+    self.base_panel:setPositionY(total_height)
+    if self.btn_panel:isVisible() then
+        self.btn_panel:setPositionY(total_height - self.base_panel:getContentSize().height)
+    end
+    self.baseattr_panel:setPositionY(total_height - self.base_panel:getContentSize().height - btn_height)
+    if self.strengattr_panel:isVisible() then
+        self.strengattr_panel:setPositionY(total_height - self.base_panel:getContentSize().height - self.baseattr_panel:getContentSize().height - btn_height)
+        if self.tab_panel:isVisible() then
+            self.tab_panel:setPositionY(total_height - self.base_panel:getContentSize().height - self.baseattr_panel:getContentSize().height - self.strengattr_panel:getContentSize().height - btn_height)
+        end
+    else
+        if self.tab_panel:isVisible() then
+            self.tab_panel:setPositionY(total_height - self.base_panel:getContentSize().height - self.baseattr_panel:getContentSize().height - btn_height)
+        end
+    end
+    self.close_btn:setPositionY(total_height - 10)
+    self.img_rule:setPositionY(total_height - 110)
+end
+
+--==============================--
+--desc:设置基础信息
+--time:2018-10-20 09:40:23
+--@return 
+--==============================--
+function ExclusivePropsPanel:setBaseInfo()
+    local data = self.base_data
+    local base_cfg = self.base_cfg
+    local quality = 0
+    if base_cfg.quality >= 0 and base_cfg.quality <= 5 then
+        quality = base_cfg.quality
+    end
+    local background_res = PathTool.getResFrame("common_2", "tips_"..quality)
+    self.base_panel:loadTexture(background_res, LOADTEXT_TYPE_PLIST)
+    local res_id = PathTool.getQualityBg(base_cfg.quality)
+
+    local item_data = {}
+    item_data.is_lock = false
+    item_data.bg = res_id
+    item_data.icon = PathTool.getSoulHorcruxIcon(base_cfg.icon)
+    item_data.lev = data.lev
+    self.itemIcon:setData(item_data)
+
+    local color = BackPackConst.getEquipTipsColor(quality)
+    self.name:setTextColor(color) 
+    if base_cfg.name then
+        self.name:setString(base_cfg.name)
+    end
+    self.equip_type:setString(base_cfg.partner_name or "")
+    self.power_label:setNum(data.score_val)
+    self.label_story:setTouchEnabled(true)
+    self.label_story:setString(transformTextToShort(base_cfg.story,30))
+    addEvt2showAllTextTips(self.label_story,base_cfg.story,30)
+    local totla_tab_height = 10
+    
+    if self.label_max:isVisible() then
+        totla_tab_height = 40
+        self.label_max:setPosition(cc.p(207,70))
+    else
+        self.label_max:setPosition(cc.p(207,15))
+    end
+    if not self.data.other_view then
+        totla_tab_height = totla_tab_height + self.label_story:getContentSize().height + 20 + self.streng_btn:getContentSize().height + 10
+    else
+        totla_tab_height = totla_tab_height + self.label_story:getContentSize().height + 10
+    end
+    self.tab_panel:setContentSize(cc.size(510, totla_tab_height))
+    ccui.Helper:doLayout(self.tab_panel)
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2018-10-20 11:42:16
+--@return 
+--==============================--
+function ExclusivePropsPanel:setBaseAttrInfo()
+    local data = self.base_data
+    local lev_cfg = self.lev_cfg
+    local total_base_height = 5 + self.baseattr_panel:getChildByName("label"):getContentSize().height + 10
+    for i,v in ipairs(lev_cfg.attr) do
+        local attr_key = v[1]
+        local attr_val = v[2]
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if attr_name then
+            if not self.base_list[i] then 
+                self.base_list[i] = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(20, 48), nil, nil, 380)
+                self.baseattr_panel:addChild(self.base_list[i])
+            end
+            local label = self.base_list[i]
+            -- local _x = 30 + (i%2 == 0 and 1 or 0) * 200
+            -- label:setPositionX(_x)
+            -- local _y = 53 - (math.ceil(i/2) - 1)*40
+            local _y = 53 - i*40
+            label:setPositionY(_y)
+            local icon = PathTool.getAttrIconByStr(attr_key)
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+            local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#c1b7ab> %s：</div><div fontcolor=#ffeedd>%s</div>", PathTool.getResFrame("common", icon), attr_name, attr_val)
+            label:setString(attr_str)
+            -- if i%2 == 1 then
+                total_base_height = total_base_height + label:getContentSize().height + 10
+            -- end
+        end
+    end
+    self.baseattr_panel:setContentSize(cc.size(510, total_base_height))
+    ccui.Helper:doLayout(self.baseattr_panel)
+    for i, v in ipairs(self.base_list) do
+        local iy = self.baseattr_panel:getChildByName("label"):getPositionY()
+        -- local _y = iy - 15 - math.ceil(i/2)*40
+        local _y = iy - 15 - i*40
+        v:setPositionY(_y)
+    end
+end
+
+--==============================--
+--desc:设置强化信息
+--time:2018-10-20 09:40:23
+--@return 
+--==============================--
+function ExclusivePropsPanel:setStrengInfo()
+    local data = self.base_data
+    local lev_cfg = self.lev_cfg
+    local streng_des_list = {}
+    local start_pos_y = self.strengattr_panel.label:getPositionY() + self.strengattr_panel.label:getContentSize().height + 5
+    local space_off = 6
+    local t_height = self.strengattr_panel.label:getContentSize().height + 20
+    local list = {}
+    local label_h = 0
+    if self.data.panel_type == HERO_SOUL_TYPE then
+        t_height = t_height + self.strengattr_panel.scroll:getContentSize().height
+        local max_lv = math.min(controller:getModel():getHorcruxesMaxLev(),tableLen(Config.PartnerSoulData.data_soul_level[self.base_data.id]))
+        for i, v in ipairs(Config.PartnerSoulData.data_soul_level[self.base_data.id]) do
+            if v.desc and v.desc ~= "" and v.lev > 1 and v.lev <= max_lv then
+                streng_des_list[#streng_des_list + 1] = v.desc
+                -- local mark_img = createSprite(cur_loading_png, SCREEN_WIDTH*0.5, SCREEN_HEIGHT*0.5, self.strengattr_panel, cc.p(0.5,0.5), LOADTEXT_TYPE)
+                -- local height = start_pos_y + t_height
+                -- local label = createLabel(24,cc.c4b(0xc1,0xb7,0xab,0xff),nil,20, 0,"",self.strengattr_panel.scroll,1,cc.p(0,1))
+                local label = createRichLabel(24,cc.c3b(0xc1,0xb7,0xab),cc.p(0,1),cc.p(20,0),1,nil,485)
+                self.strengattr_panel.scroll:addChild(label)
+                -- label:setDimensions(485, 0)
+                if self.base_data.lev >= v.lev then
+                    label:setFontColor(cc.c4b(0x0e,0xa8,0x0e,0xff))
+                end
+                label:setString(v.desc)
+                -- t_height = t_height + label:getContentSize().height + 10
+                label_h = label_h + label:getContentSize().height + 10
+                list[#list +1] = label
+                --判断是否激活
+            end
+        end 
+    else
+        local config = Config.SkillData.data_get_skill(lev_cfg.unlock)
+        local s_lev_lock = false
+        if not config then
+            for i, v in ipairs(Config.PartnerHeartData.data_soul_level[self.base_data.id]) do
+                config = Config.SkillData.data_get_skill(v.unlock)
+                if config then
+                    s_lev_lock = true
+                    break
+                end
+            end
+        end
+        if config then
+            --是否锁住
+            if self.strengattr_panel.skillItem == nil then
+                local skillItem = SkillItem.new(true, true, true, 0.8, false)
+                skillItem:setAnchorPoint(cc.p(0, 1))
+                self.strengattr_panel:addChild(skillItem)
+                self.strengattr_panel.skillItem = skillItem
+                self.strengattr_panel.name = createLabel(24,cc.c4b(0xfe,0xee,0xba,0xff),nil,125, 0,"",self.strengattr_panel,1,cc.p(0,1))
+                self.strengattr_panel.des = createLabel(24,cc.c4b(0xfe,0xee,0xba,0xff),nil,125, 0,"",self.strengattr_panel,1,cc.p(0,1))
+                self.strengattr_panel.name:setDimensions(285, 0)
+                self.strengattr_panel.des:setDimensions(285, 0)
+            end
+            self.strengattr_panel.skillItem:setData(config)
+            self.strengattr_panel.name:setString(config.name)
+            self.strengattr_panel.des:setString(transformTextToShort(config.des, 34))
+            self.strengattr_panel.skillItem:setVisible(true)
+            self.strengattr_panel:setVisible(true)
+            t_height = t_height + self.strengattr_panel.skillItem:getContentSize().height
+            setChildUnEnabled(s_lev_lock, self.strengattr_panel.skillItem)
+            if s_lev_lock then
+                self.strengattr_panel.name:setTextColor(cc.c4b(0xc1,0xb7,0xab,0xff))
+                self.strengattr_panel.des:setTextColor(cc.c4b(0xc1,0xb7,0xab,0xff))
+            else
+                self.strengattr_panel.name:setTextColor(cc.c4b(0xfe,0xee,0xba,0xff))
+                self.strengattr_panel.des:setTextColor(cc.c4b(0xfe,0xee,0xba,0xff))
+            end
+        else
+            print(string_format("@技能表id: %s 没发现", tostring(lev_cfg.unlock)))
+            self.strengattr_panel:setVisible(false)
+            t_height = t_height
+        end
+    end
+
+    local size = self.strengattr_panel:getContentSize()
+    self.strengattr_panel:setContentSize(cc.size(size.width, t_height))
+    self.strengattr_panel.label:setPositionY(t_height - 10)
+    local o_y = t_height - 10 - self.strengattr_panel.label:getContentSize().height - 10
+    if self.data.panel_type == HERO_SOUL_TYPE then
+        local _h = math.max(label_h,self.strengattr_panel.scroll:getContentSize().height)
+        self.strengattr_panel.scroll:setInnerContainerSize(cc.size(self.strengattr_panel.scroll:getContentSize().width,_h))
+        for i, v in ipairs(list) do
+            v:setPositionY(_h)
+            _h = _h - v:getContentSize().height - 10
+        end
+    else
+        if self.strengattr_panel:isVisible() then
+            self.strengattr_panel.skillItem:setPosition(20, o_y)
+            self.strengattr_panel.name:setPositionY(o_y + 10)
+            self.strengattr_panel.des:setPositionY(o_y - 20)
+        end
+    end
+    self.strengattr_panel.line:setPositionY(t_height - 7)
+end
+
+function ExclusivePropsPanel:close_callback()
+    if self.power_label then
+        self.power_label:DeleteMe()
+        self.power_label = nil
+    end
+    for i,v in pairs(self.skill_list) do 
+        if v.skill then 
+            v.skill:DeleteMe()
+        end
+    end
+    controller:openExclusivePropsPanel(false)
+end

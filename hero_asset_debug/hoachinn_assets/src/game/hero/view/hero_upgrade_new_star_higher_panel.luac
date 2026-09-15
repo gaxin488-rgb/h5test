@@ -1,0 +1,807 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      伙伴升星星阶信息界面
+-- <br/> 2020年12月7日
+-- --------------------------------------------------------------------
+HeroUpgradeNewStarHigherPanel = HeroUpgradeNewStarHigherPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local math_ceil = math.ceil
+
+
+function HeroUpgradeNewStarHigherPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big   
+    self.layout_name = "hero/hero_upgrade_new_star_higher_panel"
+    self:config()
+end
+
+function HeroUpgradeNewStarHigherPanel:config()
+
+    --材料列表
+    self.hero_item_list = {}
+    self.cost_item_list = {} -- 升星额外消耗的材料
+end
+
+function HeroUpgradeNewStarHigherPanel:open_callback()
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.close_btn = self.main_container:getChildByName("close_btn")
+
+    self.up_img = self.main_container:getChildByName("sp_starup_star_1")
+    self.confirm_btn = self.main_container:getChildByName("confirm_btn")
+    self.confirm_btn:getChildByName("label"):setString(TI18N("语言_c_4393"))
+    
+    self.attr_list = {}
+    for i=1,5 do
+        local param = self.main_container:getChildByName("param"..i)
+        local attr = {}
+        attr.param =  param
+        attr.key = param:getChildByName("key")
+        attr.left = param:getChildByName("left")
+        attr.arrow_icon = param:getChildByName("arrow_icon")
+        attr.right = param:getChildByName("right")
+        self.attr_list[i] = attr
+    end
+    self.Image_1_0 = self.main_container:getChildByName("Image_1_0")
+    self.item_node = self.main_container:getChildByName("item_node")
+
+    self.cost_bg_1 = self.main_container:getChildByName("cost_bg_1")
+
+    self.label_waring = self.main_container:getChildByName("label_waring")
+    setTextMaxWidth(self.label_waring, 240) 
+    self.label_waring:setString(TI18N("语言_c_4394"))
+
+    self.label_complete = self.main_container:getChildByName("label_complete")
+    setTextMaxWidth(self.label_complete, 162)
+    self.label_complete:setString(TI18N("语言_c_3074"))
+
+    self.label_tip_complete = self.main_container:getChildByName("label_tip_complete")
+    setTextMaxWidth(self.label_tip_complete, 642)
+    self.label_tip_complete:setString(TI18N("语言_c_3074"))
+
+    self.star_rank_name = self.main_container:getChildByName("star_rank_name")
+    self.Image_2 = self.main_container:getChildByName("Image_2")
+    self.star_rank_title = self.main_container:getChildByName("star_rank_title")
+
+    self.label_des = self.main_container:getChildByName("label_des")
+
+    self.main_container:getChildByName("label_cost_title"):setString(TI18N("语言_c_3073"))
+    self.label_cost_title = self.main_container:getChildByName("label_cost_title")
+    -- self.main_container:getChildByName("label_tip"):setString(TI18N("语言_c_4395"))
+    -- self.label_tip = self.main_container:getChildByName("label_tip")
+    self.label_tip = createRichLabel(18, Config.ColorData.data_color4[175], cc.p(0.5,0), cc.p(337, -15),0,0,660)
+    self.label_tip:setString(TI18N("语言_c_4395"))
+    -- self.label_tip:setHorizontalLayoutType(2)
+    self.main_container:addChild(self.label_tip)
+    self.no_grade_tip = self.main_container:getChildByName("no_grade_tip")
+    self.no_grade_tip:setVisible(false)
+end
+
+function HeroUpgradeNewStarHigherPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    registerButtonEventListener(self.confirm_btn, handler(self, self.onClickBtnConfirm) ,true, 1)
+
+    self:addGlobalEvent(TipsEvent.TipsGoToEvent, function( )
+        self:onClickBtnClose()
+    end)
+
+    --添加英雄选择返回事件
+    if self.upgrade_star_select_event == nil then
+        self.upgrade_star_select_event = GlobalEvent:getInstance():Bind(HeroEvent.Upgrade_Star_Select_Event, function()
+            self:updateHeroItemInfo()
+        end)
+    end
+end
+
+function HeroUpgradeNewStarHigherPanel:openRootWnd(object)
+    self.data = object.data
+    self.hero_vo = self.data.hero_vo
+    self.star_rank = self.data.star_rank or 1
+    self.page_index = self.data.page_index
+    if self.page_index == 1 then
+        loadSpriteTexture(self.up_img, PathTool.getResFrame("hero", "ui_starup_star"), LOADTEXT_TYPE_PLIST)
+    else
+        loadSpriteTexture(self.up_img, PathTool.getResFrame("hero/special_hero_star", "special_hero_star_021"), LOADTEXT_TYPE_PLIST)
+    end
+    self:updateInfo(self.hero_vo)
+end
+
+--关闭
+function HeroUpgradeNewStarHigherPanel:onClickBtnClose()
+    controller:openHeroUpgradeNewStarHigherPanel(false)
+end
+
+-- 确定使用
+function HeroUpgradeNewStarHigherPanel:onClickBtnConfirm()
+    self:_sendUpgradeStar()
+    -- self:onClickBtnClose()
+end
+
+--发升星协议
+function HeroUpgradeNewStarHigherPanel:_sendUpgradeStar()
+    if self.is_complete_star_step then
+        message(TI18N("语言_c_3074"))
+        return 
+    end
+    local partner_id = self.hero_vo.partner_id
+    local hero_list = {}
+    local random_list = {}
+    local dic_item_expend = {}
+    if self.hero_item_data_list and next(self.hero_item_data_list) ~= nil then
+        for i,item in ipairs(self.hero_item_data_list) do
+            local count = 0
+            for k,v in pairs(item.dic_select_list) do
+                count = count + 1
+            end
+            if count < item.count then
+                message(TI18N("语言_c_3021"))
+                return
+            end
+            for k,v in pairs(item.dic_select_list) do
+                if v.is_hero_hun then --是否英魂 参考 HeroUpgradeStarSelectPanel:initHeroList(dic_other_selected) 里面的定义
+                    if v.good_vo then
+                        if dic_item_expend[v.good_vo.base_id] == nil then
+                            dic_item_expend[v.good_vo.base_id] = 1
+                        else
+                            dic_item_expend[v.good_vo.base_id] = dic_item_expend[v.good_vo.base_id] + 1
+                        end
+                    end
+                else
+                    local data = {}
+                    data.partner_id = k
+                    if item.bid == 0 then
+                        --随机卡
+                        table_insert(random_list, data)
+                    else
+                        --指定卡
+                        table_insert(hero_list, data)
+                    end
+                end
+            end
+        end 
+        model:setUpgradeStarUpdateRecord(false)
+    end
+
+        local item_list = {}
+        for item_id, num in pairs(dic_item_expend) do
+            local data = {}
+            data.item_id = item_id
+            data.num = num
+            table_insert(item_list, data)
+        end
+        if self.page_index == 1 then
+            controller:sender11018(partner_id, hero_list, random_list, item_list, self.star_rank, self.hero_vo.star)
+        else
+            if model:getTreeCanUp(self.hero_vo) then
+                controller:sender11438(partner_id, hero_list, random_list, item_list, self.star_rank, self.hero_vo.star)
+            else
+                message(TI18N("语言_c_6787"))
+                return
+            end
+        end
+        controller:openHeroUpgradeNewStarHigherPanel(false)
+end
+
+--更新选中英雄信息
+function HeroUpgradeNewStarHigherPanel:updateHeroItemInfo()
+    if not self.hero_item_data_list then return end
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    for i,v in ipairs(self.hero_item_data_list) do
+        if v.is_select then
+            v.is_select = false
+            local count = 0
+            for k,vo in pairs(v.dic_select_list) do
+                count = count + 1
+                self.dic_other_selected[k] = vo
+            end
+            v.lev = string_format("%s/%s", count, v.count)
+            if self.hero_item_list[i] then
+                self.hero_item_list[i].num_label:setString(v.lev)
+                if count > 0 then
+                    self.hero_item_list[i]:setHeadUnEnabled(false)
+                else
+                    self.hero_item_list[i]:setHeadUnEnabled(true)
+                end
+            end
+        else
+            for k,vo in pairs(v.dic_select_list) do
+                self.dic_other_selected[k] = vo
+            end
+        end
+    end
+    self:updateCentreHeroItemRedPoint()
+end
+
+function HeroUpgradeNewStarHigherPanel:updateInfo(hero_vo)
+    if not hero_vo then return end
+    self.star_rank_title:setString(string.format(TI18N("语言_c_4396"), self.star_rank))
+    self.Image_2:setContentSize(cc.size(self.star_rank_title:getContentSize().width + 120,63))
+    self.star_rank_name:setString(string.format(TI18N("语言_c_4397"), self.star_rank))
+    self.label_des:setString("")
+    self.label_des_rich = createRichLabel(20,cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0.5, 0.5), nil,nil,nil,1000)
+    self.label_des:getParent():addChild(self.label_des_rich)
+    self.label_des_rich:setPosition(cc.p(self.label_des:getPosition()))
+    local str = string.format(TI18N("语言_c_4398"),string.format(TI18N("语言_c_4399"),self.hero_vo.name, self.hero_vo.star), self.star_rank)
+    self.label_des_rich:setString(str)
+
+    local star = hero_vo.star or 1
+    local key = getNorKey(hero_vo.bid, star, self.star_rank)
+    local next_key = getNorKey(hero_vo.bid, star, self.star_rank)
+    local star_rank_config = {}
+    local next_star_rank_config = {}
+    if self.page_index == 1 then
+        star_rank_config = Config.PartnerData.data_partner_star_step(key)
+        next_star_rank_config = Config.PartnerData.data_partner_star_step(next_key)
+    else
+        star_rank_config = Config.PartnerSpecialData.data_partner_star_step(key)
+        next_star_rank_config = Config.PartnerSpecialData.data_partner_star_step(next_key)
+    end
+
+    local config = Config.PartnerData.data_partner_const.tips
+    local tips_str = TI18N("语言_c_4395")
+    if config and config.val then
+        for k, v in pairs(config.val) do
+            local c_star = v[1] 
+            local c_star_step = v[2] 
+            if c_star == star and c_star_step == self.star_rank then
+                tips_str = v[3]
+                break
+            end 
+        end
+    end
+    self.label_tip:setString(tips_str)
+    self:updateAttrUI(star_rank_config, next_star_rank_config)
+    self:updateItemDataByConfig(next_star_rank_config)
+
+    if hero_vo:isResonateHero() then --共鸣
+        self.confirm_btn:setVisible(false)
+        self.cost_bg_1:setVisible(false)
+        self.label_complete:setVisible(false)
+        self.label_waring:setVisible(false)
+        self.label_tip_complete:setVisible(false)
+    else
+        self.label_waring:setVisible(star >= 12)
+        self.label_waring:setVisible(false)
+        if model:checkStarStepCompleteByIndex(self.hero_vo, self.star_rank) or next_star_rank_config == nil then --已经激活
+            self.is_complete_star_step = true
+            self.confirm_btn:setVisible(false)
+            self.cost_bg_1:setVisible(false)
+            self.label_complete:setVisible(false)
+            self.label_tip_complete:setVisible(true)
+            self.Image_1_0:setVisible(false)
+            self.item_node:setVisible(false)
+            self.label_tip:setVisible(false)
+            self.label_cost_title:setVisible(false)
+            self.label_waring:setVisible(false)
+        else
+            self.is_complete_star_step = false
+            if next(next_star_rank_config.other_expend) ~= nil then
+                local need_num = 0
+                -- 取出所需进阶石的数量
+                for k,v in pairs(next_star_rank_config.other_expend) do
+                    if v[1] == model.upgrade_star_cost_id then
+                        need_num = v[2]
+                        break
+                    end
+                end
+                if need_num > 0 then
+                    local item_data = Config.ItemData.data_get_data(model.upgrade_star_cost_id)
+                    local count = BackpackController:getInstance():getModel():getItemNumByBid(item_data.id)
+                    if not self.consume_label_tip then
+                        self.consume_label_tip = createRichLabel(24,cc.c4b(0xff,0xf6,0xe4,0xff), cc.p(1, 0.5), cc.p(-30,21),nil,nil,1000)
+                        self.consume_label_tip:setString(string.format(TI18N("<div fontcolor=#9E501B outline=0,#294a15>%s:</div>"),TI18N("语言_c_4803")))
+                        self.cost_bg_1:addChild(self.consume_label_tip)
+                    end
+                    if not self.consume_label then
+                        self.consume_label = createRichLabel(24,cc.c4b(0xff,0xf6,0xe4,0xff), cc.p(0, 0.5), nil,nil,nil,1000)
+                        self.cost_bg_1:addChild(self.consume_label)
+                    end
+                    if self.consume_label then
+                        self.consume_label:setVisible(true)
+                        local str = string.format(TI18N("<img src=%s scale=0.6 visible=true /> <div fontcolor=#ffffff outline=0,#7c5536>  %s/%s</div>"),PathTool.getItemRes(item_data.icon),MoneyTool.GetMoneyString(count), need_num)
+                        self.consume_label:setString(str)
+                        self.cost_bg_1:setContentSize(cc.size(self.consume_label:getContentSize().width + 30,42))
+                        local size = self.cost_bg_1:getContentSize()
+                        self.consume_label:setPosition(cc.p(10,24))
+                    end
+                    self.cost_bg_1:setVisible(true)
+                else
+                    self.cost_bg_1:setVisible(false)
+                end
+            else
+                self.cost_bg_1:setVisible(false)
+            end
+            self.confirm_btn:setVisible(true)
+            self.label_complete:setVisible(false)
+            self.label_tip_complete:setVisible(false)
+            self.Image_1_0:setVisible(true)
+            self.item_node:setVisible(true)
+            self.label_tip:setVisible(true)
+            
+            self.label_cost_title:setVisible(true)
+        end
+    end
+    if hero_vo.star >= 13 and self.star_rank ~= 1 then
+        -- local is_activation = model:checkStarStepCompleteByIndex(self.hero_vo, self.star_rank - 1)
+        local is_activation = self.hero_vo.star_step >= self.star_rank - 1
+        if not is_activation then
+            self.no_grade_tip:setVisible(true)
+            self.no_grade_tip:setString(string.format(TI18N("语言_c_5896"),self.star_rank - 1))
+            self.confirm_btn:setVisible(true)
+            setChildUnEnabled(true,self.confirm_btn)
+            self.confirm_btn:setTouchEnabled(false)
+        end
+    end
+end
+
+--更新属性ui
+function HeroUpgradeNewStarHigherPanel:updateAttrUI(star_rank_config, next_star_rank_config)
+    ------new
+    --开启新天赋位 等级上限  生命  攻击  防御 next_star_rank_config  talent_pos  lev_max_up  add_hp_c add_atk_c add_def_c
+    local getUpAttrList = function(star_rank_config)
+        local hero_vo = self.hero_vo
+        local list = {}
+        if not star_rank_config then return list end
+        local talent_pos = star_rank_config.talent_pos
+        local lev_max_up = star_rank_config.lev_max_up
+        local add_hp = star_rank_config.add_hp_c 
+        local add_atk = star_rank_config.add_atk_c 
+        local add_def = star_rank_config.add_def_c
+        local add_speed = star_rank_config.add_speed_c
+        local energy_speed = star_rank_config.power_show
+        local attr = star_rank_config.attr_c
+        if talent_pos and talent_pos > 0 then
+            list[#list + 1] = {TI18N("语言_c_4400")}
+        end
+        if lev_max_up and lev_max_up > 0 then
+            local max_star = Config.PartnerData.data_partner_max_star[hero_vo.bid]  --得到最大星级
+            local key = getNorKey(hero_vo.bid, hero_vo.star)
+            local star_config = Config.PartnerData.data_partner_star(key)
+            local star_step_add_lev = model:getStarStepCompleteAddLev(hero_vo)
+            local lev_max = star_config.lev_max + star_step_add_lev
+            local new_lev_max = lev_max + lev_max_up
+            list[#list + 1] = {TI18N("语言_c_4401"), lev_max, new_lev_max}
+        end
+        if add_hp and add_hp > 0 then
+            local value = add_hp/10
+            list[#list + 1] = {TI18N("语言_c_4402"), string_format("%s%%", value)}
+        end
+        if add_atk and add_atk > 0 then
+            local value = add_atk/10
+            list[#list + 1] = {TI18N("语言_c_4403"), string_format("%s%%", value)}
+        end
+        if add_def and add_def > 0 then
+            local value = add_def/10
+            list[#list + 1] = {TI18N("语言_c_4404"), string_format("%s%%", value)}
+        end
+        if add_speed and add_speed > 0 then
+            local value = add_speed/10
+            list[#list + 1] = {TI18N("语言_c_5468"), string_format("%s%%", value)}
+        end
+        for key, value in pairs(attr) do
+            if HeroConst.AttributesDescribe1[value[1]] then
+                if value[1] == "speed" then
+                    list[#list + 1] = {HeroConst.AttributesDescribe1[value[1]]..TI18N("语言_c_5467"), value[2]}
+                else
+                    list[#list + 1] = {HeroConst.AttributesDescribe1[value[1]]..TI18N("语言_c_5467"), value[2]/10}
+                end
+            elseif HeroConst.AttributesDescribe2[value[1]] then
+                list[#list + 1] = {HeroConst.AttributesDescribe2[value[1]]..TI18N("语言_c_5467"), string_format("%s%%", value[2]/10)}
+            end
+        end
+        if energy_speed and energy_speed > 0 then
+            local value = energy_speed/10
+            list[#list + 1] = {TI18N("语言_c_6286"), string_format("%s%%", value)}
+        end
+        return list
+    end
+    local list = getUpAttrList(next_star_rank_config)
+    if next_star_rank_config == nil then
+        for i,attr in ipairs(self.attr_list) do
+            attr.param:setVisible(false)
+        end
+    else
+        for i,attr in ipairs(self.attr_list) do
+            local attr_des = list[i]
+            if attr_des then
+                attr.key:setString(attr_des[1])
+                attr.left:setString(attr_des[2])
+                if attr_des[3] then
+                    attr.arrow_icon:setVisible(true)
+                    attr.right:setVisible(true)
+                    attr.right:setString(attr_des[3])
+                else
+                    attr.arrow_icon:setVisible(false)
+                    attr.right:setVisible(false)
+                end
+                attr.param:setVisible(true)
+            else
+                attr.param:setVisible(false)
+            end
+        end
+    end
+    self:setAttrListPox()
+end
+
+function HeroUpgradeNewStarHigherPanel:setAttrListPox()
+    local left_x = 0
+    for key, value in pairs(self.attr_list) do
+        local _x = value.key:getPositionX() + value.key:getContentSize().width + value.left:getContentSize().width + 10
+        left_x = math.max(left_x, _x)
+    end
+    for key, value in pairs(self.attr_list) do
+        value.left:setPositionX(left_x)
+        value.arrow_icon:setPositionX(left_x + 35)
+        value.right:setPositionX(left_x + 60)
+    end
+end
+
+--更新升星物品材料
+function HeroUpgradeNewStarHigherPanel:updateItemDataByConfig(star_config)
+    -- print("HeroUpgradeNewStarHigherPanel updateItemDataByConfig", vardump(star_config))
+    if not star_config then return end
+    self.hero_item_data_list = {}
+    --红点条件list
+    local conditions_list = {}
+    --记录已选id [partner_id] = hero_vo
+    self.dic_other_selected = {}
+    --过滤自己
+    if self.hero_vo then
+        self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    end
+    -- local expend = star_config.expend1[1]
+    -- if expend then --主卡
+    --     --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    --     self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3]) 
+    -- end
+
+    --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    local index = 1
+    for i,expend in ipairs(star_config.expend2) do
+        self.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+    --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+    for i,expend in ipairs(star_config.expend3) do
+        self.hero_item_data_list[index] = self:getHeroData(nil, expend[2], expend[3], expend[1])
+        conditions_list[index] = {}
+        conditions_list[index][expend[1]] = {}
+        conditions_list[index][expend[1]][expend[2]] = expend[3]
+        index = index + 1
+    end
+
+    for i,item in ipairs(self.hero_item_list) do
+        item:setVisible(false)
+    end
+
+    for i,hero_vo in ipairs(self.hero_item_data_list) do
+        if self.hero_item_list[i] == nil then
+            self.hero_item_list[i] = HeroExhibitionItem.new(1, true)
+            self.hero_item_list[i]:setPosition( (i-1) * (HeroExhibitionItem.Width * 1 + 10) , 0)
+            self.hero_item_list[i]:addCallBack(function() self:_onClickItemData(i) end)
+            self.item_node:addChild(self.hero_item_list[i])
+        end
+        self.hero_item_list[i]:setVisible(true)
+        if hero_vo.bid == 0 then
+            --随机卡的头像id
+            local default_head_id = model:getRandomHeroHeadByQuality(hero_vo.star)
+            self.hero_item_list[i]:setData(hero_vo)
+            self.hero_item_list[i]:setDefaultHead(default_head_id)
+            -- self.hero_item_list[i]:setHeroName(true, string_format(TI18N("语言_c_3022"), hero_vo.star))
+        else
+            self.hero_item_list[i]:setData(hero_vo)
+            -- self.hero_item_list[i]:setHeroName(true, hero_vo.name)
+        end
+        
+        self.hero_item_list[i]:setHeadUnEnabled(true)
+    end
+
+    -- 额外材料
+    for k,item in pairs(self.cost_item_list) do
+        item:setVisible(false)
+    end
+    local upgrade_star_cost = {} --消耗材料
+    local start_index = #self.hero_item_data_list
+    if star_config.other_expend then
+        for i,v in ipairs(star_config.other_expend) do
+            local bid = v[1]
+            local need_num = v[2]
+            if bid ~= model.upgrade_star_cost_id then
+                local item = self.cost_item_list[i]
+                if not item then
+                    item = BackPackItem.new(false, true, false, 1)
+                    self.item_node:addChild(item)
+                    self.cost_item_list[i] = item
+                end
+                item:setPosition( (start_index+i-1) * (BackPackItem.Width * 1 + 10) , 0)
+                local have_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(bid)
+                item:setBaseData(bid)
+                item:setNeedNum(need_num, have_num, 1, true, 2)
+                if need_num > have_num then
+                    item:setDefaultTip(true, true)
+                else
+                    item:setDefaultTip()
+                end
+                item:setVisible(true)
+            end
+        end
+    end
+
+    self:initHeroListByMatchInfo(conditions_list)
+    self:updateCentreHeroItemRedPoint()
+end
+
+--初始化英雄列表匹配信息
+function HeroUpgradeNewStarHigherPanel:initHeroListByMatchInfo(conditions_list)
+    local hero_list = model:getHeroList()
+
+    self.conditions_hero_list = {}
+    for k,hero in pairs(hero_list) do
+        --去掉lock de 
+        if not hero:isResonateHero() and not hero:isInForm() and not hero:isLock() then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+    
+                if self.hero_item_data_list and self.hero_item_data_list[i] and self.hero_item_data_list[i].bid and self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    if conditions[0] then
+                        if conditions[0][hero.star] then
+                            table_insert(self.conditions_hero_list[i], hero)
+                        end
+                    else
+                        if conditions[hero.camp_type] and conditions[hero.camp_type][hero.star] ~= nil then
+                            table_insert(self.conditions_hero_list[i], hero)
+                        end
+                    end
+                else
+                    --指定卡
+                    if conditions[hero.bid] and conditions[hero.bid][hero.star] then   -- 指定卡要剔除自己
+                        if self.hero_vo and self.hero_vo.partner_id ~= hero.partner_id then
+                            table_insert(self.conditions_hero_list[i], hero)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    --新加需求.自动填满指定定的位置的英雄
+    -- if self.hero_vo and self.hero_vo.red_point[HeroConst.RedPointType.eRPStar] then
+        self.dic_other_selected = {}
+        if self.hero_vo then
+            self.dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+        end
+        for i,v in ipairs(self.hero_item_data_list) do
+            --策划要求指定才需要填充 
+            if v.bid ~= 0 then
+                if self.conditions_hero_list[i] and #self.conditions_hero_list[i] > 0 then
+                    local sort_func = SortTools.tableCommonSorter({{"lev", false}, {"id", true}}) 
+                    table_sort(self.conditions_hero_list[i], sort_func)
+                    local count = 0
+                    for _,hero_vo in ipairs(self.conditions_hero_list[i]) do
+                        if self.dic_other_selected[hero_vo.id] == nil and not hero_vo:checkHeroLockTips(true, nil, true) then
+                            v.dic_select_list[hero_vo.id] = hero_vo
+                            count = count + 1
+                            if count >= v.count then
+                                break
+                            end
+                        end
+                    end
+                    if count < v.count then
+                        --说明不够..就不显示了
+                        v.dic_select_list = {}
+                    else
+                        for k,v in pairs(v.dic_select_list) do
+                            self.dic_other_selected[k] = v
+                        end
+                        v.lev = string_format("%s/%s", count, v.count)
+                        if self.hero_item_list[i] then
+                            self.hero_item_list[i].num_label:setString(v.lev)
+                            if count > 0 then
+                                self.hero_item_list[i]:setHeadUnEnabled(false)
+                            else
+                                self.hero_item_list[i]:setHeadUnEnabled(true)
+                            end
+                        end      
+                    end
+                end
+            end
+        end
+    -- end
+
+
+    local list = BackpackController:getInstance():getModel():getHeroHunList()
+    for k, good_vo in pairs(list) do
+        if good_vo.config then
+            for i,conditions in ipairs(conditions_list) do
+                if self.conditions_hero_list[i] == nil then
+                    self.conditions_hero_list[i] = {}
+                end
+                if self.hero_item_data_list[i].bid == 0 then
+                    --表示随机卡 0表示全部阵营
+                    local camp_type = good_vo.config.camp_type
+                    local star = good_vo.config.eqm_jie
+                    if conditions[camp_type] and conditions[camp_type][star] ~= nil then
+                        for j=1,good_vo.quantity do
+                            local data = {}
+                            data.id = -(j + camp_type * 10)
+                            data.partner_id = data.id
+                            data.good_vo = good_vo
+                            table_insert(self.conditions_hero_list[i], data)
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+end
+
+--计算中间item红点显示
+function HeroUpgradeNewStarHigherPanel:updateCentreHeroItemRedPoint()
+    if not self.conditions_hero_list then return end
+    if not self.dic_other_selected then return end
+    for i,item in ipairs(self.hero_item_list) do
+        --模拟的hero_vo数据
+        local hero_vo = self.hero_item_data_list[i]
+        local conditions_list =  self.conditions_hero_list[i] or {}
+        if hero_vo then
+            local count = 0
+            for k,v in pairs(hero_vo.dic_select_list) do
+                count = count + 1
+            end
+            --已经填满了就不显示红点了
+            if count < hero_vo.count then
+                --随机卡的 --指定卡 逻辑一样的
+                local num = hero_vo.count
+                for i,each_hero in ipairs(conditions_list) do
+                    --自已选的.和 别人没选的 都算数 
+                    if hero_vo.dic_select_list[each_hero.id] or self.dic_other_selected[each_hero.id] == nil then 
+                        num = num -1
+                        if num == 0 then
+                            break
+                        end
+                    end
+                end
+                --说明数量够 显示红点
+                local status = (num <= 0) 
+                item:showRedPoint(status, 8, 8)
+
+            else
+                item:showRedPoint(false)
+            end
+        end
+    end
+end
+
+--点击材料数据
+function HeroUpgradeNewStarHigherPanel:_onClickItemData(index)
+    if not self.hero_item_data_list[index] then return end
+    if not self.hero_vo then return end
+    --标志点击了那个
+    self.hero_item_data_list[index].is_select = true
+    --被其他人选择的列表 [id] = hero_vo 模式
+    local dic_other_selected = {}
+    --把自己也过滤
+    dic_other_selected[self.hero_vo.partner_id] = self.hero_vo
+    for i,item in ipairs(self.hero_item_data_list) do
+        if i ~= index then
+            for k,v in pairs(item.dic_select_list) do
+                dic_other_selected[k] = v
+            end
+        end
+    end
+
+    local setting = {}
+    if self.hero_item_data_list[index].bid == 0 and self.hero_item_data_list[index].star == 5 then
+        -- 表示随机卡
+        setting.self_mark_bid = self.hero_vo.bid
+    end
+
+    controller:openHeroUpgradeStarSelectPanel(true, self.hero_item_data_list[index], dic_other_selected, HeroConst.SelectHeroType.eUpgradeStar, setting)
+end
+
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function HeroUpgradeNewStarHigherPanel:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+
+function HeroUpgradeNewStarHigherPanel:updateCostInfo(lev)
+    -- local config = Config.ResonateData.data_crystal_cost[lev]
+    -- if config and next(config.expend) ~= nil then
+    --     for i=1,3 do
+    --         local cost_data = config.expend[i]
+    --         local cost_icon = self.cost_bg_list[i].cost_icon
+    --         local cost_txt = self.cost_bg_list[i].cost_txt
+    --         if cost_data then
+    --             local bid = cost_data[1]
+    --             local num = cost_data[2]
+    --             local item_config = Config.ItemData.data_get_data(bid)
+    --             if item_config then
+    --                 cost_icon:loadTexture(PathTool.getItemRes(item_config.icon), LOADTEXT_TYPE)
+    --                 local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+    --                 cost_txt:setString(MoneyTool.GetMoneyString(have_num) .. "/" .. MoneyTool.GetMoneyString(num))
+    --                 if have_num >= num then
+    --                     cost_txt:setTextColor(cc.c3b(255, 246, 228))
+    --                 else
+    --                     cost_txt:setTextColor(cc.c3b(0xff,0x8b,0x8b))
+    --                 end
+    --             end
+    --         else
+    --             cost_txt:setString("")
+    --         end
+    --     end
+    -- end
+end
+
+
+function HeroUpgradeNewStarHigherPanel:close_callback()
+    if self.hero_item_list then
+        for i,v in ipairs(self.hero_item_list) do
+             v:DeleteMe()
+        end
+        self.hero_item_list = nil
+    end
+    if self.cost_item_list then
+        for i,v in ipairs(self.cost_item_list) do
+            v:DeleteMe()
+        end
+        self.cost_item_list = nil
+    end
+
+    if self.upgrade_star_select_event then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+
+    controller:openHeroUpgradeNewStarHigherPanel(false)
+end

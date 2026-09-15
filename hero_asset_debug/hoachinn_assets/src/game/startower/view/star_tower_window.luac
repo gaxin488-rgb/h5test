@@ -1,0 +1,617 @@
+-- --------------------------------------------------------------------
+-- 竖版星命塔主界面
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+StarTowerWindow = StarTowerWindow or BaseClass(BaseView)
+
+
+local table_insert =table.insert
+local table_sort = table.sort
+local string_format = string.format
+local controller = StartowerController:getInstance()
+local reward_data = Config.StarTowerData.data_get_floor_award
+
+function StarTowerWindow:__init()
+    self.num = 1
+    self.ctrl = StartowerController:getInstance()
+    self.is_full_screen = true
+    self.layout_name = "startower/star_tower_window"
+    self.cur_type = 0
+    self.win_type = WinType.Full  
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("startower","startower"), type = ResourcesType.plist },
+        -- { path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_27",true), type = ResourcesType.single },
+        -- { path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_36",true), type = ResourcesType.single },
+        -- { path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_28"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_29"), type = ResourcesType.single },
+        { path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_100"), type = ResourcesType.single },
+    }
+    self.tab_list = {}
+    self.select_type = 1 --伙伴类型选择,默认全部为1
+    self.view_list = {}
+    self.is_change = false
+    self.top3_item_list = {}
+end
+
+function StarTowerWindow:open_callback()
+    self.mainContainer = self.root_wnd:getChildByName("main_container")
+
+    --对应主窗口.四面对应xy位置 ..相对位置是self.main_container左下角(0,0)
+    local top_y = display.getTop(self.mainContainer)
+    local bottom_y = display.getBottom(self.mainContainer)
+
+     -- --主菜单 顶部底部的高度
+    local top_height = MainuiController:getInstance():getMainUi():getTopViewHeight()
+    local bottom_height = MainuiController:getInstance():getMainUi():getBottomHeight()
+
+    self.mainContainer_size = self.mainContainer:getContentSize()
+    self.bg = self.mainContainer:getChildByName("bg")
+    if self.bg ~= nil then
+        self.bg:setScale(display.getMaxScale())
+        self.bg:setPositionY(top_y)
+    end
+    self.container = self.mainContainer:getChildByName("container")
+    self.top_panel = self.mainContainer:getChildByName("top_panel")
+
+    self.btnRule = self.top_panel:getChildByName("btnRule")
+    self.btnRule:setPositionX(520)
+    self.top_panel:getChildByName("title"):setString(TI18N("语言_c_1204"))
+
+    self.black_bg = self.mainContainer:getChildByName("black_bg")
+    self.close_btn = self.black_bg:getChildByName("close_btn")
+   
+    -- self.cost_panel =  self.black_bg:getChildByName("cost_panel")
+    -- self.add_btn = self.cost_panel:getChildByName("add_btn")
+    -- self.less_label =  createRichLabel(24,Config.ColorData.data_color4[1],cc.p(0,1),cc.p(0,65),nil,nil,500)
+    -- self.cost_panel:addChild(self.less_label)
+
+     local buy_panel = self.black_bg:getChildByName("buy_panel")
+    buy_panel:getChildByName("key"):setString(TI18N("语言_c_4091"))
+    self.buy_count = buy_panel:getChildByName("label")
+    self.buy_btn = buy_panel:getChildByName("add_btn")
+
+    self.buy_tips = createRichLabel(20, cc.c4b(0xff,0xf8,0xbf,0xff), cc.p(0.5,0.5), cc.p(0,-13), nil, nil, 600)
+    buy_panel:addChild(self.buy_tips)
+
+    self.award_btn = self.black_bg:getChildByName("award_btn")
+    local label = self.award_btn:getChildByName("label")
+    label:setString(TI18N("语言_c_282"))
+
+    self.checkbox_series = self.black_bg:getChildByName("checkbox_series")
+    self.check_time_txt = self.checkbox_series:getChildByName("check_time_txt")
+    self.check_time_txt:setString(TI18N("语言_c_4092"))
+	self.checkbox_series:setVisible(true)
+   
+    self.rank_btn = self.black_bg:getChildByName("rank_btn")
+    local label = self.rank_btn:getChildByName("label")
+    label:setString(TI18N("语言_c_73"))
+
+    self.mainContainer:getChildByName("rank_container"):setVisible(false)
+    -- self.rank_container = self.mainContainer:getChildByName("rank_container")
+    -- self.rank_container:getChildByName("rank_desc_label"):setString(TI18N("语言_c_1642"))
+    -- self.rank_top3_btn = self.rank_container:getChildByName("rank_btn")
+    
+    local tab_y = self.top_panel:getPositionY()
+    local top_panel_y = top_y - (self.mainContainer_size.height - tab_y)
+    self.top_panel:setPositionY(top_panel_y)
+    -- local rank_y = self.rank_container:getPositionY()
+    -- self.rank_container:setPositionY(top_y - (self.mainContainer_size.height - rank_y))
+
+    self.black_bg:setPositionY(bottom_y)
+    -- 滚动高度
+    self.scroll_height = top_panel_y - 20 - bottom_y - 154
+    self:updateTowerList()
+
+    self.awardbg = self.black_bg:getChildByName("awardbg");
+    self.good_cons = self.awardbg:getChildByName("good_cons")
+    self.guanlabel = self.award_btn:getChildByName("guanlabel")
+    self:starTowerShowAward()
+
+    self:changeAutoFightState()
+end
+
+function StarTowerWindow:starTowerShowAward()
+    local scroll_view_size = self.good_cons:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 6,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.42,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.42,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.42,
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:setSwallowTouches(false)
+    self:changeAwardData()
+end
+
+function StarTowerWindow:changeAwardData()
+    self.ctrl = StartowerController:getInstance()
+    local dic_reward = self.ctrl:getModel():getRewardData()
+    local list = {}
+    for k,v in pairs(dic_reward) do
+        if reward_data[v.id] then --过滤
+            table_insert(list, v)
+        end
+    end
+    list = self.ctrl:getModel():sortFunc(list)
+    
+    self:setAwardData(list[1])
+end
+
+function StarTowerWindow:setAwardData(data)
+    if not data then
+        self.awardbg:setVisible(false)
+        self.item_scrollview:setVisible(false)
+        self.guanlabel:setVisible(false)
+        return
+    end
+    local item_data = data --controller:getModel():getRewardData(data._index)
+    local list = {}
+    for i,v in pairs(reward_data[item_data.id].award) do
+        local tab = {}
+        tab.id = v[1]
+        tab.quantity = v[2]
+        table_insert(list,tab)
+    end
+    self.item_scrollview:setData(list)
+    self.item_scrollview:addEndCallBack(function ()
+        local list = self.item_scrollview:getItemList()
+        for k,v in pairs(list) do
+            v:setDefaultTip()
+        end
+    end)
+    local str = string_format(TI18N("%d/%d"),controller:getModel():getNowTowerId(),reward_data[item_data.id].tower)
+    self.guanlabel:setString(str)
+end
+
+function StarTowerWindow:setRankShow()
+    if RankController:getInstance():checkRankIsShow() then
+        self.rank_container:setVisible(true)
+        self.rank_btn:setVisible(true)
+        self.ctrl:requestStarTowerRank()
+    else
+        self.rank_container:setVisible(false)
+        self.rank_btn:setVisible(false)
+    end
+end
+
+function StarTowerWindow:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        self.ctrl:openMainView(false)
+    end,true, 2)
+
+    registerButtonEventListener(self.award_btn, function()
+        self.ctrl:openAwardWindow(true)
+    end,true, 1)
+
+    registerButtonEventListener(self.rank_btn, function()
+        RankController:getInstance():openRankView(true,RankConstant.RankType.tower)
+    end,true, 1)
+
+    -- registerButtonEventListener(self.rank_top3_btn, function()
+    --     RankController:getInstance():openRankView(true,RankConstant.RankType.tower)
+    -- end,true, 1)
+    registerButtonEventListener(self.btnRule, function(param,sender, event_type)
+        local config = Config.StarTowerData.data_tower_const.rule_desc
+        TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+    end,true, 1)
+
+    --跳过战斗
+    registerButtonEventListener(self.checkbox_series, function()
+        -- local skip_select = self.checkbox_series:isSelected()
+        local now_status = not (self.ctrl:getModel().auto_fight == 1)
+        --if now_status then
+            --local canauto = RoleController:getInstance():getModel():checkPrivilegeStatus(6)
+            --if not canauto then
+            --    message(TI18N("语言_c_2481"))
+            --    self:_onClickSpecialBtn()
+            --    -- self.checkbox_series:setSelected(false)
+            --    setChildUnEnabled(true, self.checkbox_series)
+            --    return
+            --end 
+        --end
+        self.ctrl:getModel():setSkipFight(now_status)
+        self:changeAutoFightState()
+    end, true, 1)
+
+    if self.battle_exit_event == nil then
+        self.battle_exit_event = GlobalEvent:getInstance():Bind(BattleEvent.Battle_Show_Result_Over, function(combat_type,result)
+            if combat_type == BattleConst.Fight_Type.StarTower then
+                self:changeAutoFightState()
+            end
+        end)
+    end
+
+    if self.battle_AUTO == nil then
+        self.battle_AUTO = GlobalEvent:getInstance():Bind(StartowerEvent.Update_Auto, function(status)
+            self:changeAutoFightState()
+        end)
+    end
+
+    registerButtonEventListener(self.buy_btn, function()
+        local function fun()
+            self.ctrl:sender11321()
+        end
+        local have_buycount = self.ctrl:getModel():getBuyCount() or 0
+        local role_vo = RoleController:getInstance():getRoleVo()
+        local config = Config.StarTowerData.data_tower_vip[role_vo.vip_lev]
+       
+        if config and config.buy_count then 
+            if have_buycount >= config.buy_count then 
+                message(TI18N("语言_c_4093"))
+            else
+                local buy_config = Config.StarTowerData.data_tower_buy[have_buycount+1]
+                if buy_config and buy_config.expend and buy_config.expend[1] and buy_config.expend[1][1] then 
+                    local item_id = buy_config.expend[1][1]
+                    local num = buy_config.expend[1][2] or 0
+                    local item_config = Config.ItemData.data_get_data(item_id)
+                    if item_config and item_config.icon then
+                        local res = PathTool.getItemRes(item_config.icon)
+                        local str = string.format( TI18N("语言_c_1874"),res, num)
+                        CommonAlert.show(str,TI18N("语言_c_63"),fun,TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,nil,24)
+                    end
+                end
+            end
+        end
+    end,true, 1)
+
+    self:addGlobalEvent(StartowerEvent.Update_All_Data,function()
+        self:updateTowerList(true)
+        self:updateCount()
+        self:updataRewardRedPoint()
+        self:changeAwardData()
+    end)
+
+    -- self:addGlobalEvent(StartowerEvent.Update_Top3_rank,function(list)
+    --     self:updateTop3Info(list)
+    -- end)
+
+    self:addGlobalEvent(StartowerEvent.Update_First_Reward_Msg,function()
+        self:updataRewardRedPoint()
+        self:changeAwardData()
+    end)
+
+    -- self:addGlobalEvent(StartowerEvent.Fight_Success_Event,function()
+    --     local config = Config.StarTowerData.data_tower_base[self.ctrl:getModel():getNowTowerId()]
+    --     if not config and self.ctrl:getModel().auto_fight ~= 1 then return end
+    --     self.list_view:setInnerContainer(true)
+    --     self.list_view:resetCurrentItems()
+    --     self.list_view:moveToArrowNewPosition()
+    -- end)
+
+    self:addGlobalEvent(StartowerEvent.BATTLE_RESULT,function()
+        -- if self.num == 1 then
+            self.num = 0
+            local config = Config.StarTowerData.data_tower_base[self.ctrl:getModel():getNowTowerId()]
+            if not config and self.ctrl:getModel().auto_fight ~= 1 then return end
+            -- self.list_view:setInnerContainer(true)
+            self.list_view:resetCurrentItems()
+            self.list_view:moveToArrowNewPosition()
+        -- end
+
+    end)
+
+
+    self:addGlobalEvent(StartowerEvent.Count_Change_Event,function()
+        self:updateCount()
+        local index = self.ctrl:getModel():getNowTowerId() or 0
+
+        local list = self.list_view:getActiveCellList()
+        for i,v in ipairs(list) do
+            if v.index == index then
+                if v:getData() then
+                    v:sweepCount(v:getData())
+                end
+                break
+            end
+        end
+    end)
+
+    -- 引导中不给滑动列表
+    self:addGlobalEvent(GuideEvent.Update_Guide_Status_Event, function ( in_guide )
+        if in_guide then
+            self.list_view:setClickEnabled(false)
+        else
+            self.list_view:setClickEnabled(true)
+        end
+    end)
+
+    --
+    if not self.video_data_event then 
+        self.video_data_event = GlobalEvent:getInstance():Bind(StartowerEvent.Video_Data_Event,function(data, tower)
+            if not data or not tower then return end
+            if not data.tower_replay_data or next(data.tower_replay_data) ==nil then 
+                message(TI18N("语言_c_4098"))
+                return
+            end
+            self.ctrl:openVideoWindow(true,data,tower)
+        end)
+    end
+end
+
+
+--自动挑战特权前往页面
+function StarTowerWindow:_onClickSpecialBtn( sender )
+	local autoChallenge_pri = RoleController:getInstance():getModel():checkPrivilegeStatus(6)
+	local open_status = {autoChallenge_pri}
+	local tips_str = ""
+	for i=1,1 do
+		local explain_config = Config.PrivilegeData.data_privilege_data[107]
+		if explain_config then
+			local status = open_status[i]
+			local str = explain_config.desc or ""
+			if status then
+				str = str .. "\n" .. TI18N("语言_c_1856") --不用处理
+			else
+				str = str .. TI18N("语言_c_4377") .."\n" .. string.format("<div href=xxx fontcolor=249003>%s</div>", TI18N("语言_c_1858")) --不用处理
+			end
+			if i == 1 then
+				tips_str = str
+			else
+				tips_str = tips_str .. "<div>\n\n\n</div>" .. str
+			end
+		end
+	end
+	-- local touch_pos = sender:getTouchBeganPosition()	
+    local touch_posx, touch_posy = self.checkbox_series:getPosition()
+    self.common_tips = TipsManager:getInstance():showCommonTips(tips_str, cc.p(touch_posx, touch_posy+220))
+    -- self.common_tips:setPosition(touch_pos.x, touch_pos.y+160)
+	self.common_tips.tips_label:addTouchLinkListener(function(type, value, sender, pos, is_click)
+		if value == "xxx" then
+			TipsManager:getInstance():hideTips()
+			self:_onClickGoToActivate()
+		end
+    end, { "click", "href" })
+end
+--前往特权商城页面
+function StarTowerWindow:_onClickGoToActivate(  )
+	VipController:getInstance():openVipMainWindow(true, VIPTABCONST.PRIVILEGE,1,true)
+end
+
+function StarTowerWindow:changeAutoFightState()
+    if self.ctrl:getModel().auto_fight == 1 then
+        -- self.checkbox_series:setSelected(true)
+        setChildUnEnabled(false, self.checkbox_series)
+        message(TI18N("语言_c_4615"))
+        self:setAutoTime(true)
+    else
+        -- self.checkbox_series:setSelected(false)
+        setChildUnEnabled(true, self.checkbox_series)
+        self:setAutoTime(false)
+    end
+end
+
+--设置倒计时
+function StarTowerWindow:setAutoTime(bl)
+    if tolua.isnull(self.check_time_txt) then return end
+    doStopAllActions(self.check_time_txt)
+    local auto_time = self.ctrl:getModel().auto_fight_time
+    if bl then
+        if auto_time > 0 or not bl then
+            -- self:setTimeFightString(auto_time)
+            self.check_time_txt:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+                auto_time = auto_time - 1
+                -- self:setTimeFightString(auto_time)
+                if auto_time <= 0 then
+                    doStopAllActions(self.check_time_txt)
+                end
+            end))))
+        else
+            -- self:setTimeFightString(auto_time)
+        end
+    else
+        self.check_time_txt:setString(TI18N("语言_c_4092"))
+    end
+end
+
+function StarTowerWindow:setTimeFightString(less_time)
+    self.check_time_txt:setString(string_format(TI18N("语言_c_4094"), less_time))
+end
+
+--奖励红点
+function StarTowerWindow:updataRewardRedPoint()
+    local data = self.ctrl:getModel():getRewardData()
+    local status = false
+    for i,v in pairs(data) do
+        if v.status == 1 then
+            status = true
+            break
+        end
+    end
+    addRedPointToNodeByStatus(self.award_btn, status)
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.startower, {bid = 1, status = status})
+end
+
+function StarTowerWindow:updateCount()
+    local count = self.ctrl:getModel():getTowerLessCount() or 0
+    local all_count = Config.StarTowerData.data_tower_const["free_times"].val or 0
+    local str = string.format("%s/%s",count,all_count)
+    self.buy_count:setString(str)
+
+    local have_buycount = self.ctrl:getModel():getBuyCount() or 0
+    local role_vo = RoleController:getInstance():getRoleVo()
+    local config = Config.StarTowerData.data_tower_vip[role_vo.vip_lev]
+    if config and config.buy_count then 
+        local count = config.buy_count - have_buycount
+        if count < 0 then
+            count = 0
+        end
+        local str = string.format(TI18N("<div outline=2,#000000>( %s</div><div fontcolor=#3df424 outline=2,#000000>%s</div><div outline=2,#000000> )</div>"),TI18N("语言_c_4809"), count)
+        self.buy_tips:setString(str)
+    end
+end
+
+function StarTowerWindow:openRootWnd()
+    -- 请求排行榜数据,前3
+    -- self.ctrl:requestStarTowerRank()
+    -- self:setRankShow()
+    if self.ctrl:getModel():isInitStarTowerData() then
+        if self.list_view then
+            local lev_id = self.ctrl:getModel():getNowTowerId()
+            self.list_view:reloadData(lev_id)
+        end
+        self:updateCount()
+        self:updataRewardRedPoint()
+    else
+        --请求塔数据
+        self.ctrl:sender11320()
+    end
+    --播放音效
+    delayOnce(function()
+        AudioManager:getInstance():playMusic(AudioManager.AUDIO_TYPE.SCENE, "s_012", true)
+    end,0.1)
+end
+
+--[[
+    @desc: 设置标签页面板数据内容
+    author:{author}
+    time:2018-05-03 21:57:09
+    return
+]]
+function StarTowerWindow:setPanelData()
+end
+
+function StarTowerWindow:updateTowerList(is_reload)
+    --最大数量
+    self.max_count = Config.StarTowerData.data_tower_base_length
+    if not self.list_view then
+        local scroll_view_size = cc.size(SCREEN_WIDTH,self.scroll_height)
+        local bottom_y = display.getBottom(self.mainContainer)
+        self.list_view = StarTowerList.new(self.container, cc.p(SCREEN_WIDTH/2, bottom_y), scroll_view_size)
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+        self.list_view:setInnerContainer()
+        -- self.list_view:updateBgList()
+
+        -- 引导中不给滑动列表
+        if GuideController:getInstance():isInGuide() then
+            self.list_view:setClickEnabled(false)
+        end
+    end
+    if is_reload and not self.is_init_list then
+        self.is_init_list = true 
+        local lev_id = self.ctrl:getModel():getNowTowerId()
+        self.list_view:reloadData(lev_id)
+    end
+end
+
+--创建cell 
+function StarTowerWindow:createNewCell()
+    local cell = StarTowerItem.new(1, true)
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function StarTowerWindow:numberOfCells()
+    return self.max_count or 0
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function StarTowerWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    cell:setData(index)
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function StarTowerWindow:onCellTouched(cell)
+    local index = cell.index
+    local cur_lev = self.ctrl:getModel():getNowTowerId() + 1
+    if index > cur_lev then
+        message(TI18N("语言_c_4095"))
+        return
+    end
+    local config = Config.StarTowerData.data_tower_base[index]
+    if config then
+        self.select_vo = config
+        self.select_item = cell
+        self.data = config
+        self:clickFun(config)
+    end
+end
+
+function StarTowerWindow:clickFun(vo)
+    if not vo then return end
+    self.ctrl:openStarTowerMainView(true,vo)
+end
+
+-- function StarTowerWindow:updateTop3Info(rank_list)
+--     if rank_list == nil or next(rank_list) == nil then return end
+--     for i, v in ipairs(rank_list) do
+--         if not self.top3_item_list[v.rank] then
+--             local item = self:createSingleRankItem(v.rank)
+--             self.rank_container:addChild(item)
+--             self.top3_item_list[v.rank] = item
+--         end
+--         local item = self.top3_item_list[v.rank]
+--         if item then
+--             item:setPosition(0,160 - (v.rank-1) * item:getContentSize().height)
+--             item.label:setString(v.name)
+--             item.value:setString(string.format(TI18N("语言_c_4711"),(v.tower or 0)))
+--         end
+--     end
+-- end
+
+function StarTowerWindow:createSingleRankItem(i)
+	local container = ccui.Layout:create()
+	container:setAnchorPoint(cc.p(0,1))
+	container:setContentSize(cc.size(180,40))
+	local sp = createSprite(PathTool.getResFrame("common","common_300"..i),30,40/2,container)
+	sp:setScale(0.5)
+	container.sp = sp
+	local label = createLabel(20,1,nil,60,18,"",container)
+	label:setAnchorPoint(cc.p(0,0.5))
+	label:setTextColor(cc.c4b(0x89,0xed,0xff,0xff))
+
+	local value = createLabel(20,1,nil,188,18,"",container)
+	value:setAnchorPoint(cc.p(0,0.5))
+	value:setTextColor(cc.c4b(0x89,0xed,0xff,0xff))
+	container.label = label
+    container.value = value
+	return  container
+end
+
+function StarTowerWindow:close_callback()
+    --关闭页面时，停止自动战斗
+    -- self.ctrl:getModel():setSkipFight(false)
+    self.ctrl:openMainView(false)
+    if self.list_view then 
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+    self.select_item = nil
+    if self.lock_icon then 
+        self.lock_icon:DeleteMe()
+        self.lock_icon = nil
+    end
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.battle_exit_event then
+        GlobalEvent:getInstance():UnBind(self.battle_exit_event)
+        self.battle_exit_event = nil
+    end
+    if self.battle_AUTO then
+        GlobalEvent:getInstance():UnBind(self.battle_AUTO)
+        self.battle_AUTO = nil
+    end
+    if self.video_data_event then
+        GlobalEvent:getInstance():UnBind(self.video_data_event)
+        self.video_data_event = nil
+    end
+    -- AudioManager:getInstance():playMusic(AudioManager.AUDIO_TYPE.SCENE, "s_002", true) -- 恢复主城背景音乐播放
+    doStopAllActions(self.check_time_txt)
+end

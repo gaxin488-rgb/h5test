@@ -1,0 +1,523 @@
+-- ******** 文件说明 ********
+-- @description: 签到战令界面
+-- @DateTime:    2021-5-6
+-- *******************************
+ActionSignOrderPanel = class("ActionSignOrderPanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local table_insert = table.insert
+local table_sort = table.sort
+function ActionSignOrderPanel:ctor(bid)
+    self.holiday_bid = bid
+    -- print("--------",bid)
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("planesafkorderaction", "planesafkorderaction"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("oncewarorder", "oncewarorder"), type = ResourcesType.plist }
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        self:loadResListCompleted()
+    end)
+end
+
+function ActionSignOrderPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionSignOrderPanel:register_event()
+    if not self.update_dram_data_event then
+        self.update_dram_data_event = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE, function(data)
+            if data and data.bid == self.holiday_bid then
+                -- print("签到相关数据")
+                -- printLuaTable(data)
+                self:setData(data)
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.order_btn, function()
+        ActionController:getInstance():openSignOrderBuyWindow(true, self.holiday_bid, self.holiday_info)
+    end,true, 1)
+
+    registerButtonEventListener(self.add_btn, function()
+        local data = {}
+        local baseConfig = Config.WonderlandSignData.data_constant[self.camp_id]
+        if not baseConfig then
+            return
+        end
+        local item_id = baseConfig.val[1][1]--={{3,500}}
+        local price = baseConfig.val[1][2]--={{3,500}}
+        local limit_num = tableLen(self.total_day)
+        data.limit_num = limit_num 
+        data.price = price
+        data.item_id  = item_id
+        data.other = {}--self.total_day
+        data.other.args_list = self.total_day
+        data.other.args_key = self.holiday_bid
+        controller:openSupplementarySignature(true,data)
+    end,true, 1)
+ 
+    registerButtonEventListener(self.btn_tips, function(param, sender, event_type)
+        local baseConfig = Config.WonderlandSignData.data_constant[self.camp_id]
+        if baseConfig then
+            local str = baseConfig.desc
+            TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition())
+        end
+    end,true, 1)
+end
+
+function ActionSignOrderPanel:setData(data)
+    if not data then return end
+    local tabvo = controller:getActionSubTabVo(self.holiday_bid)
+    if not tabvo then return end
+    self.camp_id = tabvo.camp_id
+    self.holiday_info = data
+    local base_config = Config.WonderlandSignData.data_constant
+    if not base_config then return end
+    local cfg = base_config[self.camp_id]
+    local tempId = cfg.key
+    local act_cfg = Config.WonderlandSignData.data_lev_reward_list[tempId]
+    if not act_cfg then return end
+    local copy_cfg = deepCopy(act_cfg)
+    self.reward_list = {}
+    for k, v in ipairs(copy_cfg) do
+        self.reward_list[v.day] = v
+    end
+    local temp_info = data.aim_list
+    local order_status = data.args[1].args_key
+    for k, v in ipairs(temp_info) do
+        local day = v.aim
+        if self.reward_list[day] then
+           self.reward_list[day].reward_status = v
+           self.reward_list[day].order_status = order_status
+           self.reward_list[day].finish = data.finish
+           self.reward_list[day].bid = self.holiday_bid
+           self.reward_list[day].args = data.args
+           self.reward_list[day].item_effect_list = data.item_effect_list
+           self.reward_list[day].remain_sec = data.remain_sec
+        end
+    end
+    
+    if self.comp_bar_bg and not tolua.isnull(self.comp_bar_bg) and self.comp_bar and not tolua.isnull(self.comp_bar) and
+        self.bar_layout and not tolua.isnull(self.bar_layout) then
+        local len = #self.reward_list or 1
+        self.comp_bar_bg:setContentSize(cc.size(139 * (len - 1), 27))
+        self.comp_bar:setContentSize(cc.size(139 * (len - 1), 15))
+        self.bar_layout:setPosition(cc.p(49, 139 * (len - 1) + 139 / 2))
+    end
+    --从小到大排序
+    local sort_func = SortTools.tableLowerSorter({"day"})
+    table_sort(self.reward_list, sort_func )
+    self.reward_goods_item:reloadData()
+    self.reward_num_item:reloadData()
+    local tempstr = TI18N("语言_c_5015") .. data.finish
+    self.day_txt:setString(tempstr)
+    self:setActTimeInfo()
+    if tolua.isnull(self.icon_img) or tolua.isnull(self.order_btn) then
+        return
+    end
+    if order_status ~= 0 then
+        setChildUnEnabled(false, self.icon_img)
+    else
+        setChildUnEnabled(true, self.icon_img)
+    end
+    if order_status ~= 0 then
+        self.order_btn:setVisible(false)
+    else
+        self.order_btn:setVisible(true)
+    end
+    self:updatePercent()
+
+    --关于补签相关
+    self:updateSupplementarySignature()
+end
+
+function ActionSignOrderPanel:updateSupplementarySignature()
+    if not self.holiday_info then return end
+    local list_info = self.holiday_info.aim_list
+    self.total_day = {}
+    for i, v in ipairs(list_info) do
+        local status = v.status
+        if status ~= 0 then --0表示不可补签
+            table.insert( self.total_day, v.aim)
+        end
+    end
+    self.iconbg:setVisible(false)
+    self.tips1:setVisible(false)
+    self.add_btn:setVisible(false)
+    if tableLen(self.total_day) > 0 then--表示可补签
+        self.iconbg:setVisible(true)
+        self.tips1:setVisible(true)
+        self.add_btn:setVisible(true)
+    end
+end
+
+function ActionSignOrderPanel:updatePercent()
+    if tolua.isnull(self.comp_bar) then
+        return
+    end
+    -- local progress_width = self.bar_layout:getContentSize().width
+
+    local totalNum = #self.reward_list - 1  or 1
+    local getNum = self.holiday_info.finish - 1 or 0
+    self.comp_bar:setPercent(getNum/totalNum * 100)
+end
+
+function ActionSignOrderPanel:setActTimeInfo()
+    doStopAllActions(self.act_time)
+    local data = self.holiday_info
+    controller:getModel():setCountDownTime(self.act_time,data.remain_sec)
+    local w1 = self.time_bg:getChildByName("time_txt"):getContentSize().width
+    local w2 = self.act_time:getContentSize().width
+    local twidth = w1 + w2 + 35
+    self.time_bg:setContentSize(cc.size(twidth,30))
+end
+
+function ActionSignOrderPanel:createProgress()
+    if self.comp_bar == nil then
+        local size = cc.size(315, 27)
+        local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+        local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+        if self.reward_goods_item and not tolua.isnull(self.reward_goods_item) and self.reward_goods_item.container and
+            not tolua.isnull(self.reward_goods_item.container) then
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            -- bar_layout:setPositionX(7)
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.reward_goods_item.container:addChild(bar_layout, 999)
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar = createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 0, 1)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+        end
+    end
+end
+
+function ActionSignOrderPanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_sign_order_gift_panel"))
+    self.root_wnd:setPosition(-40, -82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.icon_img = self.main_container:getChildByName("icon_img")
+    self.btn_tips = self.main_container:getChildByName("btn_tips") -- 帮助说明
+    self.Image_7 = self.main_container:getChildByName("Image_7")
+    self.Image_7:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    local time_tips = self.time_bg:getChildByName("time_txt")
+    time_tips:setString(TI18N("语言_c_748"))
+    self.act_time = self.time_bg:getChildByName("act_time") -- 活动时间
+    local time_pos_x = time_tips:getPositionX() + time_tips:getContentSize().width + 5
+    self.act_time:setPositionX(time_pos_x)
+    self.day_bg = self.main_container:getChildByName("day_bg")
+    self.day_txt = self.day_bg:getChildByName("day_txt")
+    self.day_txt:setChangeScaleOffWidth(-50)
+    self.icon_img = self.main_container:getChildByName("icon_img")
+    self.order_btn = self.main_container:getChildByName("btn_open_lock")
+    self.order_btn:getChildByName("name"):setString(TI18N("语言_c_2680"))
+    self.order_btn:setVisible(false)
+    self.goods_item = self.main_container:getChildByName("goods_list")
+
+    self.iconbg = self.main_container:getChildByName("iconbg")
+    self.tips1 =  self.main_container:getChildByName("tips1")
+    self.tips1:setString(TI18N("语言_c_5145"))
+    local tips_width = self.tips1:getContentSize().width + 30
+    self.iconbg:setContentSize(cc.size(tips_width,32))
+    self.add_btn = self.main_container:getChildByName("add_btn")
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 720, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+        checkovercallback = handler(self, self.updateSlideShowByVertical)
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    ---进度条相关
+    local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 100, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.reward_num_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size2, setting)
+    self.reward_num_item:setClickEnabled(false)
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    self:createProgress()
+    controller:cs16603(self.holiday_bid)
+end
+
+-- 奖励列表
+function ActionSignOrderPanel:createTaskCell()
+    local cell = ActionSignOrderItem.new()
+    return cell
+end
+
+function ActionSignOrderPanel:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function ActionSignOrderPanel:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+-- 进度条
+-- 功勋数数列表
+function ActionSignOrderPanel:createTaskCell2()
+    local cell = ActionSignRewardItem.new()
+    return cell
+end
+
+function ActionSignOrderPanel:numberOfTaskCells2()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function ActionSignOrderPanel:updateTaskCellByIndex2(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data)
+end
+
+-- 滑动的时候处理显示
+function ActionSignOrderPanel:updateSlideShowByVertical()
+    local container_y = self.reward_goods_item:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+
+function ActionSignOrderPanel:DeleteMe()
+    doStopAllActions(self.act_time)
+    if self.update_dram_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event)
+        self.update_dram_data_event = nil
+    end
+    if self.reward_goods_item then
+		self.reward_goods_item:DeleteMe()
+		self.reward_goods_item = nil
+	end
+    if self.reward_num_item then
+		self.reward_num_item:DeleteMe()
+		self.reward_num_item = nil
+	end
+end
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description: 签到战令item
+-- Create: 2018-06-28
+-- --------------------------------------------------------------------
+ActionSignOrderItem = class("ActionSignOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionSignOrderItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionSignOrderItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_sign_order_item"))
+    self:addChild(self.root_wnd)
+    self:setAnchorPoint(0, 0)
+    self:setContentSize(cc.size(680, 120))
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setTouchEnabled(true)
+    self.main_container:setSwallowTouches(false)
+
+    self.free_goods_item = self.main_container:getChildByName("free_goods_item")
+    self.free_goods_item:setScrollBarEnabled(false)
+    self.goods_item = self.main_container:getChildByName("goods_item")
+    self.goods_item:setScrollBarEnabled(false)
+    self.finish_img = self.main_container:getChildByName("finish_img")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.btn_get_label = self.btn_get:getChildByName("name")
+end
+
+function ActionSignOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local flag = self.data.order_status -- 战令的购买状态
+        if flag ~= 0 then -- 战令已解锁
+            if self.free_status == 1 or self.pay_status == 1 then
+                ActionController:getInstance():cs16604(self.data.bid, self.data.day)
+            end
+        else
+            if self.free_status == 1 then
+                ActionController:getInstance():cs16604(self.data.bid, self.data.day)
+            elseif self.free_status == 2 then
+                ActionController:getInstance():openSignOrderBuyWindow(true,self.data.bid,self.data)
+            end
+        end
+    end, true)
+end
+
+function ActionSignOrderItem:setData(data)
+    self.data = data
+    local free_status = self.data.reward_status.item_list[1].bid
+    local free_list  = self.data.reward or {}
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.is_tip = true
+    setting.is_get_status = free_status == 2
+    setting.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.item_list = commonShowSingleRowItemList(self.free_goods_item, self.item_list, free_list, setting)
+    self.free_status = free_status
+
+    local is_locak_status = self.data.order_status ~= 0
+    local pay_status = self.data.reward_status.item_list[1].num
+    local data_list = data.rmb_reward or {}
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.lock = not is_locak_status
+    setting.is_tip = true
+    setting.is_get_status = pay_status == 2
+    setting.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.pay_item_list = commonShowSingleRowItemList(self.goods_item, self.pay_item_list, data_list, setting)
+    self.pay_status = pay_status
+
+    if not tolua.isnull(self.btn_get) then
+        self.btn_get:setTouchEnabled(true)
+        setChildUnEnabled(false,self.btn_get)
+        addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+        if is_locak_status then --战令已经解锁
+            if self.free_status == 1 or self.pay_status == 1 then -- 可领取
+                self.btn_get_label:enableOutline(Config.ColorData.data_color4[264], 2)
+                self.btn_get_label:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            elseif self.free_status == 2 and self.pay_status == 2 then--已领取
+                self.btn_get:setVisible(false)
+                self.finish_img:setVisible(true)
+            elseif self.free_status == 0 or self.pay_status == 0 then--前往过关
+                self.btn_get_label:setString(TI18N("语言_c_109"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                self.btn_get:setTouchEnabled(false)
+                setChildUnEnabled(true, self.btn_get)
+            end
+        else --战令未解锁时
+            if self.free_status == 1 then --可领取
+                self.btn_get_label:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 5, 5)
+            elseif self.free_status == 2 then --前往激活
+                self.btn_get_label:setString(TI18N("语言_c_2684"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+            elseif self.free_status == 0 then 
+                self.btn_get_label:setString(TI18N("语言_c_109"))
+                self.btn_get:setVisible(true)
+                self.btn_get:setTouchEnabled(false)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(true,self.btn_get)
+            end
+        end
+    end
+end
+
+function ActionSignOrderItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+-- 功勋子项
+ActionSignRewardItem = class("ActionSignRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionSignRewardItem:ctor()
+    self.size = cc.size(100, 139)
+    self:configUI()
+    self:register_event()
+end
+
+function ActionSignRewardItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    self.select_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_2"),
+                         self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_1"),
+                          self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img:setVisible(false)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+                      self.size.width / 2, self.size.height / 5 + 11, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+                       self.size.height / 5 + 11, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function ActionSignRewardItem:register_event()
+end
+
+function ActionSignRewardItem:setData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    self.num_txt:setString(self.data.day)
+    local free_status = self.data.reward_status.item_list[1].bid
+    if free_status == 1 or free_status == 2 then
+        self.select_img:setVisible(true)
+    else
+        self.select_img:setVisible(false)
+    end
+end
+
+function ActionSignRewardItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

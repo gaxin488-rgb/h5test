@@ -1,0 +1,115 @@
+--******** 文件说明 ********
+-- 
+-- @description: 编年史图鉴
+-- @DateTime:    2019-04-22 16:56:26
+-- *******************************
+
+TreasureBagWindow = TreasureBagWindow or BaseClass(BaseView)
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+local back_controller = BackpackController:getInstance()
+local back_model = back_controller:getModel()
+
+function TreasureBagWindow:__init()
+    self.win_type = WinType.Big      
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG    
+    self.layout_name = "treasure/treasure_bag_window"
+	self.treasure_list = {}
+    self.col_size = 5
+end
+
+function TreasureBagWindow:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.container = self.root_wnd:getChildByName("main_container")
+    self.title_bg = self.container:getChildByName("title_bg")
+    self.title_label = self.container:getChildByName("title_label")
+    self.title_label:setString(TI18N("语言_c_6062"))
+    self.title_bg:setContentSize(cc.size(math.max(self.title_label:getContentSize().width+120,332), 63))
+    self.goods = self.container:getChildByName("goods")
+    self.tip_label = self.container:getChildByName("tip_label")
+    self.tip_label:setString(transformTextToShort(TI18N("语言_c_6110"),40))
+    addEvt2showAllTextTips(self.tip_label,TI18N("语言_c_6110"),40)
+end
+function TreasureBagWindow:register_event()
+	registerButtonEventListener(self.background, function()
+        controller:openTreasureBagWindow(false)
+    end,false, 2)
+    if self.update_sell_orange_event == nil then
+        self.update_sell_orange_event = GlobalEvent:getInstance():Bind(BackpackEvent.Sell_Goods_Success, function() 
+            self:setData()
+        end)
+    end
+end
+function TreasureBagWindow:openRootWnd()
+    local scroll_view_size = cc.size(619,472)
+    local setting = {
+        item_class = TreasureItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 5,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 5,                   -- y方向的间隔
+        item_width = 119,               -- 单元的尺寸width
+        item_height = 119,              -- 单元的尺寸height
+        row = 5,                        -- 行数，作用于水平滚动类型
+        col = 5,                         -- 列数，作用于垂直滚动类型
+        once_num = 5,
+        -- need_dynamic = true,
+        list = {is_book = false,is_btn = false,is_bag = true}
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.goods, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self:setData()
+end
+function TreasureBagWindow:setData()
+    self.treasure_list = {}
+    local data = back_model:getAllBackPackArray(BackPackConst.item_tab_type.TREASURE)
+    for k, v in pairs(data) do
+        local list = {
+            id = v.config.id,
+            num = v.quantity
+        }
+        table.insert(self.treasure_list,list)
+    end
+    table.sort(self.treasure_list,function(a,b)
+        return a.id < b.id
+    end)
+    self.min_size = tableLen(self.treasure_list)
+    --背包最小显示数量 写死20
+    if self.min_size <= 20 then
+        self.min_size = 20
+    end
+    local min_size = self.min_size
+    local item_sum = #self.treasure_list
+    if item_sum < min_size then
+        --补全 剩下 
+        for i=1,min_size-item_sum do
+            table.insert(self.treasure_list, {})
+        end
+    else
+        local lacking = 0
+        if item_sum % self.col_size ~= 0 then
+            lacking = self.col_size - (item_sum % self.col_size)
+        end
+        if lacking ~= 0 then
+            for i=1,lacking do --补全不足一行的
+                table.insert(self.treasure_list, {})
+            end
+        end
+    end
+    self.item_scrollview:setData(self.treasure_list)
+    self.item_scrollview:addEndCallBack(function (  )
+        local list = self.item_scrollview:getItemList()
+        for k,v in pairs(list) do
+            local data = {is_book = false,is_btn = false,is_bag = true}
+            v:setTipsData(data)
+        end
+    end)
+end
+function TreasureBagWindow:close_callback()
+    if self.update_sell_orange_event then
+        GlobalEvent:getInstance():UnBind(self.update_sell_orange_event)
+        self.update_sell_orange_event = nil
+    end
+    controller:openTreasureBagWindow(false)
+end

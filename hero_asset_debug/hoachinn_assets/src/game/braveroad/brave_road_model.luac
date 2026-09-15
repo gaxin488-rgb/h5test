@@ -1,0 +1,499 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020.05
+-- --------------------------------------------------------------------
+local _table_insert = table.insert
+
+BraveRoadModel = BraveRoadModel or BaseClass()
+
+function BraveRoadModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+    self.braveroad_data = {
+        count = 0 --"剩余挑战次数
+        ,diff = 0 --"本月难度"
+        ,star = 0 --"本月星数"
+        ,first_month = 0 --"是否首月 1是 0 否" --首月关卡和boss配置读取不同
+        ,chapter_info = {}
+    }
+    self.boss_is_violent_list = {}
+    self.braveRoad_login_red = false
+end
+
+function BraveRoadModel:config()
+    --解析配置  LimitTrainingData
+    --关卡配置
+    self.ChapterConfig = self.ChapterConfig or {}
+    for k, v in ipairs(Config.LimitTrainingData.data_dungeon) do
+        if not self.ChapterConfig[v.cid] then
+            self.ChapterConfig[v.cid] = {}
+        end
+        if not self.ChapterConfig[v.cid][v.pos] then
+            self.ChapterConfig[v.cid][v.pos] = {}
+        end
+        table.insert(self.ChapterConfig[v.cid][v.pos], v)
+    end
+end
+
+function BraveRoadModel:getDungeonConfigByCid(cid)
+    return self.ChapterConfig[cid] or {}
+end
+
+function BraveRoadModel:getTipsConfigByBid(bid)
+    if not self.tipsConfig then
+        self.tipsConfig = {} -- bid --- config
+        for k, v in pairs(Config.LimitTrainingData.data_tips) do
+            for p, q in pairs(v) do
+                self.tipsConfig[q.bid] = q
+            end
+        end
+    end
+    return self.tipsConfig[bid]
+end
+--获取词条对应的页签类型
+function BraveRoadModel:getTipsTabTypeByBid(boss_id, bid)
+    local config= self:getTipsConfigByBid(bid)
+    local tip_id = config.tip_id
+    local boss_cfg = Config.LimitTrainingData.data_dungeon_boss[boss_id]
+    for i, v in ipairs(boss_cfg.tips_lib) do
+        for p, q in ipairs(v) do
+            if q == tip_id then
+                return i
+            end
+        end
+    end
+    return 1
+end
+
+function BraveRoadModel:initData(data)
+    -- self.braveroad_data = {
+    --     count = 0 --"剩余挑战次数
+    --     ,diff = 1 --"本月难度"
+    --     ,star = 1 --"本月星数"
+    --     ,first_month --"是否首月 1是 0 否" --首月关卡和boss配置读取不同
+    --     ,chapter_info = {{ --"章节信息"
+    --         id = 0 --"id"
+    --         ,ids = {1, 2} --已通关副本
+    --         ,boss_finish = 0 --"是否通关(0:未通 1:通关)"
+    --         ,boss_star = 1 -- "星数"
+    --         ,tips = {1, 1} --词缀
+    --         ,last_dungeon = 1 --最新进度
+    --     },}
+    -- }
+    self.braveroad_data = data
+    for key, value in pairs(data.chapter_info) do
+        if #value.tips ~= 0 then
+            self:setBossIsViolent(key,true)
+        end
+    end
+end
+--判断是否是开通首月
+function BraveRoadModel:checkOpenFirstMonth()
+    if self.braveroad_data and self.braveroad_data.first_month and self.braveroad_data.first_month == 1 then
+        return true
+    end
+    return false
+end
+
+--记录当前目标位置
+function BraveRoadModel:getLeadDun(cid, need_status)
+    local chapter_info = self.braveroad_data.chapter_info[cid]
+    if not chapter_info then
+        return 0 
+    end
+    local last_dungeon = chapter_info.last_dungeon or 0
+    -- if need_status and last_dungeon > 0 then
+    --     --判断当前的路公关之后有没有选择魂器  没有则退一步
+    --     local config = Config.LimitTrainingData.data_dungeon[chapter_info.last_dungeon]
+    --     if config.stage == 4 then
+    --         local pos = config.pos
+    --         local status =  self:checkRoadHaveHorcrux(cid, pos)
+    --         if not status then
+    --             last_dungeon = last_dungeon - 1
+    --         end
+    --     end
+    -- end
+    return last_dungeon
+end
+
+--本月星数
+function BraveRoadModel:getMonthStar()
+    return self.braveroad_data.star or 0
+end
+
+--本月难度
+function BraveRoadModel:getMonthDiff()
+    local diff = 0
+    if self:checkOpenFirstMonth() then
+        diff = 0 
+    else
+        diff = self.braveroad_data.diff
+    end
+    return diff
+end
+--本月难度系数
+function BraveRoadModel:getMonthDiffVal()
+    local dif_value = 1
+    local diff_cfg = Config.LimitTrainingData.data_diff[self:getMonthDiff()]
+	if diff_cfg then
+		dif_value = diff_cfg.diff/1000
+    end
+    return dif_value
+end
+--获取当前层boss战力  是否是首月、难度系数
+function BraveRoadModel:getCurBossPower(cid)
+    local config = Config.LimitTrainingData.data_dungeon_boss[cid]
+    local unit_id = config.unit_id
+    local power_count = config.power
+    if self:checkOpenFirstMonth() then --首月无难度系数加成
+        power_count = config.power2
+        unit_id = config.unit_id2
+    else
+        --难度系数改变基础值
+        local diff_cfg = Config.LimitTrainingData.data_diff[self:getMonthDiff()]
+        local entry_data = self:getCurCidTips(cid)
+        if diff_cfg and next(entry_data) ~= nil then
+            power_count = diff_cfg["power"..cid]
+            unit_id = diff_cfg["boss"..cid]
+        end
+    end
+    --词条 加成
+    local entry_data = self:getCurCidTips(cid)
+    for i, v in ipairs(entry_data) do
+        local config = self:getTipsConfigByBid(v.tips_id)
+        power_count = power_count + math.floor(config.power*power_count/1000)
+    end
+    return power_count, unit_id
+end
+
+function BraveRoadModel:getLastCount()
+    return self.braveroad_data.count or 0
+end
+
+function BraveRoadModel:getBraveRoadData()
+    return self.braveroad_data
+end
+
+--挑战胜利 刷新挑战次数
+function BraveRoadModel:updateLastCount()
+    self.braveroad_data.count = self.braveroad_data.count - 1
+end
+
+function BraveRoadModel:updateChapterData(data)
+    self.braveroad_data.chapter_info[data.id] = self.braveroad_data.chapter_info[data.id] or {}
+    self.braveroad_data.chapter_info[data.id] = data
+end
+
+function BraveRoadModel:getCurCid()
+    local cur_cid = 1
+    for i, v in ipairs(self.braveroad_data.chapter_info or {}) do
+        if v.boss_finish == 1 then
+            cur_cid = i + 1
+        end
+    end
+    local max = Config.LimitTrainingData.data_dungeon_boss_length   
+    cur_cid = math.min(cur_cid, max)
+    if not self.braveroad_data.chapter_info[cur_cid] then
+        self.braveroad_data.chapter_info[cur_cid] = {
+            id = cur_cid
+            ,ids = {}
+            ,boss_finish = 0
+            ,boss_star = 0
+            ,tips = {}
+            ,ways = {}
+        }
+    end
+    return cur_cid
+end
+
+function BraveRoadModel:getTargetCid()
+    if self.cur_cid then
+        return self.cur_cid
+    end
+    return self:getCurCid()
+end
+
+function BraveRoadModel:checkCidLimit(cid)
+    local cfg = Config.LimitTrainingData.data_const["unlock_lev"]
+    local limit_max = cfg.val
+    cid = math.min(cid, limit_max)
+    return cid
+end
+
+function BraveRoadModel:setTargetCid(cid)
+    self.cur_cid = cid
+end
+
+--检查boss是否已打过 （首通奖励）
+function BraveRoadModel:checkBossPass(cid)
+    local info = self:getDunDataById(cid)
+    return info.boss_finish == 1
+end
+
+--词条
+function BraveRoadModel:getCurCidTips(cid)
+    local chapter_info = self.braveroad_data.chapter_info[cid]
+    if not chapter_info then
+        return {}
+    end
+    local tips = chapter_info.tips
+    return tips or {}
+end
+
+function BraveRoadModel:setCurCidTips(cid, tips)
+    local chapter_info = self.braveroad_data.chapter_info[cid] or {}
+    if not self:getBossIsViolent(cid) then
+        self:setBossIsViolent(cid,#tips ~= 0)
+    end
+    chapter_info.tips = tips
+end
+function BraveRoadModel:setBossIsViolent(cid,status)
+    self.boss_is_violent_list[cid] = status
+end
+function BraveRoadModel:getBossIsViolent(cid)
+    return self.boss_is_violent_list[cid] or false
+end
+function BraveRoadModel:getCurCidTipsAllStar(cid)
+    local tips = self:getCurCidTips(cid)
+    local star_count = 0
+    for i, v in ipairs(tips) do
+        local config = self:getTipsConfigByBid(v.tips_id)
+        star_count = star_count + config.star
+    end
+    return star_count
+end
+
+-- 获取某一章节 某一关卡 的通关状态 HeavenConst.Chapter_Pass_Status
+function BraveRoadModel:getDunPassStatus(cid, dun_id)
+    local chapter_info = self.braveroad_data.chapter_info[cid]
+    if not chapter_info then
+        return false
+    end
+    for i, v in ipairs(chapter_info.ids) do
+        if v.id == dun_id then
+            return true
+        end
+    end
+    return false
+end
+
+function BraveRoadModel:checkTargetRoadPass(cid, pos)
+    local chapter_info = self.braveroad_data.chapter_info[cid]
+    if not chapter_info then
+        return false
+    end
+    local count = 0
+    for k, v in pairs(chapter_info.ids) do
+        local config = Config.LimitTrainingData.data_dungeon[v.id]
+        if config.pos == pos then
+            count = count + 1
+        end
+        if count >= 4 then
+            break
+        end
+    end
+    return count >= 4
+end
+
+--获取对应路的通过信息
+function BraveRoadModel:getTargetRoadPass(cid, pos)
+    local chapter_info = self.braveroad_data.chapter_info[cid]
+    if not chapter_info then
+        return {}
+    end
+    local road_ids = {}
+    for k, v in pairs(chapter_info.ids) do
+        local config = Config.LimitTrainingData.data_dungeon[v.id]
+        if config.pos == pos then
+            road_ids[#road_ids + 1] = v
+        end
+    end
+    return road_ids
+end
+ 
+--检查卡位的激活
+function BraveRoadModel:checkDunActivity(cid, dun_id, dun_type)
+    if dun_type == BraveRoadConst.Dun_Type.Boss then
+        -- --策划需求 写死第6层的boss不能打
+        -- if cid == 6 then
+        --     return false, TI18N("语言_c_4939")
+        -- end
+        local pass = self:checkTargetRoadPass(cid, 0) or self:checkTargetRoadPass(cid, 1) or self:checkTargetRoadPass(cid, 2)
+        if not pass then
+            return false, TI18N("语言_c_3978")
+        end
+        --如果没有选择魂器 提示选择魂器
+        if self:checkRoadHaveHorcrux(cid, 0) or self:checkRoadHaveHorcrux(cid, 1) or self:checkRoadHaveHorcrux(cid, 2) then
+        else
+            if self:checkTargetRoadPass(cid, 0) and not self:checkRoadHaveHorcrux(cid, 0) then
+                BraveRoadController:getInstance():sender13104(cid, 0)
+            elseif self:checkTargetRoadPass(cid, 1) and not self:checkRoadHaveHorcrux(cid, 1) then
+                BraveRoadController:getInstance():sender13104(cid, 1)
+            elseif self:checkTargetRoadPass(cid, 2) and not self:checkRoadHaveHorcrux(cid, 2) then
+                BraveRoadController:getInstance():sender13104(cid, 2)
+            end
+            return false, TI18N("语言_c_3978")
+        end
+    elseif dun_type == BraveRoadConst.Dun_Type.Mobs then
+        local config = Config.LimitTrainingData.data_dungeon[dun_id]
+        local road_ids = self:getTargetRoadPass(cid, config.pos)
+        if config.stage > 1 then
+            local have = false
+            for i, v in ipairs(road_ids) do
+                local p_config = Config.LimitTrainingData.data_dungeon[v.id]
+                if p_config.stage == (config.stage - 1) then
+                    have = true
+                    break
+                end
+            end
+            if not have then
+                return false, TI18N("语言_c_3978")
+            end
+        end
+    else
+        --先判断
+        local list = {}
+        for i=1,3 do
+            if self:checkTargetRoadPass(cid, i - 1) and not self:checkRoadHaveHorcrux(cid, i - 1)  then --此路通关并且没有选择魂器
+                list[#list + 1] = i - 1
+            end
+        end
+        return #list > 0, list
+    end
+    return true
+end
+
+-- 根据章节id获取章节数据 cid--层数
+function BraveRoadModel:getDunDataById( cid )
+	for _,dun_vo in pairs(self.braveroad_data.chapter_info) do
+		if dun_vo.id == cid then
+			return dun_vo
+		end
+    end
+    return {}
+end
+
+-- 魂器背包
+function BraveRoadModel:setHorcruxBag(horcruxes_bag)
+    self.horcruxes_bag = horcruxes_bag or {}
+end
+
+function BraveRoadModel:getHorcruxBag()
+    return self.horcruxes_bag
+end
+
+function BraveRoadModel:checkRoadHaveHorcrux(cid, pos)
+    local status = false
+    if not self.horcruxes_bag then
+        return false
+    end
+    local horcruxes = self:getRoadHorcrux(cid) or {}
+    for k, v in pairs(horcruxes.horcruxes_list or {}) do
+        if pos == v.way then
+            status = true
+            break
+        end
+    end
+    return status
+end
+
+function BraveRoadModel:getRoadHorcrux(cid)
+    if not self.horcruxes_bag then
+        return {}
+    end
+    for i, v in ipairs(self.horcruxes_bag) do
+        if v.id == cid then
+            return v or {} 
+        end
+    end
+    return {}
+end
+
+function BraveRoadModel:getMaxCidAndDunId()
+    local cid = self:getCurCid()
+    local info = self:getDunDataById(cid)
+    local dun_id = 1
+    for i, v in ipairs(info.ids or {}) do
+        local config = Config.LimitTrainingData.data_dungeon[v.id]
+        dun_id = math.max(dun_id, config.stage)
+    end
+    return cid, dun_id
+end
+
+-- user to battle  --boss
+function BraveRoadModel:saveBattleInfo(data)
+    --打boss时使用
+    self.battle_boss_data = data
+end
+
+function BraveRoadModel:getBattleInfo()
+    return self.battle_boss_data
+end
+
+function BraveRoadModel:cleanBattleInfo()
+    --打boss时使用
+    self.battle_boss_data = nil
+end
+
+-- 设置形象id
+function BraveRoadModel:setPlanesRoleLookId( look_id )
+    self.brave_look_id = look_id
+end
+
+function BraveRoadModel:getPlanesRoleLookId(  )
+    return self.brave_look_id
+end
+
+function BraveRoadModel:checkIsResertTime()
+    --勇者之路单独判断
+    -- 每月1号0点重置 0点前30分钟与后10分钟关闭
+    local status = true
+    local nowtime = GameNet:getInstance():getTime()
+    local timezone = InviteCodeController:getInstance():getModel():getServerTimeZone() -- 服务器时区
+    local e_dZoneDiff = (timezone - TimeTool.getTimeZone())*3600
+    local time = nowtime + e_dZoneDiff
+    local year = tonumber(os.date("%Y",time))
+    local mon= tonumber(os.date("%m",time))
+    local cur_day= tonumber(os.date("%d",time))
+    local next_day= tonumber(os.date("%d",time + 24*3600))
+    if cur_day == 1 then
+        local last = os.time({year=year, month=mon, day=cur_day, hour=0, min=10, sec=0, isdst=false}) --1号前十分钟
+        if time <= last then
+            status = false
+        end
+    elseif next_day == 1 then
+        local last = os.time({year=year, month=mon, day=cur_day, hour=23, min=30, sec=0, isdst=false})--本月最后一天后30分钟
+        if time >= last then
+            status = false
+        end
+    end
+    return status
+end
+
+function BraveRoadModel:getRecommendLevel()
+    local role_vo = RoleController:getInstance():getRoleVo() 
+	local self_power = role_vo and role_vo.power or 0
+    local selfLevel = 0
+    local cfg = Config.LimitTrainingData.data_choose_diff
+    for key, value in pairs(cfg) do
+        if self_power >= value.power_l and self_power <= value.power_h then
+            selfLevel = value.id
+            return selfLevel
+        end
+    end
+    return selfLevel
+end
+
+function BraveRoadModel:setBraveRoadLoginRed(bl)
+    self.braveRoad_login_red = bl
+
+    GlobalEvent:getInstance():Fire(BraveRoadEvent.Update_Brave_Road_Chapter)
+end
+
+function BraveRoadModel:__delete()
+end

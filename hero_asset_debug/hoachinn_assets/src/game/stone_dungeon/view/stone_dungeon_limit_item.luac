@@ -1,0 +1,358 @@
+--[[
+宝石副本Item项
+--]]
+StoneDungeonLimitItem = class("StoneDungeonLimitItem", function()
+	return ccui.Widget:create()
+end)
+
+local scale = 0.8
+local controller = Stone_dungeonController:getInstance()
+local model = controller:getModel()
+local role_controller = RoleController:getInstance()
+local string_format = string.format
+local data_buy = Config.DungeonStoneData.data_buy
+function StoneDungeonLimitItem:ctor()
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.item_list = {}
+    self.hero_data = {}
+    self.LimitTimeStatus = model:checkLimitTimeStatus()
+	self:configUI()
+    self:registerEvent()
+end
+
+function StoneDungeonLimitItem:configUI()
+	self._rootWnd = createCSBNote(PathTool.getTargetCSB("stonedungeon/stone_dungeon_limit_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self._rootWnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(654,170))
+	
+	self.container = self._rootWnd:getChildByName("root")
+	self._itemScrollview = self.container:getChildByName("item_scrollview")
+	self._itemScrollview:setScrollBarEnabled(false)
+    self._itemScrollview:setSwallowTouches(false)
+
+    self.diff_lev = self.container:getChildByName("diff_lev")
+    self.diff_text = self.diff_lev:getChildByName("Text_1")
+    self.top_panel = self.container:getChildByName("top_panel")
+    self.line = self.top_panel:getChildByName("bottom_bg")
+    self.linWid=self.line:getContentSize().width 
+    self.orginx=self.top_panel:getPositionX()
+    self.jian = self.container:getChildByName("Sprite_1")
+    self.jian:setVisible(false)
+    self.jian:getChildByName("Text_2"):setString(TI18N("语言_c_4888"))
+
+	self.btnClear = self.container:getChildByName("btnClear")
+    self.textClear = createRichLabel(24, 1, cc.p(0.5, 0.5), cc.p(self.btnClear:getContentSize().width*0.5, self.btnClear:getContentSize().height*0.5), -10, nil, 128)
+    self.btnClear:addChild(self.textClear)
+    self.btnClear:setVisible(false)
+    self.textClear:setString(TI18N("语言_c_649"))
+
+	self.btnChange = self.container:getChildByName("btnChange")
+    self.textChange = createRichLabel(24, 1, cc.p(0.5, 0.5), cc.p(self.btnChange:getContentSize().width*0.5, self.btnChange:getContentSize().height*0.5), -10, nil, 128)
+    self.btnChange:addChild(self.textChange)
+    self.btnChange:setVisible(false)
+    self.textChange:setString(TI18N("语言_c_650"))
+
+	self.textNumber = self.container:getChildByName("textNumber")
+    self.textNumber:setChangeScaleOffWidth(self.container:getContentSize().width-220)
+    setTextSpacing(self.textNumber)
+	self.textNumber:setString("")
+end
+
+function StoneDungeonLimitItem:setExtendData(tab)
+    self.expend = tab.expend
+    self.free_count = tab.count
+    self.title_pos = tab.title_pos
+    self.tab_id = tab.id
+end
+function StoneDungeonLimitItem:setData(data)
+    self:setChangeData(data)
+    self:CreateDunBtn()
+    self:updateDunBtn()
+end
+
+function StoneDungeonLimitItem:setChangeData(data)
+    self.dungeonData = data
+    if data.title_name ~= "" then
+        self.diff_text:setString(data.title_name)
+    else
+        self.diff_text:setString("")
+    end
+    if self.title_pos == data.difficulty then
+        self.jian:setVisible(true)
+    else
+        self.jian:setVisible(false)
+    end
+    
+    self.btnChange:setVisible(false)
+    self.btnClear:setVisible(false)
+
+    self.diff_text:setColor(Config.ColorData.data_color4[253+data.difficulty])
+    -- self.textNumber:setString(string_format(TI18N("语言_c_651"), data.power or 0))
+    local num = 0
+    local have_nun = 0
+    for k,v in pairs(self.dungeonData.limit) do
+        if v[1] == "annals" then
+            num = v[3]
+            have_nun = TreasureController:getInstance():getModel():getHaveNumByQuality(v[2]) or 0
+        end
+    end
+    self.textNumber:setString(string_format(TI18N("语言_c_6729"), num))
+    self.textNumber:setVisible(true)
+    local is_first = 1
+    local clearance = model:getPassClearanceID(data.id)
+    setChildUnEnabled(false, self.btnChange)
+
+    if clearance and clearance.status == 1 then --已经通关的
+        if self.role_vo.max_power >= data.power and have_nun >= num then
+            self.textNumber:setVisible(false)
+            self.btnClear:setVisible(true)
+            if self.free_count == 0 then
+                self.textClear:setString(string_format(TI18N("语言_c_652"), PathTool.getItemRes(15), self.expend))
+            else
+                self.textClear:setString(TI18N("语言_c_649"))
+            end
+        else
+            self.btnClear:setVisible(false)
+            self.btnChange:setVisible(true)
+            self.textChange:setString(TI18N("语言_dun_st_01_11"))
+            -- setChildUnEnabled(true, self.btnChange)
+        end
+        is_first = nil
+    else
+        self.btnClear:setVisible(false)
+        if self.role_vo.max_power >= data.power and have_nun >= num then
+            self.textNumber:setVisible(false)
+            self.btnChange:setVisible(true)
+            local status = false
+            if self.role_vo.lev < data.lev_limit then
+                local str = string_format(TI18N("语言_c_654"),data.lev_limit)
+                self.textChange:setString(str)
+                status = true
+            else
+                if self.free_count == 0 then
+                    self.textChange:setString(string_format(TI18N("语言_c_655"), PathTool.getItemRes(15), self.expend))
+                else
+                    self.textChange:setString(TI18N("语言_c_650"))
+                end
+            end
+            setChildUnEnabled(status, self.btnChange)
+        else
+            self.btnChange:setVisible(true)
+            local str = TI18N("语言_dun_st_01_11")
+            if self.role_vo.lev < data.lev_limit then
+                str = string_format(TI18N("语言_c_654"),data.lev_limit)
+            end
+            self.textChange:setString(str)
+            -- setChildUnEnabled(true, self.btnChange)
+        end
+    end
+
+    loadSpriteTexture(self.diff_lev, PathTool.getResFrame("activity",data.pis_str), LOADTEXT_TYPE_PLIST)
+    
+    for i,v in pairs(self.item_list) do
+        v:setVisible(false)
+    end
+    --首通奖励
+    self:firstAward(is_first)
+    --展示奖励
+    self:showAward(is_first)
+
+    -- 引导需要
+    if data and data.id and self.btnChange then
+        self.btnChange:setName("stone_change_btn_"..data.id)
+    end
+end
+
+function StoneDungeonLimitItem:firstAward(is_first)
+    if not is_first then return end
+	if self.dungeonData.first_items[1] then
+		if not self.item_list[1] then
+			local item = BackPackItem.new(true,true,nil,scale)
+			item:setAnchorPoint(0, 0.5)
+		    self._itemScrollview:addChild(item)
+		    item:setFirstIcon(true)
+		    self.item_list[1] = item
+		end
+        if self.item_list[1] then
+            self.item_list[1]:setVisible(true)
+            self.item_list[1]:setPosition(cc.p(4,47))
+            self.item_list[1]:setBaseData(self.dungeonData.first_items[1][1], self.dungeonData.first_items[1][2])
+            self.item_list[1]:setDefaultTip()
+        end
+	end
+end
+
+function StoneDungeonLimitItem:showAward(is_first)
+    local _flag = is_first and 1 or 0
+    if not self.dungeonData.first_items[1] then
+        _flag = 0
+        is_first = nil
+    end
+	local total_width = 135 * (#self.dungeonData.show_items+_flag) * scale + (#self.dungeonData.show_items+_flag) * 5
+    local max_width = math.max(self._itemScrollview:getContentSize().width, total_width)
+	self._itemScrollview:setInnerContainerSize(cc.size(max_width, self._itemScrollview:getContentSize().height))
+
+	for i,v in ipairs(self.dungeonData.show_items) do
+    	if not self.item_list[1+i] then
+	    	local item = BackPackItem.new(true,true,nil,scale)
+		    item:setAnchorPoint(0, 0.5)
+		    self._itemScrollview:addChild(item)
+		    self.item_list[1+i] = item
+		end
+		if self.item_list[1+i] then
+            if is_first then
+		    	self.item_list[1+i]:setPosition(cc.p(4*(i+1) + 109*i,47))
+		    else
+		    	self.item_list[1+i]:setPosition(cc.p(4*i + 109*(i-1),47))
+		    end
+            self.item_list[1+i]:setVisible(true)
+		    self.item_list[1+i]:setBaseData(v[1],v[2])
+            self.item_list[1+i]:setDefaultTip()
+        end
+    end
+end
+function StoneDungeonLimitItem:onClickEmbattleBtn()
+    if self.dungeonData.pre_id ~= 0 and not model:getPassClearanceID(self.dungeonData.pre_id) then
+        message(TI18N("语言_s_2231"))
+        return
+    end
+    local data = RoleController:getInstance():getModel():getRoleForm(PartnerConst.Fun_Form.DungeonLimit)
+    for key, value in pairs(data.formations) do
+        local sub_id=value.order
+        --更新池子
+        local data_list = value.pos_info
+        for __, info in pairs(data_list) do
+            local hero_id = info.id
+            local hero_vo = HeroController:getInstance():getModel():getHeroById(hero_id)
+            if hero_vo then
+                hero_vo.point_id = sub_id
+                hero_vo.is_ui_select = true
+            end
+        end
+    end
+    local setting = {
+        data = {
+            lev = self.dungeonData.id,
+            id = self.tab_id,
+            index = 1
+        }
+    }
+    HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.DungeonLimit,setting)
+end
+function StoneDungeonLimitItem:registerEvent()
+	--扫荡
+    registerButtonEventListener(self.btnClear, function()
+        if not self.LimitTimeStatus then
+            message(TI18N("语言_dun_st_01_12"))
+            return
+        end
+        controller:send13032(self.dungeonData.id)
+    end ,true, 1)
+    --挑战
+    registerButtonEventListener(self.btnChange, function()
+        if self.role_vo.lev < self.dungeonData.lev_limit then
+            local str = string_format(TI18N("语言_c_656"),self.dungeonData.lev_limit)
+            message(str)
+            return
+        elseif self.role_vo.max_power < self.dungeonData.power then
+            local str = string_format(TI18N("语言_c_651"),MoneyTool.moneyFormat(self.dungeonData.power))
+            message(str)
+            return
+        else
+            for k,v in pairs(self.dungeonData.limit) do
+                if v[1] == "annals" then
+                    local num = TreasureController:getInstance():getModel():getHaveNumByQuality(v[2])
+                    if num < v[3] then
+                        -- local str = string_format(TI18N("语言_c_6729"),v[3])
+                        -- message(str)
+                        if ArenaworldbullyController:getInstance():getModel():isHideArenaworldbully() then
+                            JumpController:getInstance():jumpViewByEvtData({377})
+                        else
+                            message(TI18N("语言_c_6675"))
+                        end
+                        return      
+                    end
+                end
+            end
+            local change_count = model:getChangeSweepCount(self.tab_id) --4
+            local add_count = model:getfreeCount(self.tab_id) --1
+            local vip_count = 1
+            for i,v in ipairs(data_buy[self.tab_id]) do
+                if v.vip <= self.role_vo.vip_lev then
+                    vip_count = i
+                end
+            end
+            local remain_num = vip_count - change_count + add_count
+            if remain_num <= 0 and data_buy and data_buy[self.tab_id] and data_buy[self.tab_id][vip_count+1] then
+                message(string.format(TI18N("语言_s_3102"),data_buy[self.tab_id][vip_count+1].vip))
+                return
+            end
+        end
+        if not self.LimitTimeStatus then
+            message(TI18N("语言_dun_st_01_12"))
+            return
+        end
+        self:onClickEmbattleBtn()
+            -- role_controller:sender16823(PartnerConst.Fun_Form.DungeonLimit)
+    end ,true, 1)
+    if self.update_more_team_lineup_event == nil then
+        self.update_more_team_lineup_event = GlobalEvent:getInstance():Bind(RoleEvent.UPDATE_MORE_TEAM_LINEUP_EVENT, function(data)
+            if data.type == PartnerConst.Fun_Form.DungeonLimit then
+                self:updateDunBtn(data)
+            end
+        end)
+    end
+end
+function StoneDungeonLimitItem:updateDunBtn(data)
+    if not data then
+        data = RoleController:getInstance():getModel():getRoleForm(PartnerConst.Fun_Form.DungeonLimit)
+    end
+    local hero_list = data.formations
+    for i=1,#self.dunlist do
+        local list={}
+        local num=0
+        for k, v in pairs(hero_list or {}) do
+            if v.order == i then
+                for key,value in pairs(v.pos_info) do
+                    num=num+1
+                end
+            end
+        end
+        self.dunlist[i]:setData(i,num)
+    end
+end
+function StoneDungeonLimitItem:CreateDunBtn()
+    self.dunlist={}
+    local cfg = deepCopy(self.dungeonData.unit_id)
+    local len=#cfg
+    local startX=0
+    for i=1,len do
+        local btn=BattleDramaWarDunItem.new()
+        btn:setAnchorPoint(cc.p(0.5,0.5))
+        btn:setScale(0.7)
+        self.top_panel:addChild(btn)
+        btn:setPosition(startX+(i-1)*70,25)
+        self.dunlist[i]=btn
+    end
+    local wid= self.linWid-(5-len)*70 
+    self.line:setContentSize(cc.size(wid,self.line:getContentSize().height))
+    self.top_panel:setPositionX(self.orginx+(5-len)*50)
+end
+function StoneDungeonLimitItem:DeleteMe()
+	if self.item_list and next(self.item_list or {}) ~= nil then
+        for i, v in ipairs(self.item_list) do
+            if v.DeleteMe then
+                v:DeleteMe()
+            end
+        end
+    end
+    
+    if self.update_more_team_lineup_event ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_more_team_lineup_event)
+        self.update_more_team_lineup_event = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

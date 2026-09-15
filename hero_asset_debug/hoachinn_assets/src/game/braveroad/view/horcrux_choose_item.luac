@@ -1,0 +1,271 @@
+---------------------------------
+-- 
+-- 
+-- @date 2019/12/11 10:27:09
+-- @description: 魂器选择 item
+---------------------------------
+local _string_format = string.format
+
+HorcruxChooseItem = class('HorcruxChooseItem',function()
+    return ccui.Widget:create()
+end)
+
+function HorcruxChooseItem:ctor(callback)
+    self.callback = callback
+    self:configUI()
+    self:registerEvent()
+end
+
+function HorcruxChooseItem:configUI()
+    self.size = cc.size(195, 362)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+    self:setScale(1.2)
+
+	local csbPath = PathTool.getTargetCSB("braveroad/horcrux_choose_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    container:setSwallowTouches(false)
+    self.container = container
+
+    self.pos_node = container:getChildByName("pos_node")
+    local name_bg = container:getChildByName("name_bg")
+    self.name_txt = name_bg:getChildByName("name_txt")
+    self.icon_sp = container:getChildByName("icon_sp")
+    local item = ExclusiveItem.new()
+    self.icon_sp:addChild(item)
+    self.icon_sp.itemIcon = item
+    item:setTouchEnabledStatus(false)
+    item:setScale(0.8)
+    item:setPosition(cc.p(self.icon_sp:getContentSize().width/2, self.icon_sp:getContentSize().height/2))
+    self.quality_sp = container:getChildByName("quality_sp")
+    self.node_head = container:getChildByName("node_head")
+
+
+    -- self.effect_sp = container:getChildByName("effect_sp")
+    -- self.effect_sp:setVisible(false)
+
+    self.scrollview_des = container:getChildByName("scrollview_des")
+    self.scrollview_des:setScrollBarEnabled(false)
+    self.scrollview_des:setSwallowTouches(false)
+    local size = self.scrollview_des:getContentSize()
+    self.desc_txt = createRichLabel(16, cc.c4b(88, 56, 37), cc.p(0.5, 1), cc.p(size.width/2, 0), 0, 0, size.width)
+    self.scrollview_des:addChild(self.desc_txt)
+    self.scrollview_des.size = size
+    self.scrollview_des:setTouchEnabled(false)
+end
+
+function HorcruxChooseItem:registerEvent()
+    registerButtonEventListener(self.container, handler(self, self.onClickItem), true)
+end
+
+function HorcruxChooseItem:onClickItem(  )
+    if self.is_select then return end
+    if self.callback then
+        self.callback(self)
+    end
+end
+
+function HorcruxChooseItem:onClickHorcrux()
+    local partner_cfg = Config.PartnerData.data_partner_base[self.horcruxes_cfg.partner_id]
+    local data = {panel_type = HERO_SOUL_TYPE, config = partner_cfg, other_view = true, lev = self.horcruxes_vo.h_lev}
+    HeroController:getInstance():openExclusivePropsPanel(true, data)
+end
+
+function HorcruxChooseItem:setIsSelect( status )
+    self.is_select = status
+    if status == true then
+        self:setLocalZOrder(999)
+        self:setScale(1.4);
+        self:setPositionY(350)
+        self:handleSelectEffect(true)
+        self.scrollview_des:setTouchEnabled(true);
+        self.icon_sp.itemIcon:setTouchEnabledStatus(true)
+        -- GlobalEvent:getInstance():Fire(PLANEs.SKIP_STORY)
+    else
+        self:setLocalZOrder(10)
+        self:setScale(1.2);
+        self:setPositionY(290)
+        self:handleSelectEffect(false)
+        self.scrollview_des:setTouchEnabled(false);
+        self.icon_sp.itemIcon:setTouchEnabledStatus(false)
+    end
+end
+
+--卡牌边光特效
+function HorcruxChooseItem:handleCardEffect( status )
+    if status == true then
+        action = PlayerAction.action_9
+        if self.horcruxes_cfg then
+            if self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Blue then
+                action = PlayerAction.action_9
+            elseif self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Purple then
+                action = PlayerAction.action_8
+            elseif self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Orange then
+                action = PlayerAction.action_7
+            end
+        end
+        if not tolua.isnull(self.pos_node) and self.card_effect == nil then
+            self.card_effect = createEffectSpine(Config.EffectData.data_effect_info[1701], cc.p(0, 0), cc.p(0.5, 0.5), true, action)
+            self.pos_node:addChild(self.card_effect)
+        end
+    else
+        if self.card_effect then
+            self.card_effect:clearTracks()
+            self.card_effect:removeFromParent()
+            self.card_effect = nil
+        end
+    end
+end
+
+-- 选中时出现的特效
+function HorcruxChooseItem:handleSelectEffect( status )
+    if status == true then
+        action = PlayerAction.action_4
+        if self.horcruxes_cfg then
+            if self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Blue then
+                action = PlayerAction.action_6
+            elseif self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Purple then
+                action = PlayerAction.action_5
+            elseif self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Orange then
+                action = PlayerAction.action_4
+            end
+        end
+        self.is_enter_effect = true
+        if not tolua.isnull(self.pos_node) and self.select_effect == nil then
+            self.select_effect = createEffectSpine(Config.EffectData.data_effect_info[1701], cc.p(0, 0), cc.p(0.5, 0.5), false, action, handler(self, self.onSelectEffectEnd))
+            self.pos_node:addChild(self.select_effect)
+        end
+    else
+        if self.select_effect then
+            self.select_effect:clearTracks()
+            self.select_effect:removeFromParent()
+            self.select_effect = nil
+        end
+    end
+end
+
+-- 选中进入特效后播放选中循环特效
+function HorcruxChooseItem:onSelectEffectEnd(  )
+    if self.select_effect and self.is_enter_effect then
+        self.is_enter_effect = false
+        local action = PlayerAction.action_1
+        if self.horcruxes_cfg then
+            if self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Blue then
+                action = PlayerAction.action_3
+            elseif self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Purple then
+                action = PlayerAction.action_2
+            elseif self.horcruxes_cfg.quality == PlanesafkConst.Buff_Quility.Orange then
+                action = PlayerAction.action_1
+            end
+        end
+        self.select_effect:setAnimation(0, action, true)
+    end
+end
+
+function HorcruxChooseItem:setData(horcruxes_cfg, horcruxes_vo)
+    if not horcruxes_cfg then return end
+    self.horcruxes_vo = horcruxes_vo
+    self.horcruxes_cfg = horcruxes_cfg
+    if not self.horcruxes_cfg then return end
+
+    -- 名称
+    self.name_txt:setString(self.horcruxes_cfg.name)
+    self.name_txt:setTextColor(self:getNameColorByQuality(self.horcruxes_cfg.quality))
+
+    -- 描述
+    self.desc_txt:setString(self.horcruxes_cfg.story)
+    local des_size = self.desc_txt:getContentSize()
+    if des_size.height + 6 > self.scrollview_des.size.height then
+        self.scrollview_des:setInnerContainerSize(cc.size(self.scrollview_des.size.width, des_size.height + 6))
+        self.desc_txt:setPositionY(des_size.height + 6 - 3)
+    else
+        self.desc_txt:setPositionY(self.scrollview_des.size.height - 3)
+    end
+    -- 图标
+    local res_id = PathTool.getQualityBg(self.horcruxes_cfg.quality)
+    local item_data = {}
+    item_data.is_lock = false
+    item_data.bg = res_id
+    item_data.icon = PathTool.getSoulHorcruxIcon(self.horcruxes_cfg.icon)
+    item_data.lev = horcruxes_vo.h_lev
+    item_data.callback = function()
+        if self.is_select then
+            self:onClickHorcrux()
+        end
+    end
+    self.icon_sp.itemIcon:setData(item_data)
+
+    -- 品质图标
+    local qua_icon_res = self:getQualityIconRes(self.horcruxes_cfg.quality)
+    loadSpriteTexture(self.quality_sp, qua_icon_res, LOADTEXT_TYPE_PLIST)
+
+    local size = cc.size(86, 86)
+    local mask_res = PathTool.getResFrame("common", "common_1032") 
+    local mask_cir = PathTool.getResFrame("common", "common_1031") 
+    self.mark_bg = createSprite(mask_cir, 0, 0, self.node_head, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 6)
+    local mask = createSprite(mask_res, size.width/2, size.height/2, nil, cc.p(0.5, 0.5))
+    self.clipNode = cc.ClippingNode:create(mask)
+    self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+    self.clipNode:setContentSize(size)
+    self.clipNode:setCascadeOpacityEnabled(true)
+    self.clipNode:setAlphaThreshold(0)
+    self.node_head:addChild(self.clipNode,2)
+    self.icon = ccui.ImageView:create()
+    self.icon:setCascadeOpacityEnabled(true)
+    self.icon:setAnchorPoint(0.5,0.5)
+    self.icon:setPosition(size.width/2,size.height/2)
+    self.clipNode:addChild(self.icon,3)
+    local partner_cfg = Config.PartnerData.data_partner_base[self.horcruxes_cfg.partner_id]
+    local res = PathTool.getHeadIcon(partner_cfg.bid)
+    self.icon:loadTexture( res, LOADTEXT_TYPE)
+    self.node_head:setScale(0.4)
+
+    self:handleCardEffect(true)
+end
+
+function HorcruxChooseItem:getBuffId(  )
+    if self.horcruxes_cfg then
+        return self.horcruxes_cfg.id
+    end
+end
+
+-- 根据品质获取名称字色
+function HorcruxChooseItem:getNameColorByQuality( quality )
+    if quality > PlanesafkConst.Buff_Quility.Orange then
+        quality = PlanesafkConst.Buff_Quility.Orange
+    end
+    if quality == PlanesafkConst.Buff_Quility.Orange then 
+        return Config.ColorData.data_color4[246] 
+    elseif quality == PlanesafkConst.Buff_Quility.Purple then 
+        return Config.ColorData.data_color4[245] 
+    else
+        return Config.ColorData.data_color4[244]
+    end
+end
+
+-- 根据品质获取品质图标资源
+function HorcruxChooseItem:getQualityIconRes( quality )
+    if quality > PlanesafkConst.Buff_Quility.Orange then
+        quality = PlanesafkConst.Buff_Quility.Orange
+    end
+    if quality == PlanesafkConst.Buff_Quility.Blue then
+        return PathTool.getResFrame("planes", "planes_buff_10", false, "planes_buff")
+    elseif quality == PlanesafkConst.Buff_Quility.Purple then
+        return PathTool.getResFrame("planes", "planes_buff_12", false, "planes_buff")
+    elseif quality == PlanesafkConst.Buff_Quility.Orange then
+        return PathTool.getResFrame("planes", "planes_buff_8", false, "planes_buff")
+    else
+        return PathTool.getResFrame("planes", "planes_buff_10", false, "planes_buff")
+    end
+end
+
+function HorcruxChooseItem:DeleteMe()
+    self:handleCardEffect(false)
+    self:handleSelectEffect(false)
+    self:removeAllChildren()
+	self:removeFromParent()
+end

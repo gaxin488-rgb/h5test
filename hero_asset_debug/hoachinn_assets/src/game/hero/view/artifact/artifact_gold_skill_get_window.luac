@@ -1,0 +1,134 @@
+-- --------------------------------------------------------------------
+-- 技能领悟 突破成功弹窗
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+ArtifactGoldSkillGetWindow = ArtifactGoldSkillGetWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function ArtifactGoldSkillGetWindow:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/artifact_gold_skill_get_window"
+    self.res_list = {
+        
+    }
+
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    --材料列表
+    self.hero_item_list = {}
+    self.cost_item_list = {} -- 升星额外消耗的材料
+end
+
+function ArtifactGoldSkillGetWindow:open_callback()
+	self._ui = self:getExportUI()
+    local ui = self._ui
+    ui._background:setScale(display.getMaxScale())
+    self:playEnterAnimatianByObj(ui._main_container , 2)
+    ui._desc_scr:setScrollBarEnabled(false)
+    setTextMaxWidth(ui._skill_name_1,300,-8)
+    setTextMaxWidth(ui._skill_name_2,300,-8)
+    self.title_width = ui._title_container:getContentSize().width
+    self.title_height = ui._title_container:getContentSize().height
+end
+function ArtifactGoldSkillGetWindow:register_event()
+    local ui = self._ui
+    registerButtonEventListener(ui._background, function() self:onClickCloseBtn() end ,false, 0)
+end
+
+function ArtifactGoldSkillGetWindow:handleEffect(status)
+    if status == false then
+        if self.play_effect then
+            self.play_effect:clearTracks()
+            self.play_effect:removeFromParent()
+            self.play_effect = nil
+        end
+    else
+        local action = PlayerAction.action_1
+        if self._type == 2 then
+            action = PlayerAction.action_6
+        end
+        if not tolua.isnull(self._ui._title_container) and self.play_effect == nil then
+            self.play_effect = createEffectSpine(PathTool.getEffectRes(103), cc.p(self.title_width * 0.5, self.title_height * 0.5), cc.p(0.5, 0.5), false, action)
+            self._ui._title_container:addChild(self.play_effect)
+        end
+    end
+end 
+--关闭
+function ArtifactGoldSkillGetWindow:onClickCloseBtn()
+    if self._type == 1 then
+        local cfg = Config.PartnerArtifactGoldenData.data_group[self.id]
+        if cfg then
+            controller:openArtifactGoldBreakPop(true,self.skill_bid,cfg.artifact_id)
+        end
+    end
+    controller:openArtifactGoldSkillGetWindow(false)
+end
+--_type1技能领悟 2技能突破
+function ArtifactGoldSkillGetWindow:openRootWnd(id,_type)
+    BattleResultMgr:getInstance():setWaitShowPanel(true)
+    playOtherSound("c_get")
+    local ui = self._ui
+    self.id = id
+    self._type = _type
+    self:handleEffect(true)
+    self.skill_item_1 = SkillItem.new(true, true, true,1, true)
+    ui._skill_node_1:addChild(self.skill_item_1)
+    self.skill_item_2 = SkillItem.new(true, true, true,1, true)
+    ui._skill_node_2:addChild(self.skill_item_2)
+    self.desc_txt = createRichLabel(20,cc.c3b(0xe5,0xcf,0x91),cc.p(0.5,1),cc.p(0,0),nil,nil,480)
+    self.desc_txt:setHorizontalLayoutType(2)
+    ui._txt_node:addChild(self.desc_txt)
+    if self._type == 1 then
+        local cfg = Config.PartnerArtifactGoldenData.data_skill_2[self.id]
+        self.skill_bid = cfg[1].skill_id
+        local cfg = Config.SkillData.data_get_skill(self.skill_bid)
+        ui._skill_name_1:setString(cfg.name)
+        self.desc_txt:setString(cfg.des)
+        self.skill_item_1:setData(cfg)
+        local res = PathTool.getPlistImgForDownLoad("hero", "txt_cn_level_"..1)
+        loadSpriteTexture(ui._skill_lev_1, res, LOADTEXT_TYPE)
+        ui._skill_node_1:setPositionX(360)
+        ui._skill_lev_1:setPositionX(325)
+        ui._skill_name_1:setPositionX(360)
+    else
+        self.skill_bid = self.id
+        ui._skill_node_1:setPositionX(180)
+        ui._skill_lev_1:setPositionX(145)
+        ui._skill_node_1:setPositionX(180)
+        local cfg = Config.PartnerArtifactGoldenData.data_skill_1[self.id]
+        local group_id = cfg.group_id
+        local group_cfg = Config.PartnerArtifactGoldenData.data_skill_2[group_id]
+        self.skill_bid2 = group_cfg[cfg.skill_lv+1].skill_id
+        local cfg_1 = Config.SkillData.data_get_skill(self.skill_bid)
+        ui._skill_name_1:setString(cfg_1.name)
+        self.skill_item_1:setData(cfg_1)
+        local res = PathTool.getPlistImgForDownLoad("hero", "txt_cn_level_"..cfg.skill_lv)
+        loadSpriteTexture(ui._skill_lev_1, res, LOADTEXT_TYPE)
+
+        local cfg_2 = Config.SkillData.data_get_skill(self.skill_bid2)
+        self.desc_txt:setString(cfg_2.des)
+        ui._skill_name_2:setString(cfg_2.name)
+        self.skill_item_2:setData(cfg_2)
+        local res = PathTool.getPlistImgForDownLoad("hero", "txt_cn_level_"..cfg.skill_lv+1)
+        loadSpriteTexture(ui._skill_lev_2, res, LOADTEXT_TYPE)
+    end
+    ui._next_icon:setVisible(self._type == 2)
+    ui._skill_node_2:setVisible(self._type == 2)
+    ui._skill_lev_2:setVisible(self._type == 2)
+    ui._skill_name_2:setVisible(self._type == 2)
+    local _h = math.max(self.desc_txt:getContentSize().height,ui._desc_scr:getContentSize().height)
+    ui._desc_scr:setInnerContainerSize(cc.size(ui._desc_scr:getContentSize().width,_h))
+    ui._txt_node:setPositionY(_h)
+end
+function ArtifactGoldSkillGetWindow:close_callback()
+    self:handleEffect(false)
+    controller:openArtifactGoldSkillGetWindow(false)
+end

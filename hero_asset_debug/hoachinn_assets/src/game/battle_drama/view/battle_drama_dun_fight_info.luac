@@ -1,0 +1,428 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 传奇忍者
+-- @DateTime:    2019-05-10 09:49:04
+-- *******************************
+BattleDramaDunFightInfo = BattleDramaDunFightInfo or BaseClass(BaseView)
+
+local controller = BattleDramaController:getInstance()
+local model = controller:getModel()
+
+function BattleDramaDunFightInfo:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.is_full_screen = false
+    self.win_type = WinType.Big
+    self.layout_name = "battledrama/battle_darma_dun_fight_info"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("planes", "planes_map"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("planes", "planes_info"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("planes","big_bg_2"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("planes","big_bg_3"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("War_tolerance","War_tolerance"), type = ResourcesType.plist},
+    }
+end
+
+function BattleDramaDunFightInfo:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    local image_title = self.main_container:getChildByName("image_title")
+    local win_title = self.main_container:getChildByName("win_title")
+    win_title:setString(TI18N(""))
+    autoSizeTitleBg(win_title, image_title)
+    self.image_title = image_title
+    self.win_title = win_title
+    local hero_panel=self.main_container:getChildByName("hero_panel")
+    self.hero_img=hero_panel:getChildByName("hero_img")
+    self.record_img = self.main_container:getChildByName("record_img")
+    self.record_img:getChildByName("name_txt_1"):setString(TI18N("语言_c_5208"))   
+    self.btn_bonus = self.main_container:getChildByName("btn_bonus")
+    self.btn_bonus:setVisible(true)
+    self.btn_bonus:ignoreContentAdaptWithSize(true)
+    self.bonus_txt = self.btn_bonus:getChildByName("label")
+    self.bonus_txt:setPositionX(self.btn_bonus:getContentSize().width*0.5-3)
+    self.bonus_txt:setString(TI18N("语言_c_3995"))
+    setTextMaxWidth(self.bonus_txt,130,-10)
+    self.tips_txt = self.main_container:getChildByName("tips_txt")
+    self.tips_txt:setString(transformTextToShort(TI18N("语言_c_5209"), 80))
+    self.tips_txt:setTouchEnabled(true)
+    addEvt2showAllTextTips(self.tips_txt,TI18N("语言_c_5209"),80)
+    self.dunlist={}
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.line=self.top_panel:getChildByName("bottom_bg")
+    self.linWid=self.line:getContentSize().width 
+    self.orginx=self.top_panel:getPositionX()
+    local desc_bg = self.main_container:getChildByName("desc_bg")
+    local left_bg_1 = self.main_container:getChildByName("left_bg_1")
+    local right_bg_1 = self.main_container:getChildByName("right_bg_1")
+    loadSpriteTexture(left_bg_1, PathTool.getPlistImgForDownLoad("planes","big_bg_3"), LOADTEXT_TYPE)
+    loadSpriteTexture(right_bg_1, PathTool.getPlistImgForDownLoad("planes","big_bg_2"), LOADTEXT_TYPE)
+
+    self.left_role_panel = self.main_container:getChildByName("panel_role_left")
+    local panel_size = self.left_role_panel:getContentSize()
+    --9位置
+    self.left_position_list = {}
+    self.left_bg_list = {}
+    self.left_hero_list = {}
+    for i=1,9 do
+        local item_bg = self.left_role_panel:getChildByName("pos_bg_" .. i)
+        local pos_x, pos_y = item_bg:getPosition()
+        table.insert(self.left_position_list, cc.p(pos_x, pos_y - 5))
+        table.insert(self.left_bg_list, item_bg)
+        item_bg:setVisible(false)
+    end
+    local pos = {2,4,6,7,9} --
+    for index=1,5 do
+        self.left_hero_list[index] = HeroExhibitionItem.new(0.6, true)
+        self.left_hero_list[index]:setPosition(self.left_position_list[pos[index]])
+        self.left_role_panel:addChild(self.left_hero_list[index])
+        self.left_hero_list[index]:addCallBack(function(_, data)
+            self:onClickItem(data, "left")
+        end)
+        self.left_bg_list[pos[index]]:setVisible(true)
+    end
+    self.right_role_panel = self.main_container:getChildByName("panel_role_right")
+    self.right_position_list = {}
+    self.right_bg_list = {}
+    self.right_hero_list = {}
+    for i=1,9 do
+        local item_bg = self.right_role_panel:getChildByName("pos_bg_" .. i)
+        local pos_x, pos_y = item_bg:getPosition()
+        table.insert(self.right_position_list, cc.p(pos_x, pos_y - 5))
+        table.insert(self.right_bg_list, item_bg)
+        item_bg:setVisible(false)
+    end
+    for index=1,5 do
+        self.right_hero_list[index] = HeroExhibitionItem.new(0.6, true)
+        self.right_hero_list[index]:setPosition(self.right_position_list[pos[index]])
+        self.right_role_panel:addChild(self.right_hero_list[index])
+        self.right_hero_list[index]:addCallBack(function(_,data)
+            self:onClickItem(data, "right")
+        end)
+        self.right_bg_list[pos[index]]:setVisible(true)
+    end
+
+    -- 精灵
+    self.tree_lv_left = self.main_container:getChildByName("tree_lv_left")
+    self.tree_lv_right = self.main_container:getChildByName("tree_lv_right")
+    self.left_elfin_item_list = {}
+    self.right_elfin_item_list = {}
+
+    --reward
+    self.main_container:getChildByName("award_txt"):setString(TI18N("语言_c_11"))
+    self.reward_panel = self.main_container:getChildByName("reward_panel")
+    local panel_size = self.reward_panel:getContentSize()
+    local scroll_view_size = cc.size(panel_size.width, panel_size.height+10)
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 15,                    -- x方向的间隔
+        start_y = 10,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.8,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.8,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.8
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.reward_panel, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.btn_embattle = self.main_container:getChildByName("btn_embattle")
+    self.btn_embattle:getChildByName("label"):setString(TI18N("语言_c_1389"))
+    self.btn_embattle:setName("battle_btn")
+end
+function BattleDramaDunFightInfo:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn), false, 2)
+    registerButtonEventListener(self.main_container, handler(self, self.onClickCloseBtn), false, 2)
+    registerButtonEventListener(self.record_img, handler(self, self.onClickRecord), true, 2)
+    registerButtonEventListener(self.btn_embattle, handler(self, self.onClickEmbattleBtn), true)
+    registerButtonEventListener(self.btn_bonus, handler(self, self.onClickBonusBtn), true)
+    if not self.point_info_event then
+        self.point_info_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Update_DarmaDun_point_info,function (data)
+            if not data then return end
+            self.QueueData=data.sub_list
+            self:setData()
+        end)
+    end
+
+    if not self.clear_point_info then
+        self.clear_point_info = GlobalEvent:getInstance():Bind(Battle_dramaEvent.Clear_Darma_point_info,function ()
+            self:onClickDunBtn(1)
+        end)
+    end
+
+    if not self.refresh_point_info then
+        self:addGlobalEvent(Battle_dramaEvent.refreshPointData, function ()
+            for i=1,#self.dunlist do 
+                controller:sender13235(self.info.chapter_id, self.info.dun_id,i)
+            end
+        end)
+    end
+
+    if not self.update_dram_danmu_event then
+        self.update_dram_data_event = GlobalEvent:getInstance():Bind(Battle_dramaEvent.UpdateDunVedio, function(data)
+            if not data or next(data.harder_dungeon_replay_data) ==nil then 
+                message(TI18N("语言_c_4098"))
+                return 
+            else
+                controller:openDunPlayerWindows(true, data.harder_dungeon_replay_data)
+            end
+        end)
+    end
+end
+
+function BattleDramaDunFightInfo:CreateDunBtn()
+    self.dunlist={}
+    local cfg=Config.DungeonNinjaWarData.data_drama_dungeon_info(self.info.dun_id).unit_id
+    local len=#cfg
+    local startX=0
+    for i=1,len do
+        local btn=BattleDramaWarDunItem.new()
+        btn:setAnchorPoint(cc.p(0.5,0.5))
+        self.top_panel:addChild(btn)
+        btn:setPosition(startX+(i-1)*100,25)
+        registerButtonEventListener(btn.container, function()
+            self:onClickDunBtn(i)
+        end ,true, 2)
+        self.dunlist[i]=btn
+    end
+    local wid= self.linWid-(5-len)*100    --self.linWid*((len-1)/4)
+    self.line:setContentSize(cc.size(wid,self.line:getContentSize().height))
+    self.top_panel:setPositionX(self.orginx+(5-len)*50)
+end
+
+function BattleDramaDunFightInfo:onClickItem(item_data, state)
+    if not item_data then
+        return 
+    end
+end
+
+function BattleDramaDunFightInfo:onClickRecord()
+    controller:send13215(self.info.dun_id,2)
+end
+
+function BattleDramaDunFightInfo:onClickCloseBtn()
+    controller:openBattleDramaDunFightInfo(false)
+end
+
+function BattleDramaDunFightInfo:onClickBonusBtn()
+    controller:openBattleDramaBonusInfo(true,self.info.dun_id)
+end
+
+function BattleDramaDunFightInfo:onClickEmbattleBtn()
+    local setting = {
+        pointData = self.pointData,
+    }
+    HeroController:getInstance():openFormGoFightPanel(true, PartnerConst.Fun_Form.BattleDramaDun, setting, HeroConst.FormShowType.eFormFight)
+end
+
+-- function BattleDramaDunFightInfo:onClickAbandBtn()
+--     local s = "是否放弃当前进度"   --string.format(str, num)
+--     CommonAlert.show(s, TI18N("语言_c_63"), function()
+--         controller:send13205()
+--     end, TI18N("语言_c_62"),nil, CommonAlert.type.common)
+-- end
+
+function BattleDramaDunFightInfo:onClickDunBtn(index)
+    for i=1,#self.dunlist do
+        self.dunlist[i]:setStatus(i==index)
+    end
+    self.info.sub_id=index
+    if not self.QueueData then
+        controller:sender13235(self.info.chapter_id, self.info.dun_id,index)
+    else
+        self:setData()
+    end 
+end
+
+function BattleDramaDunFightInfo:openRootWnd(data)
+    self.data = data
+    self.info=data.info
+    local rewards = {}
+    local cfg=Config.DungeonNinjaWarData.data_drama_dungeon_info(self.info.dun_id)
+    local show_items=cfg.show_items
+    for i, v in ipairs(show_items) do
+        rewards[#rewards + 1] = {bid = v[1], num = v[2]}
+    end
+    self.item_scrollview:setData(rewards)
+	self.item_scrollview:addEndCallBack(function()
+        local item_list = self.item_scrollview:getItemList()
+        for k,v in pairs(item_list) do
+            v:setDefaultTip()
+			v:setSwallowTouches(false)
+			v:setGotIcon(false)--self.data.info.pass >= 1
+        end
+	end)
+    local path= string.format("resource/partner/%d.png", cfg.show_bid)
+    self.hero_img:loadTexture(path, LOADTEXT_TYPE)
+    self:CreateDunBtn()
+    self:onClickDunBtn(self.info.sub_id)
+end
+
+function BattleDramaDunFightInfo:setData()
+    if not self.QueueData then return end
+    self.pointData = model:getSubPointData(self.info.sub_id,self.QueueData) 
+    self.pointData.dun_id=self.info.dun_id
+    self.pointData.chapter_id=self.info.chapter_id
+    if not self.pointData then return end
+    local pointData=self.pointData
+    self:updateHeroForm(self.left_hero_list, self.left_position_list, pointData.pos_info, "left", self.left_bg_list, pointData.formation_type)
+    self:updateHeroForm(self.right_hero_list, self.right_position_list, pointData.a_list, "right", self.right_bg_list, pointData.a_formation_type)
+    local actionInfo = ActionController:getInstance():getActionSubTabVo(self.info.bid)
+    local index=Config.DungeonNinjaWarData.data_drama_dungeon_info(self.info.dun_id).floor
+    self.win_title:setString(string.format(TI18N("语言_c_5810"),index,self.info.sub_id))
+    autoSizeTitleBg(self.win_title, self.image_title) 
+    for i=1,#self.dunlist do
+        local list=model:getSubHerolist(i)
+        local num=0
+        for k,v in pairs(list) do
+            num=num+1
+        end
+        self.dunlist[i]:setData(i,num)
+    end
+end
+-- 左右  都使用
+function BattleDramaDunFightInfo:updateHeroForm(hero_list, position_list, pos_info, station, bg_list, form_type)
+    for i, v in ipairs(bg_list) do
+        v:setVisible(false)
+    end
+    local function _getHeroInfoByPos( pos )
+        for _,info in pairs(pos_info) do
+            if info.pos == pos then
+                return info
+            end
+        end
+    end
+    for index = 1, 5 do
+        local hero_item = hero_list[index]
+        local pos = self:getFormPosByIndex(form_type, index)
+        local info = _getHeroInfoByPos(station == "right" and pos or index)
+        if info and hero_item then
+            hero_item:setPosition(position_list[pos])--info.pos
+            if (info.bid and info.bid ~= 0) or (info.partner_id and info.partner_id ~= 0) then
+                local hero_vo =model:getPoolHeroVoById(self.pointData.sub_id, info.partner_id)
+                if station == "right" then
+                    hero_vo = HeroVo.New()
+                    hero_vo:updateHeroVo(info)
+                end
+                if hero_vo then
+                    if station == "left" then
+                        hero_item:setData(hero_vo)
+                    else
+                        hero_item:setMonsterData(info)
+                    end
+                    hero_item:setVisible(true)
+                else
+                    hero_item:setVisible(false)
+                end
+            else
+                hero_item:setVisible(false)
+            end
+        else
+            hero_item:setVisible(false)
+        end
+        bg_list[pos]:setVisible(true)
+    end
+end
+
+-- 更新精灵
+function BattleDramaDunFightInfo:updateElfinList(data, elfin_panel, elfin_item_list, station)
+    if not elfin_panel then return end
+    if not data then return end
+    local elfin_bid_list = data.plan_sprites or {}
+    local elfin_panel = elfin_panel
+    local elfin_item_list = elfin_item_list
+    local function getElfinBidByPos(pos)
+        if station == "right" then
+            return nil
+        end 
+        local elfin_bid
+        for k,v in pairs(elfin_bid_list) do
+            if v.pos == pos then
+                elfin_bid = v.item_bid
+                break
+            end
+        end
+        return elfin_bid
+    end
+    for i=1,4 do
+        local elfin_item = elfin_item_list[i]
+        if elfin_item == nil then
+            elfin_item = SkillItem.new(true, true, true, 0.5)
+            local size = elfin_panel:getContentSize()
+            local pos_x =SkillItem.Width*0.5/2 + (i - 1)*(SkillItem.Width*0.5 + 6)
+            elfin_item:setPosition(cc.p(pos_x, size.height/2))
+            elfin_panel:addChild(elfin_item)
+            elfin_item_list[i] = elfin_item
+        end
+        local item_bid = getElfinBidByPos(i)
+        if item_bid then
+            local bid = item_bid or 0
+            elfin_item:showLockIcon(false)
+            local elfin_cfg = Config.SpriteData.data_elfin_data(bid)
+            if bid == 0 or not elfin_cfg then
+                elfin_item:setData()
+            else
+                local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+                if skill_cfg then
+                    elfin_item:setData(skill_cfg)
+                end
+            end
+        else
+            elfin_item:setData()
+            -- elfin_item:showLockIcon(true)
+        end
+    end
+    if station == "right" then
+        self.tree_lv_left:setString(string.format(TI18N("语言_c_2589"), data.lev or 0))
+    else
+        self.tree_lv_right:setString(string.format(TI18N("语言_c_2589"), 0))
+    end
+end
+
+-- 根据阵法类型和index，获取对应的位置
+function BattleDramaDunFightInfo:getFormPosByIndex( form_type, index )
+    local pos = 1
+    local formation_config = Config.FormationData.data_form_data[form_type]
+    if formation_config then
+        for k,v in pairs(formation_config.pos) do
+            if v[1] == index then
+                pos = v[2]
+                break
+            end
+        end
+    end
+    return pos
+end
+
+function BattleDramaDunFightInfo:close_callback()
+    HeroController:getInstance():getModel():setBossFormPoint()
+    if self.point_info_event then
+        GlobalEvent:getInstance():UnBind(self.point_info_event)
+        self.point_info_event = nil
+    end
+    if self.update_dram_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_dram_data_event)
+        self.update_dram_data_event = nil
+    end
+    if self.refresh_point_info then
+        GlobalEvent:getInstance():UnBind(self.refresh_point_info)
+        self.refresh_point_info = nil
+    end
+    if self.clear_point_info then
+        GlobalEvent:getInstance():UnBind(self.clear_point_info)
+        self.clear_point_info = nil
+    end
+    if self.dunlist then
+        for k, v in pairs(self.dunlist) do
+            if v then
+                v:DeleteMe() 
+            end
+        end
+    end
+    controller:openBattleDramaDunFightInfo(false)
+end

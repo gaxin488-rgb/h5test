@@ -1,0 +1,567 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2023-08-17 17:11:20
+-- @description    : 
+-- 精灵强化
+---------------------------------
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+
+NewElfinStrengWindow = NewElfinStrengWindow or BaseClass(BaseView)
+
+function NewElfinStrengWindow:__init()
+	self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "elfin/new_elfin_streng_window"
+
+	self.elfin_step_list = {}
+	self.elfin_step_list.star_list = {}
+	self.elfin_id_list = {}
+	self.base_list = {}
+	self.cost_item_list = {}
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist},
+		{ path = PathTool.getPlistImgForDownLoad("elfin","elfin_info_bg"), type = ResourcesType.single },
+		{path = PathTool.getPlistImgForDownLoad("recruit_ninja", "recruit_ninja"), type = ResourcesType.plist},
+    }
+end
+
+function NewElfinStrengWindow:open_callback(  )
+	local container = self.root_wnd:getChildByName("container")
+	self.image_bg = container:getChildByName("image_bg")
+
+    self:playEnterAnimatianByObj(container, 2)
+	self.con_size = container:getContentSize()
+	self.container = container
+	self.elfin_node = container:getChildByName("elfin_node")
+
+	--附魂
+	self.attach_node = container:getChildByName("attach_node")
+	self.gold_eff_info = container:getChildByName("gold_eff_info")
+	self.gold_name_bg = self.gold_eff_info:getChildByName("gold_name_bg")
+	self.gold_name = self.gold_eff_info:getChildByName("name_txt")
+
+	self.name_txt = container:getChildByName("name_txt")
+	self.name_tips = container:getChildByName("name_tips")
+	self.name_tips:setString(TI18N("语言_spr_01_21"))
+	self.name_tips:setVisible(false)
+	self.type_img = container:getChildByName("type_img")
+	self.type_img:setZOrder(97)
+	self.type_bg = container:getChildByName("type_bg")
+	self.type_bg:setZOrder(98)
+	self.type_name = container:getChildByName("type_name")
+	self.type_name:setZOrder(99)
+	self.stage_node = container:getChildByName("stage_node")
+
+	self.up_star_panel = container:getChildByName("up_star_panel")
+	self.item_node = self.up_star_panel:getChildByName("item_node")
+	local num_txt_1 = self.up_star_panel:getChildByName("num_txt")
+	num_txt_1:setVisible(false)
+	local posx = num_txt_1:getPositionX()
+	local posy = num_txt_1:getPositionY()
+	self.num_txt_1 = createRichLabel(24, cc.c4b(0x26, 0x95, 0x2f, 0xff), cc.p(0, 0.5), cc.p(posx, posy))
+	self.up_star_panel:addChild(self.num_txt_1)
+
+	self.right_btn_1 = self.up_star_panel:getChildByName("right_btn")
+	self.right_btn_1:getChildByName("label"):setString(TI18N("语言_c_4863"))
+	self.num_label = self.up_star_panel:getChildByName("num_label")
+	self.num_label:setString(TI18N("语言_c_4810"))
+	self.num_label:setVisible(false)
+
+	self.attr_list = container:getChildByName("attr_list")
+	self.levle_node = container:getChildByName("levle_node")
+	self.levle_item = NewElfinStrengAttrItem.new()
+	self.levle_node:addChild(self.levle_item)
+
+	self.level_view = container:getChildByName("level_view")
+	local label = createRichLabel(22, cc.c3b(0xff,0xed,0xb7), cc.p(0.5, 0.5), cc.p(107, 54), nil, nil)
+	label:setString(TI18N("语言_spr_01_16"))
+	self.level_view:addChild(label)
+	local btnRule = self.level_view:getChildByName("btnRule")
+	local label_width = label:getContentSize().width
+	local total_width = label_width + 30 + 8 + 50
+	self.level_view:setContentSize(cc.size(total_width, 78))
+	btnRule:setPositionX(40)
+	label:setPositionX(63+label_width/2)
+	self.level_txt = CommonNum.new(27, self.level_view, 99999, -2, cc.p(0.5, 0.5),0)
+    self.level_txt:setPosition(total_width/2, 39)
+	self.level_view:setLocalZOrder(999)
+
+	self.reset_txt = createRichLabel(22,cc.c3b(0xff,0x15,0x15),cc.p(1,0.5),cc.p(557,357))
+	self.container:addChild(self.reset_txt)
+	local res = PathTool.getResFrame("recruit_ninja", "recruit_hero_dir_2")
+	self.reset_txt:setString(string.format(TI18N("语言_c_7530"),res))
+	self.reset_txt:addTouchLinkListener(function()
+        self:_onClickResetBtn()
+    end, { "click", "href" })
+	container:getChildByName("score_title"):setString(TI18N("语言_c_1742"))
+	container:getChildByName("score_title"):setLocalZOrder(9998)
+	self.power_label = CommonNum.new(23, container, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(260, 358))
+    self.power_label:setNum(0)
+	self.power_label:setScale(0.8)
+	self.power_label:setLocalZOrder(9999)
+	
+end
+--强化重置
+function NewElfinStrengWindow:_onClickResetBtn()
+	local lev = _model:getElfinStrongLev(self.elfin_id)
+	if lev < 1 then
+		message(TI18N("语言_c_7531"))
+		return
+	end
+	_controller:openNewElfinStrengResetWindow(true,self.elfin_id)
+end
+function NewElfinStrengWindow:register_event(  )
+	registerButtonEventListener(self.level_view, function ()
+		_controller:openElfinView2Window(true,self.elfin_id)
+	end, true, 2)
+
+	registerButtonEventListener(self.right_btn_1, function (  )
+		local item_cfg = Config.ItemData.data_get_data(self.elfin_id)
+		local lev = _model:getElfinStrongLev(self.elfin_id)
+		if not item_cfg then return end
+		if not Config.SpriteData.data_sprite_enhance[item_cfg.quality] then return end
+		if not Config.SpriteData.data_sprite_enhance[item_cfg.quality][lev] then return end
+		local cfg = Config.SpriteData.data_sprite_enhance[item_cfg.quality]
+		local attr_cfg = cfg[lev]
+		for k, v in pairs(attr_cfg.cost_up) do
+            local need_id = v[1]
+            local need_num = v[2]
+            local have_num = BackpackController:getInstance():getModel():getItemNumByBid(need_id)
+            if have_num < need_num then
+                BackpackController:getInstance():openTipsSource(true, need_id)
+                return
+            end
+        end
+        _controller:send26576(self.elfin_id)
+	end, true, 1)
+
+	if not self.update_num_event then
+        self.update_num_event = GlobalEvent:getInstance():Bind(ElfinEvent.ElfinBookComposeSuccess, function ( bid, status )
+			self:setData( self.id_list, self.is_show )
+        end)
+    end
+	
+    self:addGlobalEvent(ElfinEvent.ElfinStrengEvent, function() 
+        self:setData( self.id_list, self.is_show )
+   end)
+   
+   	self:addGlobalEvent(BackpackEvent.ADD_GOODS, function()
+		self:upGradeOrCompose()
+	end)
+	self:addGlobalEvent(BackpackEvent.MODIFY_GOODS_NUM, function()
+		self:upGradeOrCompose()
+	end)
+	self:addGlobalEvent(BackpackEvent.DELETE_GOODS, function()
+		self:upGradeOrCompose()
+	end)
+end
+
+function NewElfinStrengWindow:setActiveStatus()
+	local list = self.elfin_id_list
+	self.is_active = false
+	for k, v in pairs(list) do
+		local id = v
+		local status = _model:checkElfinActStatus(id)
+		if status then
+			self.elfin_id = id
+			self.is_active = true
+			break
+		end
+	end
+end
+
+function NewElfinStrengWindow:openRootWnd( data, is_show )
+	self.id_list = data
+	self.is_show = is_show
+	self:setData(data, is_show)
+end
+
+function NewElfinStrengWindow:setData( data, is_show)
+	if not data then return end
+	local id_list = data
+	local list = {}
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("sprite_data")
+	for i,bid in ipairs(id_list) do
+		table.insert(list, bid)
+	end
+	local function sortFunc( objA, objB )
+			return objA < objB
+	end
+	table.sort(list, sortFunc)
+	self.elfin_id_list = list
+	
+	self.elfin_id = list[#list]
+	self.first_id = list[1]
+	self.is_active = false
+	for k, v in pairs(list) do
+		local id = v
+		local status = _model:checkElfinActStatus(id)
+		if status then
+			self.elfin_id = id
+			self.is_active = true
+			break
+		end
+	end
+	self.elfin_pos = _controller:getModel():getElfinTreeByBid(self.elfin_id) or 0
+	local cfg = Config.ItemData.data_get_data(self.elfin_id)
+	self.item_cfg = cfg
+
+	self.gold_eff_info:setVisible(true)
+	self.name_txt:setVisible(false)
+
+	local elfin_cfg = Config.SpriteData.data_elfin_data(self.item_cfg.id)
+	if not elfin_cfg then return end
+	--当前积分
+	local score_cfg = Config.SpriteData.data_sprite_score
+	local score_data = score_cfg[self.elfin_id]
+	if score_data then
+		self.level_txt:setNum(score_data.score) 
+	end
+
+	-- 名称
+	local str = self.item_cfg.name or ""
+	if is_show then
+		str = str .. TI18N("语言_hol_sp_lo_02_3")
+	end
+	self.name_txt:setString(str)
+	self.gold_name:setString(str)
+	self.name_tips:setPositionY(870)
+	autoSizeTitleBg(self.gold_name, self.gold_name_bg, 60, 185)
+
+	if cfg.quality == 6 then
+		local res_id = PathTool.getPlistImgForDownLoad("elfin", "elfin_info_bg_1")
+		self.load1 = createResourcesLoad(res_id, ResourcesType.single, function()
+			if self.image_bg and not tolua.isnull(self.image_bg) then
+				self.image_bg:loadTexture(res_id, LOADTEXT_TYPE)	-- loadSpriteTexture(self.image_bg, res_id, LOADTEXT_TYPE)
+				self.image_bg:setScale9Enabled(true)
+				self.image_bg:setCapInsets(cc.rect(16, 700, 687, 102))
+			end
+		end, self.load1)
+	end
+
+	self:upGradeOrCompose()
+
+	-- 阶数
+	if cfg then
+		local start_y = 785
+		-- if cfg.quality > 5 then
+			start_y = 835
+		-- end
+		self:showElfinStep(cfg.eqm_jie,start_y)
+		self:showBottomEffect(true, cfg.quality)
+		local res = PathTool.getResFrame("elfin", "elfin_1054")
+		local res2 = PathTool.getResFrame("elfin", "txt_cn_elfin_type_1")
+		local color = cc.c4b(0x84,0xde,0xfc,0xff)
+		local color2 = cc.c4b(0x1c,0x2d,0x5f,0xff)
+    	if cfg.quality >= BackPackConst.quality.orange then
+			res = PathTool.getResFrame("elfin", "elfin_1056")
+			res2 = PathTool.getResFrame("elfin", "txt_cn_elfin_type_3")
+			color = cc.c4b(0xff,0xef,0xb2,0xff)
+			color2 = cc.c4b(0x84,0x3e,0x23,0xff)
+    	elseif cfg.quality == BackPackConst.quality.purple then
+			res = PathTool.getResFrame("elfin", "elfin_1055")
+			res2 = PathTool.getResFrame("elfin", "txt_cn_elfin_type_2")
+			color = cc.c4b(0xe2,0xcd,0xff,0xff)
+			color2 = cc.c4b(0x51,0x35,0x7f,0xff)
+		end
+		self.type_bg:loadTexture(res,LOADTEXT_TYPE_PLIST)
+		loadSpriteTexture(self.type_img, res2, LOADTEXT_TYPE_PLIST)
+		self.type_name:setTextColor(color)
+		self.type_name:enableOutline(color2, 2)
+		self.type_name:setString(cfg.use_desc)
+		moveTextBg(self.type_name,self.type_bg,13,150)
+	end
+	local attachElfinId = _model:getAttachElfinById(self.elfin_id)
+	if attachElfinId then
+		if not self.attach_panel then
+			self.attach_panel = ElfinAttachInfoPanel.new()
+			self.attach_node:addChild(self.attach_panel)
+		end
+		self.attach_panel:setVisible(true)
+		self.attach_panel:setData(self.elfin_id)
+	else
+		if self.attach_panel then
+			self.attach_panel:setVisible(false)
+		end
+	end
+
+	local is_show_atttch = elfin_cfg.embed_shield
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("sprite_possess_show")
+    if is_show_atttch == 0 and not table.indexof(nohideIds,self.elfin_id) then
+		self.attach_node:setVisible(false)
+    else
+        self.attach_node:setVisible(true)
+    end
+
+	-- 模型
+	local effect_id = elfin_cfg.effect_id or "E70001"
+	if not self.elfin_spine then
+		local offset_y = tonumber(elfin_cfg.offset_y) or 0
+		self.elfin_spine = createEffectSpine( effect_id, cc.p(self.con_size.width*0.5, 470+offset_y), cc.p(0.5, 0), true, PlayerAction.stand )
+		self.elfin_node:addChild(self.elfin_spine)
+	end
+	if elfin_cfg.scale_val and elfin_cfg.scale_val > 0 then
+		self.elfin_spine:setScale(elfin_cfg.scale_val)
+	end
+
+	if elfin_cfg.support_skill_id then
+		local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.support_skill_id)
+		if skill_cfg then
+			if not self.support_item then
+				self.support_item = SkillItem.new(true, true, true, 0.8, true)
+				self.support_item:setPosition(cc.p(90, 50))
+				self.container:addChild(self.support_item)
+			end
+			self.support_item:setVisible(true)
+			self.support_item:setData(skill_cfg)
+		else
+			if self.support_item then
+				self.support_item:setVisible(false)
+			end
+		end
+	else
+		if self.support_item then
+			self.support_item:setVisible(false)
+		end
+	end
+
+	self:setAttrList()
+
+	addRedPointToNodeByStatus(self.right_btn_1,_model:getElfinStrongRed(self.elfin_id),10,10)
+end
+
+--合成和升级信息
+function NewElfinStrengWindow:upGradeOrCompose()
+	self.name_tips:setVisible(false)
+	local item_cfg = Config.ItemData.data_get_data(self.elfin_id)
+	local lev = _model:getElfinStrongLev(self.elfin_id)
+	if not item_cfg then return end
+	if not Config.SpriteData.data_sprite_enhance[item_cfg.quality] then return end
+	if not Config.SpriteData.data_sprite_enhance[item_cfg.quality][lev] then return end
+	local cfg = Config.SpriteData.data_sprite_enhance[item_cfg.quality]
+	local attr_cfg = cfg[lev]
+	local score_num = 0
+	score_num = attr_cfg.power
+	local elfin_cfg = Config.SpriteData.data_elfin_data(self.elfin_id)
+	score_num = score_num + elfin_cfg.power
+	self.power_label:setNum(score_num)
+	
+	if cfg[lev+1] then
+		for i,v in ipairs(attr_cfg.cost_up) do
+            local bid = v[1]
+            local need_num = v[2]
+			local item = self.cost_item_list[i]
+			if not item then
+				item = BackPackItem.new(false, true, false, 0.8)
+				self.item_node:addChild(item)
+				self.cost_item_list[i] = item
+			end
+			item:setPosition( (i-1) * (BackPackItem.Width * 0.8 + 10) , 0)
+			local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+			item:setBaseData(bid)
+			item:setNeedNum(need_num, have_num, 1, true, 2)
+			if need_num > have_num then
+				item:setDefaultTip(true, true)
+			else
+				item:setDefaultTip()
+			end
+			item:setVisible(true)
+        end
+		self.right_btn_1:setVisible(true)
+		self.item_node:setVisible(true)
+	else
+		--已满星
+		if self.chip_item1 then
+			self.chip_item1:setVisible(false)
+		end
+		self.num_txt_1:setVisible(false)
+		self.right_btn_1:setVisible(false)
+		self.num_label:setVisible(true)
+		self.item_node:setVisible(false)
+		addRedPointToNodeByStatus(self.right_btn_1, false)
+	end
+	self.up_star_panel:setVisible(true)
+end
+--设置宠物当前升级属性
+function NewElfinStrengWindow:setAttrList()
+	local item_cfg = Config.ItemData.data_get_data(self.elfin_id)
+	local lev = _model:getElfinStrongLev(self.elfin_id)
+	if not item_cfg then return end
+	if not Config.SpriteData.data_sprite_enhance[item_cfg.quality] then return end
+	if not Config.SpriteData.data_sprite_enhance[item_cfg.quality][lev] then return end
+	local cfg = Config.SpriteData.data_sprite_enhance[item_cfg.quality]
+	local attr_cfg = cfg[lev]
+	local attr_list = deepCopy(attr_cfg.attr)
+	local levle_list = {}
+	if cfg[lev+1] then
+		for k,v in pairs(cfg[lev+1].attr) do
+			local status = false
+			for key,value in pairs(attr_list) do
+				if v[1] == value[1] then
+					value[3] = v[2]
+					status = true
+					break
+				end
+			end
+			if not status then
+				local list = {v[1],0,v[2]}
+				table.insert(attr_list,list)
+			end
+		end
+		levle_list = {"level",lev,lev+1}
+	else
+		levle_list = {"level",lev}
+	end
+	self.levle_item:setData(levle_list,0)
+	self.show_list = attr_list
+	if self.list_view == nil then
+        if tolua.isnull(self.attr_list) then return end
+        local list_setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 0,
+            space_y = 0,
+            item_width = NewElfinStrengAttrItem.Width,
+            item_height = NewElfinStrengAttrItem.Height,
+            row = 0,
+            col = 1,
+            need_dynamic = true
+        }
+        local size = self.attr_list:getContentSize()
+        self.list_view = CommonScrollViewSingleLayout.new(self.attr_list, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, list_setting, cc.p(0, 0)) 
+
+        self.list_view:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.list_view:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.list_view:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.list_view:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function NewElfinStrengWindow:createNewCell(width, height)
+    local cell = NewElfinStrengAttrItem.new(0.9, true)
+    return cell
+end
+--获取数据数量
+function NewElfinStrengWindow:numberOfCells()
+    return #self.show_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function NewElfinStrengWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.show_list[index]
+    cell:setData(data,index)
+end
+
+--宠物星级
+function NewElfinStrengWindow:showElfinStep(num,posy)
+	posy = posy or 815
+	if not self.name_tips:isVisible() then
+		posy = 850
+	end
+	local width_s = 25
+    local _cStar = function(star_count, res, star_list,moveW)
+        local width = width_s
+		local x = self.con_size.width * 0.5 - star_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+		for k, v in pairs(star_list or {}) do
+			v:setVisible(false)
+		end
+        for i=1,star_count do
+            if not star_list[i] then 
+                local star = createImage(self.container,res,0,0,cc.p(0.5,0),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPosition(cc.p(x + (i-1) * width,posy))
+        end
+    end
+    if num > 0 and num <= 5 then
+        local res = PathTool.getResFrame("common","common_90032")
+        _cStar(num, res, self.elfin_step_list.star_list,0)
+	elseif num >= 6 then
+		local res = PathTool.getResFrame("common_1","common_1_572")
+		if self.elfin_step_list.moon == nil then 
+            local star = createImage(self.container,res,295, posy,cc.p(0.5,0.5),true,0,false)
+            self.elfin_step_list.moon = star
+        else
+            self.elfin_step_list.moon:setVisible(true)
+        end
+		if self.elfin_step_list.label == nil then 
+            local label = createLabel(18, 1, cc.c3b(0x00, 0x00, 0x00), 292, posy-4, "", self.container, 2, cc.p(0.5, 0.5))
+			label:setString(num)
+            self.elfin_step_list.label = label
+        else
+            self.elfin_step_list.label:setVisible(true)
+			self.elfin_step_list.label:setString(num)
+        end
+    end
+end
+
+-- 底盘特效
+function NewElfinStrengWindow:showBottomEffect( status, quality )
+	if status == false then
+        if self.bottom_effect then
+            self.bottom_effect:clearTracks()
+            self.bottom_effect:removeFromParent()
+            self.bottom_effect = nil
+        end
+    else
+		local eff_id = "E27004"
+		local action = PlayerAction.action_3
+		if quality == 6 then
+			eff_id = "E27008"
+			action = PlayerAction.action_3
+		elseif quality == 5 then
+			eff_id = "E27007"
+			action = PlayerAction.action_3
+		elseif quality == 4 then
+			action = PlayerAction.action_3
+		elseif quality == 3 then
+			action = PlayerAction.action_2
+		elseif quality == 2 then
+			action = PlayerAction.action_1
+		end
+        if not tolua.isnull(self.stage_node) and self.bottom_effect == nil then
+            self.bottom_effect = createEffectSpine(eff_id, cc.p(0, -40), cc.p(0.5, 0), true, action)
+            self.stage_node:addChild(self.bottom_effect)
+        end
+    end
+end
+
+function NewElfinStrengWindow:close_callback(  )
+	self:showBottomEffect(false)
+	if self.power_label then
+        self.power_label:DeleteMe()
+        self.power_label = nil
+	end
+	if self.update_num_event then
+		GlobalEvent:getInstance():UnBind(self.update_num_event)
+		self.update_num_event = nil
+	end
+	if self.chip_item1 then
+		self.chip_item1:DeleteMe()
+		self.chip_item1 = nil
+	end
+	if self.support_item then
+		self.support_item:DeleteMe()
+		self.support_item = nil
+	end
+	if self.elfin_spine then
+		self.elfin_spine:clearTracks()
+		self.elfin_spine:removeFromParent()
+		self.elfin_spine = nil
+	end
+	_controller:openRedElfinInfoWindow(false)
+end

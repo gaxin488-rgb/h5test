@@ -1,0 +1,174 @@
+ -- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      精英赛个人战绩
+-- <br/> 2019年3月6日
+-- --------------------------------------------------------------------
+ShinobiLevelPanel = ShinobiLevelPanel or BaseClass(BaseView)
+
+local controller = ShinobiController:getInstance()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+
+
+function ShinobiLevelPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "shinobi/shinobi_level_window"
+
+    self.res_list = {
+        -- { path = PathTool.getPlistImgForDownLoad("vedio","vedio"), type = ResourcesType.plist },
+    }
+
+    self.panel_list = {}
+end
+
+function ShinobiLevelPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_panel, 2)
+    
+    self.title = self.main_panel:getChildByName("win_title")
+    self.title:setString(TI18N("语言_c_5981"))
+    local image_2 = self.main_panel:getChildByName("Image_2")
+    autoSizeTitleBg(self.title,image_2)
+    self.panel_list={}
+    for i=1,2 do
+    	local panel = self.main_panel:getChildByName("panel_".. i)
+    	if panel then
+    		local object = {}
+            object.panel=panel
+    		object.name = panel:getChildByName("name")
+    		object.power = panel:getChildByName("power")
+            object.p = panel:getChildByName("Image_p")
+            local text_1=panel:getChildByName("text_1")
+            text_1:setString(TI18N("语言_c_5998"))
+            local text_2=panel:getChildByName("text_2")
+            text_2:setString(TI18N("语言_c_5999"))
+    		object.group_txt = panel:getChildByName("group_txt")
+            object.index = i
+            local group=self:getPanelGroup(panel)
+            object.label_list=group[1]
+            object.reawrd_list=group[2]
+    		table_insert(self.panel_list, object)
+    	end
+    end
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+    self.Image_arrow=self.main_panel:getChildByName("Image_arrow")
+    local tips_label = self.main_panel:getChildByName("tips_label")
+    tips_label:setString(TI18N("语言_c_6000"))
+    setTextMaxWidth(tips_label,630)
+end
+
+function ShinobiLevelPanel:getPanelGroup(panel)
+    local label_list={}
+    local reward_list={}
+    for i=1,4 do
+        local label = panel:getChildByName("reward_"..i)
+        table_insert(label_list,label)
+        local list=panel:getChildByName("itemlist_"..i)
+        local item_scrollview= self:SetRewardLayout(list)
+        table_insert(reward_list,item_scrollview)
+    end
+    return {label_list,reward_list}
+end
+
+function ShinobiLevelPanel:SetRewardLayout(list)
+    local scroll_view_size = list:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 4,                  -- 第一个单元的X起点
+        space_x = 10,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 4,                   -- y方向的间隔
+        item_width = BackPackItem.Width*0.58,               -- 单元的尺寸width
+        item_height = BackPackItem.Height*0.58,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 0,                         -- 列数，作用于垂直滚动类型
+        scale = 0.58
+    }
+    local item_scrollview = CommonScrollViewLayout.new(list, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    item_scrollview:setSwallowTouches(false)
+    return item_scrollview
+end
+
+function ShinobiLevelPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose), true)
+end
+
+--关闭
+function ShinobiLevelPanel:onClickBtnClose()
+    -- self:showSharePanel(false)
+    controller:openShinobiLevelPanel(false)
+end
+
+function ShinobiLevelPanel:openRootWnd(group)
+    -- local power= RoleController:getInstance():getRoleVo().power
+    -- local cfg= Config.ArenaShinobiData.data_group
+    -- self.group=0
+    -- for i,v in ipairs(cfg) do
+    --     if v.min_power<=power and v.max_power>=power then
+            
+    --     end
+    -- end 
+    self.group=group
+    self:updateData()
+end
+
+function ShinobiLevelPanel:updateData()
+    local maxGroup=Config.ArenaShinobiData.data_group_length
+    if self.group< maxGroup then
+        self.panel_list[2].panel:setVisible(true)
+        self.panel_list[1].panel:setPositionX(169)
+        self.Image_arrow:setVisible(true)
+        self:initPanel(1,self.group)
+        self:initPanel(2,self.group+1)
+    else
+        self.panel_list[2].panel:setVisible(false)
+        self.Image_arrow:setVisible(false)
+        self.panel_list[1].panel:setPositionX(338)
+        self:initPanel(1,self.group)
+    end
+end
+
+function ShinobiLevelPanel:initPanel(index,group)
+    local cfg  = Config.ArenaShinobiData.data_group_fun(group) 
+    local maxgroup= Config.ArenaShinobiData.data_shinobi_const["group_max_show"].val
+    local object= self.panel_list[index]
+    if cfg then
+        object.name:setString(cfg.name) --当前段位
+        if maxgroup==group then
+            object.power:setString(string.format(TI18N("语言_c_6143"),cfg.min_power))
+        else
+            object.power:setString(cfg.min_power.."-"..cfg.max_power)
+        end
+        object.p:setPositionX(object.power:getPositionX()-object.power:getContentSize().width/2-20)
+        local score_list=cfg.score_list
+        local award_list=cfg.award_list
+        for i=1,4 do
+            object.label_list[i]:setString(string.format(TI18N("语言_c_6140"),score_list[i]))
+            object.reawrd_list[i]:setData(award_list[i])
+            object.reawrd_list[i]:addEndCallBack(function()
+                local list = object.reawrd_list[i]:getItemList()
+                for k,v in pairs(list) do
+                    v:setNumFontSize(35)
+                    v:setDefaultTip()
+                    v:setSwallowTouches(false)
+                end
+            end)
+        end
+        object.group_txt:setString(index==1 and TI18N("语言_c_6001") or TI18N("语言_c_6002"))
+    end
+end
+
+function ShinobiLevelPanel:close_callback()
+    controller:openShinobiLevelPanel(false)
+end
+

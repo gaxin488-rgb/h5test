@@ -1,0 +1,214 @@
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--      
+-- <br/>Create: new Date().toISOString()
+--
+-- --------------------------------------------------------------------
+MinigameRankView = class("MinigameRankItem", function()
+    return ccui.Widget:create()
+end)
+local controller = MinigameController:getInstance()
+
+local function GetTotalWins(level, win_count)
+    local total_count = win_count
+    for i = 1, level - 1, 1 do
+        local config = Config.MinigameMobcontrolData.data_level_dif_info[i]
+        total_count = total_count + config.up_condition
+    end
+    return total_count
+end
+
+function MinigameRankView:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function MinigameRankView:configUI()
+	local csbPath = PathTool.getTargetCSB("minigame/minigame_rank_view")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.root_wnd:setAnchorPoint(cc.p(0.5, 0.5))
+
+    local title_container = self.root_wnd:getChildByName("title_container")
+    title_container:getChildByName("Panel_1"):getChildByName("rank_title"):setString(TI18N("语言_c_g_66"))
+
+    title_container:getChildByName("Panel_2"):getChildByName("role_name_title"):setString(TI18N("语言_c_g_67"))
+
+    title_container:getChildByName("Panel_3"):getChildByName("lv_title"):setString(TI18N("语言_c_g_68"))
+
+    title_container:getChildByName("Panel_4"):getChildByName("wins_title"):setString(TI18N("语言_c_g_69"))
+
+    title_container:getChildByName("Panel_5"):getChildByName("winrate_title"):setString(TI18N("语言_c_g_70"))
+
+    local container = self.root_wnd:getChildByName("container")
+
+    local bgSize = container:getContentSize()
+	local scroll_view_size = cc.size(bgSize.width, bgSize.height-8)
+    local setting = {
+        item_class = MinigameRankItem,      -- 单元类
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 0,                   -- y方向的间隔
+        item_width = 612,               -- 单元的尺寸width
+        item_height = 112,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+
+    self.rank_scrollview = CommonScrollViewLayout.new(container, cc.p(0,5) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.rank_scrollview:setSwallowTouches(false)
+
+    self.my_rank = self.root_wnd:getChildByName("my_rank")
+    local title = self.my_rank:getChildByName("title")
+    self.my_rank:getChildByName("title"):setString(TI18N("语言_c_g_74"))
+
+    local title_bg = self.my_rank:getChildByName("title_bg")
+    local title_bg_width = title:getContentSize().width + 40
+    local title_bg_height = title_bg:getContentSize().height
+    title_bg:setContentSize(title_bg_width,title_bg_height)
+    title:setPositionX(title_bg:getPositionX() + title_bg_width/2)
+
+
+    self.my_rank_id = self.my_rank:getChildByName("my_rank_id")
+    self.no_rank_label = self.my_rank:getChildByName("no_rank_label")
+    self.no_rank_label:setString(TI18N("语言_c_4935"))
+    self.my_name_label = self.my_rank:getChildByName("my_name_label")
+    self.my_level_label = self.my_rank:getChildByName("my_level_label")
+    self.my_wins_label = self.my_rank:getChildByName("my_wins_label")
+    -- self.my_winrate_label = self.my_rank:getChildByName("my_winrate_label")
+
+    self.my_head = PlayerHead.new(PlayerHead.type.circle)
+    self.my_head:setHeadLayerScale(0.8)
+    self.my_head:setPosition(150, 48)
+    self.my_rank:addChild(self.my_head)
+end
+
+function MinigameRankView:register_event()
+    -- if self.update_rank_event == nil then
+    --     self.update_rank_event = GlobalEvent:getInstance():Bind(RankEvent.RankEvent_Get_Rank_data, function(data)
+    --         if not data then return end
+    --         print(">>>>>>>>>>>>>>>------- MinigameRankView", vardump(data))
+    --         if data.type == 57 then
+    --             self.rank_scrollview:setData(data.rank_list)
+    --         end
+    --     end)
+    -- end
+end
+
+function MinigameRankView:open(data)
+    if not data then return end
+    -- RankController:getInstance():send_12900(57, 1, 10)
+    self.rank_scrollview:setData(data.rank_list)
+
+    --my
+    if data.my_idx == 0 then
+        self.no_rank_label:setVisible(true)
+        self.my_rank_id:setVisible(false)
+    else
+        self.no_rank_label:setVisible(false)
+        self.my_rank_id:setVisible(true)
+        self.my_rank_id:setString(data.my_idx)
+    end
+    local role_vo = RoleController:getInstance():getRoleVo()
+    self.my_head:setHeadRes(role_vo.face_id, false, LOADTEXT_TYPE, role_vo.face_file, role_vo.face_update_time)
+	self.my_head:setLev(role_vo.lev)
+    self.my_name_label:setString(role_vo.name)
+
+    local base_data = controller:getModel():getBaseData()
+    if base_data then
+        self.my_level_label:setString(base_data.level)
+        self.my_wins_label:setString(GetTotalWins(base_data.level, base_data.win_count))
+    end
+    -- if base_data.total_count == 0 then
+    --     self.my_winrate_label:setString("0%")
+    -- else
+    --     self.my_winrate_label:setString(string.format("%.0f", base_data.win_count/base_data.total_count*100).."%")
+    -- end
+end
+
+function MinigameRankView:DeleteMe()
+    if self.rank_scrollview then
+		self.rank_scrollview:DeleteMe()
+		self.rank_scrollview = nil
+	end
+    -- if self.update_rank_event ~= nil then
+    --     GlobalEvent:getInstance():UnBind(self.update_rank_event)
+    --     self.update_rank_event = nil
+    -- end
+end
+
+-----------------------------------@ rank item
+MinigameRankItem = class("MinigameRankItem", function()
+    return ccui.Widget:create()
+end)
+
+function MinigameRankItem:ctor()
+	self:configUI()
+	self:register_event()
+end
+
+function MinigameRankItem:configUI(  )
+	self.size = cc.size(612,112)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("minigame/minigame_rank_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local main_panel = self.root_wnd:getChildByName("main_panel")
+    self.rank_id = main_panel:getChildByName("rank_id")
+    self.rank_image = main_panel:getChildByName("rank_image")
+    self.rank_head = PlayerHead.new(PlayerHead.type.circle)
+    self.rank_head:setHeadLayerScale(0.8)
+    self.rank_head:setPosition(150, 58)
+    self.root_wnd:addChild(self.rank_head)
+    self.my_name_label = main_panel:getChildByName("my_name_label")
+    self.my_lv_label = main_panel:getChildByName("my_lv_label")
+    self.my_wins_label = main_panel:getChildByName("my_wins_label")
+    -- self.my_winrate_label = main_panel:getChildByName("my_winrate_label")
+end
+
+function MinigameRankItem:register_event(  )
+	
+end
+
+function MinigameRankItem:setData( data )
+	data = data or {}
+
+    if data.idx == 1 then
+		self.rank_id:setVisible(false)
+		self.rank_image:setVisible(true)
+		self.rank_image:loadTexture(PathTool.getResFrame("common","common_3001"), LOADTEXT_TYPE_PLIST)
+	elseif data.idx == 2 then
+		self.rank_id:setVisible(false)
+		self.rank_image:setVisible(true)
+		self.rank_image:loadTexture(PathTool.getResFrame("common","common_3002"), LOADTEXT_TYPE_PLIST)
+	elseif data.idx == 3 then
+		self.rank_id:setVisible(false)
+		self.rank_image:setVisible(true)
+		self.rank_image:loadTexture(PathTool.getResFrame("common","common_3003"), LOADTEXT_TYPE_PLIST)
+	else
+		self.rank_id:setString(data.idx)
+		self.rank_id:setVisible(true)
+		self.rank_image:setVisible(false)
+	end
+	self.rank_head:setHeadRes(data.face_id, false, LOADTEXT_TYPE, data.face_file, data.face_update_time)
+	self.rank_head:setLev(data.lev)
+
+	self.my_name_label:setString(transformNameByServ(data.name, data.srv_id))
+
+    self.my_lv_label:setString(data.val1)
+    self.my_wins_label:setString(GetTotalWins(data.val1, data.val2))
+    -- self.my_winrate_label:setString((data.val3/100).."%")
+end
+
+function MinigameRankItem:DeleteMe(  )
+	self:removeAllChildren()
+	self:removeFromParent()
+end

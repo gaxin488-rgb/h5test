@@ -1,0 +1,811 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      英雄属性tips
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+HeroDetailsAttrPanel = HeroDetailsAttrPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+
+function HeroDetailsAttrPanel:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/hero_details_attr_panel"
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+    }
+
+    self.key_list1 = {[1]="atk",[2]="hp",[3]="def",[4]="speed"}
+    self.key_list2 = {[1]="crit_rate",[2]="crit_ratio",[3]="hit_magic",[4]="dodge_magic",
+                    [5]="tenacity",[6]="hit_rate",[7]="res",[8]="dodge_rate",
+                    [9]="cure",[10]="be_cure",[11]="dam",
+                    [12] = "dam_p",           --物伤
+                    [13] = "dam_s",           --法伤
+                    [14] = "res_p",           --物免
+                    [15] = "res_s",           --法免
+                    }
+    self.addition_attr_list = {}
+    self.base_list = {}
+    self.rand_list = {}
+    self.addition_list = {}
+    self.addition_cfg = Config.AttrData.data_attr_add
+end
+
+function HeroDetailsAttrPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.container = self.root_wnd:getChildByName("main_panel")
+    self.container:setTouchEnabled(true)
+    self.ScrollView = self.container:getChildByName("ScrollView")
+    self.ScrollView:setScrollBarEnabled(false)
+end
+
+function HeroDetailsAttrPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn) ,false, 1)
+
+    -- 打开详情 特殊属性
+    self.details_attr_open = GlobalEvent:getInstance():Bind(HeroEvent.Select_Details_Attr_Open_Event,function(index)
+        if self.rand_list[index] and not self.rand_list[index].is_open then
+            self:ClickRandAttr(index,true,self.rand_list[index])
+        end
+    end)
+    -- 关闭详情 特殊属性
+    self.details_attr_close = GlobalEvent:getInstance():Bind(HeroEvent.Select_Details_Attr_Close_Event,function(index)
+        if self.rand_list[index] and self.rand_list[index].is_open then
+            self:ClickRandAttr(index,false,self.rand_list[index])
+        end
+    end)
+    -- 打开详情 加成项
+    self.details_attr_open2 = GlobalEvent:getInstance():Bind(HeroEvent.Select_Details_Attr_Open_Event2,function(index)
+        if self.addition_list[index] and not self.addition_list[index].is_open then
+            self:ClickAdditionAttr(index,true,self.addition_list[index])
+        end
+    end)
+    -- 关闭详情 加成项
+    self.details_attr_close2 = GlobalEvent:getInstance():Bind(HeroEvent.Select_Details_Attr_Close_Event2,function(index)
+        if self.addition_list[index] and self.addition_list[index].is_open then
+            self:ClickAdditionAttr(index,false,self.addition_list[index])
+        end
+    end)
+end
+
+--关闭
+function HeroDetailsAttrPanel:onClickCloseBtn()
+    controller:openHeroDetailsAttrPanel(false)
+end
+
+function HeroDetailsAttrPanel:openRootWnd(hero_vo,is_my)
+    self.hero_vo = hero_vo
+    self.is_my = is_my
+    self:setData(hero_vo)
+end
+
+
+function HeroDetailsAttrPanel:setData(hero_vo)
+    self:setBasePanel()
+    self:setRandomPanel()
+    self:setAdditionAttrList()
+    self:setAdditionPanel()
+    self:setPos()
+end
+
+function HeroDetailsAttrPanel:setPos()
+    if tolua.isnull(self.addition_panel) then return end
+    self.base_size = self.base_panel:getContentSize()
+    self.rand_size = self.rand_panel:getContentSize()
+    self.addition_size = self.addition_panel:getContentSize()
+    local _h= self.base_size.height + self.rand_size.height + self.addition_size.height
+    self.scroll_h = math.max(_h,self.ScrollView:getContentSize().height)
+    self.ScrollView:setInnerContainerSize(cc.size(self.ScrollView:getContentSize().width,self.scroll_h))
+    self.base_panel:setPositionY(self.scroll_h)
+    self.rand_panel:setPositionY(self.scroll_h - self.base_size.height)
+    self.addition_panel:setPositionY(self.scroll_h - self.base_size.height - self.rand_size.height)
+end
+
+--基础属性
+function HeroDetailsAttrPanel:setBasePanel()
+	self.base_panel = ccui.Widget:create()
+    self.base_panel:setContentSize(cc.size(447, tableLen(self.key_list1)*50 + 50))
+    self.base_panel:setAnchorPoint(cc.p(0.5,1))
+    self.base_panel:setPositionX(self.ScrollView:getContentSize().width/2)
+    self.base_title = createImage(self.base_panel,PathTool.getResFrame("common","common_1_304","false","common_1"),447/2,self.base_panel:getContentSize().height - 30,cc.p(0.5,0.5),true,3,true)
+    self.base_txt = createLabel(22, cc.c3b(0xff,0xff,0xff), cc.c3b(0x00,0x00,0x00), self.base_panel:getContentSize().width/2, self.base_panel:getContentSize().height - 30, TI18N("语言_c_2997"), self.base_panel, 2, cc.p(0.5,0.5))
+    self.base_txt:setZOrder(4)
+    local _w = math.max(self.base_txt:getContentSize().width + 100,self.base_title:getContentSize().width)
+    self.base_title:setContentSize(cc.size(_w,self.base_title:getContentSize().height))
+    self.ScrollView:addChild(self.base_panel)
+    for key, value in pairs(self.key_list1) do
+        local item = self:setBaseItem(value,self.hero_vo[value])
+        self.base_panel:addChild(item)
+        item:setAnchorPoint(cc.p(0,0))
+        item:setPosition(cc.p(0,(tableLen(self.key_list1) - key)*50))
+        table.insert(self.base_list,key,item)
+    end
+end
+function HeroDetailsAttrPanel:setBaseItem(attr_str,num)
+    local panel = ccui.Widget:create()
+    panel:setContentSize(cc.size(447, 50))
+    panel:setAnchorPoint(cc.p(0.5,0.5))
+    local res_id = PathTool.getAttrIconByStr(attr_str)
+    local res = PathTool.getResFrame("common",res_id)
+    local icon = createSprite(res, 0, 5, panel, cc.p(0,0))
+    local name = createLabel(22,cc.c3b(0x7c,0x55,0x36),nil,40,5,Config.AttrData.data_attr_desc[attr_str].attr_write,panel,nil,cc.p(0,0))
+    local full_x = name:getContentSize().width + 60
+    local name2 = createLabel(22,cc.c3b(0x7c,0x55,0x36),nil,full_x,5,Config.AttrData.data_attr_desc[attr_str].attr_name,panel,nil,cc.p(0,0))
+    local num_txt = createLabel(22,cc.c3b(0x7c,0x55,0x36),nil,447,5,num,panel,nil,cc.p(1,0))
+    local line = createSprite(PathTool.getResFrame("common","common_1_303","false","common_1"), 447/2, 0, panel, cc.p(0.5,0))
+    if name:getString() == name2:getString() then
+        name2:setVisible(false)
+    else
+        name2:setVisible(true)
+    end
+    return panel
+end
+--随机属性
+function HeroDetailsAttrPanel:setRandomPanel()
+    self.rand_panel = ccui.Widget:create()
+    self.rand_panel:setContentSize(cc.size(447, tableLen(self.key_list2)*50 + 60))
+    self.rand_panel:setAnchorPoint(cc.p(0.5,1))
+    self.rand_panel:setPositionX(self.ScrollView:getContentSize().width/2)
+    self.rand_title = createImage(self.rand_panel,PathTool.getResFrame("common","common_1_304","false","common_1"),447/2,self.rand_panel:getContentSize().height - 30,cc.p(0.5,0.5),true,3,true)
+    self.rand_txt = createLabel(22, cc.c3b(0xff,0xff,0xff), cc.c3b(0x00,0x00,0x00), self.rand_panel:getContentSize().width/2, self.rand_panel:getContentSize().height - 30, TI18N("语言_c_2990"), self.rand_panel, 2, cc.p(0.5,0.5))
+    self.rand_txt:setZOrder(4)
+    local _w = math.max(self.rand_txt:getContentSize().width + 100,self.rand_title:getContentSize().width)
+    self.rand_title:setContentSize(cc.size(_w,self.rand_title:getContentSize().height))
+    self.ScrollView:addChild(self.rand_panel)
+    for i = 1, tableLen(self.key_list2) do
+        local item = self:setRandItem(self.key_list2[i],self.hero_vo[self.key_list2[i]],i)
+        self.rand_panel:addChild(item)
+        item:setAnchorPoint(cc.p(0,0))
+        item:setPosition(cc.p(0,(tableLen(self.key_list2) - i)*50))
+        table.insert(self.rand_list,i,item)
+    end
+end
+function HeroDetailsAttrPanel:setRandItem(attr_str,num,index)
+    local short_width = 0
+    local panel = ccui.Widget:create()
+    panel:setContentSize(cc.size(447, 50))
+    panel:setAnchorPoint(cc.p(0.5,1))
+    local panel_bg = createImage(panel,PathTool.getResFrame("common","common_1_301","false","common_1"),223,5,cc.p(0.5,0), true, nil, true)
+    panel_bg:setVisible(false)
+    local res_id = PathTool.getAttrIconByStr(attr_str)
+    local res = PathTool.getResFrame("common",res_id)
+    local icon = createSprite(res, 0, 5, panel, cc.p(0,0))
+    --缩写
+    local shorthand = createLabel(22,cc.c3b(0x29,0x92,0x08),nil,40,5,Config.AttrData.data_attr_desc[attr_str].attr_write,panel,nil,cc.p(0,0))
+    short_width = shorthand:getContentSize().width
+    --数值
+    local txt = string.format(TI18N("语言_c_4739"),num/10)
+    local num_txt = createLabel(22,cc.c3b(0xd9,0x54,0x19),nil,447 - 50,5,txt,panel,nil,cc.p(1,0))
+    local open_img = createImage(panel,PathTool.getResFrame("common", "common_1093"),447,25,cc.p(1,0.5), true, nil, true)
+    open_img:setTouchEnabled(true)
+    open_img:setVisible(true)
+    open_img:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            GlobalEvent:getInstance():Fire(HeroEvent.Select_Details_Attr_Open_Event, index)
+        end
+    end)
+    local close_img = createImage(panel,PathTool.getResFrame("common", "common_90034"),430,20,cc.p(0.5,0.5), true, nil, true)
+    close_img:setTouchEnabled(true)
+    close_img:setVisible(false)
+    close_img:setRotation(90)
+    close_img:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            GlobalEvent:getInstance():Fire(HeroEvent.Select_Details_Attr_Close_Event, index)
+        end
+    end)
+    local desc_panel = ccui.Widget:create()
+    desc_panel:setAnchorPoint(cc.p(0,0))
+    panel:addChild(desc_panel)
+    desc_panel:setVisible(false)
+    local desc_bg = createImage(desc_panel,PathTool.getResFrame("common","common_1_302","false","common_1"),223,0,cc.p(0.5,0), true, nil, true)
+    local txt_scr = createScrollView(447,40,0,3,desc_panel,ccui.ScrollViewDir.vertical)
+    --描述
+    local desc_txt = createRichLabel(18,cc.c3b(0x7c,0x55,0x36),cc.p(0,1),cc.p(23,5),0,nil,400)
+    txt_scr:addChild(desc_txt)
+    desc_txt:setString(Config.AttrData.data_attr_desc[attr_str].attr_desc)
+    desc_txt:setVisible(true)
+    local txt_h = desc_txt:getContentSize().height    
+    if txt_h > 70 then
+        txt_scr:setContentSize(cc.size(447,70))
+        txt_scr:setTouchEnabled(true)
+    else
+        txt_scr:setContentSize(cc.size(447,math.max(txt_h,40)))
+        txt_scr:setTouchEnabled(false)
+    end
+    txt_scr:setInnerContainerSize(cc.size(447,math.max(txt_h,40)))
+    desc_txt:setPositionY(txt_scr:getInnerContainerSize().height)
+    local _h = math.max(txt_scr:getContentSize().height,47)
+    desc_panel:setContentSize(cc.size(447, _h))
+    desc_panel:setPositionY(10)
+    desc_bg:setContentSize(cc.size(447, _h + 7))
+    local line = createSprite(PathTool.getResFrame("common","common_1_303","false","common_1"), 447/2, 0, panel, cc.p(0.5,0))
+    panel.index = index
+    panel.panel = panel
+    panel.panel_bg = panel_bg
+    panel.icon = icon
+    panel.shorthand = shorthand
+    panel.num_txt = num_txt
+    panel.open_img = open_img
+    panel.close_img = close_img
+    panel.desc_panel = desc_panel
+    panel.desc_bg = desc_bg
+    panel.txt_scr = txt_scr
+    panel.txt_scr.desc_txt = desc_txt
+    panel.desc_bg = desc_bg
+    panel.desc_bg = desc_bg
+    panel.line = line
+    panel.is_open = false
+    return panel
+end
+function HeroDetailsAttrPanel:ClickRandAttr(index,status,item)
+    if not item then return end
+    local _h = 0
+    if status then
+        item.is_open = true
+        item.desc_panel:setVisible(true)
+        item.panel_bg:setVisible(true)
+        item.open_img:setVisible(false)
+        item.close_img:setVisible(true)
+
+        local desc_h = item.desc_panel:getContentSize().height + 10
+        _h = desc_h
+        item.panel:setContentSize(cc.size(447,item.panel:getContentSize().height + desc_h))
+        item.panel_bg:setContentSize(cc.size(460,item.panel:getContentSize().height - 5))
+        item.icon:setPositionY(item.icon:getPositionY() + desc_h + 5)
+        item.shorthand:setPositionY(item.shorthand:getPositionY() + desc_h + 5)
+        item.num_txt:setPositionY(item.num_txt:getPositionY() + desc_h + 5)
+        item.open_img:setPositionY(item.open_img:getPositionY() + desc_h + 5)
+        item.close_img:setPositionY(item.close_img:getPositionY() + desc_h + 5)        
+        self.rand_panel:setContentSize(cc.size(self.rand_panel:getContentSize().width,self.rand_panel:getContentSize().height + desc_h))
+        for key, value in pairs(self.rand_list) do
+            if value.index < index then
+                value:setPositionY(value:getPositionY() + _h)
+            end
+        end
+    else
+        item.is_open = false
+        item.desc_panel:setVisible(false)
+        item.panel_bg:setVisible(false)
+        item.open_img:setVisible(true)
+        item.close_img:setVisible(false)
+        
+        local desc_h = item.desc_panel:getContentSize().height + 10
+        _h = -desc_h
+        item.panel:setContentSize(cc.size(447,item.panel:getContentSize().height - desc_h))
+        item.panel_bg:setContentSize(cc.size(460,item.panel:getContentSize().height))
+        item.icon:setPositionY(item.icon:getPositionY() - desc_h - 5)
+        item.shorthand:setPositionY(item.shorthand:getPositionY() - desc_h - 5)
+        item.num_txt:setPositionY(item.num_txt:getPositionY() - desc_h - 5)        
+        item.open_img:setPositionY(item.open_img:getPositionY() - desc_h - 5)
+        item.close_img:setPositionY(item.close_img:getPositionY() - desc_h - 5)  
+        self.rand_panel:setContentSize(cc.size(self.rand_panel:getContentSize().width,self.rand_panel:getContentSize().height - desc_h))
+        for key, value in pairs(self.rand_list) do
+            if value.index < index then
+                value:setPositionY(value:getPositionY() + _h)
+            end
+        end
+    end
+    self.rand_title:setPositionY(self.rand_panel:getContentSize().height - 30)
+    self.rand_txt:setPositionY(self.rand_panel:getContentSize().height - 30)
+    local scr_y = self.ScrollView:getInnerContainer():getPositionY()
+    self:setPos()
+    local temp_percent = 100 - (math.abs(scr_y) + _h) / (self.ScrollView:getInnerContainerSize().height - self.ScrollView:getContentSize().height) * 100
+    if temp_percent < 0 then
+        temp_percent = 0
+    elseif temp_percent > 100 then
+        temp_percent = 100
+    end
+    self.ScrollView:jumpToPercentVertical(temp_percent)
+end
+
+--加成项
+function HeroDetailsAttrPanel:setAdditionAttrList()
+    local string_format = string.format
+    local _type = HeroConst.CareerType.eMagician
+    local camp_type = HeroConst.CampType.eWater
+    local config = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    if config then
+        _type = config.type
+        camp_type = config.camp_type
+    end
+
+    --异能英雄
+    local is_lock, lock_id = false, 0
+    local is_eAlien = false
+    if self.hero_vo.camp_type == HeroConst.CampType.eAlien then
+        is_eAlien = true
+        local new_hero = self.hero_vo
+        if not self.hero_vo.isLockByLocktype then
+            new_hero = HeroVo.New()
+            new_hero:updateHeroVo(self.hero_vo)
+        end
+        is_lock, lock_id = new_hero:isLockByLocktype(HeroConst.LockType.eHeroSoulLock)
+        if is_lock then
+            local alien_hero_vo = HeroController:getInstance():getModel():getHeroById(lock_id)
+            local alien_config = Config.PartnerData.data_partner_base[alien_hero_vo.bid]
+            _type = alien_config.type
+            camp_type = alien_config.camp_type
+        end
+    end
+    local guild_level = 0 --公会等级
+    local guild_pvp_skill_level = 0 --公会pvp技能等级
+    local guild_pvp_attr_level = 0 --公会pvp属性等级
+    local halidom_level = 0 --圣物等级
+    local halidom_break = 0 --圣物阶级
+    local resonate_stone_level = 0 --共鸣石碑等级
+    local tree_level = 0 --古树等级
+    local tree_order = 0 --古树阶数
+    local home_level = 0 --家园层数
+    local soul_level = self.hero_vo.h_lev or 0 --专属忍具
+    local soul_unlock = true
+    local heart_level = self.hero_vo.a_lev or 0 --异界之心
+    local heart_unlock = true
+    local treasure_power = 0 --魔导器总战力
+    local runic_power = 0 --符文能量
+    local treasure_unlock = true
+    local high_halidom_level = 0 --高阶圣物等级
+    local high_halidom_jie = 0 --高阶圣物阶数
+    local high_halidom_unlock = true
+    local high_halidom_jie_unlock = true
+    --如果是异能英雄 判断回退之后锁定状态
+    local unlock_star = Config.PartnerSoulData.data_const["open_star_condition"].val
+    local unlock_tower = Config.PartnerSoulData.data_const["open_tower_layers"].val
+    local now_tower = StartowerController:getInstance():getModel():getNowTowerId() or 0
+    local herostar = self.hero_vo and self.hero_vo.star or 0
+    if herostar < unlock_star then
+        soul_unlock = false
+    end
+    local unlock_lv = Config.PartnerHeartData.data_const["heartskill_unlock"].val
+    if self.hero_vo.lev < unlock_lv then
+        heart_unlock = false
+    end
+    treasure_unlock = TreasureController:getInstance():getModel():TreasureIsOpen()
+    treasure_power = TreasureController:getInstance():getModel():getTreasurePower()
+    
+    local is_open_high_jades = false
+    -- for i=1,6 do
+    --     local high_jades = HalidomController:getInstance():getModel():getHighJades(self.hero_vo.camp_type,i)
+    --     if high_jades and next(high_jades) and high_jades.hero_id == self.hero_vo.id then
+    --         is_open_high_jades = true 
+    --         high_halidom_jie = high_jades.jade_step
+    --     end
+    -- end
+    high_halidom_unlock = true
+    -- high_halidom_jie_unlock = is_open_high_jades
+    local data = HalidomController:getInstance():getModel():getHalidomDataById(self.hero_vo.camp_type)
+    high_halidom_level = data and data.high_lev or 0
+    if self.hero_vo.ext_data then
+        for i,v in ipairs(self.hero_vo.ext_data) do
+            if v.id == 1 then --公会等级
+                guild_level = v.val or 0
+            elseif v.id == 2 then
+                halidom_break = v.val or 0
+            elseif v.id == 3 then
+                halidom_level = v.val or 0
+            elseif v.id == 4 then
+                resonate_stone_level = v.val or 0
+            elseif v.id == 5 then
+                guild_pvp_attr_level = v.val or 0
+            elseif v.id == 6 then
+                guild_pvp_skill_level = v.val or 0
+            elseif v.id == 9 then --古树等级
+                tree_level = v.val or 0
+            elseif v.id == 10 then --古树阶数
+                tree_order = v.val or 0
+            elseif v.id == 11 then --家园楼层
+                home_level = v.val or 0
+            elseif v.id == 14 then --符文能量
+                runic_power = v.val or 0
+            elseif v.id == 17 then --高阶圣物阶数
+                high_halidom_jie = v.val or 0
+            elseif v.id == 18 then --高阶圣物等级
+                high_halidom_level = v.val or 0
+            end
+        end
+    end
+    high_halidom_jie_unlock = high_halidom_jie ~= 0
+    if self.is_my and not self.hero_vo.is_pokedex then
+        --是自己的.公会等级可能会改变
+        local model = GuildskillController:getInstance():getModel()
+        local level = model:getCareerSkillLevel(_type)
+        local attr_lev, skill_lev = model:getCareerPvpSkillLevel(_type)
+        if level ~= -1 then 
+            --如果有公会技能等级信息..拿本地的
+            guild_level = level
+        end
+        if attr_lev ~= -1 then
+            guild_pvp_skill_level = skill_lev or 0
+            guild_pvp_attr_level = attr_lev or 0
+        end
+
+        local halidom_vo = HalidomController:getInstance():getModel():getHalidomDataByCampType(camp_type)
+        if halidom_vo then
+            halidom_level = halidom_vo.lev or 0
+            halidom_break = halidom_vo.step or 0
+        end
+        local model = controller:getModel()
+        if model then
+            resonate_stone_level  = model.resonate_stone_level or 0    
+        end
+
+        local tree_data = ElfinController:getInstance():getModel():getElfinTreeData()
+        if tree_data then
+            tree_level = tree_data.lev
+            tree_order = tree_data.break_lev
+        end
+    end
+
+    --公会技能等级
+    local str1 = string.format(self.addition_cfg[1001].attr_name,HeroConst.CareerName[_type])
+    local str2 = string.format(self.addition_cfg[1001].attr_desc,HeroConst.CareerName[_type],HeroConst.CareerName[_type])
+    local str3 = string.format(TI18N("语言_c_4712"),guild_level)
+    local list1 = {[1] = str1,[2] = str2,[3] = str3}
+    table.insert(self.addition_attr_list,list1)
+    --公会PVP等级
+    local str1 = string.format(self.addition_cfg[1002].attr_name,HeroConst.CareerName[_type])
+    local txt = ""
+    local key = getNorKey(_type, guild_pvp_skill_level)
+    if guild_pvp_skill_level == 0 then
+        key = getNorKey(_type, 1)
+    end
+    local pvp_skill_config = Config.GuildSkillData.data_pvp_skill_info(key)
+    if pvp_skill_config then
+        local skill_config = Config.SkillData.data_get_skill(pvp_skill_config.skill_id)
+        if skill_config then
+            txt = skill_config.name
+        end
+    end
+    local str2 = string.format(self.addition_cfg[1002].attr_desc,HeroConst.CareerName[_type],HeroConst.CareerName[_type],txt)
+    local str3 = string.format(TI18N("语言_c_5969"),guild_pvp_attr_level, guild_pvp_skill_level)
+    local list2 = {[1] = str1,[2] = str2,[3] = str3}
+    table.insert(self.addition_attr_list,list2)
+    --查克拉等级
+    local str1 = ""
+    if is_eAlien then
+        if is_lock then
+            str1 = string.format(self.addition_cfg[1003].attr_name,HeroConst.CampName[camp_type])..TI18N("语言_c_5028")
+        else
+            str1 = string_format(TI18N("语言_c_5026"), HeroConst.CampName[camp_type])
+        end
+    else
+        str1 = string.format(self.addition_cfg[1003].attr_name,HeroConst.CampName[camp_type])
+    end
+    local str2 = string.format(self.addition_cfg[1003].attr_desc,HeroConst.CampName[camp_type],HeroConst.CampName[camp_type])
+    local str3 = ""
+    if halidom_break == 0 and halidom_level == 0 then
+        str3 = TI18N("语言_c_1586")
+    else
+        str3 = string.format(TI18N("语言_c_5970"),halidom_level,halidom_break)
+    end
+    local list3 = {[1] = str1,[2] = str2,[3] = str3}
+    table.insert(self.addition_attr_list,list3)
+    --共鸣石碑等级 神树查克拉等级
+    local str1 = self.addition_cfg[1004].attr_name
+    local str2 = self.addition_cfg[1004].attr_desc
+    local str3 = ""
+    if resonate_stone_level == 0 then
+        str3 = TI18N("语言_c_1586")
+    else
+        str3 = string.format(TI18N("语言_c_4712"),resonate_stone_level)
+    end
+    local list4 = {[1] = str1,[2] = str2,[3] = str3}
+    table.insert(self.addition_attr_list,list4)
+    --通灵界唤醒等级阶级 古树
+    local str1 = self.addition_cfg[1005].attr_name
+    local str2 = self.addition_cfg[1005].attr_desc
+    local str3 = ""
+    if not tree_level then tree_level = 0 end
+    if not tree_order then tree_order = 0 end
+    if tree_level == 0 and tree_order == 0 then
+        str3 = TI18N("语言_c_1586")
+    else
+        str3 = string.format(TI18N("语言_c_5970"),tree_level,tree_order)
+    end
+    local list5 = {[1] = str1,[2] = str2,[3] = str3}
+    table.insert(self.addition_attr_list,list5)
+    --专属忍具
+    local str1 = self.addition_cfg[1006].attr_name
+    local str2 = self.addition_cfg[1006].attr_desc
+    local str3 = ""
+    if soul_level == 0 or not soul_unlock then
+        str3 = TI18N("语言_c_1586")
+    else
+        str3 = string.format(TI18N("语言_c_4712"), soul_level)
+    end
+    local list6 = {[1] = str1,[2] = str2,[3] = str3}
+    local limit_cfg = Config.PartnerSoulData.data_const["entrance_lv"]
+    local role_vo = RoleController:getInstance():getRoleVo()
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("partner_soul_data")
+    local isshowsoul = config and config.horcruxes and config.horcruxes ~= 0 and limit_cfg and limit_cfg.val <= role_vo.lev and ((config.horcruxes_show == 0 and table.indexof(nohideIds,config.horcruxes)) or config.horcruxes_show == 1)
+    if isshowsoul then
+        table.insert(self.addition_attr_list,list6)
+    end
+    --异界之心
+    local str1 = self.addition_cfg[1008].attr_name
+    local str2 = self.addition_cfg[1008].attr_desc
+    local str3 = ""
+    if heart_level == 0 or not heart_unlock then
+        str3 = TI18N("语言_c_1586")
+    else
+        str3 = string.format(TI18N("语言_c_4712"), heart_level)
+    end
+    local list7 = {[1] = str1,[2] = str2,[3] = str3}
+    local isshowheart = config and config.alterheart and config.alterheart ~= 0
+    if isshowheart then
+        table.insert(self.addition_attr_list,list7)
+    end
+    --家园层数
+    local str1 = self.addition_cfg[1007].attr_name
+    local str2 = self.addition_cfg[1007].attr_desc
+    local str3 = string.format(TI18N("语言_c_5154"),home_level)
+    local list8 = {[1] = str1,[2] = str2,[3] = str3}
+    local isshowHome = home_level ~= 0
+    if isshowHome then
+        table.insert(self.addition_attr_list,list8)
+    end
+    
+    --符文能量
+    local str1 = self.addition_cfg[1009].attr_name
+    local str2 = self.addition_cfg[1009].attr_desc
+    local str3 = runic_power
+    local list9 = {[1] = str1,[2] = str2,[3] = str3}
+    local isshowRunicPower = self.hero_vo.star >= 13 
+    if isshowRunicPower then
+        table.insert(self.addition_attr_list,list9)
+    end
+    
+    --魔导器
+    local str1 = self.addition_cfg[1010].attr_name
+    local treasure_list = TreasureController:getInstance():getModel():getTreasureList()
+    local treasure_cfg = Config.NinjaTreasureData.data_base_info
+    local treasure_lev_cfg = Config.NinjaTreasureData.data_lv_info
+    local num1 = tableLen(treasure_list)
+    local num2 = Config.NinjaTreasureData.data_base_info_length
+    local num3 = 0
+    for key, value in pairs(treasure_list) do
+        num3 = num3 + value.lv
+    end
+    local num4 = 0
+    for key, value in pairs(treasure_cfg) do
+        num4 = num4 + tableLen(treasure_lev_cfg[value.quality])
+    end
+    local str2 = string.format(self.addition_cfg[1010].attr_desc,num1,num2,num3,num4)
+    local str3 = string.format(TI18N("%s"),treasure_power)
+    local list10 = {[1] = str1,[2] = str2,[3] = str3}
+    if treasure_unlock then
+        table.insert(self.addition_attr_list,list10)
+    end
+    --查克拉二阶段
+    local str1 = string.format(self.addition_cfg[1011].attr_name,HeroConst.CampName[camp_type])
+    local str2 = string.format(self.addition_cfg[1011].attr_desc,HeroConst.CampName[camp_type])
+    local str3 = ""
+    if high_halidom_level == 0 then
+        str3 = TI18N("语言_c_1586")
+    else
+        str3 = string.format(TI18N("语言_c_4712"),high_halidom_level)
+    end
+    local list11 = {[1] = str1,[2] = str2,[3] = str3}
+    if high_halidom_unlock then
+        table.insert(self.addition_attr_list,list11)
+    end
+    local str1 = self.addition_cfg[1012].attr_name
+    local str2 = self.addition_cfg[1012].attr_desc
+    local str3 = ""
+    if high_halidom_level == 0 then
+        str3 = TI18N("语言_c_1586")
+    else
+        str3 = string.format(TI18N("语言_c_4712"),high_halidom_jie)
+    end
+    local list12 = {[1] = str1,[2] = str2,[3] = str3}
+    if high_halidom_jie_unlock then
+        table.insert(self.addition_attr_list,list12)
+    end
+end
+function HeroDetailsAttrPanel:setAdditionPanel()
+    self.addition_panel = ccui.Widget:create()
+    self.addition_panel:setContentSize(cc.size(447, tableLen(self.addition_attr_list)*50 + 60))
+    self.addition_panel:setAnchorPoint(cc.p(0.5,1))
+    self.addition_panel:setPositionX(self.ScrollView:getContentSize().width/2)
+    self.addition_title = createImage(self.addition_panel,PathTool.getResFrame("common","common_1_304","false","common_1"),447/2,self.addition_panel:getContentSize().height - 30,cc.p(0.5,0.5),true,3,true)
+    self.addition_txt = createLabel(22, cc.c3b(0xff,0xff,0xff), cc.c3b(0x00,0x00,0x00), self.addition_panel:getContentSize().width/2, self.addition_panel:getContentSize().height - 30, TI18N("语言_c_2998"), self.addition_panel, 2, cc.p(0.5,0.5))
+    self.addition_txt:setZOrder(4)
+    local _w = math.max(self.addition_txt:getContentSize().width + 100,self.addition_title:getContentSize().width)
+    self.addition_title:setContentSize(cc.size(_w,self.addition_title:getContentSize().height))
+    self.ScrollView:addChild(self.addition_panel)
+    for key, value in pairs(self.addition_attr_list) do
+        -- local item = self:setAdditionItem(value,self.hero_vo[value],key)
+        local item = self:setAdditionItem(value[1],value[2],value[3],key)
+        self.addition_panel:addChild(item)
+        item:setAnchorPoint(cc.p(0,0))
+        item:setPosition(cc.p(0,(tableLen(self.addition_attr_list) - key)*50))
+        table.insert(self.addition_list,key,item)
+    end
+end
+
+function HeroDetailsAttrPanel:setAdditionItem(attr_name,attr_desc,num,index)
+    local short_width = 0
+    local panel = ccui.Widget:create()
+    panel:setContentSize(cc.size(447, 50))
+    panel:setAnchorPoint(cc.p(0.5,1))
+    local panel_bg = createImage(panel,PathTool.getResFrame("common","common_1_301","false","common_1"),223,5,cc.p(0.5,0), true, nil, true)
+    panel_bg:setVisible(false)
+    --缩写
+    local shorthand = createRichLabel(22,cc.c3b(0x29,0x92,0x08),cc.p(0,0),cc.p(5,5),-8,nil,300)
+    panel:addChild(shorthand)
+    shorthand:setString(attr_name)
+    short_width = shorthand:getContentSize().width
+    --数值
+    local num_txt = createLabel(22,cc.c3b(0xd9,0x54,0x19),nil,447 - 50,5,"",panel,nil,cc.p(1,0))
+    num_txt:setAlignment(cc.TEXT_ALIGNMENT_RIGHT)
+    num_txt:setLineSpacing(-8)
+    num_txt:setChangeScaleOffWidth(shorthand:getContentSize().width + 70)
+    num_txt:setString(num)
+    local open_img = createImage(panel,PathTool.getResFrame("common", "common_1093"),447,25,cc.p(1,0.5), true, nil, true)
+    open_img:setTouchEnabled(true)
+    open_img:setVisible(true)
+    open_img:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            GlobalEvent:getInstance():Fire(HeroEvent.Select_Details_Attr_Open_Event2, index)
+        end
+    end)
+    local close_img = createImage(panel,PathTool.getResFrame("common", "common_90034"),430,20,cc.p(0.5,0.5), true, nil, true)
+    close_img:setTouchEnabled(true)
+    close_img:setVisible(false)
+    close_img:setRotation(90)
+    close_img:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            GlobalEvent:getInstance():Fire(HeroEvent.Select_Details_Attr_Close_Event2, index)
+        end
+    end)
+    local desc_panel = ccui.Widget:create()
+    desc_panel:setAnchorPoint(cc.p(0,0))
+    panel:addChild(desc_panel)
+    desc_panel:setVisible(false)
+    local desc_bg = createImage(desc_panel,PathTool.getResFrame("common","common_1_302","false","common_1"),223,0,cc.p(0.5,0), true, nil, true)
+    local txt_scr = createScrollView(447,40,0,3,desc_panel,ccui.ScrollViewDir.vertical)
+    --描述
+    local desc_txt = createLabel(18,cc.c3b(0x7c,0x55,0x36),nil,23,5,"",txt_scr,nil,cc.p(0,1))
+    desc_txt:setLineSpacing(-4)
+    desc_txt:setWidth(400)
+    desc_txt:setString(attr_desc)
+    desc_txt:setVisible(true)
+    local txt_h = desc_txt:getContentSize().height    
+    if txt_h > 70 then
+        txt_scr:setContentSize(cc.size(447,70))
+        txt_scr:setTouchEnabled(true)
+    else
+        txt_scr:setContentSize(cc.size(447,math.max(txt_h,40)))
+        txt_scr:setTouchEnabled(false)
+    end
+    txt_scr:setInnerContainerSize(cc.size(447,math.max(txt_h,40)))
+    desc_txt:setPositionY(txt_scr:getInnerContainerSize().height)
+    local _h = math.max(txt_scr:getContentSize().height,47)
+    desc_panel:setContentSize(cc.size(447, _h))
+    desc_panel:setPositionY(10)
+    desc_bg:setContentSize(cc.size(447, _h + 7))
+    local line = createSprite(PathTool.getResFrame("common","common_1_303","false","common_1"), 447/2, 0, panel, cc.p(0.5,0))
+    panel.index = index
+    panel.panel = panel
+    panel.panel_bg = panel_bg
+    panel.shorthand = shorthand
+    panel.num_txt = num_txt
+    panel.open_img = open_img
+    panel.close_img = close_img
+    panel.desc_panel = desc_panel
+    panel.desc_bg = desc_bg
+    panel.txt_scr = txt_scr
+    panel.txt_scr.desc_txt = desc_txt
+    panel.desc_bg = desc_bg
+    panel.desc_bg = desc_bg
+    panel.line = line
+    panel.is_open = false
+    return panel
+end
+
+function HeroDetailsAttrPanel:ClickAdditionAttr(index,status,item)
+    if not item then return end
+    local _h = 0
+    if status then
+        item.is_open = true
+        item.desc_panel:setVisible(true)
+        item.panel_bg:setVisible(true)
+        item.open_img:setVisible(false)
+        item.close_img:setVisible(true)
+
+        local desc_h = item.desc_panel:getContentSize().height + 10
+        _h = desc_h
+        item.panel:setContentSize(cc.size(447,item.panel:getContentSize().height + desc_h))
+        item.panel_bg:setContentSize(cc.size(460,item.panel:getContentSize().height - 5))
+        if item.shorthand:getContentSize().height > 30 then
+            item.shorthand:setPositionY(item.shorthand:getPositionY() + desc_h)
+        else
+            item.shorthand:setPositionY(item.shorthand:getPositionY() + desc_h + 5)
+        end
+        if item.num_txt:getContentSize().height > 30 then
+            item.num_txt:setPositionY(item.num_txt:getPositionY() + desc_h)
+        else
+            item.num_txt:setPositionY(item.num_txt:getPositionY() + desc_h + 5)
+        end
+        item.open_img:setPositionY(item.open_img:getPositionY() + desc_h + 5)
+        item.close_img:setPositionY(item.close_img:getPositionY() + desc_h + 5)        
+        self.addition_panel:setContentSize(cc.size(self.addition_panel:getContentSize().width,self.addition_panel:getContentSize().height + desc_h))
+        for key, value in pairs(self.addition_list) do
+            if value.index < index then
+                value:setPositionY(value:getPositionY() + _h)
+            end
+        end
+    else
+        item.is_open = false
+        item.desc_panel:setVisible(false)
+        item.panel_bg:setVisible(false)
+        item.open_img:setVisible(true)
+        item.close_img:setVisible(false)
+        
+        local desc_h = item.desc_panel:getContentSize().height + 10
+        _h = -desc_h
+        item.panel:setContentSize(cc.size(447,item.panel:getContentSize().height - desc_h))
+        item.panel_bg:setContentSize(cc.size(460,item.panel:getContentSize().height))
+        if item.shorthand:getContentSize().height > 30 then
+            item.shorthand:setPositionY(item.shorthand:getPositionY() - desc_h)
+        else
+            item.shorthand:setPositionY(item.shorthand:getPositionY() - desc_h - 5)
+        end
+        if item.num_txt:getContentSize().height > 30 then
+            item.num_txt:setPositionY(item.num_txt:getPositionY() - desc_h)        
+        else
+            item.num_txt:setPositionY(item.num_txt:getPositionY() - desc_h - 5)        
+        end
+        item.open_img:setPositionY(item.open_img:getPositionY() - desc_h - 5)
+        item.close_img:setPositionY(item.close_img:getPositionY() - desc_h - 5)  
+        self.addition_panel:setContentSize(cc.size(self.addition_panel:getContentSize().width,self.addition_panel:getContentSize().height - desc_h))
+        for key, value in pairs(self.addition_list) do
+            if value.index < index then
+                value:setPositionY(value:getPositionY() + _h)
+            end
+        end
+    end
+    self.addition_title:setPositionY(self.addition_panel:getContentSize().height - 30)
+    self.addition_txt:setPositionY(self.addition_panel:getContentSize().height - 30)
+    local scr_y = self.ScrollView:getInnerContainer():getPositionY()
+    self:setPos()
+    local temp_percent = 100 - (math.abs(scr_y) + _h) / (self.ScrollView:getInnerContainerSize().height - self.ScrollView:getContentSize().height) * 100
+    if temp_percent < 0 then
+        temp_percent = 0
+    elseif temp_percent > 100 then
+        temp_percent = 100
+    end
+    self.ScrollView:jumpToPercentVertical(temp_percent)
+end
+function HeroDetailsAttrPanel:close_callback()
+    controller:openHeroDetailsAttrPanel(false)
+    self.addition_attr_list = {}
+    self.base_list = {}
+    self.rand_list = {}
+    self.addition_list = {}
+    
+    if self.details_attr_open then
+        GlobalEvent:getInstance():UnBind(self.details_attr_open)
+        self.details_attr_open = nil
+    end
+    if self.details_attr_close then
+        GlobalEvent:getInstance():UnBind(self.details_attr_close)
+        self.details_attr_close = nil
+    end
+    if self.details_attr_open2 then
+        GlobalEvent:getInstance():UnBind(self.details_attr_open2)
+        self.details_attr_open2 = nil
+    end
+    if self.details_attr_close2 then
+        GlobalEvent:getInstance():UnBind(self.details_attr_close2)
+        self.details_attr_close2 = nil
+    end
+end

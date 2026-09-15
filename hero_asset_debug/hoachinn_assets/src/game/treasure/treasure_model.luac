@@ -1,0 +1,1313 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      神殿玩法  策划 星宇 后端 爵爷 
+-- <br/>Create: 2018-10-26
+-- --------------------------------------------------------------------
+TreasureModel = TreasureModel or BaseClass()
+
+function TreasureModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function TreasureModel:config()
+    self.treasure_hatch_list = {}  -- 孵化器数据
+	self.treasure_red_list = {} -- 红点数据 1战令
+	self.treasure_buy_info = {} 	-- 今日购买精灵蛋和砸蛋道具的物品数量
+	self.treasure_list = {} --自己拥有得秘宝
+	self.first_red = false --每次登陆红点  不需要每次登陆有红点 需要的话 这里变为true
+	self.treasure_change_list = {} --改变的秘宝
+	self.is_first_war = false
+	self.research_data = {}--研发的数据
+	self.research_first_list = {} --研发项目首次点击红点
+end
+
+-- 设置灵窝数据
+function TreasureModel:setTreasureHatchList( data_list )
+	self.treasure_hatch_list = {}
+	for k,data in pairs(data_list) do
+		local treasure_hatch_vo = TreasureHatchVo.New()
+		treasure_hatch_vo:updateData(data)
+		if self.hatch_cfg and self.hatch_cfg[data.id] then
+			treasure_hatch_vo.sort = self.hatch_cfg[data.id].sort
+		end
+		table.insert(self.treasure_hatch_list, treasure_hatch_vo)
+	end
+	table.sort(self.treasure_hatch_list,function(a,b) return a.sort < b.sort end)
+
+	-- 检测是否有孵化完成的灵窝
+	self:calculateTreasureHatchDoneRedStatus()
+	self:calculateTreasureHatchEggRedStatus()
+end
+-- 更新灵窝数据
+function TreasureModel:updateTreasureHatchData( data_list )
+	for _,data in pairs(data_list) do
+		local is_have = false
+		for k,treasure_hatch_vo in pairs(self.treasure_hatch_list) do
+			if treasure_hatch_vo.id == data.id then
+				treasure_hatch_vo:updateData(data)
+				is_have = true
+				break
+			end
+		end
+		if not is_have then
+			local treasure_hatch_vo = TreasureHatchVo.New()
+			treasure_hatch_vo:updateData(data)
+			if self.hatch_cfg and self.hatch_cfg[data.id] then
+				treasure_hatch_vo.sort = self.hatch_cfg[data.id].sort
+			end
+			table.insert(self.treasure_hatch_list, treasure_hatch_vo)
+		end
+	end
+
+	-- 检测是否有孵化完成的灵窝
+	self:calculateTreasureHatchDoneRedStatus()
+	self:calculateTreasureHatchEggRedStatus()
+end
+
+-- 计算灵窝孵化完成的红点
+function TreasureModel:calculateTreasureHatchDoneRedStatus(  )
+	if not self:checkTreasureIsOpen(true) then return end
+	local hatch_done_red = false
+	for k,hatch_vo in pairs(self.treasure_hatch_list) do
+		if hatch_vo.state == TreasureConst.Hatch_Status.Over then
+			hatch_done_red = true
+			break
+		end
+	end
+	self:updateTreasureRedStatus(HeroConst.RedPointType.eTreasure_hatch_done, hatch_done_red)
+end
+
+-- 计算是否有可孵化的灵窝和蛋
+function TreasureModel:calculateTreasureHatchEggRedStatus(  )
+	if not self:checkTreasureIsOpen(true) then return end
+	local red_status = false
+	local have_empty_hatch = false
+	for k,hatch_vo in pairs(self.treasure_hatch_list) do
+		if hatch_vo.is_open == 1 and hatch_vo.state == TreasureConst.Hatch_Status.Open then
+			have_empty_hatch = true
+			break
+		end
+	end
+	if have_empty_hatch then
+		local all_egg_list = BackpackController:getInstance():getModel():getBackPackItemListByType(BackPackConst.item_type.ELFIN_EGG)
+		if #all_egg_list > 0 then
+			red_status = true
+		end
+	end
+	red_status = red_status and self:getIsSearchLimit()
+	self:updateTreasureRedStatus(HeroConst.RedPointType.eTreasure_hatch_egg, red_status)
+end
+
+-------------------------------------@ 红点相关
+function TreasureModel:updateTreasureRedStatus( bid, status )
+	if not self:checkTreasureIsOpen(true) then return end
+	if not bid then return end
+    self.treasure_red_list[bid] = status
+
+    MainuiController:getInstance():setBtnRedPoint(MainuiConst.btn_index.partner, {bid = bid, status = status})
+    GlobalEvent:getInstance():Fire(TreasureEvent.Update_Treasure_Search_Red_Event, bid, status)
+	local redpoint_data = {}
+    redpoint_data.bid = bid
+    redpoint_data.status = status
+	GlobalEvent:getInstance():Fire(HeroEvent.All_Hero_RedPoint_Event, {redpoint_data})
+	-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.lottery,status = self:getTreasureRed()})
+	-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.firstRed,status = self.first_red == true})
+	self:setRedInfo()
+end
+function TreasureModel:getTreasureRed()
+	if not self:IsTreasureLev() then return false end
+	for key, value in pairs(self.treasure_red_list) do
+		if value then
+			return true
+		end
+	end
+	return false
+end
+function TreasureModel:setTreasureRed(data)
+	local red_point = false
+	red_point = self:getCanUpLevForIdRed(data)
+	if red_point then
+		self.treasure_red_list[data.item_bid] = red_point
+		return
+	end
+	red_point = self:getCanUpstarForIdRed(data)
+	if red_point then
+		self.treasure_red_list[data.item_bid] = red_point
+		return
+	end
+	red_point = self:getCanWakeUpForIdRed(data)
+	if red_point then
+		self.treasure_red_list[data.item_bid] = red_point
+		return
+	end
+	self.treasure_red_list[data.item_bid] = red_point
+end
+--能否升级
+function TreasureModel:getCanUpLevForIdRed(data)
+	-- local id = data.item_bid or data.id
+	-- local lv = data.lev or data.lv
+	-- local star_info = Config.NinjaTreasureData.data_star_info[id]
+	-- if not star_info then return false end
+	-- star_info = star_info[data.star]
+	-- local max_lv = star_info.lv_max
+	-- if lv >= max_lv then return false end
+	-- local base_cfg = Config.NinjaTreasureData.data_base_info[id]
+	-- if not base_cfg then return false end
+	-- local quality = base_cfg.quality
+	-- local lv_info = Config.NinjaTreasureData.data_lv_info[quality]
+	-- if not lv_info then return false end
+	-- if lv >= tableLen(lv_info) then return false end
+	-- lv_info = lv_info[lv]
+	-- local cost_data = lv_info.need
+	-- for key, value in pairs(cost_data) do
+	-- 	local have_num = BackpackController:getInstance():getModel():getItemNumByBid(value[1])
+	-- 	if have_num < value[2] then
+			return false
+	-- 	end
+	-- end
+	-- return true
+end
+--能否升星
+function TreasureModel:getCanUpstarForIdRed(data)
+	local id = data.item_bid or data.id
+	if BattleDramaController:getInstance():getModel():checkDispatchIsUp(id) then
+		return false
+	end
+	local star_info = Config.NinjaTreasureData.data_star_info[id]
+	if not star_info then return false end
+	if data.star >= tableLen(star_info) then return false end
+	star_info = star_info[data.star]
+	if star_info.limit[1] then
+		local limit = star_info.limit[1]
+		if limit[1] == "tree_lev" then
+			local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev
+			if tree_lev < limit[2] then return false end
+		end
+	end
+	local cost_data = star_info.cost
+	for key, value in pairs(cost_data) do
+		local have_num = BackpackController:getInstance():getModel():getItemNumByBid(value[1])
+		if have_num < value[2] then
+			return false
+		end
+	end
+	local cost_card = star_info.cost_card
+	for key, value in pairs(cost_card) do
+		local num = self:getHeroList(value)
+		if num < value[3] then return false end
+	end
+	
+	local cost_card = star_info.cost_card_mine
+	for key, value in pairs(cost_card) do
+		local heroinfolist = HeroController:getInstance():getModel():getHeroInfoByBidStar(value[1], value[2])
+		local num = heroinfolist and #(heroinfolist) or 0
+		if num < value[3] then return false end
+	end
+	return true
+end
+function TreasureModel:getHeroList(data)
+	local num = 0
+	--过滤
+	local hero_array = HeroController:getInstance():getModel():getAllHeroArray()
+	local size = hero_array:GetSize()
+	--表示选择同阵营的随机卡
+	for j=1, size do
+		local hero_vo = hero_array:Get(j-1)
+		if hero_vo  and not hero_vo:isResonateHero() and (hero_vo.camp_type == data[1] or 0 == data[1]) and (hero_vo.camp_type ~= HeroConst.CampType.eAlien) and --默认排除异能英雄
+			hero_vo.star == data[2] then
+			num = num + 1
+		end
+	end
+	--不忽略英雄魂
+	-- 获取背包的英魂 BackpackController:getInstance():getModel()
+	local list = BackpackController:getInstance():getModel():getHeroHunList()
+	for _,v in pairs(list) do
+		if v.config and (v.config.camp_type == data[1] or 0 == data[1]) and v.config.eqm_jie == data[2] then
+			for i=1, v.quantity do
+				num = num + 1
+			end
+		end
+	end
+	return num
+end
+--能否觉醒
+function TreasureModel:getCanWakeUpForIdRed(data)
+	local wake = data.is_wakeup or data["break"]
+	if wake == 1 then return false end
+	local id = data.item_bid or data.id
+	local lv = data.lev or data.lv
+	local awake_info = Config.NinjaTreasureData.data_awake_info[id]
+	if not awake_info then return false end
+	for k, v in pairs(awake_info.limit) do
+		if v[1] == "star" then
+			if data.star < v[2] then return false end
+		elseif v[1] == "lev" then
+			if lv < v[2] then return false end
+		end
+	end
+	local cost_data = awake_info.cost
+	local cost_item_list = awake_info.cost_item
+	for key, value in pairs(cost_data) do
+		local have_data = BackpackController:getInstance():getModel():getNumForQuantity(value[1],value[2])
+		local num = 0
+		local cost_num = 0
+		for key, value in pairs(have_data) do
+			for k, v in pairs(cost_item_list) do
+				if value.id == v[1] then
+					cost_num = v[2]
+				end
+			end
+			if cost_num == 0 then
+				num = num + value.num
+			else
+				num = num + value.num - cost_num
+			end
+		end
+		if num < value[2] then
+			return false
+		end
+	end
+	local cost_data = awake_info.cost_item
+	for key, value in pairs(cost_data) do
+		local have_num = BackpackController:getInstance():getModel():getItemNumByBid(value[1])
+		if have_num < value[2] then
+			return false
+		end
+	end
+	local cost_card = awake_info.cost_card_mine
+	for key, value in pairs(cost_card) do
+		local heroinfolist = HeroController:getInstance():getModel():getHeroInfoByBidStar(value[1], value[2])
+		local num = heroinfolist and #(heroinfolist) or 0
+		if num < value[3] then return false end
+	end
+	return true
+end
+-- 魔导器系统是否开启
+function TreasureModel:checkTreasureIsOpen( not_tips )
+	local is_open = false
+	local role_vo = RoleController:getInstance():getRoleVo()
+	local open_cfg = Config.NinjaTreasureData.data_constant["open_lev"]
+	if open_cfg and role_vo and open_cfg.val <= role_vo.lev then
+		is_open = true
+	end
+
+	if not is_open and open_cfg and not not_tips then
+		message(open_cfg.desc)
+	end
+
+	return is_open
+end
+-- 获取精灵红点状态
+function TreasureModel:getTreasureRedStatusByRedBid( bid )
+	return self.treasure_red_list[bid] or false
+end
+-- 获取所有寻访数据
+function TreasureModel:getTreasureHatchList(  )
+	return self.treasure_hatch_list
+end
+-- 设置今日购买数量信息
+function TreasureModel:setTreasureBuyInfo( data )
+	self.treasure_buy_info = data or {}
+end
+-- 根据bid获取该物品今日购买数量
+function TreasureModel:getTreasureBuyCountByBid( bid )
+	local buy_num = 0
+	for k,v in pairs(self.treasure_buy_info) do
+		if v.item_bid == bid then
+			buy_num = v.buy_num
+			break
+		end
+	end
+	return buy_num
+end
+
+-- 更新某一个物品今日购买信息
+function TreasureModel:updateTreasureBuyInfoByBid( bid, count )
+	local is_have = false
+	for k,v in pairs(self.treasure_buy_info) do
+		if v.item_bid == bid then
+			is_have = true
+			v.buy_num = count
+			break
+		end
+	end
+	if not is_have then
+		local info = {}
+		info.item_bid = bid
+		info.buy_num = count
+		table.insert(self.treasure_buy_info, info)
+	end
+end
+
+--设置自己拥有得秘宝列表
+function TreasureModel:setTreasureList(data)
+	for k, v in pairs(data) do
+		self.treasure_list[v.item_bid] = v
+	end
+	for key, value in pairs(self.treasure_list) do
+		self:setTreasureRed(value)
+	end
+	self:setNoTreasureRed()
+	GlobalEvent:getInstance():Fire(TreasureEvent.Open_Treasure_List_Event,data)
+	for key, value in pairs(self.treasure_red_list) do
+		if value then
+			self.red_1 = true
+			self:setRedInfo()
+			-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.treasure,status = true})
+			-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.firstRed,status = self.first_red == true})
+			return
+		end
+	end
+	self.red_1 = false
+	self:setRedInfo()
+	-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.treasure,status = false})
+	-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.firstRed,status = self.first_red == true})
+	self.treasure_change_list = {}
+end
+--刷新单个编年史的红点 传入编年史碎片id
+function TreasureModel:updateTreasureRedForOne(id)
+	local item_cfg = Config.ItemData.data_get_data(id)
+	if not item_cfg then return end
+	local item_id = 0
+	if item_cfg.effect and item_cfg.effect[1] and item_cfg.effect[1].val then
+		item_id = item_cfg.effect[1].val
+	end
+	if item_id == 0 then return end
+	local cfg = Config.NinjaTreasureData.data_base_info[item_id]
+	if not item_id then return end
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("ninja_treasure_data")
+	local backpack_model = BackpackController:getInstance():getModel()
+	local hero_model = HeroController:getInstance():getModel()
+	if (cfg.open == 0 and table.indexof(nohideIds,cfg.id)) or cfg.open == 1 then
+		if not self.treasure_list[cfg.id] then --激活
+			local need_id = cfg.need_id
+			local need_num = cfg.item_num
+			local have_num = backpack_model:getNumForId(need_id)			
+			local tree_lev = hero_model.resonate_cystal_lev or 0
+			if have_num >= need_num and tree_lev >= cfg.open_limit[1][2] then
+				self.treasure_red_list[cfg.id] = true
+			else
+				self.treasure_red_list[cfg.id] = false
+			end
+		else
+			local data = self.treasure_list[cfg.id]
+			self:setTreasureRed(data)
+		end
+		local status = false
+		for key, value in pairs(self.treasure_red_list) do
+			if value then
+				status = true
+				break
+			end
+		end
+		self.red_2 = status
+		self:setRedInfo()
+		-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.treasure,status = status})
+	else
+		return
+	end
+end
+function TreasureModel:getTreasureList()
+	return self.treasure_list
+end
+--设置未激活秘宝的可激活红点
+function TreasureModel:setNoTreasureRed()
+	local cfg = Config.NinjaTreasureData.data_base_info
+	local star_cfg = Config.NinjaTreasureData.data_star_info
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("ninja_treasure_data")
+	local backpack_model = BackpackController:getInstance():getModel()
+	local hero_model = HeroController:getInstance():getModel()
+	for key, value in pairs(cfg) do
+		--单个魔导器屏蔽
+        if (value.open == 0 and table.indexof(nohideIds,value.id)) or value.open == 1 then
+			if not self.treasure_list[value.id] then --激活
+				local need_id = value.need_id
+				local need_num = value.item_num
+				local have_num = backpack_model:getNumForId(need_id)			
+				local tree_lev = hero_model.resonate_cystal_lev or 0
+				if have_num >= need_num and tree_lev >= value.open_limit[1][2] then
+					self.treasure_red_list[value.id] = true
+				else
+					self.treasure_red_list[value.id] = false
+				end
+			end
+        end
+	end
+end
+
+
+--活动英雄列表 根据匹配信息
+--@dic_the_conditions --指定匹配 dic_the_conditions[bid][star] = 数量
+--@dic_random_conditions --随机阵容匹配 dic_the_conditions[camp][star] = 数量
+--@dic_hero_id 标志已用
+--return
+--@ count 拥有不重复英雄总数量
+function TreasureModel:getHeroListByMatchInfo(dic_the_conditions, dic_random_conditions, dic_hero_id)
+    --找不重复的数量
+    local count  = 0
+    local dic_hero_id = dic_hero_id or {}
+    local dic_count = {}
+
+    local _setDicCount = function( partner_id, str, max)
+        --判断是否重复
+        if dic_hero_id[partner_id] == nil then
+            if dic_count[str] == nil then
+                dic_count[str] = 0
+            end
+            if dic_count[str] < max then
+                dic_count[str] = dic_count[str] + 1
+                count = count + 1    
+                dic_hero_id[partner_id] = 1
+            end
+        end 
+    end
+	local list = HeroController:getInstance():getModel():getHeroList()
+    for k,hero in pairs(list) do
+        if not hero:isResonateHero() then
+            if dic_the_conditions and dic_the_conditions[hero.bid] and dic_the_conditions[hero.bid][hero.star] and not hero:isInForm() and not hero:isLock() then
+                --指定的.范围最小
+                local str = string_format("%s%s", hero.bid, hero.star)
+                _setDicCount(hero.partner_id, str, dic_the_conditions[hero.bid][hero.star])
+            end
+
+            if dic_random_conditions then
+                if dic_random_conditions[hero.camp_type] and dic_random_conditions[hero.camp_type][hero.star] and not hero:isInForm() and not hero:isLock() then
+                    --先判定指定阵营的 ,先小范围.再大范围
+                    local str = string_format("_%s%s", hero.camp_type, hero.star)
+                    _setDicCount(hero.partner_id, str, dic_random_conditions[hero.camp_type][hero.star])
+                elseif dic_random_conditions[0] and dic_random_conditions[0][hero.star] and not hero:isInForm() and not hero:isLock() then
+                    --0表示所有阵营的合适
+                    local str = string_format("_%s%s", 0, hero.star)
+                    _setDicCount(hero.partner_id, str, dic_random_conditions[0][hero.star])
+                end    
+            end
+        end
+    end
+
+    local list = BackpackController:getInstance():getModel():getHeroHunList()
+    for k,good_vo in pairs(list) do
+        if good_vo.config then
+            local camp_type = good_vo.config.camp_type
+            local star = good_vo.config.eqm_jie
+			if dic_random_conditions[0] and dic_random_conditions[0][star] then
+                local str = string.format("_%s%s", 0, star)
+
+                if dic_count[str] == nil then
+                    dic_count[str] = 0
+                end
+                if dic_count[str] < dic_random_conditions[0][star] then
+                    local cur_count = dic_random_conditions[0][star] - dic_count[str]
+                    if good_vo.quantity < cur_count then
+                        cur_count = good_vo.quantity
+                    end
+                    count = count + cur_count 
+                    dic_count[str] = dic_count[str] + cur_count
+                end
+            end
+        end
+    end
+
+    return count
+end
+function TreasureModel:getHaveNumByQuality(quality)
+	local num = 0
+	for key, value in pairs(self.treasure_list) do
+		local cfg = Config.NinjaTreasureData.data_base_info[key]
+		if cfg and cfg.quality == quality then
+			num = num + 1
+		end
+	end
+	return num
+end
+function TreasureModel:getTreasureForId(id)
+	if self.treasure_list[id] then 
+		return self.treasure_list[id]
+	end
+	return nil
+end
+-----------------------------------------抽奖------------------------
+function TreasureModel:setLotteryInfo(data)
+	self.lottery_info = data
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Update_Lottery_Info_Event,self.lottery_info)
+end
+function TreasureModel:setLotteryOneInfo(data)
+	for key, value in pairs(self.lottery_info.draw_list) do
+		if value.group_id == data.group_id then
+			self.lottery_info.draw_list[key] = data
+		else
+			self.lottery_info.draw_list[key].times = data.times
+		end
+	end
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Update_Lottery_Info_Event,self.lottery_info)
+end
+function TreasureModel:getLotteryInfo()
+	return self.lottery_info
+end
+--获取已经解锁的奖池id
+function TreasureModel:getLotteryId()
+	local list = {}
+	for key, value in pairs(self.lottery_info.draw_list) do
+		if value.start_time > 0 then
+			table.insert(list,value.group_id)
+		end
+	end
+	return list
+end
+--战令信息列表
+function TreasureModel:setOrderList(data)
+	self.order_list = data
+	table.sort(data.awards,function(a,b) return a.id < b.id end)
+	self.awards = data.awards  --奖励
+	self.buy1 = data.buy1 -- 是否解锁第一档
+	self.buy2 = data.buy2 -- 是否解锁第二档
+	self.discount = data.discount --是否打折
+	self.end_time = data.end_time --结束时间
+	self.id = data.id --战令周期id
+	self.score = data.score --积分
+	self:getOrderRed()
+	TaskController:getInstance():getModel():checkQuestAndFeatStatus(TaskConst.update_type.quest)
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Order_Event)
+end
+--返回战令信息
+function TreasureModel:getOrderList()
+	return self.order_list or nil
+end
+--返回战令奖励领取列表
+function TreasureModel:getOrderAwards()
+	return self.awards or {}
+end
+--返回战令奖励是否已经领取
+function TreasureModel:getOrderAwardsReceive(id,num)
+	if self.awards[id] then
+		if self.awards[id]["award"..num] then
+			return self.awards[id]["award"..num] == 2
+		end
+	end
+	return false
+end
+--返回战令奖励领取情况
+function TreasureModel:getOrderStaForId(index)
+	local status = 0
+	if self.awards then
+		for key, value in pairs(self.awards) do
+			if value.id == index then
+				if value.award1 == 0 and value.award2 == 0 then
+					status = 0 
+				elseif value.award1 == 2 and value.award2 == 0 then
+					status = 1
+				elseif value.award1 == 0 and value.award2 == 2 then
+					status = 2
+				elseif value.award1 == 2 and value.award2 == 2 then
+					status = 3
+				end
+			end
+		end
+	end
+	return status
+end
+--返回战令是否解锁第一档 0未解锁 1已解锁
+function TreasureModel:getOrderBuy1()
+	return self.buy1 or 0
+end
+--返回战令是否解锁第一档 0未解锁 1已解锁
+function TreasureModel:getOrderBuy2()
+	return self.buy2 or 0
+end
+--返回战令是否打折 0不打折 1打折
+function TreasureModel:getOrderDiscount()
+	return self.discount or 0
+end
+--返回战令结束时间
+function TreasureModel:getOrderEndTime()
+	return self.end_time or 0
+end
+--返回战令周期id
+function TreasureModel:getOrderId()
+	return self.id or 1
+end
+--返回战令积分
+function TreasureModel:getOrderScore()
+	return self.score or 0
+end
+
+--返回战令是否有红点
+function TreasureModel:getOrderRed()
+	if not Config.NinjaTreasureDrawData then
+		return false
+	end
+	local cfg = deepCopy(Config.NinjaTreasureDrawData.data_get_task_reward[self:getOrderId()])
+	if not cfg then return false end
+	local buy1 = self:getOrderBuy1()
+	local buy2 = self:getOrderBuy2()
+	for i = 1, #cfg do
+		if cfg[i] and self:getOrderScore() >= cfg[i].need_num then
+			if self:getOrderStaForId(cfg[i].order) == 0 then
+				self.red_3 = true
+				self:setRedInfo()
+				-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.order,status = true})
+				-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.firstRed,status = self.first_red == true})
+				if buy1 == 1 or buy2 == 1 then return true end
+			elseif self:getOrderStaForId(cfg[i].order) == 1 then
+				self.red_3 = true
+				self:setRedInfo()
+				-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.order,status = true})
+				-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.firstRed,status = self.first_red == true})
+				if buy1 == 2 then return true end
+			elseif self:getOrderStaForId(cfg[i].order) == 2 then
+				self.red_3 = true
+				self:setRedInfo()
+				-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.order,status = true})
+				-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.firstRed,status = self.first_red == true})
+				if buy1 == 1 then return true end
+			end
+		end
+	end
+	self.red_3 = false
+	self:setRedInfo()
+	-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.order,status = false})
+	-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.firstRed,status = self.first_red == true})
+	return false
+end
+
+--是否满足寻访开启条件
+function TreasureModel:getIsSearchLimit()
+	local cfg = Config.NinjaTreasureData.data_constant
+	local lev = RoleController:getInstance():getRoleVo().lev or 0
+	local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+	if lev >= cfg["hatch_open_lev"].val and tree_lev >= cfg["hatch_open_tree_lev"].val then
+		return true
+	else
+		return false
+	end
+end
+--是否满足抽奖开启条件
+function TreasureModel:getIsLotteryLimit()
+	local limit_lev = Config.NinjaTreasureDrawData.data_constant["open_lv"].val
+	local limit_tree_lev = Config.NinjaTreasureDrawData.data_constant["open_tree_lv"].val
+	local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+	if RoleController:getInstance():getRoleVo().lev < limit_lev or tree_lev < limit_tree_lev then
+		return false
+	else
+		return true
+	end
+end
+--是否满足成长自选开启条件
+function TreasureModel:getIsMpGiftLimit()
+	local data = ActionController:getInstance():getActionSubTabVo(ActionRankCommonType.grow_gift)
+	if not data then return false end
+	local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+	local limit_tree_lev = Config.NinjaTreasureData.data_constant["fire_gift_open_lev"].val[2]
+	if tree_lev < limit_tree_lev then
+		return false
+	end
+	return true
+end
+--是否满足编年小铺开启条件
+function TreasureModel:getIsShopLimit()
+    if not Config.ExchangeData then
+        require "config.exchange_data"
+		if not Config.ExchangeData then return false end
+    end
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("skill_shop_data")
+    local cfg = Config.ExchangeData.data_shop_list[MallConst.MallType.TreasureShop3]
+    if cfg and (cfg.shop_show == 1 or (cfg.shop_show == 0 and table.indexof(nohideIds,MallConst.MallType.TreasureShop3))) then
+		local limit_lev = cfg.limit[1][2]
+		if RoleController:getInstance():getRoleVo().lev < limit_lev then
+			return false
+		else
+			return true
+		end
+    end
+    return false
+end
+--是否满足战令开启条件
+function TreasureModel:getIsOrderLimit()
+	if self:getOrderEndTime() > 0 then return true end
+	local limit_lev = Config.NinjaTreasureDrawData.data_constant["order_open_lv"].val
+	local limit_tree_lev = Config.NinjaTreasureDrawData.data_constant["order_open_tree_lv"].val
+	local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+	if RoleController:getInstance():getRoleVo().lev < limit_lev or tree_lev < limit_tree_lev then
+		return false
+	else
+		return true
+	end
+end
+--是否满足魔导器开启等级
+function TreasureModel:IsTreasureLev()
+	if not Config.NinjaTreasureData then
+		require("config.ninja_treasure_data")
+	end
+	local cfg = Config.NinjaTreasureData.data_constant.open_lev
+	local role_vo = RoleController:getInstance():getRoleVo()
+	if role_vo.lev < cfg.val then
+		return false
+	else
+		return true
+	end
+	return false
+end
+--魔导器是否开启
+function TreasureModel:TreasureIsOpen()
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+    local featuresId = MainuiConst.FeaturesShield.Treasure
+    if table.indexof(nohideIds,featuresId) then
+        if self:IsTreasureLev() then
+			return true
+        end
+    end
+	return false
+end
+--魔导器总战力
+function TreasureModel:setTreasurePower(num)
+	self.treasurePower = num
+end
+function TreasureModel:getTreasurePower()
+	return self.treasurePower or 0
+end
+
+function TreasureModel:setfirstWar(status)
+	self.is_first_war = status
+	TaskController:getInstance():getModel():checkQuestAndFeatStatus(TaskConst.update_type.quest)
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_War_First_Event)
+end
+function TreasureModel:getfirstWar()
+	return self.is_first_war and self:getOrderBuy1() == 0
+end
+function TreasureModel:gettaskWarRed()
+	return self:getOrderRed() or self:getfirstWar()
+end
+
+--魔导器研发开启条件是否满足
+function TreasureModel:IsTreasureResearchOpen()
+	local cfg = Config.NinjaTreasureResearchData.data_constant
+	local shield_id = MainuiConst.FeaturesShield.TreasureResearch
+	local open_lv = cfg["open_lv"].val
+	local open_tree_lv = cfg["open_tree_lv"].val
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	if table.indexof(nohideIds,shield_id) then
+		local role_vo = RoleController:getInstance():getRoleVo()
+		if role_vo.lev >= open_lv then
+			if HeroController:getInstance():getModel():checkEnoughResLev(open_tree_lv) then
+				return 0
+			end
+		end
+	else
+		return 1
+	end
+	return 2
+end
+--魔导器研发主界面红点
+function TreasureModel:setResearchMainRed()
+	local status = self:getResearchRed() or self:getResearchRankRed() or self:getResearchAllRewardRed()
+	self.red_4 = status
+	self:setRedInfo()
+	-- MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = TreasureConst.Red_Type.research,status = status})
+	MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.research, status or self:getResearchFirstRed())
+	GlobalEvent:getInstance():Fire(TreasureEvent.Research_Rank_Red_Event,status)
+end
+--魔导器研发数据
+function TreasureModel:setResearchData(data)
+	self.research_data = data
+	if self.research_data.all then
+		for key, value in pairs(self.research_data.all) do
+			for k, v in pairs(value.pos_info_list) do
+				v.open_time = GameNet:getInstance():getTime() - v.use_time
+			end
+		end
+	end
+	self:setResearchMainRed()
+	GlobalEvent:getInstance():Fire(TreasureEvent.Research_Data_Event,data.chose_round,data.chose_pos)
+end
+--魔导器研发数据单个项目
+function TreasureModel:setResearchDataForProject(data)
+	local status = true
+	if self.research_data.all then
+		for key, value in pairs(self.research_data.all) do
+			if value.round == data.round then
+				status = false
+				value = data
+			end
+		end
+		if status then
+			local list = {}
+			list.round = data.round
+			for k, v in pairs(data.pos_info_list) do
+				v.open_time = GameNet:getInstance():getTime() - v.use_time
+			end
+			list.pos_info_list = data.pos_info_list
+			table.insert(self.research_data.all,list)
+		end
+		self:setResearchMainRed()
+		GlobalEvent:getInstance():Fire(TreasureEvent.Research_Data_Event)
+	end
+end
+--魔导器研发数据单个魔导器
+function TreasureModel:setResearchDataForItem(data)
+	local status = true
+	if self.research_data.all then
+		for key, value in pairs(self.research_data.all) do
+			if value.round == data.round then
+				for k, v in pairs(value.pos_info_list) do
+					if v.pos == data.pos then
+						v.use_time = data.use_time
+						v.open_time = GameNet:getInstance():getTime() - v.use_time
+						v.pos_state = data.pos_state
+						v.rewards = data.rewards
+						for a, b in pairs(data.quest_list) do
+							for i, j in pairs(v.quest_list) do
+								if j.id == b.id then
+									self.research_data.all[key].pos_info_list[k].quest_list[i] = data.quest_list[a]
+									status = false
+								end
+							end
+							if status then
+								table.insert(v.quest_list,b)
+							end
+							status = true
+						end
+					end
+				end
+			end
+		end
+		self:setResearchMainRed()
+		GlobalEvent:getInstance():Fire(TreasureEvent.Research_Data_Event,data.round,data.pos)
+	end
+end
+--魔导器构成当前选择的项目
+function TreasureModel:getResearchProjectNum()
+	if not self.research_data then return 0 end
+	return self.research_data.chose_round
+end
+--魔导器构成当前选择的位置
+function TreasureModel:getResearchClickNum()
+	if not self.research_data then return 0 end
+	return self.research_data.chose_pos
+end
+function TreasureModel:ResearchStaData(project_num,click_num)
+	if self.research_data and self.research_data.all then
+		local data = self.research_data.all
+		for key, value in pairs(data) do
+			if value.round == project_num then
+				for k, v in pairs(value.pos_info_list) do
+					if v.pos == click_num then
+						return v
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+--魔导器构成研发状态 0未构成研发 1构成中 2研发中
+function TreasureModel:ResearchSta(project_num,click_num)
+	local list = self:ResearchStaData(project_num,click_num)
+	if list then
+		return list.pos_state
+	end
+	return 0
+end
+--魔导器构成研发开启时间
+function TreasureModel:ResearchTime(project_num,click_num)
+	local list = self:ResearchStaData(project_num,click_num)
+	if list then
+		return list.use_time
+	end
+	return 0
+end
+--魔导器构成研发开启时间戳
+function TreasureModel:ResearchTimeNum(project_num,click_num)
+	local list = self:ResearchStaData(project_num,click_num)
+	if list then
+		return list.open_time
+	end
+	return 0
+end
+--魔导器构成任务数据
+function TreasureModel:getConstituteRankList(project_num,click_num,id)
+	local list = self:ResearchStaData(project_num,click_num)
+	if list then
+		for k, v in pairs(list.quest_list) do
+			if v.id == id then
+				return v
+			end
+		end
+	end
+	return nil
+end
+--魔导器研发配置
+function TreasureModel:getResearchCfg()
+	local list = {}
+	local research_cfg = deepCopy(Config.NinjaTreasureResearchData.data_base_info)
+	local treasure_cfg = deepCopy(Config.NinjaTreasureData.data_base_info)
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("ninja_treasure_data")
+	local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+    for key, value in pairs(research_cfg) do
+		for k, v in pairs(value) do
+			local cfg = treasure_cfg[v.annals_id]
+			if cfg then
+				if (cfg.open == 0 and table.indexof(nohideIds,cfg.id)) or cfg.open == 1 then
+					if (next(cfg.show_limit) and tree_lev >= cfg.show_limit[1][2]) or not next(cfg.show_limit) then
+						if not list[v.round] then
+							list[v.round] = {}
+						end
+						table.insert(list[v.round],v)
+					end
+				end
+			end
+		end
+    end
+	return list
+end
+--魔导器研发剩余可获得道具
+function TreasureModel:getResearchCanGetItem(project_num,click_num)
+	local list = {}
+	local reward_list = {}
+	local achievement_list = {}
+	local data = self:getResearchRankListForItem(project_num,click_num)
+	if data then
+		for k, v in pairs(data.quest_list) do
+			if v.state ~= 2 then
+				table.insert(achievement_list,v.id)
+			end
+		end
+	else
+		local cfg = deepCopy(Config.NinjaTreasureResearchData.data_base_info[project_num][click_num])
+		if not cfg then return reward_list end
+		achievement_list = cfg.achievement_list
+	end
+	for k, v in pairs(achievement_list) do
+		local config = deepCopy(Config.NinjaTreasureResearchData.data_get[v])
+		if next(config.commit_rewards) then
+			for key, value in pairs(config.commit_rewards) do
+				if list[value[1]] then
+					list[value[1]] = list[value[1]] + value[2]
+				else
+					list[value[1]] = value[2]
+				end
+			end
+		end
+	end
+	for key, value in pairs(list) do
+		local data = {key,value}
+		table.insert(reward_list, data)
+	end
+	return reward_list
+end
+--魔导器研发任务列表
+function TreasureModel:getResearchRankList(project_num,click_num)
+	local num = 0
+	num = click_num
+	local cfg = deepCopy(Config.NinjaTreasureResearchData.data_base_info[project_num][num])
+	return cfg.achievement_list
+end
+--研发任务列表
+function TreasureModel:setResearchRankList(data)
+	self.rank_list = data
+	GlobalEvent:getInstance():Fire(TreasureEvent.Research_Rank_Data_Event,data.round,data.pos)
+	self:setResearchMainRed()
+end
+function TreasureModel:getResearchRankListAll()
+	return self.rank_list
+end
+--单个研发任务列表
+function TreasureModel:setResearchRankListForItem(data)
+	if next(self.rank_list.all) then
+		for key, value in pairs(self.rank_list.all) do
+			if value.round == data.round then
+				for k, v in pairs(value.pos_info_list) do
+					if v.pos == data.pos then
+						for i, j in pairs(data.quest_list) do
+							for a, b in pairs(v.quest_list) do
+								if j.id == b.id then
+									self.rank_list.all[key].pos_info_list[k].quest_list[a] = j
+								end
+							end
+						end
+					end
+				end
+			end
+		end
+	else
+		local list = {}
+		list.round = data.round
+		list.pos_info_list = {}
+		local list1= {}
+		list1.pos = data.pos
+		list1.quest_list = data.quest_list
+		table.insert(list.pos_info_list,list1)
+		table.insert(self.rank_list.all,list)
+	end
+	GlobalEvent:getInstance():Fire(TreasureEvent.Research_Rank_Data_Event,data.round,data.pos)
+	self:setResearchMainRed()
+end
+
+--获取研发任务  单个魔导器
+function TreasureModel:getResearchRankListForItem(round,index)
+	if self.rank_list and self.rank_list.all then
+		for key, value in pairs(self.rank_list.all) do
+			if value.round == round then
+				for k, v in pairs(value.pos_info_list) do
+					if v.pos == index then
+						return v
+					end
+				end
+			end
+		end
+	end
+	return nil
+end
+
+--获取研发任务  单个项目
+function TreasureModel:getResearchRankListForRound(round)
+	for key, value in pairs(self.rank_list.all) do
+		if value.round == round then
+			return value
+		end
+	end
+	return nil
+end
+function TreasureModel:setResearchRankRound(round)
+	self.rank_round = round
+end
+function TreasureModel:getResearchRankRound()
+	return self.rank_round
+end
+function TreasureModel:setResearchRankIndex(index)
+	self.rank_index = index
+end
+function TreasureModel:getResearchRankIndex()
+	return self.rank_index
+end
+--魔导器研发红点
+function TreasureModel:getResearchRed()
+	if self.research_data and self.research_data.all then
+		for key, value in pairs(self.research_data.all) do
+			if value.round == self:getResearchProjectNum() then
+				for k, v in pairs(value.pos_info_list) do
+					if v.pos == self:getResearchClickNum() then
+						for a, b in pairs(v.quest_list) do
+							if b.point == 1 or b.state == 1 or (b.state ~= 2 and self:getResearchRankForItemRed(b.id)) then
+								return true
+							end
+						end
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+--单个项目位置的红点
+function TreasureModel:getResearchOnlyRedForRound(round)
+	if self.research_data and self.research_data.all then
+		for key, value in pairs(self.research_data.all) do
+			if value.round == round then
+				for k, v in pairs(value.pos_info_list) do
+					if self:getResearchOnlyRed(value.round,v.pos) then
+						return true
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+function TreasureModel:getResearchOnlyRed(round,pos)
+	return self:getResearchRewardRed(round,pos)
+end
+
+--研发奖励红点
+function TreasureModel:getResearchAllRewardRed()
+	if self.research_data and self.research_data.all then
+		for key, value in pairs(self.research_data.all) do
+			for k, v in pairs(value.pos_info_list) do
+				if self:getResearchRewardRed(value.round,v.pos) then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+function TreasureModel:getResearchRewardRed(round,pos)
+	local data = self:ResearchStaData(round,pos)
+	if not data then return false end
+	local config = Config.NinjaTreasureResearchData.data_base_info
+	if config and config[round] and config[round][pos] then
+		local num = 0
+		local cfg = config[round][pos].rewards
+		local list = data.quest_list
+		for k, v in pairs(list) do
+            if v.state == 2 then
+                num = num + 1
+            end
+        end
+		for k, v in pairs(cfg) do
+			local status = true
+			for key, value in pairs(data.rewards) do
+				if value.reward_id == v[1] then
+					status = false
+				end
+			end
+			if status and num >=v[1] then
+				return true
+			end
+		end
+	end
+	return false
+end
+function TreasureModel:getResearchRankForItemRed(id)
+	local cfg = Config.NinjaTreasureResearchData.data_get[id]
+	if cfg.progress[1].cli_label == "evt_use_item" then
+		local data = cfg.progress[1].param[1]
+		local id = data[1]
+		local need_num = data[2]
+		local have_num = BackpackController:getInstance():getModel():getItemNumByBid(id)
+		if have_num >= need_num then
+			return true
+		end
+	elseif cfg.progress[1].cli_label == "evt_give_annals" then
+		local need_num = cfg.progress[1].param[1][1]
+		local type = cfg.progress[1].param[1][2]
+		local list = BackpackController:getInstance():getModel():getNumForQuantity2(type,need_num)
+		local have_num = 0
+		for key, value in pairs(list) do
+			have_num = have_num + value.num
+		end
+		if have_num >= need_num then
+			return true
+		end
+	end
+	return false
+end
+
+--魔导器研发任务红点
+function TreasureModel:getResearchRankRed()
+	if self.rank_list and self.rank_list.all then
+		for key, value in pairs(self.rank_list.all) do
+			for k, v in pairs(value.pos_info_list) do
+				for a, b in pairs(v.quest_list) do
+					if b.state == 1 then
+						return true
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+--魔导器研发任务红点单个项目
+function TreasureModel:getResearchRankRedForProject(round)
+	for key, value in pairs(self.rank_list.all) do
+		if value.round == round then
+			for k, v in pairs(value.pos_info_list) do
+				for a, b in pairs(v.quest_list) do
+					if b.state == 1 then
+						return true
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+--魔导器研发任务红点单个项目单个魔导器
+function TreasureModel:getResearchRankRedForProjectPos(round,pos)
+	for key, value in pairs(self.rank_list.all) do
+		if value.round == round then
+			for k, v in pairs(value.pos_info_list) do
+				if v.pos == pos then
+					for a, b in pairs(v.quest_list) do
+						if b.state == 1 then
+							return true
+						end
+					end
+				end
+			end
+		end
+	end
+	return false
+end
+
+function TreasureModel:setRedInfo(status)
+	local red_status = false
+	if self.red_1 or self.red_2 or self.red_3 or self.red_4 or self.red_5 or self.first_red then
+		red_status = true
+	end
+	MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, {bid = JinqiConst.Red_Type.biannianshi,status = red_status})
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Update_All_Red_Event) 
+end
+
+function TreasureModel:getRedInfo()
+	return self.red_1 or self.red_2 or self.red_3 or self.red_4 or self.red_5 or self.first_red
+end
+
+--魔导器红点
+function TreasureModel:getRed()
+	return self:getTreasureRed() or self:getOrderRed() or self.first_red == true or self:getResearchRed() or self:getResearchRankRed() or self:getResearchAllRewardRed()
+end
+--首次点击完成构成
+function TreasureModel:setFirstFinish(status)
+	self.first_finish = status
+	GlobalEvent:getInstance():Fire(TreasureEvent.Research_First_Finish_Event)
+end
+function TreasureModel:getFirstFinish()
+	return self.first_finish
+end
+--首次点击实战投入
+function TreasureModel:setFirstInto(status)
+	self.first_into = status
+	GlobalEvent:getInstance():Fire(TreasureEvent.Research_First_Into_Event)
+end
+function TreasureModel:getFirstInto()
+	return self.first_into
+end
+--项目期数首次点击红点
+function TreasureModel:sendResearchFirstRed()
+	local list = self:getResearchCfg()
+	local send_list = {}
+	for k, v in pairs(list) do
+		table.insert(send_list,2000+v[1].round)
+	end
+	ActionController:getInstance():sender16808(send_list)
+end
+function TreasureModel:setResearchFirstRed(type,status)
+	self.research_first_list[type-2000] = status
+	self:updateResearchFirstRed()
+end
+function TreasureModel:getResearchFirstRedForType(type)
+	if self.research_first_list and self.research_first_list[type] then
+		return true
+	else
+		return false
+	end
+end
+function TreasureModel:updateResearchFirstRed()
+	self.red_5 = false
+	for key,value in pairs(self.research_first_list) do
+		if value then
+			self.red_5 = true
+		end
+	end
+	self:setResearchMainRed()
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_First_Red_Event)
+	GlobalEvent:getInstance():Fire(TreasureEvent.Research_Rank_Red_Event)
+end
+function TreasureModel:getResearchFirstRed()
+	if self.red_5 then
+		return self.red_5
+	end
+	return false
+end
+function TreasureModel:getResearchMainRed()
+	return self:getResearchRed() or self:getResearchRankRed() or self:getResearchAllRewardRed() or self:getResearchFirstRed()
+end
+function TreasureModel:__delete()
+end

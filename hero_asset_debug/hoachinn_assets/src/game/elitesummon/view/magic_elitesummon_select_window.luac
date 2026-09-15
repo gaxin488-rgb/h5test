@@ -1,0 +1,336 @@
+--******** 文件说明 ********
+-- @Author:      yuanqi@shiyue.com 
+-- @description: 魔法精英招募选择心愿
+-- @DateTime:    2020-05-15
+-- *******************************
+MagicElitesummonSelectWindow = MagicElitesummonSelectWindow or BaseClass(BaseView)
+
+local _controller = EliteSummonController:getInstance()
+local _model = _controller:getModel()
+
+local table_insert = table.insert
+local table_sort = table.sort
+local string_format = string.format
+
+function MagicElitesummonSelectWindow:__init()
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.res_list = {}
+    self.layout_name = "elitesummon/magic_elitesummon_select_window"
+
+    self.cur_item_id = nil
+	self.select_cell = nil
+	self.hero_data_list = {}
+end
+
+function MagicElitesummonSelectWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+    local main_panel = self.main_container:getChildByName("main_panel")
+    self.title = main_panel:getChildByName("win_title")
+    self.title:setString(TI18N("英雄选择"))
+
+    self.close_btn = main_panel:getChildByName("close_btn")
+
+    self.comfirm_btn = self.main_container:getChildByName("comfirm_btn")
+    self.comfirm_btn_label = self.comfirm_btn:getChildByName("label")
+    self.comfirm_btn_label:setString(TI18N("确 定"))
+    self.cancel_btn = self.main_container:getChildByName("cancel_btn")
+    self.cancel_btn:getChildByName("label"):setString(TI18N("取 消"))
+
+    self.lay_srollview = self.main_container:getChildByName("lay_srollview")
+
+    self.tips_label = self.main_container:getChildByName("tips_label")
+    self.tips_label:setString(TI18N("请在下面列表中选择一名英雄作为指定心愿英雄"))
+    self.tips_label:setFontSize(20)
+
+    --阵营
+    local camp_node = self.main_container:getChildByName("camp_node")
+    self.camp_btn_list = {}
+    self.camp_btn_list[0] = camp_node:getChildByName("camp_btn0")
+    self.camp_btn_list[HeroConst.CampType.eWater] = camp_node:getChildByName("camp_btn1")
+    self.camp_btn_list[HeroConst.CampType.eFire]  = camp_node:getChildByName("camp_btn2")
+    self.camp_btn_list[HeroConst.CampType.eWind]  = camp_node:getChildByName("camp_btn3")
+    self.camp_btn_list[HeroConst.CampType.eLight] = camp_node:getChildByName("camp_btn4")
+    self.camp_btn_list[HeroConst.CampType.eDark]  = camp_node:getChildByName("camp_btn5")
+    self.img_select = camp_node:getChildByName("img_select")
+    local x, y = self.camp_btn_list[0]:getPosition()
+    self.img_select:setPosition(x - 0.5, y + 1)
+end
+
+function MagicElitesummonSelectWindow:register_event()
+    registerButtonEventListener(
+        self.background,
+        function()
+            self:onClosedBtn()
+        end,
+        false,
+        2
+    )
+    registerButtonEventListener(
+        self.close_btn,
+        function()
+            self:onClosedBtn()
+        end,
+        true,
+        2
+    )
+    registerButtonEventListener(
+        self.comfirm_btn,
+        function()
+            self:onComfirmBtn()
+        end,
+        true,
+        1
+    )
+    registerButtonEventListener(
+        self.cancel_btn,
+        function()
+            self:onCancelBtn()
+        end,
+        true,
+        1
+    )
+    
+    --阵营按钮
+    for select_camp, v in pairs(self.camp_btn_list) do
+        registerButtonEventListener(v, function() self:onClickBtnShowByIndex(select_camp) end ,true, 2)
+    end
+end
+
+--关闭
+function MagicElitesummonSelectWindow:onClosedBtn()
+    _controller:openMagicSummonSelectWindow(false)
+end
+
+--确定
+function MagicElitesummonSelectWindow:onComfirmBtn()
+    if next(self.hero_data_list) == nil then
+		message(TI18N("没有可选择的英雄"))
+		return
+	end
+
+	if self.cur_item_id == nil or self.cur_item_id <= 0 then
+		message(TI18N("请选择心愿英雄"))
+		return 
+	end
+
+	_controller:send23238(self.cur_item_id)
+	self:onClosedBtn()
+end
+
+--取消
+function MagicElitesummonSelectWindow:onCancelBtn()
+    self:onClosedBtn()
+end
+
+function MagicElitesummonSelectWindow:openRootWnd()
+    self:setData()
+end
+
+function MagicElitesummonSelectWindow:setData()
+    local data = _model:getMagicSummonData()
+    if not data then return end
+    self.cur_item_id = data.lucky_bid
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.lay_srollview:getContentSize()
+        local width = scroll_view_size.width / 4
+        local setting = {
+            start_x = 0, -- 第一个单元的X起点
+            space_x = 0, -- x方向的间隔
+            start_y = 0, -- 第一个单元的Y起点
+            space_y = 0, -- y方向的间隔
+            item_width = width, -- 单元的尺寸width
+            item_height = 158, -- 单元的尺寸height
+            row = 1, -- 行数，作用于水平滚动类型
+            col = 4, -- 列数，作用于垂直滚动类型
+            once_num = 1 -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.lay_srollview, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self, self.onCellTouched), ScrollViewFuncType.OnCellTouched) --更新cell
+    end
+
+    self:updateSelectItemData()
+end
+
+--显示根据类型 0表示全部
+function MagicElitesummonSelectWindow:onClickBtnShowByIndex(select_camp)
+    if not self.item_scrollview then return end
+	if self.img_select and self.camp_btn_list[select_camp] then
+		local x, y = self.camp_btn_list[select_camp]:getPosition()
+		self.img_select:setPosition(x - 0.5, y + 1)
+	end
+	self:updateSelectItemData(select_camp)
+end 
+
+function MagicElitesummonSelectWindow:updateSelectItemData(select_camp)
+    local data = _model:getMagicSummonData()
+    if not data then return end
+    if select_camp == nil then
+        select_camp = HeroConst.CampType.eNone
+    end
+    self.hero_data_list = {}
+	local temp_list = {}
+    local config =  Config.RecruitHolidayMagicData.data_wish[data.camp_id]
+    if config then
+        for k,v in pairs(config) do
+            if select_camp == HeroConst.CampType.eNone then
+                table_insert( temp_list, {id = k,sort = v.sort})
+            else
+                local item_config = Config.ItemData.data_get_data(v.id)
+                if select_camp == HeroConst.CampType.eWater and item_config.lev == HeroConst.CampType.eWater then
+                    table_insert( temp_list, {id = k,sort = v.sort})
+                elseif select_camp == HeroConst.CampType.eFire and item_config.lev == HeroConst.CampType.eFire then
+                    table_insert( temp_list, {id = k,sort = v.sort})
+                elseif select_camp == HeroConst.CampType.eWind and item_config.lev == HeroConst.CampType.eWind then
+                    table_insert( temp_list, {id = k,sort = v.sort})
+                elseif select_camp == HeroConst.CampType.eLight and item_config.lev == HeroConst.CampType.eLight then
+                    table_insert( temp_list, {id = k,sort = v.sort})
+                elseif select_camp == HeroConst.CampType.eDark and item_config.lev == HeroConst.CampType.eDark then
+                    table_insert( temp_list, {id = k,sort = v.sort})
+                end
+            end
+        end
+	end
+	
+	table.sort(temp_list, SortTools.KeyLowerSorter("sort"))
+
+	for i,v in ipairs(temp_list) do
+        table_insert( self.hero_data_list, v.id)
+    end
+    self.item_scrollview:reloadData()
+end
+
+--创建cell
+--@width 是setting.item_width
+--@height 是setting.item_height
+function MagicElitesummonSelectWindow:createNewCell(width, height)
+    local cell = ccui.Widget:create()
+    cell:setCascadeOpacityEnabled(true)
+    cell:setAnchorPoint(0.5, 0)
+    cell:setContentSize(cc.size(width, height))
+    cell.goods_item = BackPackItem.new(true, true, false, nil, nil, false)
+    cell.goods_item:setPosition(width * 0.5, 90)
+    cell:addChild(cell.goods_item)
+    cell.txt_surplus_count = createLabel(22, Config.ColorData.data_color4[175], nil, width * 0.5, 5, nil, cell, nil, cc.p(0.5, 0))
+
+    if cell.lay_select == nil then
+        local _x, _y = cell.goods_item:getPosition()
+        local size = cell.goods_item:getContentSize()
+        cell.lay_select = ccui.Layout:create()
+        cell.lay_select:setAnchorPoint(cc.p(0.5, 0.5))
+        cell.lay_select:setContentSize(size)
+        cell.lay_select:setPosition(_x, _y)
+        cell.lay_select:setTouchEnabled(false)
+        showLayoutRect(cell.lay_select, 150)
+        local res = PathTool.getResFrame("common", "common_1043")
+        createImage(cell.lay_select, res, size.width / 2, size.height / 2, cc.p(0.5, 0.5), true, 0, false)
+        cell:addChild(cell.lay_select, 1)
+        cell.lay_select:setVisible(false)
+    end
+
+    cell.goods_item:addCallBack(
+        function()
+            self:onCellTouched(cell)
+        end
+    )
+    
+    cell.goods_item:addLongTimeTouchCallback(
+        function()
+            self:onCellLongTimeTouched(cell)
+        end
+    )
+
+    cell.DeleteMe = function()
+        if cell.goods_item then
+            cell.goods_item:DeleteMe()
+            cell.goods_item = nil
+        end
+    end
+    return cell
+end
+
+function MagicElitesummonSelectWindow:onCellLongTimeTouched(cell)
+    local item_config = Config.ItemData.data_get_data(self.hero_data_list[cell.index])
+    if item_config then
+        TipsManager:getInstance():showGoodsTips(item_config)
+    end
+end
+
+--获取数据数量
+function MagicElitesummonSelectWindow:numberOfCells()
+    if not self.hero_data_list then return 0 end
+    return #self.hero_data_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function MagicElitesummonSelectWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local cell_data = self.hero_data_list[index]
+    if not cell_data then
+        return
+    end
+    if self.cur_item_id == cell_data then
+        cell.lay_select:setVisible(true)
+        self.select_cell = cell
+    else
+        cell.lay_select:setVisible(false)
+    end
+    if cell_data then
+        local vo = {}
+        vo = deepCopy(Config.ItemData.data_get_data(cell_data))
+        if vo ~= nil then
+            cell.goods_item:setData(vo)
+            local str = vo.name
+            cell.txt_surplus_count:setString(str)
+            cell.goods_item:showItemEffect(false)	
+        end
+    end
+end
+
+-- --点击cell .需要在 createNewCell 设置点击事件
+function MagicElitesummonSelectWindow:onCellTouched(cell)
+    if not cell.index then
+        return
+    end
+    local cell_data = self.hero_data_list[cell.index]
+    if not cell_data then
+        return
+    end
+
+    if self.select_cell and self.select_cell.goods_item then
+        self.select_cell.lay_select:setVisible(false)
+    end
+
+    if self.cur_item_id and self.cur_item_id == cell_data then
+        --取消选中
+        self.cur_item_id = nil
+        self.select_cell = nil
+        return
+    else
+        self.cur_item_id = cell_data
+        self.select_cell = cell
+        if self.select_cell and self.select_cell.goods_item then
+            self.select_cell.lay_select:setVisible(true)
+        end
+        return
+    end
+end
+
+function MagicElitesummonSelectWindow:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+    end
+    self.item_scrollview = nil
+    _controller:openMagicSummonSelectWindow(false)
+end

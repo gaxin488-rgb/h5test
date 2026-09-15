@@ -1,0 +1,185 @@
+-- --------------------------------------------------------------------
+-- 突破升星成功
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      进阶成功
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+HeroUrEnableSuccessPanel = HeroUrEnableSuccessPanel or BaseClass(BaseView)
+
+local table_insert = table.insert
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+function HeroUrEnableSuccessPanel:__init()
+    self.win_type = WinType.Mini
+    self.layout_name = "hero/hero_ur_enable_success_panel"
+    self.view_tag = ViewMgrTag.MSG_TAG
+    self.res_list = {
+        -- { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist },
+    }
+
+    self.attr_list ={}
+end
+
+function HeroUrEnableSuccessPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_size = self.main_container:getContentSize()
+
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.top_bg = self.top_panel:getChildByName("top_bg")
+    self.top_title = self.top_panel:getChildByName("top_title")
+    self.power_icon = self.top_title:getChildByName("power_icon")
+    self.power_arrow = self.top_title:getChildByName("power_arrow")
+    self.power_old_num = self.top_title:getChildByName("power_old_num")
+    self.power_new_num = self.top_title:getChildByName("power_new_num")
+    self.attr_panel = self.top_panel:getChildByName("attr_panel")
+
+    self.bot_panel = self.main_container:getChildByName("bot_panel")
+    self.bot_bg = self.bot_panel:getChildByName("bot_bg")
+    self.bot_bg_0 = self.bot_panel:getChildByName("bot_bg_0")
+    self.no_tip = self.bot_panel:getChildByName("no_tip")
+    self.no_tip:setString(TI18N("语言_par_ult_21"))
+    self.no_tip:setVisible(false)
+    self.desc_scroll = self.bot_panel:getChildByName("desc_scroll")
+    self.desc_scroll:setScrollBarEnabled(false)
+    self.desc_txt = createRichLabel(24,cc.c3b(0xe5,0xcf,0x90),cc.p(0,1),cc.p(0,0),-4,nil,410)
+    self.desc_scroll:addChild(self.desc_txt)
+    self.skillItem = SkillItem.new(true, true, true,0.95)
+    self.skillItem:setPosition(cc.p(130, 104))
+    self.bot_panel:addChild(self.skillItem)
+
+    self.titlepanel = self.root_wnd:getChildByName("titlepanel")
+    self.title_container = self.titlepanel:getChildByName("title_container")
+    self.title_width = self.title_container:getContentSize().width
+    self.title_height = self.title_container:getContentSize().height
+
+end
+
+function HeroUrEnableSuccessPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+end
+
+--关闭
+function HeroUrEnableSuccessPanel:_onClickBtnClose()
+    controller:openHeroUrEnableSuccessPanel(false)
+end
+
+function HeroUrEnableSuccessPanel:openRootWnd(data)
+    if not data then return end
+
+    BattleResultMgr:getInstance():setWaitShowPanel(true)
+    playOtherSound("c_get")
+    
+    self:handleEffect(true)
+
+    self.data = data
+    self:updateTopPanel()
+    self:updateBotPanel()
+    self:updatePagePanel()
+end
+function HeroUrEnableSuccessPanel:updateTopPanel()
+    self.power_old_num:setString(MoneyTool.moneyFormat(self.data.old_power))
+    self.power_new_num:setString(MoneyTool.moneyFormat(self.data.power))
+    local attr_list = {}
+    for i, v in ipairs(self.data.attr) do
+        table.insert(attr_list,v)
+    end
+    for i, v in ipairs(self.data.old_attr) do
+        for key, value in ipairs(attr_list) do
+            if v.old_attr_id == value.attr_id then
+                attr_list[key].old_attr_val = v.old_attr_val
+                break
+            end
+        end
+    end
+    local attr_h = #attr_list*44
+    self.attr_panel:setContentSize(cc.size(self.attr_panel:getContentSize().width,attr_h))
+    local top_h = attr_h +154
+    self.top_panel:setContentSize(cc.size(self.top_panel:getContentSize().width,top_h))
+    self.top_bg:setContentSize(cc.size(self.top_bg:getContentSize().width,top_h+1))
+    self.top_title:setPositionY(top_h-94)
+    for i, v in ipairs(attr_list) do
+        local item = self:getAttrItem(v)
+        self.attr_panel:addChild(item)
+        item:setPosition(cc.p(0,attr_h-(i-1)*44-4))
+    end
+end
+function HeroUrEnableSuccessPanel:getAttrItem(data)
+    local item = ccui.Layout:create()
+    item:setContentSize(cc.size(720, 40))
+    item:setAnchorPoint(0,1)
+    item:setPosition(0, 0)
+    local attr_id = data.attr_id
+    local attr_key = Config.AttrData.data_id_to_key[attr_id]
+    if not attr_key then
+        attr_key = Config.AttrExtraData.data_id_to_key[attr_id]
+    end
+    local attr_val = data.attr_val or 0
+    local old_attr_val = data.old_attr_val or 0
+    item.arrow = createSprite(PathTool.getResFrame("common", "common_90034"),366,20,item,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+    item.arrow:setScale(0.5)
+    local attr_name = Config.AttrData.data_key_to_name[attr_key]
+    if not attr_name then
+        attr_name = Config.AttrExtraData.data_key_to_name[attr_key]
+    end
+    item.name_txt = createLabel(24,cc.c3b(0xe5,0xcf,0x90),nil,164,20,attr_name,item,nil,cc.p(1,0.5))
+    local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+    if is_per == true then
+        attr_val = (attr_val/10) .."%"
+        old_attr_val = (old_attr_val/10) .."%"
+    end
+    item.old_value_txt = createLabel(24,cc.c3b(0xe5,0xcf,0x90),nil,234,20,old_attr_val,item,nil,cc.p(0.5,0.5))
+    item.value_txt = createLabel(24,cc.c3b(0x35,0xff,0x14),nil,502,20,attr_val,item,nil,cc.p(0.5,0.5))
+    return item
+end
+function HeroUrEnableSuccessPanel:updateBotPanel()
+    local skill_id = self.data.skill
+    local skill_cfg = Config.SkillData.data_get_skill(skill_id)
+    if skill_cfg then
+        self.skillItem:setData(skill_cfg)
+        local txt = "<div><img src=\'%s\' /> <div>%s</div></div>"
+        self.desc_txt:setString(string.format(txt,PathTool.getPlistImgForDownLoad("hero", "txt_cn_level_"..skill_cfg.level),skill_cfg.des))
+        local _h = math.max(self.desc_txt:getContentSize().height,self.desc_scroll:getContentSize().height)
+        self.desc_scroll:setInnerContainerSize(cc.size(self.desc_scroll:getContentSize().width,_h))
+        self.desc_txt:setPositionY(_h)
+        self.no_tip:setVisible(false)
+    else
+        self.skillItem:setVisible(false)
+        self.desc_scroll:setVisible(false)
+        self.no_tip:setVisible(true)
+    end
+end
+function HeroUrEnableSuccessPanel:updatePagePanel()
+    local _h = self.top_panel:getContentSize().height + self.bot_panel:getContentSize().height
+    self.main_container:setContentSize(cc.size(self.main_container:getContentSize().width,_h))
+    self.top_panel:setPositionY(_h)
+    local title_h = self.main_container:getPositionY() + _h*0.5 - 70
+    self.titlepanel:setPositionY(title_h)
+end
+function HeroUrEnableSuccessPanel:handleEffect(status)
+    if status == false then
+        if self.play_effect then
+            self.play_effect:clearTracks()
+            self.play_effect:removeFromParent()
+            self.play_effect = nil
+        end
+    else
+        local action = PlayerAction.action_5
+        if not tolua.isnull(self.title_container) and self.play_effect == nil then
+            self.play_effect = createEffectSpine("E24305", cc.p(self.title_width * 0.5, self.title_height * 0.5), cc.p(0.5, 0.5), false, action)
+            self.title_container:addChild(self.play_effect)
+        end
+    end
+end 
+
+function HeroUrEnableSuccessPanel:close_callback()
+    self:handleEffect(false)
+    controller:openHeroUrEnableSuccessPanel(false)
+end

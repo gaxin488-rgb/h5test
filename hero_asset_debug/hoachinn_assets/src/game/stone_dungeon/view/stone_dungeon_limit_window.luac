@@ -1,0 +1,612 @@
+--[[
+宝石副本主界面
+--]]
+StoneDungeonLimitWindow = StoneDungeonLimitWindow or BaseClass(BaseView)
+local controller = Stone_dungeonController:getInstance()
+local model = controller:getModel()
+local role_controller = RoleController:getInstance()
+
+local const = Config.DungeonStoneData.data_const
+local data_buy = Config.DungeonStoneData.data_buy
+local type_open = Config.DungeonStoneData.data_type_open
+local award_list = Config.DungeonStoneData.data_award_list
+local table_insert = table.insert
+local table_sort = table.sort
+function StoneDungeonLimitWindow:__init()
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.is_full_screen = true
+    self.win_type = WinType.Big      
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG    	
+    self.layout_name = "stonedungeon/stone_dungeon_limit_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("activity", "activity"), type = ResourcesType.plist}
+    }
+    self.first_come_in = true
+    self.cur_index = 6
+    self.tab_list = {}
+    self.banner_load = {}
+    self.name_banner_load = {}
+    self.LimitTimeStatus = model:checkLimitTimeStatus()
+    
+    model:setLimitLoginRed(false)
+end
+
+function StoneDungeonLimitWindow:open_callback()
+    local background = self.root_wnd:getChildByName("bg")
+    background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    local Image_2 = self.main_container:getChildByName("Image_2")
+    self.title = self.main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_dun_st_01_8"))
+    autoSizeTitleBg(self.title,Image_2)
+    self.open_time_bg = self.main_container:getChildByName("Image_4")
+    self.open_time_txt = self.main_container:getChildByName("open_time_txt")
+    self.textCount = createRichLabel(23,cc.c3b(0xfa,0xf5,0xe4),cc.p(1,0.5),cc.p(679,732),nil,nil,658)
+    self.main_container:addChild(self.textCount)
+
+    self.onekey_btn = self.main_container:getChildByName("onekey_btn")
+    self.onekey_btn.label = replaceButtonLabel(self.onekey_btn)
+    if self.onekey_btn.label ~= nil then
+    	self.onekey_btn.label:setTextColor(cc.c4b(0xff,0xff,0xff,0xff))
+		self.onekey_btn.label:enableOutline(cc.c4b(0x76,0x45,0x19,0xff), 2)
+		self.onekey_btn.label:setString(TI18N("语言_ele_te_08_4"))
+    end
+
+    self.checkbox_all = self.main_container:getChildByName("checkbox_all")
+    local Panel_1 = self.checkbox_all:getChildByName("Panel_1")
+    Panel_1:getChildByName("name"):setString(TI18N("语言_c_643"))
+    self.checkbox_all:setVisible(false)
+    self.is_all_select = SysEnv:getInstance():getBool(SysEnv.keys.dungeon_check_onekey, false)
+    self.checkbox_all:setSelected(self.is_all_select)
+
+    local needvip = Config.DungeonStoneData.data_const["vip_lock"].val
+    if needvip > 0 then
+        local role_vo = RoleController:getInstance():getRoleVo()
+        if role_vo and role_vo.vip_lev >= needvip then
+            self.checkbox_all:setVisible(true)
+        end
+    else
+        self.checkbox_all:setVisible(true)
+    end
+
+    local banner_top = self.main_container:getChildByName("Image_3")
+    local bg_top = PathTool.getPlistImgForDownLoad("activity/activity_big", "activity_top")
+    if not self.banner_load_top then
+        self.banner_load_top = loadSpriteTextureFromCDN(banner_top, bg_top, ResourcesType.single, self.banner_load_top)
+    end
+
+    self.tab_container = self.main_container:getChildByName("tab_container")
+    self.banner = self.main_container:getChildByName("banner")
+    self.name_banner = self.main_container:getChildByName("name_banner")
+    self.close_btn = self.main_container:getChildByName("close_btn")
+
+    self.btnRule = self.main_container:getChildByName("btnRule")
+    self.scoreView = self.main_container:getChildByName("scoreView")
+    local scroll_view_size = cc.size(self.scoreView:getContentSize().width, self.scoreView:getContentSize().height - 10)
+    local setting = {
+        item_class = StoneDungeonLimitItem,      -- 单元类
+        start_x = 7,                  -- 第一个单元的X起点
+        space_x = 0,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 10,                    -- y方向的间隔
+        item_width = 654,               -- 单元的尺寸width
+        item_height = 170,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 1                         -- 列数，作用于垂直滚动类型
+    }
+    self.itemScrollview = CommonScrollViewLayout.new(self.scoreView, cc.p(0,5), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.time_txt = createRichLabel(20,cc.c3b(0xff, 0xff, 0xff),cc.p(0,0),cc.p(40,716),nil,nil,600)
+    self.main_container:addChild(self.time_txt)
+    self.time_txt:setVisible(self.LimitTimeStatus)
+    local setting = {
+        label_type = CommonAlert.type.rich,
+        time_title = string.format("<div fontcolor=#ffffff outline=2,#000000>%s</div>",TI18N("语言_c_1242")),
+        time_color = "#00ff00",
+        outline = "#000000",
+        end_callback = function()
+            self.time_txt:setVisible(false)
+        end
+    }
+    commonCountDownTime(self.time_txt,TimeTool.getToDayZeroTime()+86400 - GameNet:getInstance():getTime(),setting)
+end
+
+function StoneDungeonLimitWindow:register_event()
+    self:addGlobalEvent(TreasureEvent.Treasure_Atr_Event, function(data)
+        self:setData()
+    end)
+
+    self:addGlobalEvent(Stone_dungeonEvent.Updata_StoneDungeon_Data, function(data)
+        self:changeDungeonData(self.cur_index,1)
+        self.first_come_in = false
+        self:redPointStatus()
+    end)
+
+    registerButtonEventListener(self.btnRule, function(param,sender, event_type)
+        local config = Config.DungeonStoneData.data_const.desc_rule_1
+        TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+    end,true, 1)
+
+    registerButtonEventListener(self.close_btn, function()
+        controller:openStoneDungeonLimitView(false)
+    end,true, 2)
+
+    registerButtonEventListener(self.onekey_btn, function()
+        self:onekeyClick()
+    end,true, 2)
+
+    -- 选择所有副本
+    registerButtonEventListener(self.checkbox_all, function()
+        local all_select = self.checkbox_all:isSelected()
+        self.is_all_select = all_select
+        self:changeOnekeyState()
+    end, true, 1)
+
+    if self.role_vo then
+        if not self.updata_role_event then
+            self.updata_role_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+                if key == "lev" then
+                    self:changeDungeonData(self.cur_index)
+                end
+            end)
+        end
+    end
+end
+
+function StoneDungeonLimitWindow:onekeyClick()
+        if not self.LimitTimeStatus then
+            message(TI18N("语言_c_1473"))
+            return
+        end
+        local type_id = self.cur_index;
+        if self.is_all_select == true then
+            type_id = 999;
+        end
+        local freetime,costtime,costnum = self:calculateTimeAndCode(type_id)
+        local str1 = string.format("<img src=%s visible=true scale=0.3 fontcolor=#578e2c /><div>%s</div>",PathTool.getItemRes(Config.ItemData.data_assets_label2id.gold), costnum)
+        local str2 = string.format(TI18N("语言_c_644"),freetime,costtime,str1)
+
+        local function fun()
+            controller:send13033(type_id)
+        end
+        CommonAlert.show(str2,TI18N("语言_c_645"), fun,TI18N("语言_c_62"),nil, CommonAlert.type.rich,nil, nil, nil, true)
+end
+
+--红点
+function StoneDungeonLimitWindow:redPointStatus()
+    local status = {}
+    local length = tableLen(const.dungeon_type_high.val)
+    local list = const.dungeon_type_high.val
+    for i=1, length do
+        local count = model:getChangeSweepCount(list[i])
+        local free_count = model:getfreeCount(list[i])
+        status[list[i]] = false
+        local bool = MainuiController:getInstance():checkIsOpenByActivate(type_open[list[i]].activate)
+        if count < 2 + free_count and bool == true then
+            status[list[i]] = true
+        end
+        local item = self.tab_list[i]
+        if item then
+            item:setSelectRedPoint(status[list[i]] and self.LimitTimeStatus or false)
+        end
+    end
+    local bool = false
+    for i=1,length do
+        bool = bool or (status[i] or false)
+    end
+    return bool
+end
+
+function StoneDungeonLimitWindow:calculateTimeAndCode(type_id)
+    local freetime = 0
+    local costtime = 0
+    local costnum = 0
+    local expend
+    local buy_len
+    local cfg = Config.DungeonStoneData.data_const["dungeon_type_high"].val
+    for i=1,tableLen(cfg),1 do
+        local index = cfg[i]
+        local clearance
+        buy_len = #data_buy[index]
+        local isopen = false
+        for f,v in pairs(award_list[index]) do
+            clearance = model:getPassClearanceID(v.id)
+            if clearance and clearance.status == 1 then
+                isopen = true
+                break
+            end
+        end
+        if isopen == true then
+            if type_id == 999 or type_id == index then
+                local change_count = model:getChangeSweepCount(index)
+                local free_count = model:getfreeCount(index)
+                -- 计算免费的次数
+                local lastnum = const.free_num.val-change_count + free_count
+                if lastnum > 0 then
+                    freetime = freetime + lastnum;
+                end
+                if change_count - free_count >= buy_len then
+                    -- 今日已无次数
+                else
+                    local c_count = change_count - free_count
+                    if c_count < const.free_num.val then
+                        c_count = const.free_num.val
+                    end
+                    local vip_count = 1
+                    for i,v in ipairs(data_buy[index]) do
+                        if v.vip <= self.role_vo.vip_lev then
+                            vip_count = i
+                        end
+                    end
+                    local remain_num = vip_count - c_count
+                    if remain_num <= 0 then
+                        remain_num = 0
+                    end
+                    local temptime = remain_num
+                    costtime = costtime + remain_num
+                    if remain_num > 0 then
+                        for j=1,remain_num,1 do
+                            c_count = const.free_num.val + j
+                            if c_count >= buy_len then
+                                c_count = buy_len
+                            end
+                            expend = data_buy[index][c_count].cost
+                            costnum = costnum + expend
+                        end
+                    end
+                    -- 今日剩余次数
+                end
+            end
+        end
+    end
+    return freetime,costtime,costnum
+end
+
+function StoneDungeonLimitWindow:changeDungeonData(index,flag)
+    index = type_open[index].id or 1
+    local change_count = model:getChangeSweepCount(index) --4
+    local add_count = model:getfreeCount(index) --1
+    local str = ""
+    local free_count = 1 --1:还有次数
+    if change_count >= 2 + add_count then
+        free_count = 0
+        if change_count >= #data_buy[index] + add_count then
+            str = string.format(TI18N("语言_c_646"))
+        else
+            local vip_count = 1
+            for i,v in ipairs(data_buy[index]) do
+                if v.vip <= self.role_vo.vip_lev then
+                    vip_count = i
+                end
+            end
+            local remain_num = vip_count - change_count + add_count
+            if remain_num <= 0 then
+                remain_num = 0
+            end
+            str = string.format(TI18N("语言_c_647"),remain_num)
+        end
+    else
+        str = string.format(TI18N("语言_c_648"),const.free_num.val-change_count + add_count)
+    end
+    self.textCount:setString(str)
+
+    if self.itemScrollview then
+        local data_info = {}
+        for i,v in pairs(award_list[index]) do
+            table_insert(data_info,v)
+        end
+        table_sort(data_info,function(a,b) return a.id < b.id end)
+
+
+        local title_pos = self:getPoerTitle(data_info)      
+        change_count = change_count + 1
+        if change_count >= #data_buy[index] then
+            change_count = #data_buy[index]
+        end
+
+        local tab = {
+            title_pos = title_pos, --推荐位置
+            count = free_count, --免费次数
+            expend = data_buy[index][change_count].cost, --消耗钻石
+            id = self.cur_index
+        }
+
+        local list_item = self.itemScrollview:getItemList()
+        if flag == 1 and self.first_come_in == false then
+            for i=1,#list_item do
+                list_item[i]:setExtendData(tab)
+                list_item[i]:setChangeData(data_info[i])
+            end
+        else
+            self.itemScrollview:setData(data_info,nil,nil,tab)
+            self.itemScrollview:jumpToMove(cc.p(0,170 * (title_pos-1)), 0.2)
+        end
+    end
+
+    self:changeOnekeyState()
+end
+
+--获取推荐角标
+function StoneDungeonLimitWindow:changeOnekeyState()
+    local freetime,costtime,costnum
+    if self.is_all_select == true then
+        freetime,costtime,costnum = self:calculateTimeAndCode(999)
+    else
+        freetime,costtime,costnum = self:calculateTimeAndCode(self.cur_index)
+    end
+    
+    if (freetime == 0 and costtime == 0) or not self.LimitTimeStatus then
+        setChildUnEnabled(true, self.onekey_btn)
+        self.onekey_btn:setTouchEnabled(false)
+    	self.onekey_btn.label:setTextColor(Config.ColorData.data_color4[1])
+		self.onekey_btn.label:enableOutline(cc.c4b(0x49,0x49,0x49,0xff), 2)
+    else
+        setChildUnEnabled(false, self.onekey_btn)
+        self.onekey_btn:setTouchEnabled(true)
+    	self.onekey_btn.label:setTextColor(cc.c4b(0xff,0xff,0xff,0xff))
+		self.onekey_btn.label:enableOutline(cc.c4b(0x76,0x45,0x19,0xff), 2)
+    end
+end
+
+--获取推荐角标
+function StoneDungeonLimitWindow:getPoerTitle(data)
+    local num = 0
+    local totle = tableLen(data)
+    for i, v in ipairs(data) do
+        local clearance = model:getPassClearanceID(v.id)
+        if self.role_vo.max_power >= v.power then
+            if clearance and clearance.status == 1 then
+                num = i
+            end
+        end
+    end
+    if num+1 >= totle then
+        if data[num+1] and self.role_vo.max_power >= data[num+1].power and self.role_vo.lev >= data[num+1].lev_limit then
+            num = totle
+        end
+    else
+        if data[num+1] and self.role_vo.max_power >= data[num+1].power and self.role_vo.lev >= data[num+1].lev_limit then
+            num = num + 1
+        else
+            return num
+        end
+    end
+    return num
+end
+
+function StoneDungeonLimitWindow:openRootWnd()
+    self:setData()
+end
+function StoneDungeonLimitWindow:setData()
+    if not self.tabScrollview then 
+        local scroll_view_size = self.tab_container:getContentSize()
+        local setting = {
+            item_class = StoneDungeonLimitTab,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 20,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 0,                    -- y方向的间隔
+            item_width = 120,               -- 单元的尺寸width
+            item_height = 136,              -- 单元的尺寸height
+            row = 1,                        -- 行数，作用于水平滚动类型
+            col = 0,                         -- 列数，作用于垂直滚动类型
+        }
+        self.tabScrollview = CommonScrollViewLayout.new(self.tab_container, cc.p(0,0), ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    role_controller:sender16823(PartnerConst.Fun_Form.DungeonLimit)
+    controller:send13030()
+    local list = const.dungeon_type_high.val
+    local tab = {}
+    for i=1,#list do
+        table.insert(tab,{id=list[i]})
+    end
+    self:setLoadBanner(6)
+
+    if self.tabScrollview then
+        self.tabScrollview:setData(tab,function(cell)
+            local bool = MainuiController:getInstance():checkIsOpenByActivate(type_open[cell:getData().id].activate)
+            if bool == false then
+                message(type_open[cell:getData().id].desc)
+                return
+            end
+            if self.cur_index == cell:getData().id then return end 
+
+            local list_item = self.tabScrollview:getItemList()
+            for k, v in pairs(list_item) do
+                if v:getData().id == cell:getData().id then
+                    v:setSelect(true)
+                else
+                    v:setSelect(false)
+                end
+            end
+            self.cur_index = cell:getData().id
+            self:changeDungeonData(cell:getData().id)
+            self:setLoadBanner(type_open[cell:getData().id].id)
+        end)
+
+        self.tabScrollview:addEndCallBack(function()
+            local list_item = self.tabScrollview:getItemList()
+            for i,v in pairs(list_item) do
+                table_insert(self.tab_list,v)
+            end
+            self:redPointStatus()
+        end) 
+    end
+end
+
+function StoneDungeonLimitWindow:setLoadBanner(id)
+    local str = string.format("activity_banner_%s", id)
+    local bg_res = PathTool.getPlistImgForDownLoad("activity/activity_big", str)
+    if not self.banner_load[id] then
+        self.banner_load[id] = loadSpriteTextureFromCDN(self.banner, bg_res, ResourcesType.single, self.banner_load[id])
+    else
+        loadSpriteTexture(self.banner, bg_res, LOADTEXT_TYPE)
+    end
+    local str = string.format("txt_cn_activity_banner_%s_1", id)
+    local bg_res = PathTool.getPlistImgForDownLoad("activity/activity_big", str)
+    if not self.name_banner_load[id] then
+        self.name_banner_load[id] = loadSpriteTextureFromCDN(self.name_banner, bg_res, ResourcesType.single, self.name_banner_load[id])
+    else
+        loadSpriteTexture(self.name_banner, bg_res, LOADTEXT_TYPE)
+    end
+    self.open_time_txt:setString(TI18N("语言_dun_st_01_"..id))
+    self.open_time_bg:setContentSize(cc.size(self.open_time_txt:getContentSize().width+100, self.open_time_bg:getContentSize().height))
+end
+
+function StoneDungeonLimitWindow:close_callback()
+    if SysEnv:getInstance():getBool(SysEnv.keys.dungeon_check_onekey, false) ~= self.is_all_select then
+        SysEnv:getInstance():set(SysEnv.keys.dungeon_check_onekey, self.is_all_select)
+    end
+    for i,v in pairs(self.banner_load) do
+        if v then
+            v:DeleteMe()
+            v = nil
+        end
+    end
+    for i,v in pairs(self.name_banner_load) do
+        if v then
+            v:DeleteMe()
+            v = nil
+        end
+    end
+    self.banner_load = {}
+    self.name_banner_load = {}
+
+    if self.banner_load_top then
+        self.banner_load_top:DeleteMe()
+    end
+    self.banner_load_top = nil
+
+    if self.itemScrollview then
+        self.itemScrollview:DeleteMe()
+        self.itemScrollview = nil
+    end
+    if self.tabScrollview then
+        self.tabScrollview:DeleteMe()
+        self.tabScrollview = nil
+    end
+    for i,v in pairs(self.tab_list) do
+        if v.DeleteMe then
+            v:DeleteMe()
+            v = nil
+        end
+    end
+    
+    if self.role_vo then
+        if self.updata_role_event then
+            self.role_vo:UnBind(self.updata_role_event)
+            self.updata_role_event = nil
+        end
+        self.role_vo = nil
+    end
+    controller:openStoneDungeonLimitView(false)
+end
+
+
+--******************
+--Tab
+--******************
+StoneDungeonLimitTab = class("StoneDungeonLimitTab", function()
+    return ccui.Widget:create()
+end)
+
+function StoneDungeonLimitTab:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function StoneDungeonLimitTab:configUI()
+    self.rootWnd = createCSBNote(PathTool.getTargetCSB("stonedungeon/stone_dungeon_tab"))
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:addChild(self.rootWnd)
+    self:setTouchEnabled(true)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(120,136))
+
+    local main_container = self.rootWnd:getChildByName("main_container")
+    self.normal = main_container:getChildByName("normal")
+    self.title = main_container:getChildByName("title")
+    self.title:setPositionY(30)
+    self.condite = main_container:getChildByName("condite")
+    self.redpoint = main_container:getChildByName("redpoint")
+    self.redpoint:setZOrder(2)
+    self.redpoint:setPositionY(103)
+    self.select = main_container:getChildByName("select")
+    self.select:setVisible(false)
+
+    self.effect = createEffectSpine(PathTool.getEffectRes(547), cc.p(63, 64), cc.p(0.5, 0.5), true, PlayerAction.action)
+    main_container:addChild(self.effect, 1)
+    self.effect:setVisible(false)
+    main_container:setPosition(cc.p(60,15))
+end
+function StoneDungeonLimitTab:setData(data)
+    if not data or next(data) == nil then return end
+    self.data = data
+    
+    local res = PathTool.getPlistImgForDownLoad("activity/activity_tab", "activity_tab_"..data.id)
+    self.tab_load = loadSpriteTextureFromCDN(self.normal, res, ResourcesType.single, self.tab_load)  
+    self.title:setString(type_open[data.id].name)
+    self.title:getVirtualRenderer():setLineSpacing(-6)
+    if data.id == 6 then
+        self:setSelect(true)
+    end
+    local bool = MainuiController:getInstance():checkIsOpenByActivate(type_open[data.id].activate)
+    if bool == true then
+        self.condite:setVisible(false)
+    else
+        self.condite:setVisible(true)
+    end
+end
+function StoneDungeonLimitTab:setSelect(visible)
+    if self.select and self.effect then
+        -- self.select:setVisible(visible)
+        self.effect:setVisible(visible)
+    end
+end
+function StoneDungeonLimitTab:setSelectRedPoint(visible)
+    if self.redpoint then
+        self.redpoint:setVisible(visible)
+    end
+end
+function StoneDungeonLimitTab:getData()
+    return self.data
+end
+function StoneDungeonLimitTab:addCallBack(value)
+    self.callback =  value
+end
+function StoneDungeonLimitTab:register_event()
+    self:addTouchEventListener(function(sender, event_type)
+        customClickAction_2(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            self.touch_end = sender:getTouchEndPosition()
+            local is_click = true
+            if self.touch_began ~= nil then
+                is_click = math.abs(self.touch_end.x - self.touch_began.x) <= 20 and math.abs(self.touch_end.y - self.touch_began.y) <= 20
+            end
+            if is_click == true then
+                playButtonSound2()
+                if self.callback then
+                    self:callback()
+                end
+            end
+            elseif event_type == ccui.TouchEventType.moved then
+            elseif event_type == ccui.TouchEventType.began then
+                self.touch_began = sender:getTouchBeganPosition()
+            elseif event_type == ccui.TouchEventType.canceled then
+            end
+    end)
+end
+function StoneDungeonLimitTab:DeleteMe()
+    if self.tab_load then
+        self.tab_load:DeleteMe()
+        self.tab_load = nil
+    end
+    if self.effect then
+        self.effect:clearTracks()
+        self.effect:removeFromParent()
+        self.effect = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

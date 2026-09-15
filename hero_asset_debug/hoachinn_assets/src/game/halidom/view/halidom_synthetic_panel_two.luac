@@ -1,0 +1,421 @@
+-- --------------------------------------------------------------------
+-- @author: xhj@syg.com(必填, 创建模块的人员)
+-- @editor: xxx@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      基础材料转换
+-- <br/> 2020年6月15日
+-- --------------------------------------------------------------------
+HalidowSyntheticPanelTwo = class("HalidowSyntheticPanelTwo", function()
+    return ccui.Widget:create()
+end)
+
+local controller = HalidomController:getInstance()
+local model = controller:getModel()
+
+function HalidowSyntheticPanelTwo:ctor()
+ 
+    self.cur_selected_sum = 0                       -- 当前选中消耗的数量
+    self.max_num = 0 -- 最大可选择数量
+    self.select_cell_list = {}
+
+    self:configUI()
+    self:register_event()
+    self:openRootWnd()
+end
+
+function HalidowSyntheticPanelTwo:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/halidom_synthetic_panel_2"))
+    --self.root_wnd:setPosition(cc.p(0,290))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0,0)
+
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    
+    self.tips_1 = self.main_panel:getChildByName("tips_1")
+    self.tips_1:setString(TI18N("请选择需要转换的材料"))
+
+    self.tips_2 = self.main_panel:getChildByName("tips_2")
+    self.tips_2:setString(TI18N("旧圣物材料1:1转换为虚空宝石"))
+
+    self.scroll_view = self.main_container:getChildByName("scroll_view")
+
+    self.right_btn = self.main_container:getChildByName("right_btn")
+    self.right_btn:getChildByName("label"):setString(TI18N("转 换"))
+
+    self.container = self.main_container:getChildByName("container")
+    self.sub_btn = self.container:getChildByName("btn_redu")                                 -- 减号
+    self.add_btn = self.container:getChildByName("btn_add")                                 -- 加号
+    self.buy_num = self.container:getChildByName("buy_num")         
+    if self.buy_num and not tolua.isnull(self.buy_num) then
+        self.buy_num:setString(tostring(0))
+    end                       
+
+    self.edit_content = createEditBox(self.container, PathTool.getResFrame("common","common_99998"),cc.size(200,40), Config.ColorData.data_color4[2], 26, Config.ColorData.data_color4[2], 26, "", nil, nil, LOADTEXT_TYPE_PLIST)
+    self.edit_content:setInputMode(cc.EDITBOX_INPUT_MODE_NUMERIC)
+    self.edit_content:setAnchorPoint(cc.p(0.5,0.5))
+    self.edit_content:setPosition(cc.p(184, 33))
+
+    local begin_change_label = false
+    local function editBoxTextEventHandle(strEventName,pSender)
+        if strEventName == "return" or strEventName == "ended" then
+            if begin_change_label then  
+                begin_change_label = false
+                if self.buy_num and not tolua.isnull(self.buy_num) then
+                    self.buy_num:setVisible(true)
+                end
+                
+                local str = pSender:getText()
+                pSender:setText("")  
+                if str ~= "" then
+                    local num = tonumber(str)
+                    if num ~= nil and num >= 0 then
+                        self:setCurUseItemInfoByNum(num,true)
+                    else
+                        self:setCurUseItemInfoByNum(self.cur_selected_sum,true)
+                        message(TI18N("请输入数字"))
+                    end
+                else
+                    self:setCurUseItemInfoByNum(self.cur_selected_sum,true)
+                end 
+
+            end
+        elseif strEventName == "began" then
+            if not begin_change_label then
+                if self.buy_num and not tolua.isnull(self.buy_num) then
+                    self.buy_num:setVisible(false)
+                end
+                
+                begin_change_label = true
+            end
+        elseif strEventName == "changed" then
+
+        end
+    end
+    self.edit_content:registerScriptEditBoxHandler(editBoxTextEventHandle)
+
+end
+
+function HalidowSyntheticPanelTwo:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+    
+    registerButtonEventListener(self.right_btn, handler(self, self.onClickBtnRight) ,true, 2)
+
+    self.sub_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            if self.cur_selected_sum == 0 then return end
+            self.cur_selected_sum = self.cur_selected_sum - 1
+            self:setCurUseItemInfoByNum(self.cur_selected_sum,true)
+        end
+    end)
+    self.add_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            if self.cur_selected_sum >= self.max_num then
+                message(TI18N("请选择需要转换的材料"))    
+                return 
+            end
+            self.cur_selected_sum = self.cur_selected_sum + 1
+            self:setCurUseItemInfoByNum(self.cur_selected_sum,true)
+        end
+    end)
+
+    if self.update_sell_orange_event == nil then
+        self.update_sell_orange_event = GlobalEvent:getInstance():Bind(BackpackEvent.Sell_Goods_Success, function() 
+            self:openRootWnd()
+            self:setCurUseItemInfoByNum(self.cur_selected_sum)
+        end)
+    end
+
+end
+
+
+function HalidowSyntheticPanelTwo:onClickBtnRight()
+    local temp_list = {}
+    for k,v in pairs(self.select_cell_list) do
+        if v.cell and v.index then
+            local info = self.item_list[v.index]
+            if info and info.sel_number>0 then
+                table.insert(temp_list,{id=info.id, bid=info.base_id,num=info.sel_number})
+            end
+        end
+    end
+    if temp_list and #temp_list > 0 then
+        BackpackController:getInstance():sender10522(BackPackConst.Bag_Code.BACKPACK, temp_list)  
+    else
+        message(TI18N("请选择需要转换材料和数量"))
+    end
+end
+
+
+function HalidowSyntheticPanelTwo:setCurUseItemInfoByNum(num,isupdate)
+    num = math.max(0, num)
+    local sum = math.min(self.max_num,num)
+    self.cur_selected_sum = sum
+    if self.buy_num and not tolua.isnull(self.buy_num) then
+        self.buy_num:setString(tostring(sum))
+    end
+    
+    if isupdate and isupdate == true then
+        self:update_list()
+    end
+    self:setBtnStatus()
+end
+
+function HalidowSyntheticPanelTwo:openRootWnd()
+    self.select_cell_list = {}
+    self.max_num = 0
+    self.cur_selected_sum = 0
+    self.item_list = {}
+    local temp_conf =  Config.HalidomData.data_const.old_material_transformation
+    if temp_conf and temp_conf.val then
+        for k,v in pairs(temp_conf.val) do
+            local have_num = BackpackController:getInstance():getModel():getItemNumByBid(v)
+            if have_num>0 then
+                local id_list = BackpackController:getInstance():getModel():getBackPackItemIdListByBid(v)
+                for i,j in pairs(id_list) do
+                    local vo = BackpackController:getInstance():getModel():getBackPackItemById(j)
+                    if vo then
+                        table.insert( self.item_list, {id = vo.id,base_id = v,cur_number = vo.quantity,sel_number = 0})
+                    end
+                end
+            end
+        end
+    end
+
+    if #self.item_list == 0 then
+        commonShowEmptyIcon(self.scroll_view, true, {font_size = 20, offset_y = 10, text = TI18N("暂无可转换的材料")})
+    else
+        commonShowEmptyIcon(self.scroll_view, false)
+    end
+    self:updateList()
+    self:setBtnStatus()
+end
+
+function HalidowSyntheticPanelTwo:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool) 
+end
+
+function HalidowSyntheticPanelTwo:updateList()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.scroll_view:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            end_y = 0,                     -- 第一个单元的Y起点
+            space_y = 20,                     -- y方向的间隔
+            item_width = scroll_view_size.width / 3 ,                -- 单元的尺寸width
+            item_height = BackPackItem.Height+70,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 3,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.scroll_view, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.item_scrollview:reloadData()
+
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HalidowSyntheticPanelTwo:createNewCell(width, height)
+    local cell = HalidowSyntheticPanelTwoItem.new()
+    cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+--获取数据数量
+function HalidowSyntheticPanelTwo:numberOfCells()
+    if not self.item_list then return 0 end
+    return #self.item_list
+end
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--index :数据的索引
+function HalidowSyntheticPanelTwo:updateCellByIndex(cell, index)
+    cell.index = index
+    local data = self.item_list[index]
+    if not data then return end
+    cell:setData(data)
+
+    cell:IsGetStatus(false)
+    if self.select_cell_list then
+        for k,v in pairs(self.select_cell_list) do
+            if v.index and v.index == index then
+                cell:IsGetStatus(true)
+                break
+            end
+        end
+    end
+end
+
+--点击cell .需要在 createNewCell 设置点击事件
+function HalidowSyntheticPanelTwo:onCellTouched(cell)
+    if not cell.index then return end
+    local data = self.item_list[cell.index]
+    if not data then return end
+
+    if self.select_cell_list then
+        for k,v in pairs(self.select_cell_list) do
+            if v.index == cell.index then
+                self.select_cell_list[k].cell:IsGetStatus(false)
+                self.select_cell_list[k].cell = nil
+                self.select_cell_list[k].index = nil
+                self.max_num = self.max_num - data.cur_number
+                self.cur_selected_sum = self.cur_selected_sum - data.sel_number
+                self:setCurUseItemInfoByNum(self.cur_selected_sum)
+                self.item_list[cell.index].sel_number = 0
+                if self.item_scrollview then
+                    self.item_scrollview:resetCurrentItems()
+                end
+                return
+            end
+        end
+    end
+    
+    cell:IsGetStatus(true)    
+    table.insert( self.select_cell_list, {cell = cell,index = cell.index} )
+    self.max_num = self.max_num+data.cur_number
+    self:setBtnStatus()
+end
+
+
+function HalidowSyntheticPanelTwo:setBtnStatus()
+    if self.max_num == 1 then
+        self:setTouchEnable_Redu(true)
+        self:setTouchEnable_Add(true)
+    else
+        if self.cur_selected_sum <= 1 then
+            self:setTouchEnable_Redu(true)
+            self:setTouchEnable_Add(false)
+        elseif self.cur_selected_sum == self.max_num then
+            self:setTouchEnable_Redu(false)
+            self:setTouchEnable_Add(true)
+        else
+            self:setTouchEnable_Redu(false)
+            self:setTouchEnable_Add(false)
+        end
+    end
+end
+
+function HalidowSyntheticPanelTwo:setTouchEnable_Add(bool)
+    setChildUnEnabled(bool,self.add_btn)
+    self.add_btn:setTouchEnabled(not bool)
+end
+function HalidowSyntheticPanelTwo:setTouchEnable_Redu(bool)
+    setChildUnEnabled(bool,self.sub_btn)
+    self.sub_btn:setTouchEnabled(not bool)
+end
+
+
+function HalidowSyntheticPanelTwo:update_list()
+    if self.item_list and self.cur_selected_sum >= 0 and self.select_cell_list then
+        local temp_num = self.cur_selected_sum
+        for k,v in ipairs(self.item_list) do
+            for i,j in pairs(self.select_cell_list) do
+                if j.index and j.index == k then
+                    if v.cur_number <= temp_num then
+                        v.sel_number = v.cur_number
+                        temp_num = temp_num-v.cur_number
+                    else
+                        v.sel_number = temp_num
+                        temp_num = 0
+                    end
+                    break
+                end
+            end
+        end
+        self.item_scrollview:resetCurrentItems()
+    end
+end
+
+function HalidowSyntheticPanelTwo:DeleteMe()
+    if self.item_scrollview then 
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+
+    if self.update_sell_orange_event then
+        GlobalEvent:getInstance():UnBind(self.update_sell_orange_event)
+        self.update_sell_orange_event = nil
+    end
+end
+
+
+--------------------------@ item
+HalidowSyntheticPanelTwoItem = class("HalidowSyntheticPanelTwoItem", function()
+    return ccui.Widget:create()
+end)
+
+function HalidowSyntheticPanelTwoItem:ctor()
+	self:configUI()
+end
+
+function HalidowSyntheticPanelTwoItem:configUI(  )
+	self.size = cc.size(BackPackItem.Width, BackPackItem.Height+70)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	self.item_node = BackPackItem.new(false, true, false, 1, false)
+	self.item_node:setIsScrollName(true)
+    self.item_node:setPosition(cc.p(self.size.width*0.5, self.size.height-BackPackItem.Height*0.5))
+    self:addChild(self.item_node)
+
+    self.num_bg = createImage(self, PathTool.getResFrame("common","common_90003"), BackPackItem.Width/2,50, cc.p(0.5,0.5), true)
+    self.num_bg:setScale9Enabled(true)
+    self.num_bg:setContentSize(cc.size(160,30))
+    self.num_lab = createLabel(20,Config.ColorData.data_color4[1],Config.ColorData.data_color4[2],BackPackItem.Width/2,50,"",self,1, cc.p(0.5,0.5))
+end
+
+function HalidowSyntheticPanelTwoItem:addCallBack( callback )
+	if self.item_node then
+		self.item_node:addCallBack(callback)
+	end
+end
+
+
+
+function HalidowSyntheticPanelTwoItem:setData( data)
+	self.data = data
+	if self.item_node then
+		if data then
+			self.item_node:setBaseData(data.base_id, 1)
+            if data.sel_number>0 then
+                self.num_lab:setString(string.format( "%s/%s",data.sel_number,data.cur_number ))
+            else
+                self.num_lab:setString(tostring(data.cur_number))
+            end
+            if self.item_node.item_config then
+                self.item_node:setGoodsName(self.item_node.item_config.name, cc.p(BackPackItem.Width/2,-65))
+            end
+		end
+	end
+end
+
+function HalidowSyntheticPanelTwoItem:IsGetStatus( status )
+	if self.item_node then
+		self.item_node:IsGetStatus(status)
+	end
+end
+
+
+
+function HalidowSyntheticPanelTwoItem:DeleteMe(  )
+	
+	if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+	end
+end

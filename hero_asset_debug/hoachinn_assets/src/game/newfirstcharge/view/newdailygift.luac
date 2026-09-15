@@ -1,0 +1,315 @@
+-- --------------------------------------------------------------------
+-- ******** 文件说明 ********
+-- 开服每日礼包
+-- *******************************
+NewDailygift = NewDailygift or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+function NewDailygift:__init()
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "newfirstcharge/new_daily_gift_window"
+    self.res_list = {{
+        path = PathTool.getPlistImgForDownLoad("dailypack", "dailypack"),
+        type = ResourcesType.plist
+    }}
+end
+
+function NewDailygift:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    local container = self.main_container:getChildByName("container")
+    self.title_img = container:getChildByName("title_img")
+    local Panel_8 = container:getChildByName("Panel_8")
+    self.time_txt = Panel_8:getChildByName("time_txt")
+    self.time_tips = Panel_8:getChildByName("time_tips")
+    self.time_tips:setString(TI18N("语言_c_4962"))
+    local pos_x = self.time_tips:getPositionX() + self.time_tips:getContentSize().width + 5
+    self.time_txt:setPositionX(pos_x)
+    self.close_btn = container:getChildByName("close_btn")
+    self.scroller = container:getChildByName("scroller")
+    self.shop_btn = container:getChildByName("shop_btn")
+    local scroll_view_size = self.scroller:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 10, -- y方向的间隔
+        item_width = 612, -- 单元的尺寸width
+        item_height = 296, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 1 -- 列数，作用于垂直滚动类型
+        -- need_dynamic = true
+        -- checkovercallback = handler(self, self.updateSlideShowByVertical)
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.scroller, cc.p(0, 0), ScrollViewDir.vertical,
+                                 ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.CreateNewCell),
+        ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.NumberOfCells),
+        ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.UpdateCellByIndex),
+        ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    self.shop_effect_1 = createEffectSpine("E20989", cc.p(582, 871), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+    container:addChild(self.shop_effect_1)
+    self.shop_btn:setZOrder(9999)
+    self.shop_effect_2 = createEffectSpine("E20989", cc.p(85, 30), cc.p(0.5, 0.5), true, PlayerAction.action_2)
+    self.shop_btn:addChild(self.shop_effect_2)
+end
+
+function NewDailygift:openRootWnd(bid)
+    self.holiday_bid = bid
+    controller:cs16603(bid)
+    MonopolyController:getInstance():sender16810(ActionStorageBool2.ShinobuStore)
+end
+function NewDailygift:btnShopRed()
+    local red_vis = ActionController:getInstance():getModel():getNinjaShopRed()
+    addRedPointToNodeByStatus(self.shop_btn,red_vis,-20,-20)
+end
+-- 奖励列表
+function NewDailygift:CreateNewCell()
+    local cell = NewDailygiftItem.new()
+    return cell
+end
+
+function NewDailygift:NumberOfCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function NewDailygift:UpdateCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+
+    cell:setData(cell_data)
+end
+
+function NewDailygift:setPanelData()
+    if not self.holiday_data then
+        return
+    end
+    self.reward_list = self.holiday_data.aim_list
+    self.reward_goods_item:reloadData()
+    self:setTimeTxt()
+end
+
+function NewDailygift:register_event()
+    registerButtonEventListener(self.close_btn, function()
+        controller:openNewDailyGiftWindow(false)
+    end, false, 2)
+
+    -- registerButtonEventListener(self.background, function()
+    --     controller:openNewDailyGiftWindow(false)
+    -- end, false, 2)
+
+    if not self.update_action_even_event then
+        self.update_action_even_event = GlobalEvent:getInstance():Bind(ActionEvent.UPDATE_HOLIDAY_SIGNLE, function(data)
+            if data.bid == self.holiday_bid then
+                self.holiday_data = data
+                -- printLuaTable(data)
+                if not self.holiday_data or tableLen(self.holiday_data.aim_list) == 0 then --如果没有数据
+                    MainuiController:getInstance():removeFunctionIconById(MainuiConst.icon.new_daily_gift)
+                    controller:openNewDailyGiftWindow(false)
+                    return
+                end
+                local red = false or ActionController:getInstance():getModel():getNinjaShopRed()
+                MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.new_daily_gift, red)
+                self:setPanelData()
+            end
+        end)
+    end
+
+    self.shop_btn:addTouchEventListener(function(sender, state)
+		if state == ccui.TouchEventType.ended then
+			self:onClickShopBtn()
+		end
+	end)
+    
+    self:addGlobalEvent(MonopolyEvent.Get_Monopoly_War_Order_Popups, function ( data )
+        if data.type == ActionStorageBool2.ShinobuStore then
+            if data.flag == 1 then
+                ActionController:getInstance():getModel().NinjaShopRed = false
+            elseif data.flag == 0 then
+                ActionController:getInstance():getModel().NinjaShopRed = true
+            end
+            self:btnShopRed()
+            ActionController:getInstance().new_daily_gift_red = false
+            local red = ActionController:getInstance().new_daily_gift_red or ActionController:getInstance():getModel():getNinjaShopRed()
+            MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.new_daily_gift, red)
+        end 
+	end)
+end
+
+function NewDailygift:onClickShopBtn()
+    if not Config.ExchangeData then
+        require "config.exchange_data"
+		if not Config.ExchangeData then return false end
+    end
+    local setting = {}
+    setting.mall_type = MallConst.MallType.HeroSoulShop
+    setting.item_id = 10005 -- 英魂之心
+    setting.config = Config.ExchangeData.data_shop_exchage_herosoul
+    setting.shop_name = TI18N("语言_exc_02_25")
+    MallController:getInstance():openMallSingleShopPanel(true, setting)
+end
+
+function NewDailygift:setTimeTxt()
+    if not self.holiday_data then
+        return
+    end
+    doStopAllActions(self.time_txt)
+    -- local time = self.holiday_data.remain_sec --这里要显示每天的倒计时
+    local nowtime = GameNet:getInstance():getTime()
+    local timezone = InviteCodeController:getInstance():getModel():getServerTimeZone() -- 服务器时区
+    local leftTime = TimeTool.getOneDayLessTimeServer(nowtime, timezone)
+    model:setCountDownTime(self.time_txt, leftTime)
+end
+
+function NewDailygift:close_callback()
+    doStopAllActions(self.time_txt)
+    if self.update_action_even_event then
+        GlobalEvent:getInstance():UnBind(self.update_action_even_event)
+        self.update_action_even_event = nil
+    end
+    if  self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    if self.NinjaShop_Red ~= nil then
+        GlobalEvent:getInstance():UnBind(self.NinjaShop_Red)
+        self.NinjaShop_Red = nil
+    end
+    controller:openNewDailyGiftWindow(false)
+end
+
+---------------------------@ 子项
+NewDailygiftItem = class("NewDailygiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function NewDailygiftItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function NewDailygiftItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("newfirstcharge/new_daily_gift_item"))
+    self:setAnchorPoint(0, 0)
+    self:setContentSize(cc.size(612, 296))
+    self:addChild(self.root_wnd)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.small_title = self.main_container:getChildByName("small_title")
+    self.gift_name = self.main_container:getChildByName("gift_name")
+    self.limit = self.main_container:getChildByName("limit")
+    setTextMaxWidth(self.limit,200)
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.spr_get = self.main_container:getChildByName("spr_get")
+    self.spr_get:setVisible(false)
+    self.item_container = self.main_container:getChildByName("good_cons")
+    self.item_container:setScrollBarEnabled(false)
+    
+    self.red_line = self.main_container:getChildByName("red_line")
+    self.old_price = self.main_container:getChildByName("old_price")
+    setTextMaxWidth(self.limit,180)
+end
+
+function NewDailygiftItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local cdata = Config.ChargeData.data_charge_data[self.rechargeId]
+        if cdata then
+            sdkOnPay(cdata.val, 1, self.rechargeId)
+        end
+    end, true)
+end
+
+function NewDailygiftItem:setData(data)
+    if not data then
+        return
+    end
+    -- printLuaTable(data)
+    self.gift_name:setString(TI18N(data.aim_str))
+    local item_list = data.item_list
+    self:setItemData(item_list)
+    local discount_list = keyfind('aim_args_key', 26, data.aim_args) or nil -- 原价
+    local new_price_list = keyfind('aim_args_key', 27, data.aim_args) or nil -- 现价
+    local limit_buy_list = keyfind('aim_args_key', 4, data.aim_args) or nil -- 限购
+    local now_buy_list = keyfind('aim_args_key', 5, data.aim_args) or nil -- 当前购买数量
+    local recharge_list = keyfind('aim_args_key', 33, data.aim_args) or nil -- 充值id
+    self.rechargeId = recharge_list.aim_args_val
+    local leftbuynum = (limit_buy_list.aim_args_val - now_buy_list.aim_args_val)
+    local str = TI18N("语言_c_1688") .. now_buy_list.aim_args_val .. "/" .. limit_buy_list.aim_args_val
+    self.limit:setString(str)
+    local price = string.format(TI18N("语言_c_4440"), (GetMoneyNum(new_price_list, "aim_args_val")))
+    self.btn_get:getChildByName("Text_3"):setString(price)
+    self.small_title:setString(TI18N(new_price_list.aim_args_str))
+    local old_price = string.format(TI18N("语言_c_4439"), (GetMoneyNum(discount_list, "aim_args_val")))
+    self.old_price:setString(old_price)
+    self.red_line:setContentSize(cc.size(self.old_price:getContentSize().width + 10,2))
+
+    local status = data.status
+    if leftbuynum == 0 then
+        self.spr_get:setVisible(true)
+        self.btn_get:setVisible(false)
+    else
+        self.spr_get:setVisible(false)
+        self.btn_get:setVisible(true)
+    end
+end
+
+-- 设置奖励列表
+function NewDailygiftItem:setItemData(data)
+    if not data then
+        return
+    end
+    local scroll_view_size = self.item_container:getContentSize()
+    local setting = {
+        item_class = BackPackItem, -- 单元类
+        start_x = 35, -- 第一个单元的X起点
+        space_x = 10, -- x方向的间隔
+        start_y = 5, -- 第一个单元的Y起点
+        space_y = 4, -- y方向的间隔
+        item_width = BackPackItem.Width * 0.8, -- 单元的尺寸width
+        item_height = BackPackItem.Height * 0.8, -- 单元的尺寸height
+        row = 1, -- 行数，作用于水平滚动类型
+        col = 0, -- 列数，作用于垂直滚动类型
+        scale = 0.8
+    }
+    if not self.item_scrollview  then
+        self.item_scrollview = CommonScrollViewLayout.new(self.item_container, cc.p(0, 0), ScrollViewDir.horizontal,ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+    self.item_scrollview:setSwallowTouches(false)
+    local list = {}
+    for k, v in pairs(data) do
+        local temp = Config.ItemData.data_get_data(v.bid)
+        local vo = deepCopy(temp)
+        vo.quantity = v.num
+        table.insert(list, vo)
+    end
+    self.item_scrollview:setData(list)
+    self.item_scrollview:addEndCallBack(function()
+        local list = self.item_scrollview:getItemList()
+        for k, v in pairs(list) do
+            v:setDefaultTip()
+        end
+    end)
+end
+
+function NewDailygiftItem:DeleteMe()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

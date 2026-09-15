@@ -1,0 +1,392 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- @author: lc@syg.com(必填, 创建模块的人员)
+-- @editor: lc@syg.com(必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-1-7
+-- --------------------------------------------------------------------
+NoticeModel = NoticeModel or BaseClass()
+
+function NoticeModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function NoticeModel:config()
+	self.feed_back_list = {} --反馈列表
+	self.all_count = 0
+	self.replied_count = 0 
+	self.wait_count = 0
+	self.reply_content_list = {} --回复列表
+	self.trace_content_list = {} --追问列表
+	self.time_data = {}
+	self.red_status = false
+end
+
+function NoticeModel:setFeedBackData( data )
+	self:config()
+    local function sortfunc( objA, objB )
+        return objA.end_msg_time > objB.end_msg_time
+	end
+	local log_data = data.feedback_logs
+	if log_data ~= nil and next(log_data) ~= nil then
+		table.sort( log_data, sortfunc )
+		for i,v in pairs(log_data) do
+			local list_data = {}
+			list_data.id = v.id
+			list_data.title = v.title
+			list_data.content = v.content
+			list_data.state = v.state
+			list_data.status2 = v.status2
+			list_data.end_msg_time = v.end_msg_time
+			list_data.start_time = v.start_time
+			list_data.finish_time = v.finish_time
+			list_data.score_time = v.score_time
+			table.insert( self.feed_back_list, list_data )
+			if v.state == 2 then
+				self.replied_count = self.replied_count + 1 
+			end 
+			if v.state == 3 then
+				self.wait_count = self.wait_count + 1
+			end
+			if v.state == 2 or v.status2 == 3 then
+				if v.status2 == 0 then
+					self.red_status = true
+				end
+			end
+		end	
+		self.all_count = #log_data
+	end
+end
+
+function NoticeModel:getFeedBackData()
+	if self.feed_back_list ~= nil and next(self.feed_back_list) ~= nil then
+		table.sort(self.feed_back_list, function(a, b) return b.end_msg_time > a.end_msg_time end)
+		table.sort(self.feed_back_list, function(a, b) 
+			if a.end_msg_time == 0 then
+				return a.start_time > b.start_time
+			end
+			end)
+			-- return b.end_msg_time > a.end_msg_time end)
+
+		return self.feed_back_list
+	end
+end
+
+function NoticeModel:getTimeData(  )
+		if self.time_data ~= nil and next(self.time_data) ~= nil then
+		return self.time_data
+	end
+end
+
+function NoticeModel:setContentData(data)
+	self:config()
+	if data ~= nil and next(data) ~= nil then
+		if  data.end_msg_time then
+			self.time_data.end_msg_time = data.end_msg_time 
+		end
+		if  data.start_time then
+			self.time_data.start_time = data.start_time 
+		end
+		if  data.finish_time then
+			self.time_data.finish_time = data.finish_time 
+		end
+		if data.status2 then
+			self.time_data.state = data.state
+		end
+		local questions_lists = data.questions_lists
+		if questions_lists ~= nil and next(questions_lists) ~= nil then
+			self:setTraceContentData(questions_lists)
+		end
+		local answer_lists = data.answer_lists
+		if answer_lists ~= nil and next(answer_lists) ~= nil then
+			self:setAnswerContentData(answer_lists)
+		end
+		
+	end
+
+end
+
+function NoticeModel:setTraceContentData( trace_list ) --追问
+	local function sortfunc( objA, objB )
+        	return objA.questions_timer > objB.questions_timer
+	end
+	table.sort( trace_list, sortfunc )
+	for i,v in pairs(trace_list) do
+		local questions_lists_data = {}
+		questions_lists_data.questions_timer = trace_list[i].questions_timer
+		questions_lists_data.questions_content = trace_list[i].questions_content
+		table.insert( self.trace_content_list, questions_lists_data )
+	end
+end
+
+function NoticeModel:setAnswerContentData( answer_list )
+	local function sortfunc( objA, objB )
+    	return objA.answer_timer > objB.answer_timer
+	end
+	table.sort( answer_list, sortfunc )
+	for i,v in pairs(answer_list) do
+		local answer_list_data = {}
+		answer_list_data.answer_timer = answer_list[i].answer_timer
+		answer_list_data.answer_content = answer_list[i].answer_content
+		table.insert( self.reply_content_list, answer_list_data )
+	end
+end
+
+function NoticeModel:getTraceContentData( ... )  --问题
+	if self.trace_content_list ~= nil and next(self.trace_content_list) ~= nil then
+		return self.trace_content_list
+	end
+end
+
+
+function NoticeModel:getAnswerContentData( ... ) --回复
+	if self.reply_content_list ~= nil and next(self.reply_content_list) ~= nil then
+		return self.reply_content_list
+	end
+end
+
+function NoticeModel:getRedStatus( ... )
+	return self.red_status
+end
+
+
+
+function NoticeModel:getCount()
+	local data = {}
+	data.wait_count = self.wait_count
+	data.all_count = self.all_count
+	data.replied_count = self.replied_count
+	return data
+end
+
+function NoticeModel:generateChatMsg(list)
+	-- local render_list = self:getTraceContentData()
+	-- local answer_list = self:getAnswerContentData()
+	-- local chat_msg = {}
+	-- for i,v in ipairs(render_list) do
+	-- 	local msg = {}
+	-- 	msg.isSelf = true
+	-- 	msg.content = v.questions_content
+	-- 	msg.time = v.questions_timer
+	-- 	chat_msg[#chat_msg +1] = msg
+	-- end
+	-- for i,v in ipairs(answer_list) do
+	-- 	local msg = {}
+	-- 	msg.isSelf = false
+	-- 	msg.content = v.answer_content
+	-- 	msg.time = v.answer_timer
+	-- 	chat_msg[#chat_msg +1] = msg
+	-- end
+	-- table.sort(chat_msg, function(a, b) return a.time < b.time end)
+	local array = Array.New()
+	for i,v in ipairs(list) do
+		local vo = self:formatToChat(v, v.msg_type)
+		vo.id = i
+		vo.channel  = 1
+		array:PushBack(vo)
+	end
+	return array
+end
+
+function NoticeModel:formatToChat(msg, isSelf)
+	local data = {}
+	data.channel = 1
+	data.len = 0
+	data.msg = msg.msg or ""
+	data.role_list = {}
+	local role_data = {}
+	local role = RoleController:getInstance():getRoleVo()
+	if isSelf == 1 then
+		role_data.capacity = role.capacity or 0
+		role_data.career = role.capacity or 0
+		role_data.chat_bubble = 0
+		role_data.city = ""
+		-- role_data.ext_list = {
+		-- 	[1] = {
+		-- 		type = 2,
+		-- 		val = 1,
+		-- 	},
+		-- }
+		role_data.face_file = role.face_file or ""
+		role_data.face_id = role.face_id or 10401
+		role_data.face_update_time = role.face_update_time or 0
+		role_data.g_name = role.g_name or ""
+		role_data.gid = role.gid or 3
+		role_data.gsrv_id = role.gsrv_id or "dev_14"
+		role_data.head_bid = role.avatar_base_id or 5100
+		role_data.is_show_vip = role.is_show_vip or 0
+		role_data.lev = role.lev or 103
+		role_data.name = msg.send_time..""
+		role_data.province = ""
+		role_data.rid = role.rid or 28
+		role_data.sex = role.sex or 1
+		role_data.srv_id = role.srv_id or "dev_14"
+		role_data.vip_lev = role.vip_lev or 10
+	else
+		role_data.bubble_bid = 0
+		role_data.capacity = 0
+		role_data.career = 0
+		role_data.city = ""
+		-- role_data.ext_list = {
+		-- 	[1] = {
+		-- 		type = 2,
+		-- 		val = 1,
+		-- 	},
+		-- }
+		role_data.face_file = ""
+		role_data.face_id = 1002
+		role_data.face_update_time = 0
+		role_data.g_name = ""
+		role_data.gid = 0
+		role_data.gsrv_id = "0"
+		role_data.head_bid = 0
+		role_data.is_show_vip = 0
+		role_data.lev = 0
+		role_data.name = TI18N("语言_c_2655").."  "..msg.send_time
+		role_data.province = ""
+		role_data.rid = -1
+		role_data.sex = 2
+		role_data.srv_id = role.srv_id or ""
+		role_data.vip_lev = 0
+	end
+	data.role_list[#data.role_list + 1] = role_data
+	data.tick = msg.send_time
+	local vo = ChatModel.clone(data, 1)
+	return vo
+end
+
+function NoticeModel:setNoticeBaseData(data)
+	self.n_baseData = data
+end
+
+function NoticeModel:getNoticeBaseData()
+	return self.n_baseData
+end
+
+function NoticeModel:updateNoticeBaseDataEmail(email)
+	self.n_baseData = self.n_baseData or {}
+	self.n_baseData.email = email
+end
+
+function NoticeModel:checkQuestionsDataExist()
+	return self.n_questionsData
+end
+
+function NoticeModel:setQuestionsData(data)
+	self.n_questionsData = self.n_questionsData or {}
+	for k,v in pairs(data) do
+		if not self.n_questionsData[v.id] then
+			self.n_questionsData[v.id] = v
+		end
+	end
+end
+
+function NoticeModel:getQuestionById(id)
+	if self then
+		self.n_questionsData = self.n_questionsData or {}
+		return self.n_questionsData[id]
+	end
+end
+
+function NoticeModel:markQuestionReportStatus(id, mark)
+	if not tolua.isnull(self) and self.n_questionsData and type(self.n_questionsData) == "table" then
+		local data = self.n_questionsData[id]
+		if data then
+			data.report_status = mark or 1
+		end
+	end
+end
+
+function NoticeModel:getQuestionList()
+	local dataList = self.n_questionsData
+	local list = {}
+	for k,v in pairs(self.n_questionsData) do
+		list[#list + 1] = v
+	end
+	table.sort(list, function(a, b) return a.id > b.id end)
+	return list
+end
+
+function NoticeModel:setQuestionsInfoData(post_id, datalist)  --全部
+	self.n_questionsInfoData = self.n_questionsInfoData or {}
+	self.n_questionsInfoData[post_id] = self.n_questionsInfoData[post_id] or {}
+	for k,v in pairs(datalist) do
+		self.n_questionsInfoData[post_id][#self.n_questionsInfoData[post_id] + 1] = v
+	end
+end
+
+function NoticeModel:addQuestionsInfoData(post_id, data)  --增加
+	self.n_questionsInfoData = self.n_questionsInfoData or {}
+	self.n_questionsInfoData[post_id] = self.n_questionsInfoData[post_id] or {}
+	self.n_questionsInfoData[post_id][#self.n_questionsInfoData[post_id] + 1] = data
+end
+
+function NoticeModel:getQuestionsInfoData(post_id)
+	self.n_questionsInfoData = self.n_questionsInfoData or {}
+	return self.n_questionsInfoData[post_id]
+end
+
+--收到有新消息并且没有打开的情况 存起来
+function NoticeModel:addQuestionNewState(post_id)
+	self.n_questionsInfoState = self.n_questionsInfoState or {}
+	self.n_questionsInfoState[post_id] = 1
+end
+
+function NoticeModel:removeQuestionNewState(post_id)
+	self.n_questionsInfoState = self.n_questionsInfoState or {}
+	self.n_questionsInfoState[post_id] = nil
+end
+
+function NoticeModel:checkRedStatus()
+	local status = false
+	self.n_questionsInfoState = self.n_questionsInfoState or {}
+	for k,v in pairs(self.n_questionsInfoState) do
+		if v == 1 then
+			return true
+		end
+	end
+	return false
+end
+
+function NoticeModel:checkRedStatusById(post_id)
+	if self.n_questionsInfoState[post_id] then
+		return self.n_questionsInfoState[post_id] == 1
+	end
+	return false
+end
+
+function NoticeModel:setQuestionInfoPage(post_id, page)
+	self.n_questionsInfoPage = self.n_questionsInfoPage or {}
+	self.n_questionsInfoPage[post_id] = page
+end
+
+function NoticeModel:getQuestionInfoPage(post_id)
+	self.n_questionsInfoPage = self.n_questionsInfoPage or {}
+	return self.n_questionsInfoPage[post_id] or 1
+end
+
+function NoticeModel:setQuestionListPage(page)
+	self.n_questionsListPage = page
+end
+
+function NoticeModel:getQuestionListPage()
+	return self.n_questionsListPage or 1
+end 
+
+function NoticeModel:checkQuestionNoExist()
+	self.n_questionsInfoState = self.n_questionsInfoState or {}
+	for k,v in pairs(self.n_questionsInfoState) do
+		if v == 1 then
+			if not self:getQuestionById(k) then
+				return true
+			end
+		end
+	end
+	return false
+end
+
+function NoticeModel:__delete()
+end

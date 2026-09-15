@@ -1,0 +1,477 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      潜能
+-- <br/>Create: 2020-02-05
+-- --------------------------------------------------------------------
+PotentialModel = PotentialModel or BaseClass()
+
+function PotentialModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function PotentialModel:config()
+    self.potential_list = {} --潜能列表
+end
+--潜能基础信息
+function PotentialModel:setPotentialBaseInfo(data)
+    self.potential_list = {}
+    for k, v in pairs(data.potential_list) do
+        self.potential_list[v.potential_id] = v
+    end
+    
+    GlobalEvent:getInstance():Fire(PotentialEvent.Potential_Base_Info_Event)
+    self:updatePotentialRed()
+end
+--刷新多个潜能信息
+function PotentialModel:updatePotentialMoreInfo(data)
+    for k, v in pairs(data.potential_list) do
+        self.potential_list[v.potential_id] = v
+    end
+    GlobalEvent:getInstance():Fire(PotentialEvent.Potential_Base_Info_Event)
+    self:updatePotentialRed()
+end
+--获取潜能列表
+function PotentialModel:getPotentialList()
+    return self.potential_list
+end
+--获取单个潜能信息
+function PotentialModel:getPotentialForId(potential_id)
+    if self.potential_list[potential_id] then
+        return self.potential_list[potential_id]
+    end
+    return nil
+end
+--单个潜能状态 0未激活 1可激活 2激活失效 3激活生效
+function PotentialModel:getPotentialOneStatus(potential_id)
+    local list = self:getPotentialForId(potential_id)
+    if list then
+        if list.is_effect == PotentialConst.Eff_Status.haveEff then --1生效0不生效
+            return PotentialConst.One_Status.haveEff
+        end
+        return PotentialConst.One_Status.loseEff
+    end
+    local cfg = Config.PotentialData.data_get_potential_base_ex[potential_id]
+    if cfg then
+        local need_list = cfg.pre_potential_id
+        local status = false
+        for k, v in pairs(need_list) do
+            if self:getPotentialOneStatus(v) == 3 then
+                status = true
+            end
+        end
+        if not status and next(need_list) then
+            return PotentialConst.One_Status.noAct
+        end
+        if self:getPotentialCanAct(potential_id) then
+            return PotentialConst.One_Status.canAct
+        end
+    end
+    return PotentialConst.One_Status.noAct
+end
+--刷新单个潜能信息
+function PotentialModel:updatePotentialList(data)
+    self.potential_list[data.potential_id] = data
+    
+    self:updatePotentialRed()
+    GlobalEvent:getInstance():Fire(PotentialEvent.Update_Potential_Info_Event,data)
+end
+--获取功能屏蔽是否开启
+function PotentialModel:getFunIsHide()
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+    local featuresId = MainuiConst.FeaturesShield.PotenPtial
+    if table.indexof(nohideIds,featuresId) then
+        return true
+    end
+    return false
+end
+--获取功能是否开启
+function PotentialModel:getFunIsOpen()
+    local cfg = Config.PotentialData.data_const
+    local role_vo = RoleController:getInstance():getRoleVo()
+    if role_vo and role_vo.lev >= cfg.open_level.val and self:getFunIsHide() then
+        return true
+    end
+    return false
+end
+--获取页签屏蔽是否开启
+function PotentialModel:getTabIsHide(index)
+    local cfg = Config.PotentialData.data_get_round[index]
+    if cfg then
+        local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("potential_data")
+        if cfg.shield == 1 or (cfg.shield == 0 and table.indexof(nohideIds,index)) then
+            return true
+        end
+    end
+    return false
+end
+--获取页签状态 0屏蔽 1解锁高亮 2解锁置灰(失效) 3锁
+function PotentialModel:getTabStatus(index)
+    if self:getTabIsHide(index) then
+        if index == 1 then return 1 end
+        local round_cfg = Config.PotentialData.data_get_round[index-1]
+        if round_cfg then
+            if round_cfg.key == 0 then
+                return 1
+            end
+            local list = self:getPotentialForId(round_cfg.key)
+            if not list then
+                return 3
+            else
+                if list.is_effect == 0 then
+                    return 2
+                else
+                    return 1
+                end
+            end
+        end
+    end
+    return 0
+end
+--获取单个潜能能否升级
+function PotentialModel:getPotentialCanUp(potential_id)
+    local list = self:getPotentialForId(potential_id)
+    if list and list.is_effect == 1 then
+        if not self:getPotentialCanUpCon(potential_id) then return false end
+        local config = Config.PotentialData.data_get_potential_detail[potential_id]
+        if config then
+            local cfg = config[list.potential_level]
+            if cfg and cfg.cost and next(cfg.cost) and config[list.potential_level+1] then
+                for k, v in pairs(cfg.cost) do
+                    local have_num = BackpackController:getInstance():getModel():getItemNumByBid(v[1])
+                    if have_num < v[2] then
+                        return false
+                    end
+                end
+                for k, v in pairs(cfg.cost2) do
+                    local dic_random_conditions = {}
+                    local camp = v[1]
+                    local star = v[2]
+                    local need_num = v[3]
+                    dic_random_conditions[camp] = {}
+                    dic_random_conditions[camp][star] = need_num
+                    local total_count = HeroController:getInstance():getModel():getHeroListByMatchInfo({}, dic_random_conditions, {})
+                    if total_count < need_num then
+                        return false
+                    end
+                end
+                return true
+            end
+        end
+    end
+    return false
+end
+--获取单个潜能是否可激活
+function PotentialModel:getPotentialCanAct(potential_id)
+    if self:getPotentialCanActCost(potential_id) and self:getPotentialCanActCon(potential_id) then
+        return true
+    end
+end
+--获取单个潜能是否可激活 材料
+function PotentialModel:getPotentialCanActCost(potential_id)
+    local cfg = Config.PotentialData.data_get_potential_base_ex[potential_id]
+    local cost_list = cfg.unlock_cost
+    for k, v in pairs(cost_list) do
+        local count = BackpackController:getInstance():getModel():getItemNumByBid(v[1])
+        if count < v[2] then
+            return false
+        end
+    end
+    return true
+end
+--获取单个潜能是否可激活 条件
+function PotentialModel:getPotentialCanActCon(potential_id)
+    local cfg = Config.PotentialData.data_get_potential_base_ex[potential_id]
+    local unlock_cond_list = cfg.unlock_cond
+    for k, v in pairs(unlock_cond_list) do
+        if v[1] == "partner_unlock" then
+            local list = {v[2],v[3],v[4]}
+            local _list = HeroController:getInstance():getModel():getHeroReachCon(list)
+            if not _list[1] then
+                return false
+            end
+        elseif v[1] == "cystal_lev" then
+            if not HeroController:getInstance():getModel():checkEnoughResLev(v[2]) then
+                return false
+            end
+        end
+    end
+    return true
+end
+--获取潜能加成
+function PotentialModel:getPotentialAdd()
+    local attr_list = {}
+    local skill_list = {}
+    local halo_list = {}
+    local potential_list = self:getPotentialList()
+    if potential_list then
+        for k, v in pairs(potential_list) do
+            if v.is_effect == 1 then
+                local cfg = Config.PotentialData.data_get_potential_detail[v.potential_id][v.potential_level]
+                if cfg and cfg.effect and next(cfg.effect) then
+                    if cfg.effect_type == 1 or cfg.effect_type == 4 or cfg.effect_type == 5 or cfg.effect_type == 6 then --属性
+                        local index = 0
+                        if cfg.effect_limit_text and cfg.effect_limit_text[1] then
+                            index = cfg.effect_limit_text[1]
+                        end
+                        if not attr_list[index] then
+                            attr_list[index] = {}
+                            if cfg.effect_limit_text[3] then
+                                attr_list[index].desc = cfg.effect_limit_text[3]
+                            else
+                                attr_list[index].desc = cfg.effect_limit_text[2]
+                            end
+                            attr_list[index].list = {}
+                        end
+                        local _attr_list = attr_list[index].list
+                        for key, value in pairs(cfg.effect) do
+                            if not _attr_list[value[1]] then
+                                _attr_list[value[1]] = value[2]
+                            else
+                                _attr_list[value[1]] = _attr_list[value[1]] + value[2]
+                            end
+                        end
+                    elseif cfg.effect_type == 2 then --光环
+                        if next(halo_list) then
+                            local status = false
+                            for key, value in pairs(halo_list) do
+                                if value[1] == cfg.effect[1][1] then
+                                    if value[2] < cfg.effect[1][2] then
+                                        halo_list[key] = cfg.effect[1]
+                                    end
+                                    status = true
+                                end
+                            end
+                            if not status then
+                                table.insert(halo_list,cfg.effect[1])    
+                            end
+                        else
+                            table.insert(halo_list,cfg.effect[1])
+                        end
+                    elseif cfg.effect_type == 3 then --技能
+                        table.insert(skill_list, cfg.effect)
+                    end
+                end
+            end
+        end
+    end
+    if halo_list and next(halo_list) then
+        for key, value in pairs(halo_list) do
+            table.insert(skill_list,{value[3]})
+        end
+    end
+    local list = {}
+    list.attr_list = attr_list
+    list.skill_list = skill_list
+    return list
+end
+--获取开启了几个光环
+function PotentialModel:getHaloNum()
+    local cfg = Config.PotentialData.data_get_potential_detail
+    local potential_list = self:getPotentialList()
+    local num = 1
+    for k, v in pairs(potential_list) do
+        if v.is_effect == 1 and cfg[v.potential_id] and cfg[v.potential_id][v.potential_level] and cfg[v.potential_id][v.potential_level].effect_type == 2 then
+            local list = cfg[v.potential_id][v.potential_level].effect[1]
+            num = math.max(num, list[1])
+        end
+    end
+    return num
+end
+--获取光环等级
+function PotentialModel:getHaloLv()
+    local cfg = Config.PotentialData.data_get_potential_detail
+    local potential_list = self:getPotentialList()
+    local num = 0
+    local lev = 0
+    for k, v in pairs(potential_list) do
+        if v.is_effect == 1 and cfg[v.potential_id] and cfg[v.potential_id][v.potential_level] and cfg[v.potential_id][v.potential_level].effect_type == 2 then
+            local list = cfg[v.potential_id][v.potential_level].effect[1]
+            num = math.max(num, list[1])
+            if num == list[1] then
+                lev = math.max(lev, list[2])
+            else
+                lev = list[2]
+            end
+        end
+    end
+    return lev
+end
+--光环布阵槽位是否开启
+function PotentialModel:getHaloIsOpen(index)
+    local list = Config.PotentialData.data_const.halo_lock.val
+    local page_index = list[index-1]
+    local status = self:getTabStatus(page_index)
+    if status ~= 0 then
+        return true
+    end
+    return false
+end
+--获取当前页面潜能总等级
+function PotentialModel:getPotentialNowLevel(index)
+    local level_num = 0
+    local cfg = Config.PotentialData.data_get_potential_base[index]
+    if cfg then
+        for _, page_data in pairs(cfg) do
+            for k, v in pairs(page_data) do
+                local list = self:getPotentialForId(v.potential_id)
+                if list and next(list) then
+                    level_num = level_num + list.potential_level
+                end
+            end
+        end
+    end
+    return level_num
+end
+--获取单个潜能是否满足升级条件
+function PotentialModel:getPotentialCanUpCon(potential_id)
+    local cfg = Config.PotentialData.data_get_potential_detail[potential_id]
+    local list = self:getPotentialForId(potential_id)
+    local lev = 1
+    if list and next(list) then
+        lev = list.potential_level
+    end
+    local unlock_cond_list = cfg[lev].upgrade_cond
+    for k, v in pairs(unlock_cond_list) do
+        if v[1] == "sheet_lev" then
+            local config = Config.PotentialData.data_get_potential_base_ex[potential_id]
+            if self:getPotentialNowLevel(config.round_id) < v[2] then
+                return false
+            end
+        end
+    end
+    return true
+end
+---------------------------------任务
+--设置任务信息
+function PotentialModel:setPotentialTaskInfo(data)
+    self.task_index_info = data.quest_list
+    self.task_info = {}
+    for k, v in pairs(data.quest_list) do
+        self.task_info[v.id] = v
+    end
+    GlobalEvent:getInstance():Fire(PotentialEvent.Potential_Task_Event)
+end
+function PotentialModel:getTaskInfoData()
+    if self.task_index_info then
+        return self.task_index_info
+    end
+    return {}
+end
+--更新任务信息
+function PotentialModel:updatePotentialTaskInfo(data)
+    if self.task_index_info then
+        for k, v in pairs(self.task_index_info) do
+            if v.id == data.id then
+                self.task_index_info[k] = data
+            end
+        end
+    end
+    if not self.task_info then 
+        self.task_info = {}
+    end
+    if data and next(data) then
+        self.task_info[data.id] = data
+    end
+    GlobalEvent:getInstance():Fire(PotentialEvent.Potential_Task_Event)
+end
+--获取任务信息
+function PotentialModel:getTaskInfo()
+    return self.task_info or {}
+end
+--获取单个任务信息
+function PotentialModel:getOneTaskInfo(id)
+    if self.task_info and self.task_info[id] then
+        return self.task_info[id]
+    end
+    return self.task_info or {}
+end
+--获取单个任务信息状态
+function PotentialModel:getOneTaskStatus(id)
+    local list = self:getOneTaskInfo(id)
+    if list and next(list) then
+        return list.finish
+    end
+    return 0
+end
+---------------------------------红点
+--任务功能红点
+function PotentialModel:getTaskRed()
+    local cfg = Config.PotentialData.data_get_potential_quest
+    for k, v in pairs(cfg) do
+        local status = self:getOneTaskStatus(v.id)
+        if status == 1 then
+            return true
+        end
+    end
+    return false
+end
+--单个潜能红点
+function PotentialModel:getOneRed(potential_id)
+    if self:getPotentialOneStatus(potential_id) == PotentialConst.One_Status.canAct then return true end
+    if self:getPotentialCanUp(potential_id) then return true end
+    return false
+end
+--单个潜能页签红点
+function PotentialModel:getOneTabRed(index)
+    local cfg = Config.PotentialData.data_get_potential_base[index]
+    if not cfg then return false end
+    if not self:getTabIsHide(index) then return false end
+    --首次红点
+    if self:getBtnFirstRed(index) then return true end
+    for key, value in pairs(cfg) do
+        for k, v in pairs(value) do
+            if self:getOneRed(v.potential_id) then return true end
+        end
+    end
+    return false
+end
+--页签首次点击红点
+function PotentialModel:setBtnFirstRed(index,status)
+    if not self.btnFirstRed_list then
+        self.btnFirstRed_list = {}
+    end
+    self.btnFirstRed_list[index] = status
+    GlobalEvent:getInstance():Fire(PotentialEvent.Potential_Update_Tab_Red_Event)
+end
+function PotentialModel:getBtnFirstRedList()
+    return self.btnFirstRed_list
+end
+function PotentialModel:getBtnFirstRed(index)
+    if self.btnFirstRed_list and self.btnFirstRed_list[index] then
+        return true
+    end
+    return false
+end
+--功能红点
+function PotentialModel:getPotentialRed()
+    if self:getFunIsOpen() then
+        if self:getReturnLoginRed() then return true end
+        local cfg = Config.PotentialData.data_get_round
+        for k, v in pairs(cfg) do
+            if self:getOneTabRed(v.round_id) then
+                return true
+            end
+        end
+        if self:getTaskRed() then
+            return true
+        end
+    end
+    return false
+end
+function PotentialModel:updatePotentialRed()
+    MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.treasure, { bid = JinqiConst.Red_Type.potential, status = self:getPotentialRed() })
+    GlobalEvent:getInstance():Fire(PotentialEvent.Potential_Update_Red_Event)
+end
+--登录红点
+function PotentialModel:setReturnLoginRed(status)
+    self.login_red = status
+end
+function PotentialModel:getReturnLoginRed()
+    return self.login_red
+end
+function PotentialModel:__delete()
+end

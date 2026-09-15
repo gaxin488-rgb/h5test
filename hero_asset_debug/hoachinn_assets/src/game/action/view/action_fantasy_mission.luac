@@ -1,0 +1,296 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 幻境任务
+-- *******************************
+ActionFantasyMmission = class("ActionFantasyMmission", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local color_text = {
+    [1] = cc.c4b(0x80,0xf7,0x31,0xff),
+    [2] = cc.c4b(0x64,0x32,0x23,0xff),
+}
+
+function ActionFantasyMmission:ctor(bid)
+    self.holiday_bid = bid
+    self.panelList = {}
+    self.timeValueList = {}
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("wonderlandtask","wonderlandtask"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("welfare/welfare_banner","txt_cn_welfare_banner136"), type = ResourcesType.single},
+	}
+    self.resources_load = ResourcesLoad.New(true)
+	self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+            controller:sender21600(bid)
+        end
+	end)
+end
+function ActionFantasyMmission:loadResListCompleted(  )
+    self:configUI()
+	self:register_event()
+end
+
+function ActionFantasyMmission:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_fantasy_mmission"))
+    self.root_wnd:setPosition(-40, -82)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_con = self.main_container:getChildByName("title_con")
+    self.title_img = self.title_con:getChildByName("title_img")
+    self.time_panel = self.title_con:getChildByName("time_panel")
+    self.time_label = self.title_con:getChildByName("label_time_key")
+    self.time_label:setString(TI18N("语言_c_1113"))
+    self.time_text = self.title_con:getChildByName("label_time")
+    self.time_text:setTextColor(color_text[1])
+    self.btn_rule = self.title_con:getChildByName("btn_rule") --规则说明按钮，，就是问号的图片
+    self.btn_rule:setVisible(false)
+    self.image_6 = self.main_container:getChildByName("image_6")
+    if self.image_6 then
+        self.image_6:setVisible(false)
+    end
+    self.good_cons = self.main_container:getChildByName("charge_con")
+    self.good_cons:setSwallowTouches(false)
+    self.good_cons:setScrollBarEnabled(false)
+    self.tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    self.constant_cfg = Config.WonderlandTaskData.data_constant[self.tab_vo.camp_id]
+    self:loadBannerImage()
+
+end
+function ActionFantasyMmission:loadBannerImage()
+    local str_banner = "txt_cn_welfare_banner136"
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if tab_vo and tab_vo.reward_title ~= "" and tab_vo.reward_title then
+        str_banner = tab_vo.reward_title
+    end
+    local res = PathTool.getPlistImgForDownLoad("welfare/welfare_banner",str_banner)
+    loadSpriteTexture(self.title_img,res, LOADTEXT_TYPE)
+    self:setData()
+end
+function ActionFantasyMmission:register_event()
+    if not self.update_action_even_event  then
+        self.update_action_even_event = GlobalEvent:getInstance():Bind(ActionEvent.FantasyMissionData,function (data)
+            if data.bid == self.holiday_bid then
+                self:setData(data)
+            end
+        end)
+    end
+end
+
+function ActionFantasyMmission:setData(data)
+    if data then
+        self.data = data 
+    else
+        self.data = model:getFantasyMissionData(self.holiday_bid)
+    end
+    if not self.data then return end
+    local time = self.data.end_time - GameNet:getInstance():getTime()
+	commonCountDownTime(self.time_text, time)
+    self.time_text:setAnchorPoint(cc.p(1, 0.5))
+    self.time_label:setAnchorPoint(cc.p(1, 0.5))
+    self.time_text:setPositionX(700)
+    self.time_label:setPositionX(self.time_text:getPositionX() - self.time_text:getContentSize().width - 10)
+    self.time_panel:setContentSize(cc.size(self.time_text:getContentSize().width + self.time_label:getContentSize().width + 20,26))
+    local scrollH = 0
+    for key, value in pairs(self.data.list) do
+        scrollH = scrollH + 210 * math.ceil(tableLen(value)/2) + 80
+    end
+    self.good_cons:setInnerContainerSize(cc.size(693,scrollH))
+    local period = self.constant_cfg.period
+    local cfg = Config.WonderlandTaskData.data_quest_list[period]
+    for key, value in pairs(self.data.list) do
+        local list = {}
+        for k, v in pairs(value) do
+            local need_id = cfg[v.id].need_id
+            if need_id and need_id ~= 0 then
+                local need_list = model:getFantasyMissionForId(self.holiday_bid,need_id)
+                if need_list and need_list.finish == 2 then
+                    table.insert(list,v)
+                end
+            else
+                table.insert(list,v)
+            end
+        end
+        self:setpanel(key,list)
+    end
+end
+
+function ActionFantasyMmission:setpanel(index,data)
+    local panel_h = 210 * math.ceil(tableLen(data)/2) + 80
+    local layout = ccui.Layout:create()
+    layout:setContentSize(cc.size(693, panel_h))
+    layout:setAnchorPoint(cc.p(0, 0))
+    if index == 2 then
+        layout:setPosition(cc.p(0, 0))
+    else
+        local panel_y = 210 * math.ceil(tableLen(self.data.list[2])/2) + 80
+        layout:setPosition(cc.p(0, panel_y))
+    end
+    self.good_cons:addChild(layout)
+    table.insert(self.panelList,index,layout)
+    local res = PathTool.getResFrame("wonderlandtask","wonderland_task_2")
+    local title_bg = createSprite(res,0,panel_h,layout,cc.p(0,1),LOADTEXT_TYPE_PLIST)
+    local title = createLabel(30,cc.c4b(0xd7,0x53,0x03,0xff),cc.c4b(0xfe,0xfe,0xdc),20,30,index,title_bg,2,cc.p(0,0.5))
+    local time_txt = createLabel(24,cc.c4b(0xff,0xff,0xff,0xff),nil,20,30,index,title_bg,2,cc.p(1,0.5))
+    local time_val = createLabel(24,cc.c4b(0x0e,0xa8,0x0e,0xff),nil,680,30,index,title_bg,2,cc.p(1,0.5))
+    table.insert(self.timeValueList,index,time_val)
+    if data and data[1] and data[1].end_time then
+        local time = data[1].end_time - GameNet:getInstance():getTime()
+        commonCountDownTime(self.timeValueList[index], time)
+    end
+    if index == 1 then
+        title:setString(TI18N("语言_c_731"))
+        time_txt:setString(TI18N("语言_c_734"))
+    elseif index == 2 then
+        title:setString(TI18N("语言_c_5016"))
+        time_txt:setString(TI18N("语言_c_1242"))
+    end
+    time_txt:setPositionX(time_val:getPositionX() - time_val:getContentSize().width-10)
+    for i=1,tableLen(data) do
+        local item = ActionFantasyMmissionItem:new()
+        local pos_x =(1-i%2)*349
+        local pos_y = panel_h - 65 - (math.ceil(i/2)-1)*213
+        item:setPosition(cc.p(pos_x,pos_y))
+        layout:addChild(item)
+        item:setData(index,i,data[i],self.holiday_bid)
+    end
+end
+
+function ActionFantasyMmission:DeleteMe()
+    model:deFantasyMissionData(self.holiday_bid)
+    doStopAllActions(self.time_text)
+    doStopAllActions(self.timeValueList[1])
+    doStopAllActions(self.timeValueList[2])
+
+    if self.update_action_even_event then
+        self.update_action_even_event = GlobalEvent:getInstance():UnBind(self.update_action_even_event)
+        self.update_action_even_event = nil
+    end
+    for k, v in pairs(self.panelList) do
+        if v then
+            v:removeAllChildren()
+            v:removeFromParent()
+        end
+    end
+    if self then
+        self:removeAllChildren()
+        self:removeFromParent()
+    end
+end
+
+--幻境任务
+ActionFantasyMmissionItem = class("ActionFantasyMmissionItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionFantasyMmissionItem:ctor()
+    self.goods_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function ActionFantasyMmissionItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_fantasy_mmission_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(344,208))
+	self:setTouchEnabled(false)
+
+    self.background = self.root_wnd:getChildByName("background")
+    self.main_container = self.root_wnd:getChildByName("container")
+    self.btn_goto = self.main_container:getChildByName("btn_goto")
+    self.Text_11 = self.btn_goto:getChildByName("Text_11")
+    self.Text_11:setString(TI18N("语言_c_7"))
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.Text_10 = self.btn_get:getChildByName("Text_10")
+    self.Text_10:setString(TI18N("语言_c_8"))
+    self.has_bg = self.main_container:getChildByName("has_bg")
+    self.schedule = self.main_container:getChildByName("schedule")
+    self.ScrollView_2 = self.main_container:getChildByName("ScrollView_2")
+    self.ScrollView_2:setScrollBarEnabled(false)
+    self.cesc = createRichLabel(20,cc.c4b(0x7c,0x55,0x36,0xff),cc.p(0,1),cc.p(0,0),FONT_COMMON_LINE_SPACE,nil,300)
+    self.ScrollView_2:addChild(self.cesc)
+end
+
+function ActionFantasyMmissionItem:setData(index,key,data,bid)
+    self.data = data
+    self.data.index = index
+    self.data.key = key
+    self.holiday_bid = bid
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if not tab_vo then return end
+    local camp_id = tab_vo.camp_id
+    if not camp_id then return end
+    local period = Config.WonderlandTaskData.data_constant[camp_id] and Config.WonderlandTaskData.data_constant[camp_id].period
+    if not period then return end
+    self.cfg = Config.WonderlandTaskData.data_quest_list[period][self.data.id]
+    self.schedule:setString(string.format(TI18N("语言_c_5017"),self.data.value,self.data.target_val))
+    self.btn_goto:setVisible(self.data.finish == 0)
+    self.btn_get:setVisible(self.data.finish == 1)
+    addRedPointToNodeByStatus(self.btn_get, self.data.finish == 1, 15, 10)
+    self.has_bg:setVisible(self.data.finish == 2)
+    self.schedule:setVisible(self.data.finish ~= 2)
+    if self.data.value < self.data.target_val then
+        self.schedule:setTextColor(cc.c4b(0xff,0x15,0x15,0xff))
+    else
+        self.schedule:setTextColor(cc.c4b(0x0e,0xa8,0x0e,0xff))
+    end
+    local desclist =  ActivityTaskDescription(self.cfg.progress[1].param[1])
+    table.insert(desclist,1,self.cfg.progress[1].target_val)
+    local str = LangStringFormat(self.cfg.desc,desclist)
+    self.cesc:setString(str)
+    if self.cesc:getContentSize().height < 90 then
+        self.ScrollView_2:setInnerContainerSize(cc.size(306,90))
+        self.cesc:setPositionY(90)
+    else
+        self.ScrollView_2:setInnerContainerSize(cc.size(306,self.cesc:getContentSize().height))
+        self.cesc:setPositionY(self.cesc:getContentSize().height)
+    end
+    self.reward = BackPackItem.new(false, true, false, 0.7, true, true)
+    self.main_container:addChild(self.reward)
+    self.reward:setPosition(cc.p(80,50))
+    self.reward:setBaseData(self.cfg.award[1][1],self.cfg.award[1][2])
+end
+function ActionFantasyMmissionItem:register_event( )
+    registerButtonEventListener(self.btn_goto, function()
+        if self and self.cfg and self.cfg.id then
+            local jump_id = self.cfg.id
+            local data = {}
+            data[1] = jump_id
+            local bid = 0
+            for key, value in pairs(self.cfg.progress) do
+                for k, v in pairs(value.param) do
+                    if v[1] == "hbid" then
+                        for _k, _v in pairs(v[2]) do
+                            if controller:getActionSubTabVo(_v) then
+                                bid = _v
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            if bid ~= 0 then
+                data[2] = bid
+            end
+            controller:openActionMainPanel(false)
+            JumpController:getInstance():jumpViewByEvtData(data)
+        end
+	end, true)
+    registerButtonEventListener(self.btn_get, function()
+        controller:sender21601(self.holiday_bid,self.data.id)
+	end, true)
+end
+
+function ActionFantasyMmissionItem:DeleteMe()
+    if self then
+        self:removeAllChildren()
+        self:removeFromParent()
+    end
+end

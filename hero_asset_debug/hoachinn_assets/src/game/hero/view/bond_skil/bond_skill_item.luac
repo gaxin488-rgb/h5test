@@ -1,0 +1,347 @@
+-- --------------------------------------------------------------------
+-- 羁绊技icon
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+BondSkillItem = class("BondSkillItem", function() 
+	return ccui.Layout:create()
+end)
+
+BondSkillItem.Width = 119
+BondSkillItem.Height = 119
+
+local role_vo = RoleController:getInstance():getRoleVo()
+
+--==============================--
+--desc:创建物品对象
+--time:2018-06-05 04:41:34
+--@click:是否可点击
+--@scale:缩放值
+--@effect:点击时候是否要处理回弹效果
+--@is_show_tips:是否显示tips
+--@tips_data:tips参数 is_book是否是图鉴 is_btn是否显示底部按钮 
+--@return 
+--==============================--
+function BondSkillItem:ctor(click, scale, effect, is_show_tips, swallow_touch)
+	self.click = click
+	if self.click == nil then -- 不传默认为可点击
+		self.click = true
+	end
+	self.click = self.click and true or false
+	self.is_hero = false
+	if is_show_tips == nil then
+		is_show_tips = true
+	end
+	self.is_show_tips = is_show_tips or false
+	self.scale = scale or 1
+	self.swallow_touch = swallow_touch
+	if effect == nil then
+		effect = true
+	end
+	self.effect = effect
+
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("skill/bond_skill_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setContentSize(self.size)
+	self:setTouchEnabled(self.click)
+	self:setCascadeOpacityEnabled(true)
+	if self.scale ~= 1 then
+		self:setScale(self.scale)
+	end
+
+	self.root_wnd:setAnchorPoint(0.5, 0.5)
+	self.root_wnd:setPosition(self.size.width/2, self.size.height/2)
+	self:addChild(self.root_wnd)
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+	self.item_icon = self.main_container:getChildByName("icon")
+	self.name_bg = self.main_container:getChildByName("name_bg")
+	self.name = self.main_container:getChildByName("name")
+	self.bond_par = self.main_container:getChildByName("bond_par")
+	self.bond_cir = self.main_container:getChildByName("bond_cir")
+	self.bond_par:setVisible(false)
+	self.bond_cir:setVisible(false)
+	self.lv_bg = self.main_container:getChildByName("lv_bg")
+	self.lv = self.main_container:getChildByName("lv")
+	self.red_point = self.main_container:getChildByName("red_point")
+	self.lock = self.main_container:getChildByName("lock")
+	self.equip_txt = self.main_container:getChildByName("equip_txt")
+	self.equip_txt:setScale(0.7)
+
+	self:registerEvent()
+end
+function BondSkillItem:getData()
+	return self.data
+end
+--==============================--
+--desc:点击回调
+--time:2017-07-03 08:02:23
+--@callback:
+--@return 
+--==============================--
+function BondSkillItem:addCallBack(callback)
+	self.callback = callback
+end
+--添加长时间点击的回调
+function BondSkillItem:addLongTimeTouchCallback(callback)
+    --默认有效果
+    self:setLongTimeTouchEffect(true)
+    self.long_time_callback = callback
+end
+
+--设置长时间点击的回调效果
+function BondSkillItem:setLongTimeTouchEffect(is_touch)
+    self.have_long_time_effect = is_touch
+end
+--==============================--
+--desc:注册相关事件
+--time:2017-07-03 01:53:49
+--@return 
+--==============================--
+function BondSkillItem:registerEvent()
+	if self.click == true then
+		self:setTouchEnabled(true)
+		self:addTouchEventListener(function(sender, event_type) 
+			if self.effect == true then
+				customClickAction_2(self.main_container, event_type)
+			end
+			if event_type == ccui.TouchEventType.ended then
+				if self.have_long_time_effect then
+					if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+						doStopAllActions(self.background)
+						self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+					elseif self.long_touch_type == LONG_TOUCH_END_TYPE then
+						--事件触发了就不处理点击事件了
+						return
+					end
+				end
+				
+				self.touch_end = sender:getTouchEndPosition()
+				local is_click = true
+				if self.touch_began ~= nil then
+					is_click =
+						math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+						math.abs(self.touch_end.y - self.touch_began.y) <= 20
+				end
+				if is_click == true then
+					playButtonSound2()
+					if self.btn_call_fun then
+						self:btn_call_fun()
+					else
+						if self.callback then
+							self:callback(self)
+						end
+					end
+				end
+			elseif event_type == ccui.TouchEventType.moved then
+				if self.have_long_time_effect then
+					if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+						local touch_began = self.touch_began
+						local touch_move = sender:getTouchMovePosition()
+						if touch_began and touch_move and (math.abs(touch_move.x - touch_began.x) > 20 or math.abs(touch_move.y - touch_began.y) > 20) then 
+							--移动大于20了..表示取消长点击效果
+							doStopAllActions(self.background)
+							self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+						end 
+					end
+				end
+			elseif event_type == ccui.TouchEventType.began then
+				self.touch_began = sender:getTouchBeganPosition()
+				if self.have_long_time_effect then
+					--有长点击效果
+					doStopAllActions(self.background)
+					self.long_touch_type = LONG_TOUCH_BEGAN_TYPE
+					delayRun(self.background, 0.6, function ()
+						if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+							if self.long_time_callback then
+								self.long_time_callback()
+							end
+						end
+						self.long_touch_type = LONG_TOUCH_END_TYPE
+					end)
+				end
+			elseif event_type == ccui.TouchEventType.canceled then
+				if self.have_long_time_effect then
+					if self.long_touch_type == LONG_TOUCH_BEGAN_TYPE then
+						doStopAllActions(self.background)
+						self.long_touch_type = LONG_TOUCH_CANCEL_TYPE
+					end
+				end
+			end
+		end)
+		if self.swallow_touch == false then
+			self:setSwallowTouches(self.swallow_touch)
+		end
+	end
+	
+    --刷新数据
+    if not self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Bond_Skill_Event,function ( data )
+			if not self.data then return end
+			local bsid = self.data.id
+            if data ~= nil and data.bsid and bsid == data.bsid and not self.isWash then
+				self.data.data = data
+                self:setData(self.data)
+				self:setRed(HeroController:getInstance():getModel():getBondSkillAct(bsid))
+            end
+        end)
+    end
+	-- 退出的时候移除一下吧.要不然可能有些人不会手动移除,就会报错
+	self:registerScriptHandler(function(event)
+		if "enter" == event then
+		elseif "exit" == event then		
+			if self.data then
+				if self.item_update_event ~= nil then
+					self.data:UnBind(self.item_update_event)
+					self.item_update_event = nil
+				end
+				self.data = nil
+			end
+		end 
+	end)
+end
+function BondSkillItem:setIsWash(status)
+	self.isWash = status
+end
+--==============================--
+--desc:设置显示数据,暂时支持的格式有
+--time:2017-07-31 01:58:10
+--@data:
+--@return 
+--==============================--
+function BondSkillItem:setData(data)
+	self.data = data
+    local skill_cfg = Config.SkillData.data_get_skill(data.skill_ids[1] or data.id)
+	local txt = skill_cfg.name
+	local num = 20
+    if judgingLanguage() then
+        num = 8
+    end
+    self.name:setString(transformTextToShort(txt,num))
+	addEvt2showAllTextTips(self.name,txt,num)
+	self.name_bg:setContentSize(cc.size(self.name:getContentSize().width+30,self.name_bg:getContentSize().height))
+	if data.data then
+		self:setLvSta(data.data.b_lev)
+	else
+		self:setLvSta(0)
+	end
+	self:setequipSta(false)
+	loadSpriteTexture(self.item_icon, string.format("resource/bondskill/skill_icon/%s.png",data.id), LOADTEXT_TYPE)
+	self.type = self:setSelfState()
+	if self.type == 0 then
+		self:setLockSta(true)
+		setChildUnEnabled(true,self.item_icon)
+	elseif self.type == 1 then
+		self:setLockSta(true)
+		setChildUnEnabled(false,self.item_icon)
+	elseif self.type == 2 then
+		self:setLockSta(false)
+		setChildUnEnabled(false,self.item_icon)
+	elseif self.type == 3 then
+		self:setLockSta(false)
+		setChildUnEnabled(false,self.item_icon)
+		self:setequipSta(true)
+	end
+	if self.data.data and self.data.data.b_partner_id and self.data.data.b_partner_id ~= 0 then
+		self:setbond_par(self.data.data.b_partner_id)
+	end
+	self:setRed(false)
+end
+--是否已经激活 0不可激活 1可激活 2已激活 3已装备
+function BondSkillItem:setSelfState()
+	if self.data.data then
+		if self.data.data.b_partner_id == HeroController:getInstance():getModel().bond_par_id then
+			return 3
+		end
+		return 2
+	else
+		if HeroController:getInstance():getModel():getBondSkillAct(self.data.id) then
+			return 1
+		end
+		return 0
+	end
+end
+function BondSkillItem:getSelfState()
+	return self.type or 0
+end
+--是否锁定
+function BondSkillItem:setLockSta(status)
+	self.lock:setVisible(status)
+end
+--是否显示装备忍者
+function BondSkillItem:setbondParVis(status)
+	self.bond_par:setVisible(status)
+	self.bond_cir:setVisible(status)
+end
+--设置装备忍者
+function BondSkillItem:setbond_par(id)
+	local hero_vo = HeroController:getInstance():getModel():getHeroById(id)
+	if hero_vo then
+		self:setbondParVis(true)
+		self.mask = createSprite(PathTool.getResFrame("bondskill","bondskill_14",false,"bondskill"), 22, 22, nil, cc.p(0.5, 0.5),LOADTEXT_TYPE_PLIST)--模板
+		self.mask:setScale(1)
+		self.clipNode = cc.ClippingNode:create(self.mask)
+		self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+		self.clipNode:setContentSize(self.bond_par:getContentSize())
+		self.clipNode:setCascadeOpacityEnabled(true)
+		self.clipNode:setPosition(22,22)
+		self.clipNode:setAlphaThreshold(0)
+		self.bond_par:addChild(self.clipNode,2)
+
+		self.icon = ccui.ImageView:create()
+		self.icon:setCascadeOpacityEnabled(true)
+		self.icon:setAnchorPoint(0.5,0.5)
+		self.icon:setPosition(22,22)--底板
+		self.clipNode:addChild(self.icon,3)
+		self.icon:loadTexture(PathTool.getHeadIcon(hero_vo.bid), LOADTEXT_TYPE)
+		self.icon:setScale(0.5)
+	else
+		self:setbondParVis(false)
+	end
+end
+--是否显示已装备
+function BondSkillItem:setequipSta(status)
+	self.equip_txt:setVisible(status)
+end
+--是否显示名称
+function BondSkillItem:setnameSta(status)
+	self.name:setVisible(status)
+	self.name_bg:setVisible(status)
+end
+--名称y值
+function BondSkillItem:setnameY(y)
+	self.name:setPositionY(y)
+	self.name_bg:setPositionY(y)
+end
+--是否显示等级
+function BondSkillItem:setLvSta(num)
+	if num and num > 0 then
+		self.lv_bg:setVisible(true)
+		self.lv:setVisible(true)
+		self.lv:setString(num)
+	else
+		self.lv_bg:setVisible(false)
+		self.lv:setVisible(false)
+	end
+end
+--
+function BondSkillItem:setRed(status)
+	self.red_point:setVisible(status)
+end
+function BondSkillItem:getData()
+	return self.data
+end
+function BondSkillItem:DeleteMe()
+	self:removeAllChildren()
+    self:removeFromParent()
+	
+    if self.updateBond then
+        self.updateBond = GlobalEvent:getInstance():UnBind(self.updateBond)
+        self.updateBond = nil
+    end
+end

@@ -1,0 +1,511 @@
+--******** 文件说明 ********
+-- @Author:      yuanqi@shiyue.com
+-- @description: 新服周、月循环礼包
+-- @DateTime:    2020-04-22
+LoopGiftPanel = class("LoopGiftPanel", function()
+	return ccui.Widget:create()
+end)
+local controller = WelfareController:getInstance()
+local model = controller:getModel()
+local table_sort = table.sort
+local table_insert = table.insert
+function LoopGiftPanel:ctor(holiday_id)
+    self.holiday_id = holiday_id
+    self.cell_data_list = {}
+    self.data = {}
+    self.reward_config = {}
+	self:configUI()
+    self:register_event()
+end
+
+function LoopGiftPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("welfare/week_month_panel"))
+	self:addChild(self.root_wnd)
+	self:setPosition(-40, -64)
+	self:setAnchorPoint(0, 0)
+	
+    local main_container = self.root_wnd:getChildByName("main_container")
+    local title_con = main_container:getChildByName("title_con")
+    self.title_con = title_con
+    self.btn_rule = title_con:getChildByName("btn_rule")
+    self.btn_rule:setVisible(false)
+    local sprite_title = title_con:getChildByName("sprite_title")
+    self.shop_btn = title_con:getChildByName("btn_shop")
+    self.shop_btn:setLocalZOrder(2)
+    if self.holiday_id == WelfareIcon.loop_week then -- 每周特惠
+        self.shop_btn:setVisible(true)
+        self:handleShopffect(true)
+    else
+        self.shop_btn:setVisible(false)
+    end
+
+    local str = ""
+    if self.holiday_id == WelfareIcon.loop_day then
+        self.gift_type = LoopGiftType.day_gift
+        str = "txt_cn_welfare_banner116"
+    elseif self.holiday_id == WelfareIcon.loop_week then
+        self.gift_type = LoopGiftType.week_gift
+        str = "txt_cn_welfare_banner6"
+    elseif self.holiday_id == WelfareIcon.loop_month then
+        self.gift_type = LoopGiftType.month_gift
+        str = "txt_cn_welfare_banner7"
+    end
+    
+	local res = PathTool.getWelfareBannerRes(str)
+    if not self.item_load then
+        self.item_load = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(sprite_title) then
+    			loadSpriteTexture(sprite_title, res, LOADTEXT_TYPE)
+    		end
+    	end,self.item_load)
+    end
+
+    local time_panel = title_con:getChildByName("time_panel")
+    time_panel:getChildByName("Text_1"):setString(TI18N("剩余时间: "))
+    self.remain_time = time_panel:getChildByName("remain_time")
+    self.remain_time:setString("")
+    self.good_cons = main_container:getChildByName("good_cons")
+    self:updateScrollviewList()
+end
+
+function LoopGiftPanel:updateScrollviewList()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.good_cons:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 688,                -- 单元的尺寸width
+            item_height = 136,               -- 单元的尺寸height
+            row = 0,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    self.child_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function LoopGiftPanel:createNewCell(width, height)
+    local cell = LoopGiftItem.new()
+	return cell
+end
+
+--获取数据数量
+function LoopGiftPanel:numberOfCells()
+    if not self.cell_data_list then return 0 end
+    return #self.cell_data_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function LoopGiftPanel:updateCellByIndex(cell, index)
+    if not self.cell_data_list then return end
+    cell.index = index
+    local cell_data = self.cell_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function LoopGiftPanel:register_event()
+	if self.update_loop_gift_data == nil then
+        self.update_loop_gift_data = GlobalEvent:getInstance():Bind(WelfareEvent.Updata_Week_Month_Data,function(data)
+            self:updateItem(data)
+        end)
+    end
+    if self.update_open_data == nil then
+        self.update_open_data = GlobalEvent:getInstance():Bind(WelfareEvent.Update_Loop_Gift_Open_data,function(data)
+            self:updateItem()
+        end)
+    end
+    if self.update_month_charge_data == nil then
+        self.update_month_charge_data = GlobalEvent:getInstance():Bind(ActionEvent.Is_Charge_Event,function(data)
+            if data and data.status and data.charge_id then
+                local charge_config = Config.ChargeData.data_charge_data[data.charge_id]
+                local cur_charge_id = model:getLoopGiftChargeID()
+                if cur_charge_id and charge_config and data.status == 1 and data.charge_id == cur_charge_id and self:isVisible() then
+                    sdkOnPay(charge_config.val, 1, charge_config.id, charge_config.name)
+                end
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.shop_btn, handler(self, self.onClickShopBtn), true)
+end
+
+function LoopGiftPanel:onClickShopBtn(  )
+    if self.holiday_id ~= WelfareIcon.loop_week then return end
+	local setting = {}
+    setting.mall_type = MallConst.MallType.HeroSoulShop
+    setting.item_id = 10005 -- 英魂之心
+    setting.config = Config.ExchangeData.data_shop_exchage_herosoul
+    setting.shop_name = TI18N("英魂商店")
+    MallController:getInstance():openMallSingleShopPanel(true, setting)
+end
+
+function LoopGiftPanel:handleShopffect( status )
+    if self.holiday_id ~= WelfareIcon.loop_week then return end
+    if status == false then
+        if self.shop_effect_1 then
+            self.shop_effect_1:clearTracks()
+            self.shop_effect_1:removeFromParent()
+            self.shop_effect_1 = nil
+		end
+		if self.shop_effect_2 then
+            self.shop_effect_2:clearTracks()
+            self.shop_effect_2:removeFromParent()
+            self.shop_effect_2 = nil
+        end
+    else
+		if not tolua.isnull(self.title_con) and self.shop_effect_1 == nil then
+			local pos_x, pos_y = self.shop_btn:getPosition()
+            self.shop_effect_1 = createEffectSpine("E20989", cc.p(pos_x, pos_y), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+            self.title_con:addChild(self.shop_effect_1, 1)
+		end
+		if not tolua.isnull(self.shop_btn) and self.shop_effect_2 == nil then
+            self.shop_effect_2 = createEffectSpine("E20989", cc.p(85, 79), cc.p(0.5, 0.5), true, PlayerAction.action_2)
+            self.shop_btn:addChild(self.shop_effect_2)
+        end
+    end
+end
+
+function LoopGiftPanel:updateItem(data)
+    if data ~= nil then
+        self.data = data
+    end
+    local open_data
+    if self.gift_type ~= nil then
+        open_data = model:getSingleLoopGiftOpenList(self.gift_type)
+    end
+    if self.data == nil or open_data == nil or self.data.type ~= self.gift_type then return end
+    self:setItemData(self.data, open_data)
+end
+
+function LoopGiftPanel:setItemData(data, open_data)
+    self:setLessTime(data.ref_time - GameNet:getInstance():getTime())
+    self:setBuyCount(data.first_gift)
+    local gift_config
+    self.reward_config = {}
+    local open_gift_list = {}
+    self.cell_data_list = {}
+    if self.gift_type == LoopGiftType.month_gift or self.gift_type == LoopGiftType.week_gift then
+        gift_config = Config.LoopGiftData.data_cycle_gift_info[self.gift_type]
+        self.reward_config = Config.LoopGiftData.data_cycle_gift_reward
+    elseif self.gift_type == LoopGiftType.day_gift then
+        gift_config = Config.LoopGiftData.data_day_gift_info
+        self.reward_config = Config.LoopGiftData.data_day_gift_reward
+    end
+    if gift_config == nil or self.reward_config == nil then return end
+    for k, v in pairs(open_data) do   -- 选出所有开放的充值id
+        if gift_config[v.charge_id] then
+            table_insert(open_gift_list, gift_config[v.charge_id])
+        end
+    end
+    for k, v in pairs(open_gift_list) do
+        local is_open = false
+        if self.reward_config[v.charge_id] then
+            for _, n in ipairs(self.reward_config[v.charge_id]) do
+                if data.reg_day >= n.reg_day_min and data.reg_day <= n.reg_day_max then
+                    is_open = true
+                end
+                if is_open == true then 
+                    break
+                end
+            end
+        end
+        if is_open == true then
+            v.count = v.limit_count - self:getBuyCount(v.charge_id)
+            v.money = v.val
+            if v.count <= 0 then
+                v.count = 0
+            end
+            v.reward = self:getRegisteDayReward(v.charge_id, data.reg_day)
+            table_insert(self.cell_data_list, v)
+        end
+    end
+    self:sortList(self.cell_data_list)
+    self.child_scrollview:reloadData()
+end
+
+function LoopGiftPanel:setVisibleStatus(bool)
+	bool = bool or false
+	self:setVisible(bool)
+	if bool == true and self.gift_type then
+		controller:sender21007(self.gift_type)
+	end
+end
+
+function LoopGiftPanel:getRegisteDayReward(id, day)
+    local role_vo = RoleController:getInstance():getRoleVo()
+	if  self.reward_config and self.reward_config[id] then
+		local num = 1
+		for i,v in pairs(self.reward_config[id]) do
+			if day >= v.reg_day_min and day <= v.reg_day_max then
+				num = v.sort_id
+				break
+			end
+		end
+		return self.reward_config[id][num].reward
+	end
+	return {}
+end
+
+--排序
+function LoopGiftPanel:sortList(list)
+	local function sort_func(obj_a, obj_b)
+		if obj_a.count <= 0 and obj_b.count > 0 then
+			return false
+		elseif obj_a.count > 0 and obj_b.count <= 0 then
+            return true
+		else
+			return obj_a.sort_id < obj_b.sort_id
+		end
+	end
+	table_sort(list, sort_func)
+end
+
+--获取购买的数量
+function LoopGiftPanel:setBuyCount(data)
+	self.buyCountData = {}
+	if not data or next(data) == nil then return end
+	for i,v in pairs(data) do
+		self.buyCountData[v.id] = v.count
+	end
+end
+
+function LoopGiftPanel:getBuyCount(id)
+	if self.buyCountData and self.buyCountData[id] then
+		return self.buyCountData[id]
+	end
+	return 0
+end
+
+--设置倒计时
+function LoopGiftPanel:setLessTime(less_time)
+    if tolua.isnull(self.remain_time) then return end
+    doStopAllActions(self.remain_time)
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.remain_time:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                doStopAllActions(self.remain_time)
+                self.remain_time:setString("00:00:00")
+            else
+                self:setTimeFormatString(less_time)
+            end
+        end))))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+function LoopGiftPanel:setTimeFormatString(time)
+    if time > 0 then
+        self.remain_time:setString(TimeTool.GetTimeForFunction(time))
+    else
+        doStopAllActions(self.remain_time)
+        self.remain_time:setString("00:00:00")
+    end
+end
+
+function LoopGiftPanel:DeleteMe()
+    doStopAllActions(self.remain_time)
+	if self.item_load then
+        self.item_load:DeleteMe()
+    end
+    self.item_load = nil
+    if self.child_scrollview then
+        self.child_scrollview:DeleteMe()
+        self.child_scrollview = nil
+    end
+    if self.update_loop_gift_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_loop_gift_data)
+        self.update_loop_gift_data = nil
+    end
+    if self.update_open_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_open_data)
+        self.update_open_data = nil
+    end
+    if self.update_month_charge_data ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_month_charge_data)
+        self.update_month_charge_data = nil
+    end
+end
+
+--子项
+LoopGiftItem = class("LoopGiftItem", function()
+    return ccui.Widget:create()
+end)
+
+function LoopGiftItem:ctor()
+    self.touch_buy_month = true
+    self.good_list_data = {}
+	self:configUI()
+	self:register_event()
+end
+
+function LoopGiftItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("welfare/week_month_panel_item"))
+    self:addChild(self.root_wnd)
+    self:setContentSize(cc.size(688,136))
+    self:setAnchorPoint(0,0)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.has_get = main_container:getChildByName("has_get")
+    self.has_get:setVisible(false)
+    self.btn_charge = main_container:getChildByName("btn_charge")
+    self.charge_price = self.btn_charge:getChildByName("Text_4_0")
+    setChildUnEnabled(true, self.btn_charge)
+    self.charge_price:disableEffect(cc.LabelEffect.OUTLINE)
+    self.text_remian = main_container:getChildByName("Text_4")   
+
+    self.good_cons = main_container:getChildByName("good_cons")
+    self:updateScrollviewList()
+end
+
+function LoopGiftItem:updateScrollviewList()
+    if self.good_scrollview == nil then
+        local scroll_view_size = self.good_cons:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 10,                     -- x方向的间隔
+            start_y = 12,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = BackPackItem.Width*0.80,                -- 单元的尺寸width
+            item_height = BackPackItem.Height*0.80,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 0,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.good_scrollview = CommonScrollViewSingleLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.horizontal, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.good_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.good_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.good_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.good_scrollview:setSwallowTouches(false)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function LoopGiftItem:createNewCell(width, height)
+    local cell = BackPackItem.new()
+    cell:setDefaultTip()
+    cell:setSwallowTouches(false)
+    cell:setScale(0.80)
+	return cell
+end
+
+--获取数据数量
+function LoopGiftItem:numberOfCells()
+    if not self.good_list_data then return 0 end
+    return #self.good_list_data
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function LoopGiftItem:updateCellByIndex(cell, index)
+    if not self.good_list_data then return end
+    cell.index = index
+    local cell_data = self.good_list_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function LoopGiftItem:register_event()
+	registerButtonEventListener(self.btn_charge, function()
+		if not self.touch_buy_month then return end
+        if self.buy_month_ticket == nil then
+            self.buy_month_ticket = GlobalTimeTicket:getInstance():add(function()
+                self.touch_buy_month = true
+                if self.buy_month_ticket ~= nil then
+                    GlobalTimeTicket:getInstance():remove(self.buy_month_ticket)
+                    self.buy_month_ticket = nil
+                end
+            end,2)
+        end
+        self.touch_buy_month = nil
+        if self.data and self.data.charge_id then            
+            if self.data.count > 0 and self.data.money and self.data.money == 0 then
+                MallController:getInstance():sender21023(self.data.charge_id)
+            elseif self.data.count > 0 then
+                model:setLoopGiftChargeID(self.data.charge_id)
+                ActionController:getInstance():sender21016(self.data.charge_id)
+            else
+                message(TI18N("该礼包已售罄"))
+            end
+        else
+            message(TI18N("该礼包已售罄"))
+        end
+	end, true, 1)
+end
+
+-- function LoopGiftItem:checkIsZero()
+--     local config = Config.LoopGiftData.data_const
+--     if config and config.loop_gift_day_gift_zero_id and self.data and self.data.charge_id then
+--         for k, v in pairs(config.loop_gift_day_gift_zero_id.val) do
+--             if v == self.data.charge_id then
+--                 return true
+--             end
+--         end
+--     end
+--     return false
+-- end
+
+function LoopGiftItem:getData()
+    return self.data
+end
+
+function LoopGiftItem:setData(data)
+	self.data = data
+    self.charge_price:setString(data.val..TI18N("元"))
+    if data.count <= 0 then
+        data.count = 0 
+        setChildUnEnabled(true, self.btn_charge)
+        self.charge_price:disableEffect(cc.LabelEffect.OUTLINE)
+    else
+        setChildUnEnabled(false, self.btn_charge)
+        self.charge_price:enableOutline(Config.ColorData.data_color4[277], 2)
+    end
+    self.text_remian:setString(TI18N("剩余: ")..data.count)
+    self.good_list_data = {}
+    for k, v in pairs(data.reward) do
+        local vo = {}
+        vo.bid = v[1]
+        vo.quantity = v[2]
+        table.insert(self.good_list_data, vo)
+    end
+    if #self.good_list_data > 4 then
+        self.good_scrollview:setClickEnabled(true)
+    else
+        self.good_scrollview:setClickEnabled(false)
+    end
+    self.good_scrollview:reloadData()
+end
+
+function LoopGiftItem:DeleteMe()
+	if self.buy_month_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.buy_month_ticket)
+        self.buy_month_ticket = nil
+    end
+	if self.good_scrollview then
+        self.good_scrollview:DeleteMe()
+        self.good_scrollview = nil
+    end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

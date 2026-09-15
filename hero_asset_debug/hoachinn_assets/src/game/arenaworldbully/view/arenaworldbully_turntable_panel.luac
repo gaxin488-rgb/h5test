@@ -1,0 +1,826 @@
+-- --------------------------------------------------------------------
+-- 幸运抽乐
+-- --------------------------------------------------------------------
+ArenaworldbullyTurntablePanel = ArenaworldbullyTurntablePanel or BaseClass(BaseView)
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local treasure_const = Config.DialData.data_const
+local rand_list = Config.DialData.data_get_rand_list
+local ROUND_COUNT = 8
+local reward_pos = {{360,520},{493,475},{544,352},{493,215},{360,165},{231,214},{181,351},{232,475}}
+--数字的转换  从0开始
+local change_pos = {
+    [0] = 1,
+    [1] = 2,
+    [2] = 3,
+    [3] = 4,
+    [4] = 5,
+    [5] = 6,
+    [6] = 7,
+    [7] = 8,
+    [8] = 1, --越界处理
+}
+
+function ArenaworldbullyTurntablePanel:__init()
+    self.firstComein = true
+    self.is_full_screen = true
+    self.touchEnable = false --防止乱点，必须等到本地抽奖完成之后才能进行下一次
+    self.touchRefresh = false
+    -- self.tab_list = {}
+    self.reward_lucky = {}
+    self.treasureCount = 1
+    self.cur_index = nil
+    self.cur_effect_index = nil --用于播放音效的
+
+    self.desc_item_name = {}
+    self.desc_item_Lv = {}
+
+    --拥有的劵数
+    self.hasTreasure_num = {}
+    --点击的探宝类型  -- 1  2
+    self.touchTreasure_type = 1
+    --查看更多里面的个数
+    self.checkMoreCount = 1
+    --标签页红点
+    -- self.tabRedPoint = {false,false}
+    --点击刷新控制特效
+    self.touchEffect = {true,true}
+    --探宝记录
+    self.getRewardList = {}
+    --幸运值达到领取奖励数字
+    self.arriveLuckly_label = {}
+
+    -- self.round_certer_load = {}
+    self.item_list = {}
+    self.luckly_item = {}
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "arenaworldbully/arenaworldbully_turntable_panel"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("welfare","welfare"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("ninja_treasure","ninja_treasure/ninja_treasure"), type = ResourcesType.plist }
+    }
+end
+
+function ArenaworldbullyTurntablePanel:open_callback()
+	self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+	local main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    self.panel_touch = main_container:getChildByName("panel_touch")
+
+    self.text_scroll = main_container:getChildByName("text_scroll")
+    self.text_scroll:setScrollBarEnabled(false)
+    self.panel_probablity = main_container:getChildByName("panel_probablity")
+    self.probablity = self.panel_probablity:getChildByName("probablity")
+    self.probablity.scroll = self.probablity:getChildByName("probablity_scroll")
+    self.probablity.scroll:setScrollBarEnabled(false)
+    self.panel_probablity:setSwallowTouches(false)
+    self.panel_probablity:setVisible(false)
+
+    self.item_panel = main_container:getChildByName("item_panel")
+    self.round_certer = self.item_panel:getChildByName("round")
+    self.round_certer:setVisible(false)
+    self.btnLockOther = self.item_panel:getChildByName("btnLockOther")
+    local text = self.btnLockOther:getChildByName("Text_4")
+    setTextMaxWidth(text,100,-10)
+    text:setString(TI18N("语言_c_24"))
+
+    self.run_light = createSprite(PathTool.getResFrame("welfare","welfare_37"), 0, 0, self.item_panel, cc.p(0.5,0.5), LOADTEXT_TYPE_PLIST, 10)
+    self.run_light:setVisible(false)
+    self.run_light:setScale(0.9)
+
+    self.status_count = 0
+
+    model:setLucklyRewardData()
+    model:setBuyRewardData()
+
+    main_container:getChildByName("Text_2"):setString(TI18N("语言_c_1655"))
+    local treasure_bg = self.main_container:getChildByName("treasure_bg")
+    self.resource_add = self.main_container:getChildByName("resource_add")
+    self.resource_add:setTouchEnabled(true)
+    self.resource_icon = self.main_container:getChildByName("resource_icon")
+    self.resource_label = self.main_container:getChildByName("resource_label")
+
+    for i=1,4 do
+        local buy_reward_data = model:getBuyRewardData(i)
+        local lottery_id = buy_reward_data[1].expend_item[1][1]
+        self.hasTreasure_num[i] = BackpackController:getInstance():getModel():getBackPackItemNumByBid(lottery_id)
+    end
+
+    self.btnTreasure = {}
+    for i=1,3 do
+        local tab = {}
+        tab.btn = main_container:getChildByName("btn_treasure_"..i)
+        local size = tab.btn:getContentSize()
+        tab.price = createRichLabel(22, cc.c4b(0xff,0xff,0xff, 0xff), cc.p(0.5,0.5), cc.p(size.width/2,40), nil, nil, nil)
+        tab.btn:addChild(tab.price)
+        self.btnTreasure[i] = tab
+    end
+    self.btnRule = main_container:getChildByName("btnRule")
+
+    --预加载音效
+    AudioManager:getInstance():preLoadEffect(AudioManager.AUDIO_TYPE.COMMON, 'c_turntable_game')
+    AudioManager:getInstance():preLoadEffect(AudioManager.AUDIO_TYPE.COMMON, 'c_turntable_game_1')
+end
+
+function ArenaworldbullyTurntablePanel:openRootWnd(index)
+    self.jump_index = index or 4
+    self:changeTabLocalData(self.jump_index)
+    controller:requestLucky()
+end
+--倍率
+function ArenaworldbullyTurntablePanel:rewardProbility(index)
+    index = index or 4
+    local config_data = {}
+    local lev_index = 1
+    local role_ve = RoleController:getInstance():getRoleVo()
+    config_data = Config.DialData.data_magnificat_list[index]
+
+    if config_data == nil then
+        self.panel_probablity:setVisible(false)
+        return
+    end
+
+    for i,v in ipairs(config_data) do
+        if role_ve.lev >= v.min and role_ve.lev <= v.max then
+            lev_index = i
+            break
+        end
+    end
+    local config = config_data[lev_index]
+
+    for i=1, self.checkMoreCount do
+        if self.desc_item_name[i] then
+            self.desc_item_name[i]:setVisible(false)
+        end
+        if self.desc_item_Lv[i] then
+            self.desc_item_Lv[i]:setVisible(false)
+        end
+    end
+    self.checkMoreCount = tableLen(config.award)
+
+    local num = math.floor(self.checkMoreCount)
+    local total_height = num*36 + 35*2
+    if self.probablity.scroll:getContentSize().height < total_height then
+        self.probablity.scroll:setInnerContainerSize(cc.size(self.probablity:getContentSize().width, total_height))
+    end
+    local pos_y = self.probablity.scroll:getInnerContainerSize().height - 35 
+    local size = self.probablity.scroll:getContentSize()
+    doStopAllActions(self.probablity)
+    for i=1, self.checkMoreCount do
+        delayRun(self.probablity, i*2/60, function()
+            if i <= num then
+                local item_config = Config.ItemData.data_get_data(config.award[i][1])
+                if not self.desc_item_name[i] then
+                    self.desc_item_name[i] = createLabel(26,cc.c4b(0x4c,0xd8,0x49,0xff),nil,0,0,"",self.probablity.scroll,nil, cc.p(0,0.5))
+                end
+                if self.desc_item_name[i] then
+                    self.desc_item_name[i]:setVisible(true)
+                    self.desc_item_name[i]:setContentSize(cc.size(150,30))
+                    self.desc_item_name[i]:setString(TI18N(item_config.name))
+                    self.desc_item_name[i]:setPosition(40,pos_y-36*(i-1))
+                    -- local setting = {}
+                    -- setting.max_width = 200
+                    -- setting.start_x = 40
+                    -- commonShowRollStr(self.desc_item_name[i], setting)
+                    -- self.mask:setPosition(40,pos_y-36*(i-1))
+                end
+                if not self.desc_item_Lv[i] then
+                    self.desc_item_Lv[i] = createLabel(26,cc.c4b(0xff,0xa7,0x2a,0xff),nil,0,0,"",self.probablity.scroll,nil, cc.p(1,0.5))
+                end
+                if self.desc_item_Lv[i] then
+                    self.desc_item_Lv[i]:setVisible(true)
+                    self.desc_item_Lv[i]:setString(config.award[i][2].."%")
+                    -- self.desc_item_Lv[i]:setPosition(265,pos_y-36*(i-1))
+                    self.desc_item_Lv[i]:setPosition(size.width - 40,pos_y-36*(i-1))
+                end
+            else
+                local item_config = Config.ItemData.data_get_data(config.award[i][1])
+                if not self.desc_item_name[i] then
+                    self.desc_item_name[i] = createLabel(26,cc.c4b(0x4c,0xd8,0x49,0xff),nil,0,0,"",self.probablity.scroll,nil, cc.p(0,0.5))
+                end
+                if self.desc_item_name[i] then
+                    self.desc_item_name[i]:setVisible(true)
+                    self.desc_item_name[i]:setContentSize(cc.size(150,30))
+                    self.desc_item_name[i]:setString(TI18N(item_config.name))
+                    -- self.desc_item_name[i]:setPosition(350,pos_y-36*(i-(num+1)))
+                    self.desc_item_name[i]:setPosition(370,pos_y-36*(i-(num+1)))
+                    -- local setting = {}
+                    -- setting.max_width = 200
+                    -- setting.start_x = 350
+                    -- commonShowRollStr(self.desc_item_name[i], setting)
+                    -- self.mask:setPosition(350,pos_y-36*(i-(num+1)))
+                end
+                if not self.desc_item_Lv[i] then
+                    self.desc_item_Lv[i] = createLabel(26,cc.c4b(0xff,0xa7,0x2a,0xff),nil,0,0,"",self.probablity.scroll,nil, cc.p(0,0.5))
+                end
+                if self.desc_item_Lv[i] then
+                    self.desc_item_Lv[i]:setVisible(true)
+                    self.desc_item_Lv[i]:setString(config.award[i][2].."%")
+                    -- self.desc_item_Lv[i]:setPosition(575,pos_y-36*(i-(num+1)))
+                    self.desc_item_Lv[i]:setPosition(595,pos_y-36*(i-(num+1)))
+                end
+            end
+        end)
+    end
+end
+
+function ArenaworldbullyTurntablePanel:itemRewardPos(list)
+    if not list or next(list) == nil then return end
+    --以12点钟方向为起点，顺时针
+    for i=1, #list do
+        delayRun(self.item_panel, i*2/60, function() 
+            if not self.item_list[i] then
+                local item = BackPackItem.new(true,true, false, 0.7)
+                item:setAnchorPoint(0.5, 0.5)
+                self.item_panel:addChild(item)
+                self.item_list[i] = item
+            end
+            if self.item_list[i] then
+                self.item_list[i]:setPosition(reward_pos[i][1], reward_pos[i][2])
+                self.item_list[i]:setBaseData(rand_list[list[i].id][1].item_id, rand_list[list[i].id][1].item_num)
+                self.item_list[i]:setDefaultTip()
+
+                if list[i] then
+                    if list[i].status == 1 then
+                        setChildUnEnabled(true, self.item_list[i])
+                    elseif list[i].status == 0 then
+                        setChildUnEnabled(false, self.item_list[i])
+                    end
+                end
+                local fadein = cc.FadeIn:create(0.01)
+                self.item_list[i]:runAction(fadein)
+            end
+        end)
+    end
+    self:runLightUniformSpeed()
+end
+
+--不需要服务端返回就可以显示的东西，避免UI出来时候有空挡
+function ArenaworldbullyTurntablePanel:changeTabLocalData(index)
+    if self.cur_index == index then return end
+
+    index = index or 4
+    -- local res = PathTool.getPlistImgForDownLoad("bigbg/action", "action_treasure_round_"..index)
+    -- if not self.round_certer_load[index] then
+    --     self.round_certer_load[index] = loadSpriteTextureFromCDN(self.round_certer, res, ResourcesType.single, self.round_certer_load[index])
+    -- end
+    -- if self.round_certer_load[index] then
+    --     loadSpriteTexture(self.round_certer,res,LOADTEXT_TYPE)
+    -- end
+
+    local buy_reward_data = model:getBuyRewardData(index)
+    local lottery_id = buy_reward_data[1].expend_item[1][1]
+    local item_config = Config.ItemData.data_get_data(lottery_id)
+    local res = PathTool.getItemRes(item_config.icon)
+    local str = string_format("<img src='%s' scale=0.5 />  <div fontcolor=#ffffff outline=2,#4a0c07>%s</div>",res,self.hasTreasure_num[index])
+    self.resource_label:setString(self.hasTreasure_num[index])
+    loadSpriteTexture(self.resource_icon, res, LOADTEXT_TYPE)
+    for i=1, 3 do
+        if i == 3 then
+            local str = string_format(TI18N("语言_c_1659"))
+            self.btnTreasure[i].price:setString(str)
+            self.btnTreasure[i].price:setPositionY(0)
+        else
+            local str = string_format(TI18N("语言_c_1660"), treasure_const.treasure_num.val[index][i], res, buy_reward_data[i].expend_item[1][2])
+            self.btnTreasure[i].price:setHorizontalLayoutType(2)
+            self.btnTreasure[i].price:setString(str)
+        end
+    end
+end
+
+--data:寻宝数据(服务端返回的)
+function ArenaworldbullyTurntablePanel:commonShowData(data, luckly_list)
+    if not next(data) or not next(luckly_list) then return end
+
+    local refresh = data.end_time - GameNet:getInstance():getTime()
+    if refresh > 0 then
+        model:setCountDownTime(self.refresh_time,refresh)
+        local item_config = Config.ItemData.data_get_data(treasure_const.refreash.val[1][1])
+        local res = PathTool.getItemRes(item_config.icon)
+        local str = string_format(TI18N("语言_c_1661"),res,treasure_const.refreash.val[1][2])
+        self.btnTreasure[3].price:setString(str)
+        self.touchEffect[data.type] = false
+    else
+        local str = string_format(TI18N("语言_c_1659"))
+        self.btnTreasure[3].price:setString(str)
+        doStopAllActions(self.refresh_time)
+        if self.refresh_time then
+            self.refresh_time:setString("00:00:00")
+            self.touchEffect[data.type] = true
+        end
+    end
+
+    local status = false
+    for i,v in pairs(luckly_list) do
+        local _bool = true
+        for k,m in pairs(data.lucky_award) do
+            if v.id == m.lucky then
+                _bool = false
+                break
+            end
+        end
+
+        if data.lucky < v.lucky_val then
+            _bool = false
+        end
+
+        setChildUnEnabled(false, self.luckly_item[i])
+        if self.luckly_item[i] then
+            self.luckly_item[i]:setDefaultTip(not _bool)
+            status = status or _bool
+            self.luckly_item[i]:setVisibleRedPoint(_bool)
+
+            if _bool == false and data.lucky >= v.lucky_val then
+                setChildUnEnabled(true, self.luckly_item[i])
+            end
+        end
+    end
+    model:setLucklyTabRedPoint(data.type,status)
+    self:showRedpoint()
+end
+
+function ArenaworldbullyTurntablePanel:showRedpoint()
+    -- local totle_status = false
+    -- for i=1,2 do
+    --     local status = model:getLucklyTabRedPoint(i)
+    --     self.tab_list[i].redpoint:setVisible(status)
+    --     totle_status = totle_status or status
+    -- end
+    -- MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.lucky_treasure,totle_status)
+end
+
+function ArenaworldbullyTurntablePanel:showTreasureLog(data)
+    if not data or next(data) == nil then return end
+    local str = ""
+    local num = tableLen(data.log_list)
+    if num >= 10 then
+        num = 10
+    end
+    for i,v in pairs(self.getRewardList) do
+        if v then
+            v:setVisible(false)
+        end
+    end
+    local _y = 0
+    for i = 1, num do
+        if data.log_list[i] then
+            if not self.getRewardList[i] then
+                self.getRewardList[i] = createRichLabel(22, cc.c4b(0xff,0xff,0xf8,0xff), cc.p(0.5,1), cc.p(self.text_scroll:getContentSize().width*0.5,0), nil, nil, 300)
+                self.getRewardList[i]:setHorizontalLayoutType(2)
+                self.text_scroll:addChild(self.getRewardList[i])
+            end 
+            if self.getRewardList[i] then
+                self.getRewardList[i]:setVisible(true)
+                local pos_y = self.text_scroll:getInnerContainerSize().height + 47
+                self.getRewardList[i]:setPositionY(pos_y - 26*(i+1))
+                local item_config = Config.ItemData.data_get_data(data.log_list[i].bid)
+                str = string_format(TI18N("语言_c_37"),data.log_list[i].role_name, item_config.name)
+                self.getRewardList[i]:setString(str)
+                _y = _y + self.getRewardList[i]:getContentSize().height
+            end
+        end
+    end
+    self.text_scroll:setInnerContainerSize(cc.size(self.text_scroll:getContentSize().width, _y))
+    for i = 1, #self.getRewardList do
+        self.getRewardList[i]:setPositionY(_y)
+        _y = _y - self.getRewardList[i]:getContentSize().height
+    end
+end
+
+function ArenaworldbullyTurntablePanel:changeTabView(index)
+    index = index or 4
+    if self.cur_index == index then return end
+    self.cur_index = index
+
+    self.touchEnable = false
+
+    local luckly_list = model:getLucklyRewardData(index)
+    local initData = model:getTreasureInitData(index)
+    self:commonShowData(initData, luckly_list)
+
+    self:itemRewardPos(initData.rand_lists)
+    self:showTreasureLog(initData)
+end
+
+function ArenaworldbullyTurntablePanel:register_event()
+    self:addGlobalEvent(ActionEvent.UPDATE_LUCKYROUND_GET, function(data)
+        if not data then
+            ArenaworldbullyController:getInstance():openArenaworldbullyTurntablePanel(false)
+            return
+        end
+        self:changeTabView(self.cur_index or self.jump_index)
+    end)
+    self:addGlobalEvent(ActionEvent.TREASURE_SUCCESS_DATA, function(data)
+        if not data then return end
+        if data.code == 0 then
+            self.touchEnable = false
+            message(data.msg)
+            return
+        end
+        self:showLotteryAudioEffect(true)
+        self.showRewardList = data
+        self.pos = 0
+        self.runProcess= 0
+        self.process = self.status_count --开始的位置
+        self.speed = 1
+        self.addSpeed = 0
+        self.targetPos = data.awards3[1].pos - 1 --停灯的位置(从0开始)
+        self.step = 0
+        self.round = 5 --圈数
+        if self.targetPos <= 3 then
+            self.round = 4
+        end
+
+        self:runLightUniformSpeedHide()
+        if self.lottery_ticket == nil then
+            self.lottery_ticket = GlobalTimeTicket:getInstance():add(function()
+                self:runHandler()
+            end,0.01)
+        end
+    end)
+    self:addGlobalEvent(ActionEvent.UPDATA_TREASURE_LOG_DATA, function(data)
+        if not data then return end
+        model:updataTreasureLogData(data.type, data.log_list)
+        local initData = model:getTreasureInitData(data.type)
+        self:showTreasureLog(initData)
+    end)
+    --弹窗
+    self:addGlobalEvent(ActionEvent.UPDATA_TREASURE_POPUPS_SEND, function(data)
+        self.showRewardList = data
+        self:runLightReward()
+    end)
+
+    self:addGlobalEvent(ActionEvent.UPDATE_LUCKLY_DATA, function(data)
+        if not data then return end
+        local buy_reward_data = model:getBuyRewardData(data.type)
+        local lottery_id = buy_reward_data[1].expend_item[1][1]
+        self.hasTreasure_num[data.type] = BackpackController:getInstance():getModel():getBackPackItemNumByBid(lottery_id)
+        if self.hasTreasure_num[data.type] <= 0 then self.hasTreasure_num[data.type] = 0 end
+
+        local item_config = Config.ItemData.data_get_data(lottery_id)
+        if item_config then
+            local res = PathTool.getItemRes(item_config.icon)
+            local str = string_format("<img src='%s' scale=0.5 />  <div fontcolor=#ffffff outline=2,#4a0c07>%d</div>",res,self.hasTreasure_num[data.type])
+            self.resource_label:setString(self.hasTreasure_num[data.type])
+            loadSpriteTexture(self.resource_icon, res, LOADTEXT_TYPE)
+        end
+
+        model:updataTreasureInitData(data.type, data)
+
+        local luckly_list = model:getLucklyRewardData(data.type)
+        local initData = model:getTreasureInitData(data.type)
+        self:commonShowData(initData, luckly_list)
+    end)
+
+    self:addGlobalEvent(BackpackEvent.ADD_GOODS, function(bag_code,temp_list)
+        self:changeTreasureNumber(temp_list)
+    end)
+    self:addGlobalEvent(BackpackEvent.DELETE_GOODS, function(bag_code,temp_list)
+        self:changeTreasureNumber(temp_list)
+    end)
+    self:addGlobalEvent(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+        self:changeTreasureNumber(temp_list)
+    end)
+
+    self:addGlobalEvent(ArenaworldbullyEvent.UpdateExchangeNum, function()
+        local item_bid = treasure_const["time_warp_item"].val
+        self.hasTreasure_num[4] = BackpackController:getInstance():getModel():getBackPackItemNumByBid(item_bid)
+        if self.cur_index == 4 then
+            local item_config = Config.ItemData.data_get_data(item_bid)
+            local res = PathTool.getItemRes(item_config.icon)
+            local str = string_format("<img src='%s' scale=0.5 />  <div fontcolor=#ffffff outline=2,#4a0c07>%d</div>",res,self.hasTreasure_num[4])
+            self.resource_label:setString(self.hasTreasure_num[4])
+            loadSpriteTexture(self.resource_icon, res, LOADTEXT_TYPE)
+        end
+    end)
+  
+    registerButtonEventListener(self.resource_add, function()
+        local setting = {}
+        setting.item_bid = treasure_const["time_warp_item"].val
+        setting.item_price = treasure_const["call_item_buy_1"].val[2]
+        setting.cost_item_id = treasure_const["call_item_buy_1"].val[1]
+        setting.view_type = ArenaConst.view_type.arenaworldbully
+        ArenaController:getInstance():openArenaLoopChallengeBuy(true, setting)
+    end ,true, 2)
+
+    registerButtonEventListener(self.background, function()
+        ArenaworldbullyController:getInstance():openArenaworldbullyTurntablePanel(false)
+    end ,true, 2)
+    registerButtonEventListener(self.btnRule, function(param,sender, event_type)
+        local config = Config.DialData.data_const.dial_rule_1
+        TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition(),nil,nil,500)
+    end ,false, 1)
+
+    registerButtonEventListener(self.btnLockOther, function()
+        self.panel_probablity:setVisible(true)
+        self:rewardProbility(self.cur_index)
+    end ,false, 1)
+    registerButtonEventListener(self.probablity, function()
+        self.panel_probablity:setVisible(false)
+    end ,false, 1)
+    registerButtonEventListener(self.background, function()
+        ArenaworldbullyController:getInstance():openArenaworldbullyTurntablePanel(false)
+    end ,false, 1)
+    registerButtonEventListener(self.panel_probablity, function()
+        self.panel_probablity:setVisible(false)
+    end ,false, 1)
+
+    for i,v in ipairs(self.btnTreasure) do
+        registerButtonEventListener(v.btn, function()
+            self:sendTreasureLottery(i)
+        end ,true, 1)
+    end
+end
+
+function ArenaworldbullyTurntablePanel:showLotteryAudioEffect(status)
+    if self.lottery_audio_effect then
+        AudioManager:getInstance():removeEffectBySoundId(self.lottery_audio_effect)
+        self.lottery_audio_effect = nil
+    end
+    if status then
+        self.lottery_audio_effect = AudioManager:getInstance():playEffectForHandAudoRemove(AudioManager.AUDIO_TYPE.COMMON,"c_turntable_game", false)
+    end
+end
+
+--
+function ArenaworldbullyTurntablePanel:sendTreasureLottery(index)
+    if not self.cur_index then return end
+
+    if self.touchEnable == true then
+        message(TI18N("语言_c_1663"))
+        return
+    end
+    self.cur_index = self.cur_index or 4
+    if index == 3 then
+        -- local role_vo = RoleController:getInstance():getRoleVo()
+        -- if role_vo.gold < treasure_const.refreash.val[1][2] then 
+        --     message(TI18N("语言_c_1254")) 
+        --     return 
+        -- end
+        if self.touchRefresh == true then
+            message(TI18N("语言_c_1664"))
+            return
+        end
+        self.touchRefresh = true
+        self:runLightUniformSpeedHide()
+        self:startRefreshAction()
+    else
+        local data = model:getBuyRewardData(self.cur_index)
+        self.touchEnable = true
+        local _bool = MainuiController:getInstance():checkIsOpenByActivate(data[index].limit_open)
+        if _bool == true then
+            self.touchTreasure_type = index
+        else
+            self.touchEnable = false
+        end
+        controller:send16638(self.cur_index, index)
+    end
+end
+--更改探宝劵
+function ArenaworldbullyTurntablePanel:changeTreasureNumber(list)
+    for i,v in pairs(list) do
+        if v.base_id == 37001 then
+            self.hasTreasure_num[1] = BackpackController:getInstance():getModel():getBackPackItemNumByBid(37001)
+            if self.cur_index == 1 then
+                local item_config = Config.ItemData.data_get_data(37001)
+                local res = PathTool.getItemRes(item_config.icon)
+                local str = string_format("<img src='%s' scale=0.5 />  <div fontcolor=#ffffff outline=2,#4a0c07>%d</div>",res,self.hasTreasure_num[1])
+                self.resource_label:setString(self.hasTreasure_num[1])
+                loadSpriteTexture(self.resource_icon, res, LOADTEXT_TYPE)
+            end
+        elseif v.base_id == 37002 then
+            self.hasTreasure_num[2] = BackpackController:getInstance():getModel():getBackPackItemNumByBid(37002)
+            if self.cur_index == 2 then
+                local item_config = Config.ItemData.data_get_data(37002)
+                local res = PathTool.getItemRes(item_config.icon)
+                local str = string_format("<img src='%s' scale=0.5 />  <div fontcolor=#ffffff outline=2,#4a0c07>%d</div>",res,self.hasTreasure_num[2])
+                self.resource_label:setString(self.hasTreasure_num[2])
+                loadSpriteTexture(self.resource_icon, res, LOADTEXT_TYPE)
+            end
+        elseif v.base_id == 37006 then
+            self.hasTreasure_num[3] = BackpackController:getInstance():getModel():getBackPackItemNumByBid(37006)
+            if self.cur_index == 3 then
+                local item_config = Config.ItemData.data_get_data(37006)
+                local res = PathTool.getItemRes(item_config.icon)
+                local str = string_format("<img src='%s' scale=0.5 />  <div fontcolor=#ffffff outline=2,#4a0c07>%d</div>",res,self.hasTreasure_num[3])
+                self.resource_label:setString(self.hasTreasure_num[3])
+                loadSpriteTexture(self.resource_icon, res, LOADTEXT_TYPE)
+            end
+        elseif v.base_id == 99031 then
+            self.hasTreasure_num[4] = BackpackController:getInstance():getModel():getBackPackItemNumByBid(99031)
+            if self.cur_index == 4 then
+                local item_config = Config.ItemData.data_get_data(99031)
+                local res = PathTool.getItemRes(item_config.icon)
+                local str = string_format("<img src='%s' scale=0.5 />  <div fontcolor=#ffffff outline=2,#4a0c07>%d</div>",res,self.hasTreasure_num[4])
+                self.resource_label:setString(self.hasTreasure_num[4])
+                loadSpriteTexture(self.resource_icon, res, LOADTEXT_TYPE)
+            end
+        end
+    end
+end
+
+local slow_start = 3--开始减少灯的个数
+function ArenaworldbullyTurntablePanel:runHandler()
+    if self.step == 0 then
+        self.process = self.process + 0.33
+        if self.process >= 3 then
+            self.step = 1
+            self.speed = 0.9
+        end
+    elseif self.step == 1 then
+        self.process = self.process+self.speed
+        if self.process > ROUND_COUNT*self.round and self.targetPos > -1 then
+            if self.targetPos > 3 then
+                if (self.process % ROUND_COUNT) > slow_start then
+                    self.speed = 0.04
+                    self.step = 2
+                end
+            else
+                if self.targetPos <= slow_start then
+                    if (self.process % (ROUND_COUNT*self.round)) >= (self.targetPos-slow_start+ROUND_COUNT) then
+                        self.speed = 0.04
+                        self.step = 2
+                    end
+                end
+            end
+        end
+    elseif self.step == 2 then
+        self.process = self.process+self.speed
+        local index = math.floor(self.process)
+        if self.cur_effect_index ~= index then
+            self.cur_effect_index = index
+            if self.stop_audio_effect then
+                AudioManager:getInstance():removeEffectBySoundId(self.stop_audio_effect)
+            end
+            self.stop_audio_effect = AudioManager:getInstance():playEffectForHandAudoRemove(AudioManager.AUDIO_TYPE.COMMON,"c_turntable_game_1", false)
+        end
+
+        if (self.process % ROUND_COUNT >= self.targetPos) and math.floor(self.process / ROUND_COUNT) >= 5 then
+            if self.lottery_ticket ~= nil then
+                GlobalTimeTicket:getInstance():remove(self.lottery_ticket)
+                self.lottery_ticket = nil
+                self.cur_effect_index = nil
+                self:showLotteryAudioEffect(false)
+                AudioManager:getInstance():removeEffectBySoundId(self.stop_audio_effect)
+                -- print("@跑灯结束~~~~~~")
+                self:stopRunHandler()
+            end
+        end
+    end
+    local p,_ = math.modf(self.process)
+    self:setPos(p)
+end
+
+function ArenaworldbullyTurntablePanel:setPos(pos)
+    if pos <= 0 then
+        pos  = pos + ROUND_COUNT
+    elseif pos >= ROUND_COUNT then
+        pos = pos % ROUND_COUNT
+    end
+    self.run_light:setVisible(true)
+    self.run_light:setPosition(reward_pos[change_pos[pos]][1],reward_pos[change_pos[pos]][2])
+end
+--跑灯结束
+function ArenaworldbullyTurntablePanel:stopRunHandler()
+    self.touchEnable = false
+
+    if self.run_light_show_reward == nil then
+        self.run_light_show_reward = GlobalTimeTicket:getInstance():add(function()
+            if not tolua.isnull(self.run_light) then
+                self:runLightReward()
+                self.showRewardList = nil
+                self:runLightUniformSpeed()
+            end
+        end,1.0,1)
+    end
+end
+--抽奖奖励
+function ArenaworldbullyTurntablePanel:runLightReward()
+    if self.showRewardList then
+        local award = {}
+        for i,v in ipairs(self.showRewardList.awards1) do
+            if v then
+                table.insert(award, v)
+            end
+        end
+        for i,v in ipairs(self.showRewardList.awards2) do
+            if v then
+                table.insert(award, v)
+            end
+        end
+        --类型， 次数类型
+        controller:openTreasureGetItemWindow(true, award, self.cur_index, self.touchTreasure_type)
+    end
+    local initData = model:getTreasureInitData(self.cur_index)
+    if initData then
+        self:itemRewardPos(initData.rand_lists)
+    end
+    self.showRewardList = nil
+end
+
+function ArenaworldbullyTurntablePanel:runLightUniformSpeedHide()
+    self.run_light:setVisible(false)
+    if self.open_view_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.open_view_ticket)
+        self.open_view_ticket = nil
+    end
+    if self.run_light_show_reward ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.run_light_show_reward)
+        self.run_light_show_reward = nil
+    end
+end
+--没有跑灯的时候匀速跑
+function ArenaworldbullyTurntablePanel:runLightUniformSpeed()
+    if self.open_view_ticket == nil then
+        self.open_view_ticket = GlobalTimeTicket:getInstance():add(function()
+            if not tolua.isnull(self.run_light) then
+                self.run_light:setVisible(true)
+                self.status_count = self.status_count % ROUND_COUNT
+                self.run_light:setPosition(reward_pos[change_pos[self.status_count]][1],reward_pos[change_pos[self.status_count]][2])
+                self.status_count = self.status_count + 1
+            end
+        end,0.5)
+    end
+end
+
+function ArenaworldbullyTurntablePanel:getActionFunc(node)
+    if not node then return end
+    local fadeout = cc.FadeOut:create(0.07)
+    node:runAction(fadeout)
+end
+
+function ArenaworldbullyTurntablePanel:startRefreshAction()
+    local openSingle = {}
+    for i=1, 8 do
+        local function test()
+            if self.item_list[i] then
+                self:getActionFunc(self.item_list[i])
+            end
+        end
+        openSingle[i] = cc.CallFunc:create(test)
+    end
+    local actionNode = cc.Node:create()
+    self.item_panel:addChild(actionNode)
+    local function func()
+        controller:send16642(self.cur_index)
+        self:handleEffect()
+    end
+    actionNode:runAction(cc.Sequence:create(openSingle[1],openSingle[2],openSingle[3],openSingle[4],openSingle[5],openSingle[6],
+                                            openSingle[7],openSingle[8],openSingle[9],openSingle[10],openSingle[11],openSingle[12],  
+                                            cc.CallFunc:create(func),cc.RemoveSelf:create(true)))
+end
+--特效
+function ArenaworldbullyTurntablePanel:handleEffect()
+    local function func()
+        self.touchRefresh = false
+        local initData = model:getTreasureInitData(self.cur_index)
+        self:itemRewardPos(initData.rand_lists)
+    end
+    playEffectOnce(PathTool.getEffectRes(614),self.item_panel:getContentSize().width*0.5,self.item_panel:getContentSize().height*0.5,
+                    self.item_panel,func, nil, nil, nil, PlayerAction.action_1, 1)
+end
+
+function ArenaworldbullyTurntablePanel:close_callback( )
+    if self.lottery_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.lottery_ticket)
+        self.lottery_ticket = nil
+    end
+    self:showLotteryAudioEffect(false)
+    AudioManager:getInstance():removeEffectBySoundId(self.stop_audio_effect)
+    if self.item_list and next(self.item_list or {}) ~= nil then
+        for i, v in ipairs(self.item_list) do
+            if v and v.DeleteMe then
+                v:DeleteMe()
+            end
+        end
+    end
+    
+    if self.luckly_item and next(self.luckly_item or {}) ~= nil then
+        for i, v in ipairs(self.luckly_item) do
+            if v and v.DeleteMe then
+                v:DeleteMe()
+            end
+        end
+    end
+
+    -- for i,v in pairs(self.round_certer_load) do
+    --     if v and v.DeleteMe then
+    --         v:DeleteMe()
+    --     end
+    --     v = nil
+    -- end
+
+    self:runLightReward()
+
+    doStopAllActions(self.probablity)
+    self:runLightUniformSpeedHide()
+    ArenaworldbullyController:getInstance():openArenaworldbullyTurntablePanel(false)
+end

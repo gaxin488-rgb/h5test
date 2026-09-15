@@ -1,0 +1,481 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- HERO GEM LEARN PANEL
+-- UI giống HeroTalentSkillLearnPanel (layout_name, WinType.Mini)
+-- Khảm ngọc: sender22801(partner_id, item_id, pos, 1) → gemstone subsystem
+-- Tab 1 (Chọn Ngọc): grid BackPackItem từ EQUIPS bag, lọc theo gem_type
+-- Tab 2 (Túi Đồ):    toàn bộ ngọc trong túi
+-- ═══════════════════════════════════════════════════════════════════════════════
+
+HeroGemLearnPanel = HeroGemLearnPanel or BaseClass(BaseView)
+
+local controller   = HeroController:getInstance()
+local model        = controller:getModel()
+local backModel    = BackpackController:getInstance():getModel()
+local gemModel     = GemstoneController:getInstance():getModel()
+local table_insert = table.insert
+local table_sort   = table.sort
+
+-- Slot pos → gem item type (5 slots, bỏ type 50 vì xung đột SPEC1)
+local GEM_TYPE_BY_POS = {51, 52, 53, 54, 55}
+local GEM_BID_LIST_BY_TYPE = {
+    [51] = {4011301,4011302,4011303,4011304,4011305,4011306,4011307,4011308,4011309,4011310},
+    [52] = {4011401,4011402,4011403,4011404,4011405,4011406,4011407,4011408,4011409,4011410},
+    [53] = {4011501,4011502,4011503,4011504,4011505,4011506,4011507,4011508,4011509,4011510},
+    [54] = {4011601,4011602,4011603,4011604,4011605,4011606,4011607,4011608,4011609,4011610},
+    [55] = {4011701,4011702,4011703,4011704,4011705,4011706,4011707,4011708,4011709,4011710},
+}
+
+local function normalizeItemVo(vo)
+    if not vo then return nil end
+    local cfg = vo.config
+    if cfg == nil then
+        local bid = vo.base_id or vo.bid or vo.id
+        if bid and Config and Config.ItemData and Config.ItemData.data_get_data then
+            cfg = Config.ItemData.data_get_data(bid)
+            if cfg then vo.config = cfg end
+        end
+    end
+    return cfg
+end
+
+local function buildGemDisplayAttrLines(gem_vo)
+    local lines = {}
+    if not gem_vo or not gem_vo.config then
+        return lines
+    end
+
+    local base_cfg = Config.PartnerGemData.data_base_info[gem_vo.config.id]
+    if base_cfg and base_cfg.base_attr and next(base_cfg.base_attr) ~= nil then
+        for _, attr in ipairs(base_cfg.base_attr) do
+            local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr[1], attr[2] or 0)
+            if res then
+                table_insert(lines, attr_name .. ": +" .. tostring(attr_val))
+            end
+        end
+    end
+
+    if #lines == 0 and gem_vo.config.ext then
+        for _, ext_entry in ipairs(gem_vo.config.ext) do
+            if ext_entry[1] == "main_attr" and ext_entry[2] then
+                for _, attr in ipairs(ext_entry[2]) do
+                    local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr[1], attr[2] or 0)
+                    if res then
+                        table_insert(lines, attr_name .. ": +" .. tostring(attr_val))
+                    end
+                end
+            end
+        end
+    end
+
+    if #lines == 0 then
+        local runtime_attr_list = gem_vo.item_attr or gem_vo.main_attr or {}
+        for _, attr in ipairs(runtime_attr_list) do
+            local res = false
+            local attr_name
+            local attr_val
+
+            if attr.attr_id then
+                res, attr_name, attr_val = commonGetAttrInfoByIDValue(attr.attr_id, attr.attr_val or 0)
+            elseif attr[1] ~= nil then
+                res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr[1], attr[2] or 0)
+            end
+
+            if res then
+                table_insert(lines, attr_name .. ": +" .. tostring(attr_val))
+            end
+        end
+    end
+
+    return lines
+end
+
+local function checkGemMatchSlot(gem_vo, slot_pos, gem_type)
+    local cfg = normalizeItemVo(gem_vo)
+    if not gem_vo or not cfg then return false end
+    local base_cfg = Config.PartnerGemData.data_base_info[cfg.id]
+    if base_cfg and base_cfg.pos == slot_pos then
+        return true
+    end
+    return (gem_vo.type or cfg.type) == gem_type
+end
+
+local function makeOwnedGemVo(bid)
+    local cfg = Config.ItemData.data_get_data(bid)
+    if not cfg then return nil end
+    local num = 0
+    if backModel and backModel.getItemNumByBid then
+        num = num + (backModel:getItemNumByBid(bid) or 0)
+        num = num + (backModel:getItemNumByBid(bid, BackPackConst.Bag_Code.EQUIPS) or 0)
+        num = num + (backModel:getItemNumByBid(bid, BackPackConst.Bag_Code.BACKPACK) or 0)
+        if BackPackConst.Bag_Code.GEMSTONE then
+            num = num + (backModel:getItemNumByBid(bid, BackPackConst.Bag_Code.GEMSTONE) or 0)
+        end
+    end
+    if num <= 0 then return nil end
+    local vo = deepCopy(cfg)
+    vo.id = bid
+    vo.bid = bid
+    vo.base_id = bid
+    vo.config = cfg
+    vo.quantity = num
+    vo.all_score = (gemModel and gemModel:getScore(vo)) or 0
+    return vo
+end
+
+function HeroGemLearnPanel:__init()
+    self.view_tag    = ViewMgrTag.DIALOGUE_TAG
+    self.win_type    = WinType.Mini
+    self.is_full_screen = false
+    self.layout_name = "hero/hero_talent_skill_learn_panel"
+    self.tab_list    = {}
+    self.gem_list    = {}
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+    local title = self.root_wnd:getChildByName("win_title")
+    if title then title:setString("Chọn Ngọc") end
+
+    -- Left panel: preview ngọc đang chọn
+    local show_node = self.main_container:getChildByName("show_item_node")
+    self.preview_item = BackPackItem.new(false, false, nil, 1.0, false)
+    if show_node then show_node:addChild(self.preview_item) end
+
+    self.gem_name  = self.main_container:getChildByName("skill_name")
+    local dec_node = self.main_container:getChildByName("dec_node")
+    self.gem_desc  = createRichLabel(22, cc.c4b(0x64, 0x32, 0x23, 0xff),
+                                     cc.p(0, 1), cc.p(0, 0),
+                                     FONT_COMMON_LINE_SPACE, nil, 440)
+    if dec_node then dec_node:addChild(self.gem_desc) end
+
+    -- Ẩn widget không dùng của talent
+    local nv_img = self.main_container:getChildByName("no_vedio_image")
+    local nv_lab = self.main_container:getChildByName("no_vedio_label")
+    if nv_img then nv_img:setVisible(false) end
+    if nv_lab then nv_lab:setVisible(false) end
+
+    local cost_lab = self.main_container:getChildByName("cost_label")
+    if cost_lab then cost_lab:setVisible(false) end
+    local cost_node = self.main_container:getChildByName("cost_node")
+    if cost_node then cost_node:setVisible(false) end
+
+    -- Nút Khảm
+    self.select_btn = self.main_container:getChildByName("select_btn")
+    if self.select_btn then
+        self.select_btn:getChildByName("label"):setString("Khảm Ngọc")
+    end
+
+    -- Grid scrollview
+    self.lay_scrollview = self.main_container:getChildByName("lay_scrollview")
+
+    -- Tab 2: bag (dùng bag_container sẵn có)
+    self.bag_container = self.root_wnd:getChildByName("bag_container")
+    local bag_sv_size  = cc.size(620, 750)
+    local bag_setting  = {
+        item_class   = BackPackItem,
+        start_x = 0, space_x = 40,
+        start_y = 0, space_y = 10,
+        item_width = 119, item_height = 119,
+        row = 5, col = 4, once_num = 5,
+        need_dynamic = true,
+    }
+    self.bag_scrollview = CommonScrollViewLayout.new(
+        self.bag_container, cc.p(32, -20),
+        ScrollViewDir.vertical, ScrollViewStartPos.top,
+        bag_sv_size, bag_setting)
+
+    -- Tab buttons
+    local tab_container = self.root_wnd:getChildByName("tab_container")
+    local tab_names = {[1] = "Chọn Ngọc", [2] = "Túi Đồ"}
+    for i = 1, 2 do
+        local tab_btn = tab_container and tab_container:getChildByName("tab_btn_"..i)
+        if tab_btn then
+            local obj = {
+                unselect_bg = tab_btn:getChildByName("unselect_bg"),
+                select_bg   = tab_btn:getChildByName("select_bg"),
+                lable       = tab_btn:getChildByName("title"),
+                tab_btn     = tab_btn,
+                index       = i,
+            }
+            obj.unselect_bg:setVisible(true)
+            obj.select_bg:setVisible(false)
+            obj.lable:setString(tab_names[i])
+            self.tab_list[i] = obj
+        end
+    end
+    self:changeSelectedTab(1)
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:register_event()
+    registerButtonEventListener(self.background,
+        handler(self, self.onClickBtnClose), false, 1)
+    registerButtonEventListener(self.select_btn,
+        handler(self, self.onClickBtnSelect), true, 2)
+
+    for _, obj in pairs(self.tab_list) do
+        if obj.tab_btn then
+            obj.tab_btn:addTouchEventListener(function(sender, event_type)
+                if event_type == ccui.TouchEventType.ended then
+                    playTabButtonSound()
+                    self:changeSelectedTab(obj.index)
+                end
+            end)
+        end
+    end
+
+    -- Đóng khi server push 11012 xác nhận khảm thành công
+    self:addGlobalEvent(HeroEvent.Equip_Update_Event, function()
+        controller:openHeroGemLearnPanel(false)
+    end)
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:changeSelectedTab(index)
+    if self.tab_object and self.tab_object.index == index then return end
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(false)
+    end
+    self.tab_object = self.tab_list[index]
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(true)
+    end
+    self.cur_tab_index = index
+
+    if index == 1 then
+        self.bag_container:setVisible(false)
+        self.main_container:setVisible(true)
+    else
+        self.bag_container:setVisible(true)
+        self.main_container:setVisible(false)
+        self:loadBagTab()
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:openRootWnd(hero_vo, pos)
+    if not hero_vo or not pos then return end
+    self.hero_vo       = hero_vo
+    self.click_pos     = pos
+    self.click_partner = hero_vo.partner_id or 0
+
+    -- gem_type cho slot này
+    self.gem_type = GEM_TYPE_BY_POS[pos] or 51
+
+    -- Ngọc đang mang ở slot này (từ eqm_list)
+    local eqm_list  = hero_vo.eqm_list or {}
+    self.cloth_vo   = eqm_list[self.gem_type]
+
+    self:loadGemList()
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Lấy ngọc theo slot ưu tiên từ túi GEMSTONE, fallback thêm EQUIPS cũ
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:loadGemList()
+    local found = {}
+
+    -- Luồng khảm ngọc thật dùng túi GEMSTONE và pos 1..5
+    if BackPackConst.item_tab_type.GEMSTONE then
+        local gemstones = backModel:getBagItemList(BackPackConst.item_tab_type.GEMSTONE) or {}
+        for _, v in pairs(gemstones) do
+            if checkGemMatchSlot(v, self.click_pos, self.gem_type) then
+                v.all_score = v.all_score or (gemModel and gemModel:getScore(v)) or 0
+                found[v.id] = v
+            end
+        end
+    end
+
+    -- Fallback cho dữ liệu legacy nếu ngọc vẫn đang nằm trong EQUIPS
+    local bag_code_list = {
+        BackPackConst.item_tab_type.EQUIPS,
+        BackPackConst.item_tab_type.SPECIAL,
+        BackPackConst.item_tab_type.OTHERS,
+        BackPackConst.item_tab_type.HOLYEQUIPMENT,
+        BackPackConst.Bag_Code.EQUIPS,
+        BackPackConst.Bag_Code.BACKPACK,
+        BackPackConst.Bag_Code.STORAGE,
+        BackPackConst.Bag_Code.HOME,
+        BackPackConst.Bag_Code.PETBACKPACK,
+    }
+    for _, bag_code in ipairs(bag_code_list) do
+        if bag_code then
+            local bag_list = backModel:getBagItemList(bag_code) or {}
+            for _, v in pairs(bag_list) do
+                if checkGemMatchSlot(v, self.click_pos, self.gem_type) then
+                    found[v.id] = v
+                end
+            end
+        end
+    end
+
+    self.gem_list = {}
+    for _, v in pairs(found) do
+        table_insert(self.gem_list, v)
+    end
+    table_sort(self.gem_list, function(a, b)
+        return (a.all_score or 0) > (b.all_score or 0)
+    end)
+
+    self:buildScrollview()
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Build grid scrollview trong tab 1 (giống talent)
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:buildScrollview()
+    if self.list_view == nil then
+        local sv_size = self.lay_scrollview:getContentSize()
+        local width   = sv_size.width / 4
+        local setting = {
+            start_x = 0, space_x = 0,
+            start_y = 0, space_y = 0,
+            item_width  = width,
+            item_height = 158,
+            row = 0, col = 4,
+            need_dynamic = true,
+        }
+        self.list_view = CommonScrollViewSingleLayout.new(
+            self.lay_scrollview, cc.p(0, 0),
+            ScrollViewDir.vertical, ScrollViewStartPos.top,
+            sv_size, setting, cc.p(0, 0))
+        self.list_view:registerScriptHandlerSingle(
+            handler(self, self.createNewCell),     ScrollViewFuncType.CreateNewCell)
+        self.list_view:registerScriptHandlerSingle(
+            handler(self, self.numberOfCells),     ScrollViewFuncType.NumberOfCells)
+        self.list_view:registerScriptHandlerSingle(
+            handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex)
+        self.list_view:registerScriptHandlerSingle(
+            handler(self, self.onCellTouched),     ScrollViewFuncType.OnCellTouched)
+    end
+
+    self.list_view.time_show_index = 1
+    self.list_view:reloadData(nil)
+    if #self.gem_list > 0 then
+        self.list_view:setOnCellTouched(1)
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ScrollView cells — dùng BackPackItem (click=true)
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:createNewCell(width, height)
+    local cell = ccui.Widget:create()
+    cell:setCascadeOpacityEnabled(true)
+    cell:setAnchorPoint(0, 0)
+    cell:setContentSize(cc.size(width, height))
+    cell.item = BackPackItem.new(false, true, nil, 0.9, false)
+    cell.item:setPosition(width * 0.5, 90)
+    cell:addChild(cell.item)
+    cell.item:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+
+function HeroGemLearnPanel:numberOfCells()
+    return #self.gem_list
+end
+
+function HeroGemLearnPanel:updateCellByIndex(cell, index)
+    cell.index = index
+    local gem_vo = self.gem_list[index]
+    if not gem_vo or not gem_vo.config then
+        cell:setVisible(false)
+        return
+    end
+    cell:setVisible(true)
+    cell.item:setData(gem_vo)
+    -- Hiện selected nếu đang chọn
+    if self.select_gem_vo and self.select_gem_vo.id == gem_vo.id then
+        cell.item:setSelected(true)
+    else
+        cell.item:setSelected(false)
+    end
+end
+
+function HeroGemLearnPanel:onCellTouched(cell)
+    local gem_vo = self.gem_list[cell.index]
+    if not gem_vo then return end
+    -- Deselect cũ
+    if self.select_cell then
+        self.select_cell.item:setSelected(false)
+    end
+    self.select_cell = cell
+    cell.item:setSelected(true)
+    self:showGemInfo(gem_vo)
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Hiện thông tin ngọc đang chọn ở left panel
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:showGemInfo(gem_vo)
+    if not gem_vo or not gem_vo.config then return end
+    self.select_gem_vo = gem_vo
+
+    if self.preview_item then
+        self.preview_item:setData(gem_vo)
+    end
+    if self.gem_name then
+        self.gem_name:setString(gem_vo.config.name or "")
+    end
+    if self.gem_desc then
+        local lines = buildGemDisplayAttrLines(gem_vo)
+        self.gem_desc:setString(table.concat(lines, "\n"))
+    end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Tab 2: toàn bộ ngọc của slot này trong túi
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:loadBagTab()
+    local all_gems  = self.gem_list or {}
+    local min_size  = math.max(24, #all_gems)
+    local show_list = {}
+    for _, v in ipairs(all_gems) do
+        table_insert(show_list, v)
+    end
+    while #show_list < min_size do
+        table_insert(show_list, {sort=-1, quality=-1, gemstone_sort=-1,
+                                 eqm_star=-1, eqm_jie=-1})
+    end
+    self.bag_scrollview:setSpace(10)
+    self.bag_scrollview:setData(show_list, function(cell)
+        if cell and cell:getData() and cell:getData().config then
+            TipsManager:getInstance():showGoodsTips(cell:getData(), true)
+        end
+    end, nil, {showCheckBox=false, red_point=false, is_other=false})
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+-- Nút Khảm Ngọc - dùng 11010 vì server lưu ngọc type 51..55 trong eqm_list
+-- ─────────────────────────────────────────────────────────────────────────────
+function HeroGemLearnPanel:onClickBtnSelect()
+    if not self.select_gem_vo then
+        message("Vui lòng chọn ngọc")
+        return
+    end
+    HeroController:getInstance():sender11010(self.click_partner, self.select_gem_vo.id)
+end
+
+function HeroGemLearnPanel:onClickBtnClose()
+    controller:openHeroGemLearnPanel(false)
+end
+
+function HeroGemLearnPanel:close_callback()
+    if self.list_view then
+        self.list_view:DeleteMe()
+        self.list_view = nil
+    end
+    if self.preview_item then
+        self.preview_item:DeleteMe()
+        self.preview_item = nil
+    end
+    controller:openHeroGemLearnPanel(false)
+end

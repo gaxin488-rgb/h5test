@@ -1,0 +1,1743 @@
+--------------------------------------------
+-- 
+-- 
+---------------------------------
+local _table_insert = table.insert
+
+local BODY_TYPE = {
+    SOLDIER = 1, --士兵
+    STRONGHOLD = 2, --据点
+    OBSTACLE = 3, --障碍物
+    GRID   = 4, --击杀
+    BREED = 5, -- 增值
+    ACCELERATE = 6, --加速
+    DEADDOOR = 7, -- 生命墙
+    CANNON = 8, --炮
+    PORTAL = 9--传送门
+}
+
+local SHAPE_TYPE = {
+    EDGEBOX = 1,
+    BOX = 2,
+    CIRCLE = 3,
+    EDGESEGMENT= 4,
+    POLYGON = 5,
+    IMAGE = 6,  --图片
+    MORE_SHAPE = 7, --固定旋转 {}
+}
+
+local SHAPE_TYPE_STR = {
+    ["edgebox"] = 1,
+    ["box"] = 2,
+    ["circle"] = 3,
+    ["edgesegment"]= 4,
+    ["polygon"] = 5,
+    ["image"] = 6,  --图片
+    ["more_shape"] = 7, --固定旋转 {}
+}
+
+local CAMP_TYPE_STR = {
+    ["null"] = 0,
+    ["ally"] = 1,
+    ["enemy"] = 2,
+}
+
+Minigameview = Minigameview or BaseClass()
+
+local minigameModel = MinigameController:getInstance():getModel()
+
+function Minigameview:__init(data)
+
+	self.res_list = {
+		-- {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist},
+	}
+    self.data = data or {}
+    self.level_id = self.data.level_id or minigameModel:getLevelId()
+    self.total_mine_slodier = 0
+    self.charge_value = 10
+    self.mine_soldiers = {}
+    self.mine_soldier_basenum = 0
+    self.enemy_soldiers = {}
+    self.mine_soldier_num = 0
+    self.portal_list = {}
+    self.timeing_list = {}
+    
+    self.bodyobjects = {}
+    self.skill_list = {}
+    self.our_died_num = 0
+    self.enery_died_num = 0
+    self.game_open_time = 0
+
+    self.enemyStrongHoldMsg = {}
+
+    self.breed_index = 0
+
+    self.end_status = false
+
+	self:initUI()
+    self:register_event()
+
+    --card
+    self.mine_soldier_wave = 0
+    self.product_cards = {}
+
+    self.currentTouchID = -1
+end
+
+function Minigameview:initUI()
+    local scene = cc.Scene:createWithPhysics()
+    self.scene = scene
+    self.scene:retain()
+    if GmCmd:red_vs_debug_status() then
+        scene:getPhysicsWorld():setDebugDrawMask(true and cc.PhysicsWorld.DEBUGDRAW_ALL or cc.PhysicsWorld.DEBUGDRAW_NONE)
+    end
+	self.root = ccui.Layout:create()
+    scene:addChild(self.root)
+	local size = cc.size(display.width, display.height)
+    self.root:setContentSize(size)
+
+    local fill_view = FillView.new()
+    fill_view:setPosition(display.width*0.5, display.height*0.5)
+    self.root:addChild(fill_view)
+
+    local config = Config.MinigameMobcontrolData.data_level_info[self.level_id]
+    if config then 
+        local image_name, image_type, image_plist = minigameModel:getImageType(config.res)
+        local image_bg = createImage(self.root, PathTool.getMinigameRes(image_name, image_type, image_plist), display.width/2, display.height/2, nil, image_type == 1)
+        image_bg:setScale9Enabled(true)
+    else
+        print("error_mini_config_nil",self.level_id)
+    end
+    self.container = ccui.Layout:create()
+    self.root:addChild(self.container)
+    self.container:setContentSize(cc.size(CC_DESIGN_RESOLUTION.width, CC_DESIGN_RESOLUTION.height))
+    self.container:setAnchorPoint(cc.p(0.5, 0.5))
+    self.container:setPosition(cc.p(display.width/2, display.height/2))
+
+	self.close_btn = CustomButton.New(self.root, PathTool.getMinigameRes("txt_cn_minigame_mobcontrol_2", 0),nil, nil, LOADTEXT_TYPE)
+    self.close_btn:setAnchorPoint(cc.p(1,1))
+    self.close_btn:setPosition(display.width/2 + CC_DESIGN_RESOLUTION.width/2 - 2, display.height - 2)
+
+    self.reset_btn = CustomButton.New(self.root, PathTool.getMinigameRes("txt_cn_minigame_mobcontrol_3", 0),nil, nil, LOADTEXT_TYPE)
+    self.reset_btn:setAnchorPoint(cc.p(0.5,0.5))
+    self.reset_btn:setPosition(display.width/2 + CC_DESIGN_RESOLUTION.width/2 - 35, 580)
+
+    self.auto_btn = CustomButton.New(self.root, PathTool.getMinigameRes("minigame_mobcontrol_78", 1),nil, nil, LOADTEXT_TYPE_PLIST)
+    self.auto_btn:setAnchorPoint(cc.p(0.5,0.5))
+    self.auto_btn:setPosition(display.width/2 + CC_DESIGN_RESOLUTION.width/2 - 35, 300)
+    self.auto_btn.auto_status = false
+    setChildUnEnabled(not self.auto_btn.auto_status, self.auto_btn:getRoot())
+
+    -- local image1 = createImage(self.root, PathTool.getResFrame("common", "common_1_20", nil, "common_1"), size.width/2 + CC_DESIGN_RESOLUTION.width/2, 260, cc.p(1, 0.5), true)
+    -- local image2 = createImage(image1, PathTool.getMinigameRes("minigame_mobcontrol_32", 1), 0, image1:getContentSize().height/2, cc.p(0.5, 0.5), true)
+    -- local size = image1:getContentSize()
+    -- self.card_num = createLabel(22, 1, cc.c3b(5, 40, 48), size.width/2, size.height/2, "x0", image1, 1, cc.p(0.5, 0.5))
+
+    local body = self:createObjectEdgeBox()
+    body:setVisible(false)
+    self:configCardView()
+    --objects
+    self:createObjects()
+
+    --tips
+    local node = cc.Node:create()
+    self.root:addChild(node, 999)
+    node:setPosition(cc.p(display.width/2, 450 + (display.height - CC_DESIGN_RESOLUTION.height)/2))
+    local label = createLabel(35, 1, cc.c3b(0x14, 0x23, 0x1a), 0, 0, TI18N("语言_c_g_104"), node, 4, cc.p(0.5, 0.5))
+    local image1 = createImage(node, PathTool.getMinigameRes("minigame_mobcontrol_65", 1), 0, 0, cc.p(0, 0.5), true)
+    local image2 = createImage(node, PathTool.getMinigameRes("minigame_mobcontrol_65", 1), 0, 0, cc.p(0, 0.5), true)
+    image1:setFlippedX(true)
+    self.tips_node = node
+    image1:setPosition(cc.p(-label:getContentSize().width/2 - 5, 0))
+    image2:setPosition(cc.p(label:getContentSize().width/2 + 10, 0))
+    self:changeAutoState()
+end
+
+function Minigameview:configCardView()
+    local card_view = MinigameCardview.new(self)
+    self.root:addChild(card_view, 666)
+    self.card_view = card_view
+    self.card_view:setPosition(cc.p(self.root:getContentSize().width/2, 110))
+    self.card_view:setAutoStatus(self.auto_btn.auto_status)
+end
+
+function Minigameview:play()
+    if not GameNet then
+        require("sys.net.gamenet") 
+    end
+    self.tips_node:setVisible(false)
+    self:onTrack()
+    if self.hold_timer then
+        cc.Director:getInstance():getScheduler():unscheduleScriptEntry(self.hold_timer)
+        self.hold_timer = nil
+    end
+    self.game_open_time = GameNet:getInstance():getTimeFloat()
+    local cd_num = 1
+    self.hold_timer = cc.Director:getInstance():getScheduler():scheduleScriptFunc(function(dt)
+        cd_num = cd_num - 1
+        if cd_num <= 0 then
+            cd_num = 1
+            local new_list = clone(self.mine_soldiers)
+            table.sort(new_list, function(a, b) 
+                if a and not tolua.isnull(a) and b and not tolua.isnull(b) then
+                    return a:getPositionY() > b:getPositionY()
+                end
+                return false
+            end)
+            for i, v in ipairs(new_list) do
+                if v and not tolua.isnull(v) and v.getPhysicsBody and v:getPhysicsBody() then
+                    if not v.die_status then
+                        v:setLocalZOrder(CC_DESIGN_RESOLUTION.height -  v:getPositionY())
+                        if v:getPositionY() >= Config.MinigameMobcontrolData.data_const["constant_finish"].val[2] then
+                            local cur_pos = cc.p(v:getPosition())
+                            --寻找敌方据点目标
+                            local tar_pos = nil
+                            for p, q in ipairs(self.enemyStrongHoldMsg) do
+                                if q.body and not tolua.isnull(q.body) and not q.body.die_status then
+                                    local e_pos = cc.p(q.body:getPosition())
+                                    if tar_pos and cc.pGetDistance(cur_pos, e_pos) < cc.pGetDistance(cur_pos, tar_pos) then
+                                        tar_pos = e_pos
+                                    else
+                                        tar_pos = tar_pos or e_pos
+                                    end
+                                end
+                            end
+
+                            if tar_pos then
+                                local speed = v.speed
+                                local d_x = math.abs(tar_pos.x - cur_pos.x)
+                                local d_y = math.abs(tar_pos.y - cur_pos.y)
+                                local sp_x = math.sqrt(d_x*d_x/(d_x*d_x + d_y*d_y)*speed*speed)
+                                local sp_y = math.sqrt(d_y*d_y/(d_x*d_x + d_y*d_y)*speed*speed)
+                                local symbol_x = 1
+                                local symbol_y = 1
+                                if tar_pos.x - cur_pos.x > 0 then
+                                    symbol_x = 1
+                                else
+                                    symbol_x = -1
+                                end
+                                if tar_pos.y - cur_pos.y > 0 then
+                                    symbol_y = 1
+                                else
+                                    symbol_y = -1
+                                end
+                                v:getPhysicsBody():setVelocity(cc.p(symbol_x*sp_x, symbol_y*sp_y))
+                            else
+                                if self.hold_timer then
+                                    cc.Director:getInstance():getScheduler():unscheduleScriptEntry(self.hold_timer)
+                                    self.hold_timer = nil
+                                end
+                                self:resetPlay(1)
+                                return
+                            end
+                        else
+                            local a_v_pos = v:getPhysicsBody():getVelocity()
+                            if v.speed - a_v_pos.y > 0 or a_v_pos.x ~= 0 then
+                                v:getPhysicsBody():setVelocity(cc.p(0, v.speed))
+                            end
+                        end
+
+                        --判断技能条件生效
+                        for p, q in pairs(self.skill_list) do
+                            local s_cfg = Config.MinigameMobcontrolData.data_skill_info[q.skill_id]
+                            if s_cfg then
+                                if s_cfg.trigger_cond[1] and s_cfg.trigger_cond[1] == "strikdistance" then
+                                    local s_pos_y = v:getPositionY()
+                                    if Config.MinigameMobcontrolData.data_const["constant_finish"].val[1] - s_pos_y <= s_cfg.trigger_cond[2] then
+                                        q.value = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        v:getPhysicsBody():setDynamic(false)
+                    end
+                end
+            end
+            local new_list = clone(self.enemy_soldiers)
+            table.sort(new_list, function(a, b) 
+                if a and not tolua.isnull(a) and b and not tolua.isnull(b) then
+                    return a:getPositionY() < b:getPositionY()
+                end
+                return false
+            end)
+            for i, v in ipairs(new_list) do
+                if v and not tolua.isnull(v) and v.getPhysicsBody and v:getPhysicsBody() then
+                    if not v.die_status then
+                        v:setLocalZOrder(CC_DESIGN_RESOLUTION.height - v:getPositionY())
+                        if v:getPositionY() <= Config.MinigameMobcontrolData.data_const["constant_finish"].val[1] then
+                            if self.hold_timer then
+                                cc.Director:getInstance():getScheduler():unscheduleScriptEntry(self.hold_timer)
+                                self.hold_timer = nil
+                            end
+                            self:resetPlay(0)
+                            return
+                        else
+                            local a_v_pos = v:getPhysicsBody():getVelocity()
+                            if v.speed + a_v_pos.y > 0 or a_v_pos.x ~= 0  then
+                                v:getPhysicsBody():setVelocity(cc.p(0, -v.speed))
+                            end
+                        end
+
+                        --判断技能条件生效
+                        for p, q in pairs(self.skill_list) do
+                            local s_cfg = Config.MinigameMobcontrolData.data_skill_info[q.skill_id]
+                            if s_cfg then
+                                if s_cfg.trigger_cond[1] and s_cfg.trigger_cond[1] == "alertdistance" then
+                                    local s_pos_y = v:getPositionY()
+                                    if Config.MinigameMobcontrolData.data_const["constant_finish"].val[1] - s_pos_y <= s_cfg.trigger_cond[2] then
+                                        q.value = true
+                                        break
+                                    end
+                                end
+                            end
+                        end
+                    else
+                        v:getPhysicsBody():setDynamic(false)
+                    end
+                end
+            end
+        end
+        local val = Config.MinigameMobcontrolData.data_const["simulation_card_cost"].val
+        local is_product = (self.mine_soldier_basenum - self.mine_soldier_num) >= val--math.floor(self.mine_soldier_basenum/Config.MinigameMobcontrolData.data_const["simulation_card_cost"].val)
+        if is_product and self.card_view:getCardCount() < 5 then
+            local card_pool = {101, 201, 301, 401, 501}
+            local random_seed = Config.MinigameMobcontrolData.data_const["simulation_card_drop_rate"].val
+            local random_num = math.random(1, 10000)
+            local card_id = card_pool[1]
+            local count = 0
+            for i, v in ipairs(random_seed) do
+                count = count + v[2]*100
+                if random_num <= count then
+                    card_id = v[1]
+                    break
+                end
+            end
+            local size = self.mineCannon:getContentSize()
+            local pos = self.mineCannon:convertToWorldSpace(cc.p(0,size.height * 0.5))
+            self.card_view:addCardItem(card_id, pos)
+            self.mine_soldier_num = self.mine_soldier_num + val
+        end
+
+        local die_num = 0
+        for i, v in ipairs(self.enemyStrongHoldMsg) do
+            if v.body and not tolua.isnull(v.body) then
+                local body = v.body
+                if body.die_status then
+                    die_num = die_num + 1
+                else
+                    body.timing = body.timing + dt
+                    if body.timing >= body.born_time then
+                        body.timing = 0
+                        body.mine_soldier_wave = body.mine_soldier_wave + 1
+                        local product_down = body.product_down or 0 
+                        for n = 1, (body.each_inc - product_down) do
+                            self:createEnemySoldier(body) 
+                        end
+                        if body.product_up and body.product_up > 0 and body.mine_soldier_wave - body.product_wave >= body.product_round then
+                            body.product_round = 0
+                            body.product_wave = 0
+                            body.product_down = 0
+                        end
+                    end
+                end
+            end
+        end
+        if self.mineCannon and not self.mineCannon.die_status then
+            self.mineCannon.timing = self.mineCannon.timing + dt
+            if self.mineCannon.timing >= self.mineCannon.born_time then
+                self.mineCannon.timing = 0
+                self.mineCannon.mine_soldier_wave = self.mineCannon.mine_soldier_wave + 1
+                local product_up = self.mineCannon.product_up  
+                if self.mineCannon.setAnimation then
+                    local is_active = false
+                    for i, v in ipairs(self.product_cards) do
+                        is_active = v.is_active 
+                        if is_active then
+                            break
+                        end
+                    end
+                    local action_name = is_active and "action3" or "action2"
+                    self.mineCannon:setAnimation(0, action_name, false)
+                    local config = Config.MinigameMobcontrolData.data_obj_info[self.mineCannon.obj_id]
+                    if AudioManager then
+                        AudioManager:getInstance():playEffectForHandAudoRemove(AudioManager.AUDIO_TYPE.BATTLE,config.sound)
+                    end
+                end
+                for n = 1, (self.mineCannon.each_inc + product_up) do
+                    local node = self:createMineSoldier(nil, nil, nil, n<=self.mineCannon.each_inc) 
+                    node:getPhysicsBody():setVelocity(cc.p(0, 0))
+                    local pos = cc.p(node:getPosition())
+                    node:setPosition(cc.p(pos.x + math.random(-15, 15), pos.y +  math.random(-15, 15)))
+                    node:runAction(cc.Sequence:create(cc.MoveBy:create(0.2, cc.p(0, 50)), cc.CallFunc:create(function() 
+                        if node and not tolua.isnull(node) and node.getPhysicsBody and node:getPhysicsBody() then
+                            node:getPhysicsBody():setVelocity(cc.p(0, node.speed)) 
+                        end
+                    end)))           
+                end
+                for i, v in ipairs(self.product_cards) do
+                    if v.is_active then
+                        if (self.mineCannon.mine_soldier_wave - v.mine_soldier_wave_init) <= v.param[3]  then
+                            for i = 1, v.param[2], 1 do
+                                local node = self:createMineSoldier() 
+                                node:getPhysicsBody():setVelocity(cc.p(0, 0))
+                                local pos = cc.p(node:getPosition())
+                                node:setPosition(cc.p(pos.x + math.random(-15, 15), pos.y +  math.random(-15, 15)))
+                                node:runAction(cc.Sequence:create(cc.MoveBy:create(0.2, cc.p(0, 50)), cc.CallFunc:create(function() 
+                                    if node and not tolua.isnull(node) and node.getPhysicsBody and node:getPhysicsBody() then
+                                        node:getPhysicsBody():setVelocity(cc.p(0, node.speed)) 
+                                    end
+                                end)))   
+                            end
+                        else
+                            v.is_active = false
+                        end
+                    end
+                end 
+                if self.mineCannon.product_up and self.mineCannon.product_up > 0 and self.mineCannon.mine_soldier_wave - self.mineCannon.product_wave >= self.mineCannon.product_round then
+                    self.mineCannon.product_round = 0
+                    self.mineCannon.product_wave = 0
+                    self.mineCannon.product_up = 0
+                end
+            end
+        end
+        --出现消失
+        for k, v in pairs(self.timeing_list) do
+            if v and not tolua.isnull(v) then
+                if v.over_time ~= 0 then
+                    local init_time = v.init_time
+                    local refresh_time = v.refresh_time
+                    local cur_time = GameNet:getInstance():getTimeFloat()
+                    if v.first_status == true then
+                        if v.is_visible then
+                            if cur_time - refresh_time > v.over_time then
+                                v:runAction(cc.FadeOut:create(0.0))
+                                v.refresh_time = GameNet:getInstance():getTimeFloat()
+                                v.is_visible = false
+                            end
+                        else
+                            if cur_time - refresh_time > v.revival_time then
+                                v:runAction(cc.FadeIn:create(0.0))
+                                v.refresh_time = GameNet:getInstance():getTimeFloat()
+                                v.is_visible = true
+                            end
+                        end
+                    end
+                    if not v.first_status and (cur_time - init_time > v.first_time) then
+                        v.first_status = true
+                        if v.is_visible then
+                            v:runAction(cc.FadeOut:create(0.0))
+                            v.is_visible = false
+                        else
+                            v:runAction(cc.FadeIn:create(0.0))
+                            v.is_visible = true
+                        end
+                        v.refresh_time = GameNet:getInstance():getTimeFloat()
+                    end
+                end
+            end
+        end
+        --技能
+        for k, v in pairs(self.skill_list) do
+            local s_cfg = Config.MinigameMobcontrolData.data_skill_info[v.skill_id]
+            if s_cfg then
+                if v.effective_num < s_cfg.count_limit  then  --次数
+                    local cur_time = GameNet:getInstance():getTimeFloat() 
+                    if s_cfg.skill_type == 1 then
+                        if cur_time - v.cd_time >= s_cfg.skill_cd/1000 then--时间
+                            v.cd_time = GameNet:getInstance():getTimeFloat()
+                            v.effective_num =  v.effective_num + 1
+                            self:triggerSkill(v.skill_id)
+                        end
+                    elseif s_cfg.skill_type == 2 then
+                        if self:checkSkillActivation(v) then
+                            if v.effective_num == 0 or (cur_time - v.cd_time >= s_cfg.skill_cd/1000) then--时间
+                                v.cd_time = GameNet:getInstance():getTimeFloat()
+                                v.effective_num =  v.effective_num + 1
+                                self:triggerSkill(v.skill_id)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        --判断物件持续时间结束
+        for k, v in pairs(self.bodyobjects) do
+            if v and v.lasttime and not tolua.isnull(v) and v.getPhysicsBody and v:getPhysicsBody() then
+                local cur_time = GameNet:getInstance():getTimeFloat()
+                if cur_time - v.begintime >= v.lasttime then
+                    v:removeComponent(v:getPhysicsBody())
+                    v:stopAllActions()
+                    v:removeFromParent()
+                    v = nil
+                    break
+                end
+            end
+        end
+        self.card_view:updateCdUI()
+        self.card_view:autoUseCard()
+    end, 0.00, false)
+end
+
+function Minigameview:checkSkillActivation(info)
+    if info.value then
+        return true
+    end
+    local value = false
+    local s_cfg = Config.MinigameMobcontrolData.data_skill_info[info.skill_id]
+    if s_cfg and s_cfg.trigger_cond[1] then 
+        if s_cfg.trigger_cond[1] == "objhpbellow" then
+            local body = self.bodyobjects[s_cfg.trigger_cond[2]]
+            if body and not tolua.isnull(body) then
+                if body.hp <= s_cfg.trigger_cond[3] then
+                    value = true
+                end
+            else
+                value = true
+            end
+        elseif s_cfg.trigger_cond[1] == "alertdistance" then
+            value = info.value
+        elseif s_cfg.trigger_cond[1] == "strikdistance" then
+            value = info.value
+        elseif s_cfg.trigger_cond[1] == "ally_dead_count" then
+            value = self.our_died_num >= s_cfg.trigger_cond[2]
+        elseif s_cfg.trigger_cond[1] == "enemy_kill_count" then
+            value = self.enery_died_num >= s_cfg.trigger_cond[2]
+        elseif s_cfg.trigger_cond[1] == "time_count" then
+            value = (GameNet:getInstance():getTimeFloat() - self.game_open_time) >= s_cfg.trigger_cond[2]
+        end
+    end
+    info.value = value
+    return value
+end
+
+function Minigameview:changeAutoState()
+    if self.auto_btn then
+        self.auto_btn.auto_status = not self.auto_btn.auto_status
+        setChildUnEnabled(not self.auto_btn.auto_status, self.auto_btn:getRoot())
+        self.card_view:changeAutoState()
+    end
+end
+
+function Minigameview:register_event(  ) 
+    handleTouchEnded(self.close_btn, function()
+        local str = TI18N("语言_c_1117")
+        local confirm_callback = function ( ... )
+            self:resetPlay(0)
+        end
+        MinigameAlert.new(self.root, confirm_callback)
+    end)
+    handleTouchEnded(self.reset_btn, function()
+        local str = TI18N("语言_c_1117")
+        local label_list = {content = TI18N("语言_c_g_93"),
+                            title = TI18N("语言_c_154"),
+                            ok_label = TI18N("语言_c_645"),
+                            cancel_label = TI18N("语言_c_1119"),
+                        }
+        local confirm_callback = function ( ... )
+            self:resetPlay()
+        end
+        MinigameAlert.new(self.root, confirm_callback, label_list)
+    end)
+    handleTouchEnded(self.auto_btn, function()
+        self:changeAutoState()
+    end)
+
+    local onContactBegin = function(contact)
+        local a_node = contact:getShapeA():getBody():getNode()
+        a_node.begin_pos = cc.p(a_node:getPosition())
+        local b_node = contact:getShapeB():getBody():getNode()
+        b_node.begin_pos = cc.p(b_node:getPosition())
+        if a_node.body_type == BODY_TYPE.SOLDIER and b_node.body_type == BODY_TYPE.SOLDIER then
+            return true
+        end
+        if (a_node.body_type == BODY_TYPE.OBSTACLE and not a_node.is_visible) or (b_node.body_type == BODY_TYPE.OBSTACLE and not b_node.is_visible) then
+            return false
+        end
+        if a_node.body_type == BODY_TYPE.PORTAL or b_node.body_type == BODY_TYPE.PORTAL then
+            if a_node.body_type == BODY_TYPE.SOLDIER and b_node.is_visible then
+                a_node.portal_list = a_node.portal_list or {}
+                if not a_node.portal_list[b_node.obj_id] then
+                    local t_node = self.portal_list[b_node.portal_pos]
+                    a_node:runAction(cc.Place:create(cc.p(t_node:getPosition())))
+                    a_node.is_crossed = true 
+    
+                    a_node.portal_list[b_node.obj_id] = 1
+                    a_node.portal_list[b_node.portal_pos] = 1
+                end
+            elseif b_node.body_type == BODY_TYPE.SOLDIER and a_node.is_visible then
+                b_node.portal_list = b_node.portal_list or {}
+                if not b_node.portal_list[a_node.obj_id] then
+                    local t_node = self.portal_list[a_node.portal_pos]
+                    b_node:runAction(cc.Place:create(cc.p(t_node:getPosition())))
+                    b_node.is_crossed = true 
+                    b_node.portal_list = a_node.portal_list or {}
+                    b_node.portal_list[a_node.obj_id] = 1
+                    b_node.portal_list[a_node.portal_pos] = 1
+                end
+            end
+            return false
+        end
+        if not (a_node.body_type == BODY_TYPE.SOLDIER or b_node.body_type == BODY_TYPE.SOLDIER) then
+            return false
+        end
+        if ((a_node.body_type == BODY_TYPE.GRID or b_node.body_type == BODY_TYPE.GRID) and a_node.camp_type == b_node.camp_type) or
+        (a_node.body_type == BODY_TYPE.GRID and not a_node.is_visible) or 
+        (b_node.body_type == BODY_TYPE.GRID and not b_node.is_visible)  then
+            return false
+        end
+        if (a_node.body_type == BODY_TYPE.STRONGHOLD or b_node.body_type == BODY_TYPE.STRONGHOLD) and a_node.camp_type == b_node.camp_type then
+            return false
+        end
+        if a_node.body_type == BODY_TYPE.BREED or b_node.body_type == BODY_TYPE.BREED then
+            if a_node.body_type == BODY_TYPE.SOLDIER and a_node.camp_type == b_node.camp_type then
+                if not a_node.breed_name or (a_node.breed_name ~= b_node:getName()) then
+                    self.container:runAction(cc.CallFunc:create(function()
+                        for i = 2, b_node.add_value, 1 do
+                            local body = self:createMineSoldier(a_node)
+                            body.breed_name = b_node:getName()
+                        end
+                    end))
+                end
+            elseif a_node.camp_type == b_node.camp_type then
+                if not b_node.breed_name or (b_node.breed_name ~= a_node:getName()) then
+                    self.container:runAction(cc.CallFunc:create(function()
+                        for i = 2, a_node.add_value, 1 do
+                            local body = self:createMineSoldier(b_node)
+                            body.breed_name = a_node:getName()
+                        end
+                    end))
+                end
+            end
+            return false
+        end
+        if a_node.body_type == BODY_TYPE.ACCELERATE or b_node.body_type == BODY_TYPE.ACCELERATE then
+            if a_node.body_type == BODY_TYPE.SOLDIER and a_node.camp_type == b_node.camp_type then
+                a_node.speed = a_node.speed*b_node.add_speed
+                local modulus = 1
+                if a_node.camp_type == 2 then
+                    modulus = -1
+                end
+                if not a_node.die_status and a_node.getPhysicsBody and a_node:getPhysicsBody() then
+                    a_node:getPhysicsBody():setVelocity(cc.p(0, a_node.speed*modulus))
+                end
+            elseif b_node.body_type == BODY_TYPE.SOLDIER and a_node.camp_type == b_node.camp_type then
+                b_node.speed = b_node.speed*a_node.add_speed
+                local modulus = 1
+                if a_node.camp_type == 2 then
+                    modulus = -1
+                end
+                if not b_node.die_status and b_node.getPhysicsBody and b_node:getPhysicsBody() then
+                    b_node:getPhysicsBody():setVelocity(cc.p(0, b_node.speed*modulus))
+                end
+            end
+            return false
+        end
+        return true
+    end
+
+    local onContactPreSolve = function(contact, solve)
+        local a_node = contact:getShapeA():getBody():getNode()
+        local b_node = contact:getShapeB():getBody():getNode()
+        if (a_node.body_type == BODY_TYPE.OBSTACLE and not a_node.is_visible) or (b_node.body_type == BODY_TYPE.OBSTACLE and not b_node.is_visible) then
+            return false
+        end
+        return true
+    end
+
+    local onContactPostSolve = function(contact)
+        local a_node = contact:getShapeA():getBody():getNode()
+        local b_node = contact:getShapeB():getBody():getNode()
+        if not a_node or tolua.isnull(a_node) or not b_node or tolua.isnull(b_node) or a_node.body_type == BODY_TYPE.OBSTACLE or b_node.body_type == BODY_TYPE.OBSTACLE then
+            return
+        end
+        if not a_node or not b_node or a_node.body_type == BODY_TYPE.BREED or b_node.body_type == BODY_TYPE.BREED then
+            return
+        end 
+        local makeNodeDied = function(node, new_hp)
+            if node.die_status or (not node.getPhysicsBody or not node:getPhysicsBody()) then
+                return
+            end
+            if node.body_type == BODY_TYPE.OBSTACLE then
+                return
+            end
+            
+            if node.body_type == BODY_TYPE.SOLDIER or 
+            node.body_type == BODY_TYPE.STRONGHOLD or 
+            -- node.body_type == BODY_TYPE.GRID or 
+            node.body_type == BODY_TYPE.DEADDOOR then
+                if new_hp <= 0 then
+                    node.hp = 0
+                    node.die_status = true
+                    if node.body_type == BODY_TYPE.SOLDIER then
+                        node:getPhysicsBody():setVelocity(cc.p(0, 0))
+                        if node.camp_type == 1 then
+                            self.our_died_num = self.our_died_num + 1
+                        else
+                            self.enery_died_num = self.enery_died_num + 1
+                        end
+                    end
+                    node:stopAllActions()
+                    local base_cfg = Config.MinigameMobcontrolData.data_const["death_delay"] or {}
+                    local val = base_cfg.val or 500
+                    node:runAction(cc.Sequence:create(cc.DelayTime:create(val/1000), cc.RemoveSelf:create()))
+                else
+                    node.hp = new_hp
+                    if node.body_type == BODY_TYPE.SOLDIER then
+                        node:setScale(node.hp^(1/3))--(node.hp/node.total_hp)
+                    end
+                    if node.ui_hp then
+                        --
+                        local percent = math.min(math.max(0, node.hp)/node.total_hp*100,100)
+                        node.comp_bar:setPercent(percent)
+                        node.ui_hp:setString(string.format("%s/%s",node.hp, node.total_hp))
+                    end
+                end
+                node = nil
+            end
+        end
+        -- 士兵 vs 士兵
+        if a_node.camp_type ~= b_node.camp_type then
+        -- if (a_node.body_type == BODY_TYPE.SOLDIER and b_node.body_type == BODY_TYPE.SOLDIER and a_node.camp_type ~= b_node.camp_type) or 
+        --  ((a_node.body_type == BODY_TYPE.SOLDIER and b_node.body_type == BODY_TYPE.STRONGHOLD) or (b_node.body_type == BODY_TYPE.SOLDIER and a_node.body_type == BODY_TYPE.STRONGHOLD)) or 
+        --  ((a_node.body_type == BODY_TYPE.SOLDIER and b_node.body_type == BODY_TYPE.GRID) or (b_node.body_type == BODY_TYPE.SOLDIER and a_node.body_type == BODY_TYPE.GRID)) or 
+        --  ((a_node.body_type == BODY_TYPE.SOLDIER and b_node.body_type == BODY_TYPE.DEADDOOR) or (b_node.body_type == BODY_TYPE.SOLDIER and a_node.body_type == BODY_TYPE.DEADDOOR)) then
+            local a_hp = a_node.hp or 0
+            local b_hp = b_node.hp or 0
+            local new_a_hp = a_hp - b_hp
+            local new_b_hp = b_hp - a_hp
+            if a_node.body_type == BODY_TYPE.GRID then
+                new_b_hp = 0
+                new_a_hp = 10000
+            end
+            if b_node.body_type == BODY_TYPE.GRID then
+                new_a_hp = 0
+                new_b_hp = 10000
+            end
+            makeNodeDied(a_node, new_a_hp)
+            makeNodeDied(b_node, new_b_hp)
+        end 
+    end
+    local onContactSeperate = function(contact)
+        local a_node = contact:getShapeA():getBody():getNode()
+        local b_node = contact:getShapeB():getBody():getNode()
+        -- if a_node and a_node.body_type == BODY_TYPE.SOLDIER and a_node:getPhysicsBody():isDynamic() then
+        --     local modulus = 1
+        --     if a_node.camp_type == 2 then
+        --         modulus = -1
+        --     end
+        --     a_node:getPhysicsBody():setVelocity(cc.p(0, a_node.speed*modulus))
+        -- end
+        -- if b_node and b_node.body_type == BODY_TYPE.SOLDIER and b_node:getPhysicsBody():isDynamic() then
+        --     local modulus = 1
+        --     if b_node.camp_type == 2 then
+        --         modulus = -1
+        --     end
+        --     b_node:getPhysicsBody():setVelocity(cc.p(0, b_node.speed*modulus))
+        -- end
+    end
+	local contactListener = cc.EventListenerPhysicsContact:create()
+	contactListener:registerScriptHandler(onContactBegin, cc.Handler.EVENT_PHYSICS_CONTACT_BEGIN)
+    contactListener:registerScriptHandler(onContactPreSolve, cc.Handler.EVENT_PHYSICS_CONTACT_PRESOLVE)
+    contactListener:registerScriptHandler(onContactPostSolve, cc.Handler.EVENT_PHYSICS_CONTACT_POSTSOLVE)
+    contactListener:registerScriptHandler(onContactSeperate, cc.Handler.EVENT_PHYSICS_CONTACT_SEPARATE)
+    local eventDispatcher = self.container:getEventDispatcher()
+    eventDispatcher:addEventListenerWithSceneGraphPriority(contactListener, self.container)
+
+    local touch_pos = nil
+    local touch_card = false
+	local function onTouchBegan(touch, event)
+        if self.currentTouchID < 0 then
+            self.currentTouchID = touch:getId()
+        else
+            return false
+        end
+        touch_pos = touch:getLocation()
+        if not self.hold_timer then
+            return true
+        end
+        local rect = self.card_view:getBoundingBox()
+        touch_card = cc.rectContainsPoint(rect, touch_pos) 
+        if touch_card then
+            self.card_view:onTouch(touch, ccui.TouchEventType.began)
+        end
+        return true
+    end
+
+    local function onTouchMoved(touch, event)
+        if self.currentTouchID ~= touch:getId() then
+            return
+        end
+        if touch_card then
+            self.card_view:onTouch(touch, ccui.TouchEventType.moved)
+        else
+            local last_point = touch:getDelta()
+            if not self.mineCannon or tolua.isnull(self.mineCannon) then
+                return
+            end
+            local body = self.mineCannon
+            local x = body:getPositionX() + last_point.x
+            x = math.max(x, 130)
+            x = math.min(x, 590)
+            body:setPosition(cc.p(x, body:getPositionY()))
+
+            if not self.hold_timer and not self.end_status then
+                self:play()
+            end
+        end
+    end
+
+    local function onTouchEnded(touch, event)
+        if self.currentTouchID == touch:getId() then
+            self.currentTouchID = -1
+        else
+            return
+        end
+        local end_pos = touch:getLocation()
+        touch_pos = nil
+        if touch_card then
+            self.card_view:onTouch(touch, ccui.TouchEventType.ended)
+        end
+        touch_card = false
+    end
+    local listener = cc.EventListenerTouchOneByOne:create()
+    listener:registerScriptHandler(onTouchBegan,cc.Handler.EVENT_TOUCH_BEGAN)
+    listener:registerScriptHandler(onTouchMoved,cc.Handler.EVENT_TOUCH_MOVED)
+    listener:registerScriptHandler(onTouchEnded,cc.Handler.EVENT_TOUCH_ENDED)
+    local eventDispatcher = cc.Director:getInstance():getEventDispatcher()
+    eventDispatcher:addEventListenerWithSceneGraphPriority(listener,self.container)
+    self.touch_listener = listener
+end
+
+--物件------------------------
+function Minigameview:createObjectModel(info)
+    info.have_event = false
+    -- local config = Config.MinigameData.data_object_data[info[1]]
+    local shape_type = info.shape_type --config.shape_param[1]
+    local body = nil
+    if shape_type == SHAPE_TYPE.EDGEBOX then
+        body = self:createObjectEdgeBox(info)
+    elseif shape_type == SHAPE_TYPE.BOX then
+        body = self:createObjectBox(info)
+    elseif shape_type == SHAPE_TYPE.CIRCLE then
+        body = self:createObjectCircle(info)
+    elseif shape_type == SHAPE_TYPE.EDGESEGMENT then
+        body = self:createObjectEdgeSegment(info)
+    elseif shape_type == SHAPE_TYPE.POLYGON then
+        body = self:createObjectPolygon(info)
+    elseif shape_type == SHAPE_TYPE.IMAGE then
+        body = self:createImage(info)
+    elseif shape_type == SHAPE_TYPE.MORE_SHAPE then
+        body = self:createObjectBox(info)
+        if info.anchorpoint then
+            body:setAnchorPoint(cc.p(info.anchorpoint[1], info.anchorpoint[2]))
+        end
+        if info.obj_param[1] == "cross" then
+            body:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.RotateBy:create(info.obj_param[3] or 5, 360), cc.CallFunc:create(function()
+                body:setRotation(0)
+            end))))
+        elseif info.obj_param[1] == "sector" then
+            body:setRotation(info.obj_param[2])
+            body:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.RotateBy:create(info.obj_param[4] or 3, -info.obj_param[3]),cc.DelayTime:create(info.obj_param[5] or 0), cc.RotateBy:create(info.obj_param[4] or 3, info.obj_param[3]),cc.DelayTime:create(info.obj_param[5] or 0))))
+        end
+    end
+    if body then
+        body.obj_id = info.obj_id
+        body.body_type = info.body_type
+        body.total_hp = info.hp
+        body.hp = info.hp
+        body.camp_type = info.camp_type or 0
+        body.speed = info.speed or 0
+        if shape_type == SHAPE_TYPE.IMAGE then
+            if info.obj_param[1] == "down" then
+                body:setLocalZOrder(0)
+            elseif info.obj_param[1] == "up" then
+                body:setLocalZOrder(2000)
+            end
+        else
+            body:setLocalZOrder(CC_DESIGN_RESOLUTION.height - body:getPositionY())
+        end
+        --碰撞回调设置
+        if body.body_type == BODY_TYPE.SOLDIER and body.camp_type == 1 then
+            if body.getPhysicsBody and body:getPhysicsBody() then
+                body:getPhysicsBody():setCategoryBitmask(4)
+                body:getPhysicsBody():setCollisionBitmask(7)
+                body:getPhysicsBody():setContactTestBitmask(3)
+            end
+        elseif body.body_type == BODY_TYPE.SOLDIER and body.camp_type == 2 then
+            if body.getPhysicsBody and body:getPhysicsBody() then
+                body:getPhysicsBody():setCategoryBitmask(2)
+                body:getPhysicsBody():setCollisionBitmask(7)
+                body:getPhysicsBody():setContactTestBitmask(5)
+            end
+        else
+            if body.body_type == BODY_TYPE.OBSTACLE then
+                if info.config.id then
+                    if (info.config.type == SHAPE_TYPE.POLYGON ) then
+                        if body.getPhysicsBody and body:getPhysicsBody() then
+                            body:getPhysicsBody():setCategoryBitmask(1)
+                            body:getPhysicsBody():setCollisionBitmask(6)
+                            body:getPhysicsBody():setContactTestBitmask(0)
+                        end
+                    elseif info.config.type == SHAPE_TYPE.MORE_SHAPE then
+                        if body.getPhysicsBody and body:getPhysicsBody() then
+                            body:getPhysicsBody():setCategoryBitmask(1)
+                            body:getPhysicsBody():setCollisionBitmask(6)
+                            body:getPhysicsBody():setContactTestBitmask(0)
+                        end
+                    end
+                else
+                    if body.getPhysicsBody and body:getPhysicsBody() then
+                        body:getPhysicsBody():setCategoryBitmask(1)
+                        body:getPhysicsBody():setCollisionBitmask(6)
+                        body:getPhysicsBody():setContactTestBitmask(6)
+                    end
+                end
+            else
+                if shape_type ~= SHAPE_TYPE.IMAGE then
+                    if body.getPhysicsBody and body:getPhysicsBody() then
+                        body:getPhysicsBody():setCategoryBitmask(1)
+                        body:getPhysicsBody():setCollisionBitmask(6)
+                        body:getPhysicsBody():setContactTestBitmask(6)
+                    end
+                end
+            end
+        end
+    end
+    return body
+end
+
+function Minigameview:createMapInfo(v)
+    local cfg = v
+    local item = {
+        obj_id = cfg.id,
+        config = cfg,
+        shape_type = cfg.type,
+        body_type  = BODY_TYPE.OBSTACLE,
+        param      = {},
+        node_pos   = cfg.obj_pos,
+        have_event = false,
+        camp_type  = 0,
+        other_shape = {},
+        hp = -1,
+    }
+    if cfg.type == SHAPE_TYPE.EDGESEGMENT then
+        item.param = {cfg.rigid_body[2], cfg.rigid_body[3],cfg.rigid_body[4]}
+    elseif cfg.type == SHAPE_TYPE.POLYGON then
+        for i, v in ipairs(cfg.rigid_body) do
+            if i > 1 then
+                item.param[#item.param + 1] = v
+            end
+        end
+        item.have_event = true
+    elseif cfg.type == SHAPE_TYPE.IMAGE then
+        item.obj_param = cfg.obj_param
+    elseif cfg.type == SHAPE_TYPE.MORE_SHAPE then
+        item.param = cfg.rigid_body[2]
+        item.anchorpoint = cfg.rigid_body[3]
+        item.obj_param = cfg.obj_param
+        if cfg.obj_param[1] == "cross" then
+            item.other_shape = {cfg.rigid_body[2][2], cfg.rigid_body[2][1]}
+        end
+        item.have_event = true
+    end
+    local body = self:createObjectModel(item)
+    body.is_visible = true
+end
+
+function Minigameview:createSkill()
+    local config_map = Config.MinigameMobcontrolData.data_level_info[self.level_id]
+    local skill_list = {}
+    if config_map and config_map.pre_skill and next(config_map.pre_skill) then
+        skill_list = config_map.pre_skill
+    else
+        local data = minigameModel:getBaseData()
+        if data then
+            local level = data.level
+            if (self.data and self.data.gm_status and self.data.level) then
+                level = self.data.level
+            end
+            local config = Config.MinigameMobcontrolData.data_level_dif_info[level]
+            if config then
+                local skills = config.skills
+                local skill_kind = skills[math.random(1, #skills)]
+                local skills_config = Config.MinigameMobcontrolData.data_skills_info[skill_kind]
+                skill_list = skills_config.skills
+            end
+        end
+    end
+    --技能
+    for i, v in ipairs(skill_list) do
+        local skill_cfg = Config.MinigameMobcontrolData.data_skill_info[v]
+        if skill_cfg then
+            local model = {
+                skill_id = v,
+                cd_time = GameNet:getInstance():getTimeFloat(),
+                effective_num = 0,
+            }
+            self.skill_list[#self.skill_list + 1] = model
+        end
+    end
+end
+
+function Minigameview:createObjects()
+    local config = Config.MinigameMobcontrolData.data_level_info[self.level_id]
+    if config then
+        --地形
+        local map_list = Config.MinigameMobcontrolData.data_level_map_info[config.map_id]
+        for k, v in pairs(map_list) do
+            self:createMapInfo(v)
+        end
+        --物件
+        for i, v in ipairs(config.pre_obj) do
+            self:createObjectInfo(v)
+        end
+    end
+end
+
+function Minigameview:onTrack()
+    for k, v in pairs(self.timeing_list) do
+        v.init_time = GameNet:getInstance():getTimeFloat()
+        v.refresh_time = GameNet:getInstance():getTimeFloat()
+    end
+    --技能
+    self:createSkill()
+end
+
+function Minigameview:createObjectInfo(msg)
+    local msg = msg
+    local obj_info = Config.MinigameMobcontrolData.data_obj_info[msg[1]]
+    local item = {
+        config = obj_info,
+        shape_type = SHAPE_TYPE_STR[obj_info.rigid_body[1] or "image"],
+        body_type  = obj_info.type,--BODY_TYPE.OBSTACLE,
+        param      = {},
+        node_pos   = msg[2],
+        have_event = true,
+        camp_type  = 0,
+        other_shape = {},
+        hp = -1,
+        speed = 0,
+        obj_id = msg[1],
+    }
+    local rigid_body = clone(obj_info.rigid_body)
+    table.remove(rigid_body, 1)
+    item.param = rigid_body
+    if obj_info.type == BODY_TYPE.SOLDIER then 
+        item.hp = obj_info.obj_param[1]
+        item.speed = obj_info.obj_param[2]
+        item.camp_type = CAMP_TYPE_STR[obj_info.obj_param[3]]
+        item.material = cc.PhysicsMaterial(0, 0, 0)
+    elseif obj_info.type == BODY_TYPE.STRONGHOLD then
+        item.camp_type = CAMP_TYPE_STR[obj_info.obj_param[4]]
+        item.hp = obj_info.obj_param[1]
+        item.soldier_id = obj_info.obj_param[3]
+        item.obj_param = obj_info.obj_param[2]
+        item.hp_pos = obj_info.obj_param[5]
+    elseif obj_info.type == BODY_TYPE.GRID then
+        item.camp_type = CAMP_TYPE_STR[obj_info.obj_param[1]]
+        item.over_time = obj_info.obj_param[2]
+        item.revival_time = obj_info.obj_param[3]
+        item.hp = 10000
+        item.obj_param = obj_info.obj_param[4] or {}
+        item.init_visible = obj_info.obj_param[5] or "true"
+        item.first_time = obj_info.obj_param[6] or 0
+    elseif obj_info.type == BODY_TYPE.BREED then
+        item.camp_type = CAMP_TYPE_STR[obj_info.obj_param[3]]
+        item.add_value = obj_info.obj_param[1]
+        item.obj_param = obj_info.obj_param[2]
+    elseif obj_info.type == BODY_TYPE.ACCELERATE then
+        item.camp_type = CAMP_TYPE_STR[obj_info.obj_param[2]]
+        item.add_speed = obj_info.obj_param[1]
+    elseif obj_info.type == BODY_TYPE.DEADDOOR then
+        item.hp = obj_info.obj_param[1]
+        item.camp_type = CAMP_TYPE_STR[obj_info.obj_param[2]]
+        item.hp_pos = obj_info.obj_param[3]
+    elseif obj_info.type == BODY_TYPE.CANNON then
+        item.camp_type = CAMP_TYPE_STR[obj_info.obj_param[3]]
+        item.soldier_id = obj_info.obj_param[2]
+        item.obj_param = obj_info.obj_param[1]
+    elseif obj_info.type == BODY_TYPE.PORTAL then
+        item.portal_pos = obj_info.obj_param[1]
+        item.over_time = obj_info.obj_param[2]
+        item.revival_time = obj_info.obj_param[3]
+        item.init_visible = obj_info.obj_param[4] or "true"
+        item.first_time = obj_info.obj_param[5] or 0
+    elseif obj_info.type == BODY_TYPE.OBSTACLE then  
+        item.over_time = obj_info.obj_param[1]
+        item.revival_time = obj_info.obj_param[2]
+        item.init_visible = obj_info.obj_param[3] or "true"
+        item.first_time = obj_info.obj_param[4] or 0
+    end
+    local body = self:createObjectModel(item)
+    if obj_info.type == BODY_TYPE.PORTAL then
+        body.first_time = item.first_time
+        body.portal_pos = item.portal_pos
+        body.over_time = item.over_time
+        body.revival_time = item.revival_time
+        -- body.init_time = GameNet:getInstance():getTimeFloat()
+        -- body.refresh_time = GameNet:getInstance():getTimeFloat()
+        body.is_visible = item.init_visible == "true" and true or false
+        body:setOpacity(body.is_visible and 255 or 0)
+        self.portal_list[obj_info.index] = body
+        self.timeing_list[obj_info.index] = body
+    end
+    if obj_info.type == BODY_TYPE.GRID then
+        body.first_time = item.first_time
+        body.over_time = item.over_time
+        body.revival_time = item.revival_time
+        -- body.init_time = GameNet:getInstance():getTimeFloat()
+        -- body.refresh_time = GameNet:getInstance():getTimeFloat()
+        body.is_visible = item.init_visible == "true" and true or false
+        body:setOpacity(body.is_visible and 255 or 0)
+        self.timeing_list[obj_info.index] = body
+    end
+    if obj_info.type == BODY_TYPE.OBSTACLE then
+        body.first_time = item.first_time
+        body.over_time = item.over_time
+        body.revival_time = item.revival_time
+        -- body.init_time = GameNet:getInstance():getTimeFloat()
+        -- body.refresh_time = GameNet:getInstance():getTimeFloat()
+        body.is_visible = item.init_visible == "true" and true or false
+        body:setOpacity(body.is_visible and 255 or 0)
+        self.timeing_list[obj_info.index] = body
+    end
+    if obj_info.type == BODY_TYPE.CANNON then
+        body:registerSpineEventHandler(function(event)
+            if event.animation == "action2" then
+                body:setAnimation(0, "action1", true)
+            elseif event.animation == "action3" then  
+                body:setAnimation(0, "action1", true)
+            end
+        end, sp.EventType.ANIMATION_COMPLETE)
+        self.mineCannon = body
+        body.soldier_id = item.soldier_id
+        body.born_time = item.obj_param[2]/1000
+        body.each_inc = item.obj_param[1]
+        body.timing = 0
+        self.mineCannon.mine_soldier_wave = 0
+        self.mineCannon.product_round = 0
+        self.mineCannon.product_wave = 0
+        self.mineCannon.product_up = 0
+        --loading
+        local size = cc.size(150,16)
+        local val = Config.MinigameMobcontrolData.data_const["simulation_card_cost"].val
+        local res = PathTool.getResFrame("common","common_1_18", nil, "common_1")
+        local res1 = PathTool.getResFrame("common","common_1_19", nil, "common_1")
+        local bg,comp_bar = createLoadingBar(res, res1, size, body, cc.p(0.5,0.5),  0, -40, true, true, 1.5)
+        comp_bar:setContentSize(cc.size(size.width - 5, size.height - 4.5))
+        body.comp_bar = comp_bar
+        comp_bar:setPercent(0)
+        local num = 0
+        body.progress_label = createLabel(18, 1, nil, 0, -40, "0%", body, nil, cc.p(0.5, 0.5))
+    end
+    if obj_info.type == BODY_TYPE.BREED then
+        body.add_value = item.add_value
+        body:setName("breed"..(self.breed_index))
+        self.breed_index = self.breed_index + 1
+    end
+    if obj_info.type == BODY_TYPE.ACCELERATE then
+        body.add_speed = item.add_speed
+    end
+    if obj_info.type == BODY_TYPE.STRONGHOLD then
+        if body.camp_type == 1 then
+            self.mineStrongHoldMsg = self.mineStrongHoldMsg or {}
+            self.mineStrongHoldMsg[#self.mineStrongHoldMsg + 1] = {
+                body = body,
+            }
+            body.soldier_id = item.soldier_id
+            body.born_time = item.obj_param[2]/1000
+            body.each_inc = item.obj_param[1]
+            body.timing = 0
+        elseif body.camp_type == 2 then
+            self.enemyStrongHoldMsg = self.enemyStrongHoldMsg or {}
+            self.enemyStrongHoldMsg[#self.enemyStrongHoldMsg + 1] = {
+                body = body,
+            }
+            body.soldier_id = item.soldier_id
+            body.born_time = item.obj_param[2]/1000
+            body.each_inc = item.obj_param[1]
+            body.timing = 0
+            body.mine_soldier_wave = 0
+        end
+    end
+    if obj_info.type == BODY_TYPE.SOLDIER then 
+        body:getPhysicsBody():setDynamic(true)
+    end
+    if (obj_info.type == BODY_TYPE.BREED or obj_info.type == BODY_TYPE.GRID) and item.obj_param[1] and item.obj_param[1] == "true" then 
+        local dis = item.obj_param[3]
+        local time = dis/item.obj_param[2]
+        body:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.MoveBy:create(time/4, cc.p(-dis/4, 0)), cc.MoveBy:create(time/2, cc.p(dis/2, 0)), cc.MoveBy:create(time/4, cc.p(-dis/4, 0)))))
+    end
+    self.bodyobjects = self.bodyobjects or {}
+    self.bodyobjects[obj_info.index] = body
+    return body
+end
+
+function Minigameview:createNode(info, partner)
+    local partner = partner or self.container
+    if info.config then
+        if info.config.res ~= "" then
+            local image_name, image_type, image_plist = minigameModel:getImageType(info.config.res)
+            local image = createSprite(PathTool.getMinigameRes(image_name, image_type, image_plist),info.node_pos[1],info.node_pos[2],partner,cc.p(0.5,0.5),image_type) 
+            if info.hp > 0 and (info.body_type == BODY_TYPE.STRONGHOLD or info.body_type == BODY_TYPE.DEADDOOR) then
+                local size = image:getContentSize()
+                local new_s = clone(size)
+                new_s.height = 16
+                local hp_pos = cc.p(size.width/2, size.height - 10)
+                if info.hp_pos then
+                    hp_pos = cc.p(info.hp_pos[1], info.hp_pos[2])
+                end
+                local res = PathTool.getResFrame("common","common_1_18", nil, "common_1")
+                local res1 = PathTool.getResFrame("common","common_1_19", nil, "common_1")
+                local bg,comp_bar = createLoadingBar(res, res1, new_s, image, cc.p(0.5,0.5),  hp_pos.x, hp_pos.y, true, true, 1.5)
+                comp_bar:setContentSize(cc.size(new_s.width - 5, new_s.height - 4.5))
+                image.comp_bar = comp_bar
+                comp_bar:setPercent(100)
+                image.ui_hp = createLabel(18, 1, nil, hp_pos.x, hp_pos.y, info.hp.."/"..info.hp, image, nil, cc.p(0.5, 0.5))
+            end
+            return image
+        elseif info.config.spine ~= "" then
+            local effect = createEffectSpine(info.config.spine, cc.p(info.node_pos[1], info.node_pos[2]), cc.p(0.5, 0.5), true, "action1")
+            effect:registerSpineEventHandler(function(event)
+                if event.eventData.name == "hit" then
+
+                end
+            end, sp.EventType.ANIMATION_EVENT)
+			effect:registerSpineEventHandler(function(event)
+                -- if event.animation == "action2" then
+                --     effect:setAnimation(0, "action1", true)
+                -- end
+            end, sp.EventType.ANIMATION_COMPLETE)
+            if info.hp > 0 and (info.body_type == BODY_TYPE.STRONGHOLD or info.body_type == BODY_TYPE.DEADDOOR) then
+                local size = effect:getBoundingBox()--effect:getContentSize()
+                local new_s = clone(size)
+                new_s.height = 16
+                local hp_pos = cc.p(0, size.height/2)
+                if info.hp_pos then
+                    hp_pos = cc.p(info.hp_pos[1], info.hp_pos[2])
+                end
+                local res = PathTool.getResFrame("common","common_1_18", nil, "common_1")
+                local res1 = PathTool.getResFrame("common","common_1_19", nil, "common_1")
+                local bg,comp_bar = createLoadingBar(res, res1, new_s, effect, cc.p(0.5,0.5), hp_pos.x, hp_pos.y, true, true, 1.5)
+                comp_bar:setContentSize(cc.size(new_s.width - 5, new_s.height - 4.5))
+                effect.comp_bar = comp_bar
+                comp_bar:setPercent(100)
+                effect.ui_hp = createLabel(18, 1, nil, hp_pos.x, hp_pos.y, info.hp.."/"..info.hp, effect, nil, cc.p(0.5, 0.5))
+            end
+            partner:addChild(effect)
+            return effect
+        end
+    end
+    local node = cc.Node:create()
+    node:setPosition(cc.p(info.node_pos[1],info.node_pos[2]))
+    partner:addChild(node)
+    return node
+end
+
+function Minigameview:createImage(info)
+    local node = self:createNode(info)
+    return node
+end
+
+-- 框框盒子
+function Minigameview:createObjectEdgeBox(info)
+    local size = cc.size(display.width, display.height)
+    local pos = cc.p(display.width/2, display.height/2)
+    local material = cc.PhysicsMaterial(0, 0, 0)
+    local offset = cc.p(0, 0)
+    if info then
+        pos = info.node_pos
+        size = cc.size(info.param[1], info.param[2])
+        material = info.material or cc.PhysicsMaterial(0, 0, 0)
+        offset = info.offset or cc.p(0, 0)
+    end 
+    local a_body = cc.PhysicsBody:createEdgeBox(size, material, 2, offset)
+    local a_node = cc.Node:create()
+    a_node:setPosition(pos)
+    a_node:setPhysicsBody(a_body)
+    a_body:setDynamic(false)
+    self.container:addChild(a_node)
+    return a_node
+end
+-- 方块
+function Minigameview:createObjectBox(info)
+    local node = self:createNode(info)
+    local material = info.material or cc.PhysicsMaterial(0, 0, 0)
+    local offset = info.offset or cc.p(0, 0)
+    local body = cc.PhysicsBody:createBox(cc.size(info.param[1], info.param[2]), material, offset)
+    if info.other_shape and next(info.other_shape) then
+        local other_shape = cc.PhysicsShapeBox:create(cc.size(info.other_shape[1], info.other_shape[2]), cc.PhysicsMaterial(0, 0, 0))
+        body:addShape(other_shape)
+    end
+    body:setDynamic(false)
+    if info.have_event then
+        body:setContactTestBitmask(1)
+    end
+    node:setPhysicsBody(body)
+    return node
+end
+--圆
+function Minigameview:createObjectCircle(info)
+    local node = self:createNode(info)
+    local material = info.material or cc.PhysicsMaterial(0, 0, 0)
+    local offset = info.offset or cc.p(0, 0)
+    local body = cc.PhysicsBody:createCircle(info.param[1],material, offset)
+    body:setDynamic(false)
+    if info.have_event then
+        body:setContactTestBitmask(1)
+    end
+    if info.body_type == BODY_TYPE.SOLDIER then
+        body:setPositionOffset(cc.p(0, -node:getContentSize().height/2 + 10))
+    end
+    node:setPhysicsBody(body)
+    return node
+end
+--段
+function Minigameview:createObjectEdgeSegment(info)
+    local node = self:createNode(info)
+    local body = cc.PhysicsBody:create()
+    local material = info.material or cc.PhysicsMaterial(0, 0, 0)
+    body:addShape(cc.PhysicsShapeEdgeSegment:create(cc.p(info.param[1][1],info.param[1][2]), cc.p(info.param[2][1],info.param[2][2]), material, info.param[3] or 10.0))
+    body:setDynamic(false)
+    if info.have_event then
+        body:setContactTestBitmask(1)
+    end
+    node:setPhysicsBody(body)
+    return node
+end
+--多边形
+function Minigameview:createObjectPolygon(info)
+    local node = self:createNode(info)
+    local vec = {}
+    for i, v in ipairs(info.param) do
+        vec[#vec + 1] = cc.p(v[1], v[2]) 
+    end
+    local center = cc.p(0, 0)--cc.PhysicsShape:getPolyonCenter(vec)
+    local material = info.material or cc.PhysicsMaterial(0, 0, 0)
+    local body = cc.PhysicsBody:createPolygon(vec, material, cc.p(-center.x, -center.y))
+    if info.have_event then
+        body:setContactTestBitmask(1)
+    end
+    body:setDynamic(false)
+    node:setPhysicsBody(body)
+    return node
+end
+
+function Minigameview:createMineSoldier(mo_node, soldier_id, t_pos, is_base, action_name)
+    local pos = cc.p(display.width/2, display.height/2 - 450)
+    local is_base = is_base --基础
+    local is_mo = true  --增值
+    local camp_type = 1
+    local soldier_id = soldier_id
+    if mo_node and not tolua.isnull(mo_node) then
+        local mo_pos = cc.p(mo_node:getPosition())
+        local random_x = math.random(mo_pos.x - 20, mo_pos.x + 20)
+        local random_y = math.random(mo_pos.y - 20, mo_pos.y + 20)
+        pos = cc.p(random_x, random_y)
+        is_mo = false
+        soldier_id = mo_node.obj_id
+    else
+        if self.mineCannon.die_status then
+            return
+        end
+        self.total_mine_slodier = self.total_mine_slodier + 1
+        if self.total_mine_slodier > 10 then
+            self.total_mine_slodier = 0
+        end
+        local blue_x = self.mineCannon:getPositionX()
+        local blue_y = self.mineCannon:getPositionY()
+        pos = t_pos or cc.p(blue_x, blue_y + 50)
+    end
+    local msg = {soldier_id or self.mineCannon.soldier_id, {pos.x, pos.y}}
+    local body = self:createObjectInfo(msg)
+    -- body:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_EVENT)
+    body:registerSpineEventHandler(function(event)
+        if event.animation == "action2" then
+            body:setAnimation(0, "action1", true)
+        elseif event.animation == "action3" then  
+            body:setAnimation(0, "action1", true)
+        elseif event.animation == "action4" then
+            body:setAnimation(0, "action1", true)
+        end
+    end, sp.EventType.ANIMATION_COMPLETE)
+    if body and body.setAnimation and action_name then
+        body:setAnimation(0, action_name, false)
+    end
+    body:setScale(body.hp^(1/3))
+    body.camp_type = camp_type
+    body.is_mo = is_mo
+    body.is_base = is_base
+    if body.getPhysicsBody and body:getPhysicsBody() then
+        body:getPhysicsBody():setVelocity(cc.p(0, body.speed))
+        body:getPhysicsBody():setGravityEnable(false)
+        body:getPhysicsBody():applyImpulse(cc.p(0, 0))
+    end
+    self.mine_soldiers[#self.mine_soldiers + 1] = body
+    if is_base then
+        self.mine_soldier_basenum = self.mine_soldier_basenum + 1
+        self:updateMineCannonCardProgress()
+    end
+    return body
+end
+
+function Minigameview:updateMineCannonCardProgress()
+    local val = Config.MinigameMobcontrolData.data_const["simulation_card_cost"].val
+    local mine_soldier_num = self.mine_soldier_basenum - self.mine_soldier_num-- math.floor(self.mine_soldier_basenum/val)
+    local num = mine_soldier_num
+    -- if self.card_view:getCardCount() >= 5 then
+    --     num = 0
+    --     self.mine_soldier_num = self.mine_soldier_basenum
+    -- end
+    local temp_val = num%val == 0 and val or num%val
+    self.mineCannon.comp_bar:setPercent(math.floor(temp_val/val*100))
+    self.mineCannon.progress_label:setString(math.floor(temp_val/val*100).."%")--(string.format("%s/%s", num, val))
+    -- self.card_num:setString("x"..(self.card_view:getCardCount() + math.floor(num/val)))
+end
+
+function Minigameview:createEnemySoldier(strong_hold, t_soldier_id, t_pos, fixed_pos, action_name)
+    local pos = cc.p(display.width/2, display.height/2 - 450)
+    local camp_type = 2
+    local is_mo = true
+    local red_x = strong_hold and strong_hold:getPositionX() or 0
+    local red_y = strong_hold and strong_hold:getPositionY() or 0
+    pos = t_pos or cc.p(red_x, red_y - 50)
+    local random_x = fixed_pos and pos.x or math.random(pos.x - 20, pos.x + 20)
+    local random_y = fixed_pos and pos.y or math.random(pos.y - 20, pos.y + 20)
+    local soldier_id = t_soldier_id or strong_hold.soldier_id
+    local msg = {soldier_id, {random_x, random_y}}
+    local body = self:createObjectInfo(msg)
+    body:setScale(body.hp^(1/3))
+    body.camp_type = camp_type
+    body.is_mo = is_mo
+    local fadein = cc.FadeIn:create(0.2)
+    body:runAction(fadein)
+    self.enemy_soldiers[#self.enemy_soldiers + 1] = body
+    if body.getPhysicsBody and body:getPhysicsBody() then
+        body:getPhysicsBody():setVelocity(cc.p(0, -body.speed))
+        body:getPhysicsBody():setGravityEnable(false)
+        body:getPhysicsBody():applyImpulse(cc.p(0, 0))
+    end
+end
+
+function Minigameview:useSkillCard(card_id)
+    local config = Config.MinigameMobcontrolData.data_strategy_info[card_id]
+    if config.type == 1 then     --加速
+        local param = config.param
+        local count = 0
+        local new_list = clone(self.mine_soldiers)
+        table.sort(new_list, function(a, b) 
+            if a and not tolua.isnull(a) and b and not tolua.isnull(b) then
+                return a:getPositionY() > b:getPositionY()
+            end
+            return false
+        end)
+        for i = 1, #new_list, 1 do
+            local item = new_list[i]
+            if item and not tolua.isnull(item) then
+                count = count + 1
+                item.speed = item.speed * config.param[3]
+                if count >= config.param[2] then
+                    break
+                end
+                if item.setAnimation then
+                    item:setAnimation(0, "action3", false)
+                end
+            end
+        end
+    elseif config.type == 2 then --增值
+        local param = config.param
+        local count = 0
+        local new_list = clone(self.mine_soldiers)
+        table.sort(new_list, function(a, b) 
+            if a and not tolua.isnull(a) and b and not tolua.isnull(b) then
+                return a:getPositionY() > b:getPositionY()
+            end
+            return false
+        end)
+        for i = 1, #new_list, 1 do
+            local item = new_list[i]
+            if item and not tolua.isnull(item) then
+                count = count + 1
+                for j = 1, config.param[3] do
+                    self:createMineSoldier(item, nil, nil, nil, "action2")
+                end
+                if count >= config.param[2] then
+                    break
+                end
+            end
+        end
+    elseif config.type == 3 then --增产
+        local param = config.param
+        local count = 0
+        self.product_cards[#self.product_cards + 1] = {param = param, mine_soldier_wave_init = self.mineCannon.mine_soldier_wave, is_active = true}
+    elseif config.type == 4 then --召唤
+        local param = config.param
+        if param[4] and next(param[4]) ~= nil then
+            for n = 1, param[3] do
+                -- local node = self:createMineSoldier(nil, param[2], nil, nil, "action2") 
+                local pos = cc.p(self.mineCannon:getPositionX(), param[4][2])
+                local node = self:createMineSoldier(nil, param[2], pos, nil, "action4")
+                -- node:getPhysicsBody():setVelocity(cc.p(0, 0))
+                -- node:runAction(cc.Sequence:create(cc.MoveBy:create(0.2, cc.p(0, 50)), cc.CallFunc:create(function() node:getPhysicsBody():setVelocity(cc.p(0, node.speed)) end)))            
+            end
+        end
+    elseif config.type == 5 then --审判
+        local param = config.param
+        local count = 0
+        local new_list = clone(self.enemy_soldiers)
+        table.sort(new_list, function(a, b) 
+            if a and not tolua.isnull(a) and b and not tolua.isnull(b) then
+                return a:getPositionY() < b:getPositionY()
+            end
+            return false
+        end)
+        for i, v in ipairs(new_list) do
+            if v and not tolua.isnull(v) and not v.die_status and count <= param[2] and v.getPhysicsBody and v:getPhysicsBody() then
+                count = count + 1
+                v.die_status = true
+                v:registerSpineEventHandler(function(event)
+                    if event.animation == "action2" then
+                        delayOnce(function()
+                            if v and not tolua.isnull(v) and v.getPhysicsBody and v:getPhysicsBody() then
+                                v:removeComponent(v:getPhysicsBody())
+                                v:stopAllActions()
+                                v:removeFromParent()
+                            end
+                        end, 0)
+                    end
+                end, sp.EventType.ANIMATION_COMPLETE)
+                v:getPhysicsBody():setVelocity(cc.p(0, 0))
+                v:setAnimation(0, "action2", false)
+            end
+        end
+    end
+    if AudioManager then
+        AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.BATTLE,config.sound)
+    end
+    self:updateMineCannonCardProgress()
+end
+
+function Minigameview:triggerSkill(skill_id)
+    local config = Config.MinigameMobcontrolData.data_skill_info[skill_id]
+    local trigger_param = config.trigger_param
+    local new_list = clone(self.enemy_soldiers)
+    table.sort(new_list, function(a, b) 
+        if a and not tolua.isnull(a) and b and not tolua.isnull(b) then
+            return a:getPositionY() < b:getPositionY()
+        end
+        return false
+    end)
+    if trigger_param[1] == "kill_enemy" then --击杀敌方单位
+        if trigger_param[2] == "enemyfront" then
+            local count = 0
+            for i, v in ipairs(new_list) do
+                if v and not tolua.isnull(v) and not v.die_status and count <= trigger_param[3] and v.getPhysicsBody and v:getPhysicsBody() then
+                    count = count + 1
+                    v.die_status = true
+                    v:getPhysicsBody():setVelocity(cc.p(0, 0))
+                    v:removeComponent(v:getPhysicsBody())
+                    v:stopAllActions()
+                    v:removeFromParent()
+                end
+            end
+        elseif trigger_param[2] == "enemyback" then
+            local count = 0
+            for i = #new_list, 1, -1 do
+                local v = new_list[i]
+                if v and not tolua.isnull(v) and not v.die_status and count <= trigger_param[3] and v.getPhysicsBody and v:getPhysicsBody() then
+                    count = count + 1
+                    v.die_status = true
+                    v:getPhysicsBody():setVelocity(cc.p(0, 0))
+                    v:removeComponent(v:getPhysicsBody())
+                    v:stopAllActions()
+                    v:removeFromParent()
+                end
+            end
+        end
+    elseif trigger_param[1] == "summon_unit" then --指定坐标召唤单位
+         for i, v in ipairs(trigger_param[2]) do
+            local obg_cfg = Config.MinigameMobcontrolData.data_obj_info[v[1]]
+            if obg_cfg.obj_param[3] == "ally" then
+                for i = 1, v[2], 1 do
+                    self:createMineSoldier(nil, v[1], cc.p(trigger_param[3][i][1], trigger_param[3][i][2])) 
+                end
+            else
+                for i = 1, v[2], 1 do
+                    if v[3] then
+                        local size = cc.size(v[3][3], v[3][4])
+                        local pos = cc.p(v[3][1] + math.random(0, size.width), v[3][2] + math.random(0, size.height))
+                        self:createEnemySoldier(nil, v[1], pos, config.skill_type == 2)
+                    else
+                        local pos_cfg = trigger_param[3][i] or {}
+                        local pos = trigger_param[3][i]
+                        self:createEnemySoldier(nil, v[1], cc.p(trigger_param[3][i][1], trigger_param[3][i][2]), config.skill_type == 2)
+                    end 
+                end
+            end
+         end
+    elseif trigger_param[1] == "summon_obj" then--指定坐标召唤物件
+        local body = self:createObjectInfo({trigger_param[2], trigger_param[3]})
+        body.lasttime = trigger_param[4]
+        body.begintime = GameNet:getInstance():getTimeFloat()
+    elseif trigger_param[1] == "speedup_ally" then --己方移动速度增加
+        local new_list = clone(self.mine_soldiers)
+        table.sort(new_list, function(a, b) 
+            if a and not tolua.isnull(a) and b and not tolua.isnull(b) then
+                return a:getPositionY() > b:getPositionY()
+            end
+            return false
+        end)
+        if trigger_param[2] == "allyfront" then
+            local count = 0
+            for i, v in ipairs(new_list) do
+                if v and not tolua.isnull(v) and not v.die_status and count <= trigger_param[3] then
+                    count = count + 1
+                    v.speed = v.speed * trigger_param[4]
+                end
+            end
+        elseif trigger_param[2] == "allyback" then
+            local count = 0
+            for i = #new_list, 1, -1 do
+                local v = new_list[i]
+                if v and not tolua.isnull(v) and not v.die_status and count <= trigger_param[3] then
+                    count = count + 1
+                    v.speed = v.speed * trigger_param[4]
+                end
+            end
+        end
+    elseif trigger_param[1] == "speeddown_enemy" then --敌方移动速度下降
+        if trigger_param[2] == "enemyfront" then
+            local count = 0
+            for i, v in ipairs(new_list) do
+                if v and not tolua.isnull(v) and not v.die_status and count <= trigger_param[3] then
+                    count = count + 1
+                    v.speed = v.speed * (1 - trigger_param[4])--math.max(0, trigger_param[4])
+                end
+            end
+        elseif trigger_param[2] == "enemyback" then
+            local count = 0
+            for i = #new_list, 1, -1 do
+                local v = new_list[i]
+                if v and not tolua.isnull(v) and not v.die_status and count <= trigger_param[3] then
+                    count = count + 1
+                    v.speed = v.speed * (1 - trigger_param[4])--math.max(0, trigger_param[4])
+                end
+            end
+        end
+    elseif trigger_param[1] == "production_speedup_ally" then --己方生产数量增加
+        self.mineCannon.product_up = trigger_param[3]
+        self.mineCannon.product_round = trigger_param[2]
+        self.mineCannon.product_wave = self.mineCannon.mine_soldier_wave
+    elseif trigger_param[1] == "production_speeddown_enemy" then -- 己方生产数量减少
+        for i, v in ipairs(self.enemyStrongHoldMsg) do
+            v.body.product_down = trigger_param[3]
+            v.body.product_round = trigger_param[2]
+            v.body.product_wave = v.body.mine_soldier_wave
+        end
+    elseif trigger_param[1] == "goddess_cannon" then --己方环跑
+    end
+end
+
+function Minigameview:open(  )
+    self.scene:setVisible(true)
+    cc.Director:getInstance():pushScene(self.scene)
+end
+
+function Minigameview:resetPlay(result)
+    if self.hold_timer then
+        cc.Director:getInstance():getScheduler():unscheduleScriptEntry(self.hold_timer)
+        self.hold_timer = nil
+    end
+    -- self.scene:getPhysicsWorld():removeAllBodies()
+    self.end_status = result ~= nil
+
+    for k, v in pairs(self.mine_soldiers) do
+        if v and not tolua.isnull(v) and not v.die_status and v.getPhysicsBody and v:getPhysicsBody() then
+            v:getPhysicsBody():setVelocity(cc.p(0, 0))
+            v:removeComponent(v:getPhysicsBody())
+            v:stopAllActions()
+        end
+    end
+    for k, v in pairs(self.enemy_soldiers) do
+        if v and not tolua.isnull(v) and not v.die_status and v.getPhysicsBody and v:getPhysicsBody() then
+            v:getPhysicsBody():setVelocity(cc.p(0, 0))
+            v:removeComponent(v:getPhysicsBody())
+            v:stopAllActions()
+        end
+    end
+    if not result then
+        self.enemy_soldiers = {}
+        self.mine_soldiers = {}
+        self.mine_soldier_basenum = 0
+        self.container:stopAllActions()
+        self.container:removeAllChildren()
+        self.enemyStrongHoldMsg = {}
+        self.mineStrongHoldMsg = {}
+        self.mineCannon = nil
+        self.card_view:resetCard()
+        -- self.auto_btn.auto_status = false
+        -- setChildUnEnabled(not self.auto_btn.auto_status, self.auto_btn:getRoot())
+
+        self.mine_soldier_num = 0
+        self.mine_soldier_wave = 0
+        self.product_cards = {}
+        self.portal_list = {}
+        self.timeing_list = {}
+        self.bodyobjects = {}
+        self.skill_list = {}
+        self.our_died_num = 0
+        self.enery_died_num = 0
+        self.game_open_time = 0
+        self.tips_node:setVisible(true)
+        local body = self:createObjectEdgeBox()
+        body:setVisible(false)
+        self:configCardView()
+        --objects
+        self:createObjects()
+        return
+    end
+    if not (self.data and self.data.gm_status) then
+        MinigameController:getInstance():requestMinigameResult(result)
+    else
+        MinigameController:getInstance():openMinigameView(false)
+    end
+    -- MinigameController:getInstance():openMinigameView(false)
+end
+
+function Minigameview:close(  )
+    self.container:stopAllActions()
+    self.container:removeAllChildren()
+    self.enemyStrongHoldMsg = {}
+    self.mineStrongHoldMsg = {}
+    self.mineCannon = nil
+    self.mine_soldier_num = 0
+    self.mine_soldier_wave = 0
+    self.product_cards = {}
+    self.bodyobjects = {}
+    self.skill_list = {}
+    self.our_died_num = 0
+    self.enery_died_num = 0
+    self.game_open_time = 0
+    self.enemy_soldiers = nil
+    self.mine_soldiers = nil
+    self.mine_soldier_basenum = 0
+    self.portal_list = nil
+    self.timeing_list = nil
+    self.end_status = false
+    if self.hold_timer then
+        cc.Director:getInstance():getScheduler():unscheduleScriptEntry(self.hold_timer)
+        self.hold_timer = nil
+    end
+    self.card_view:DeleteMe()
+    self.card_view = nil
+    self.scene:getPhysicsWorld():removeAllBodies()
+	self.scene:removeAllChildren()
+    self.scene:release()
+    self.scene = nil
+    cc.Director:getInstance():popScene()
+end
+
+function Minigameview:DeleteMe()
+end

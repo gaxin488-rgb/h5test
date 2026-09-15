@@ -1,0 +1,566 @@
+-- @Date:   2019-04-24 15:26:48
+-- @description:	--对对碰翻牌
+--
+ActionPuzzlePanel = class("ActionPuzzlePanel", function()
+    return ccui.Widget:create()
+end)
+
+local controller = ActionController:getInstance()
+local model = ActionController:getInstance():getModel()
+
+function ActionPuzzlePanel:ctor(bid,id,remain_sec)
+    self.holiday_bid = bid
+    self.remain_sec = remain_sec
+    self.black_list = {}
+    self.item_list = {}
+    self.is_optional = false
+    self.choose_num = 0
+    self.camp_id = 0
+    self.is_can_click = false
+    self.is_open_task = true
+    local tab_vo = controller:getActionSubTabVo(bid)
+    if tab_vo then
+        self.camp_id = tab_vo.camp_id
+    end
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("holiday_puzzle", "holiday_puzzle"),type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("holiday_puzzle", "holiday_puzzle_01"),type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("holiday_puzzle", "holiday_puzzle_bg_01"),type = ResourcesType.single},
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(self.res_list, function()
+        if self.loadResListCompleted then
+            self:loadResListCompleted()
+        end
+    end)
+end
+
+function ActionPuzzlePanel:loadResListCompleted()
+    self:configUI()
+    self:updateHeroPanel()
+    self:register_event()
+end
+
+function ActionPuzzlePanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_puzzle_panel"))
+    self.root_wnd:setPosition(cc.p(-40, -80))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0, 0)
+    self.choose_index = 0
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bg_panel = self.main_container:getChildByName("bg_panel")
+    self.bg = self.bg_panel:getChildByName("bg")
+    self.hero_icon = self.main_container:getChildByName("hero_icon")
+    self.title_con = self.main_container:getChildByName("title_con")
+    self.title_img = self.title_con:getChildByName("title_img")
+    self.surplus_time = self.title_con:getChildByName("surplus_time")
+    self.surplus_txt = self.title_con:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1242"))
+    -- 倒计时
+    local time = self.remain_sec or 0
+    setCountDownTime(self.surplus_time, time)
+    self:setTimePanel()
+    self.tip1 = self.title_con:getChildByName("tip1")
+    self.tip1:setChangeScaleOffWidth(self.title_con:getContentSize().width-320)
+    self.tip2 = self.title_con:getChildByName("tip2")
+    self.tip2:setChangeScaleOffWidth(self.title_con:getContentSize().width-520)
+    setTextSpacing(self.tip2,-10)
+    self.ultimate_node = self.title_con:getChildByName("ultimate_node")
+    self.ultimate_item = BackPackItem.new(true,true,false,0.8)
+    registerButtonEventListener(self.ultimate_item, function()
+        self:onClickItem()
+	end, true,nil,nil,0.8)
+    self.ultimate_node:addChild(self.ultimate_item,2)
+    self.play_panel = self.main_container:getChildByName("play_panel")
+    self.rule_btn = self.play_panel:getChildByName("rule_btn")
+    self.puzzle_img = self.play_panel:getChildByName("puzzle_img")
+    for i = 1, 16 do
+        local item = self.puzzle_img:getChildByName("black_"..i)
+        self.black_list[i] = item
+    end
+    self.item_panel = self.play_panel:getChildByName("item_panel")
+    for i = 1, 9 do
+        local item = self.item_panel:getChildByName("item_"..i)
+        local back_item = BackPackItem.new(true,true,false,0.6)
+        back_item:setDefaultTip()
+        item:addChild(back_item)
+        self.item_list[i] = back_item
+    end
+    self.choose_eff = createEffectSpine("E31310",cc.p(0,0),cc.p(0.5,0.5),true,PlayerAction.action)
+    self.choose_eff:setScale(0.8)
+    self.puzzle_img:addChild(self.choose_eff)
+    self.choose_eff:setVisible(false)
+    self.btn_go = self.play_panel:getChildByName("btn_go")
+    self.btn_txt = self.btn_go:getChildByName("label")
+    self.btn_txt:setString(TI18N("语言_c_3671"))
+    self.item_panel_1 = self.play_panel:getChildByName("item_panel_1")
+    self.icon_1 = self.item_panel_1:getChildByName("icon")
+    self.num_1 = self.item_panel_1:getChildByName("num")
+    self.checkbox = self.play_panel:getChildByName("checkbox")
+    self.checkname = createRichLabel(22,cc.c3b(0xff, 0xff, 0xff),cc.p(0,0.5),cc.p(40,18),nil,nil,1000)
+    self.checkbox:addChild(self.checkname)
+    self.gift_btn = self.play_panel:getChildByName("gift_btn")
+    self.gift_name = self.gift_btn:getChildByName("name")
+    self.gift_name:setString(TI18N("语言_hol_ro_4_90"))
+    setTextMaxWidth(self.gift_name,100)
+    self.task_btn = self.play_panel:getChildByName("task_btn")
+    self.task_name = self.task_btn:getChildByName("name")
+    self.task_name:setString(TI18N("语言_c_6958"))
+    setTextMaxWidth(self.task_name,100)
+    self:setUpdatePanel()
+    model:removePuzzleBlackData(self.holiday_bid)
+    controller:sender21616(self.holiday_bid)
+    controller:sender21618(self.holiday_bid)
+end
+
+function ActionPuzzlePanel:register_event()
+    self:registerCheckBoxEvent(self.checkbox)
+    registerButtonEventListener(self.checkname, function()
+        if self.is_optional then
+            self.is_optional = false
+            self:updateChoosePanel(true)
+        else
+            self.is_optional = true
+	        self:updateChoosePanel(true)
+        end
+	end, true)
+
+    registerButtonEventListener(self.rule_btn, function()
+        controller:openActionPuzzleRulePanel(true,self.holiday_bid)
+	end, true)
+
+    registerButtonEventListener(self.task_btn, function()
+        self.is_open_task = false
+        controller:openActionPuzzleTaskPanel(true,self.holiday_bid)
+	end, true)
+
+    registerButtonEventListener(self.gift_btn, function()
+        local cfg = Config.HolidayPuzzleData.data_const[self.camp_id]
+        local bid = cfg and cfg.jump_id.val or 0
+        local tab_vo = controller:getActionSubTabVo(bid)
+        if tab_vo then
+            controller:openActionMainPanel(false)
+            controller:openActionMainPanel(true, nil, bid) 
+        else
+            message(TI18N("语言_c_1472"))
+        end
+	end, true)
+
+    for i = 1, 16 do
+        registerButtonEventListener(self.black_list[i], function()
+            local status = model:getPuzzleBlackStatus(self.holiday_bid,i)
+            if self.is_optional and status then
+                self.choose_num = i
+                self.choose_eff:setPosition(cc.p(self.black_list[i]:getPositionX(),self.black_list[i]:getPositionY()))
+                self.choose_eff:setVisible(true)
+            end
+        end, false)
+    end
+
+    registerButtonEventListener(self.btn_go, function()
+        if not self.is_can_click then
+            message(TI18N("语言_s_2612"))
+            return
+        end
+        if self.data.act_list and next(self.data.act_list) and tableLen(self.data.act_list) >= 16 then
+            message(TI18N("语言_c_6959"))
+        else
+            if self.is_optional then
+                if self.have_num_2 and self.need_num_2 and self.have_num_2 >= self.need_num_2 then
+                    local config = Config.HolidayPuzzleData.data_cost[self.camp_id]
+                    if not config then return end
+                    local cfg = config[2]
+                    local num = self.data and self.data.draw_num2 or 0
+                    local need_num = cfg[num + 1]
+                    local item_cfg2 = Config.ItemData.data_get_data(self.item_id_2)
+                    local txt = TI18N("语言_c_6960")
+                    local str = LangStringFormat(txt,need_num,PathTool.getItemRes(item_cfg2.icon))
+                    CommonAlert.show( str, TI18N("语言_c_63"), function()
+                        self.is_can_click = false
+                        controller:sender21617(self.holiday_bid,2,self.choose_num)
+                    end, TI18N("语言_c_62"),nil,CommonAlert.type.rich,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+                else
+                    BackpackController:getInstance():openTipsSource(true, self.item_id_2)
+                end
+            else
+                if self.have_num and self.need_num and self.have_num >= self.need_num then
+                    self.is_can_click = false
+                    controller:sender21617(self.holiday_bid,1,0)
+                else
+                    BackpackController:getInstance():openTipsSource(true, self.item_id_1)
+                end
+            end
+        end
+	end, true)
+
+    
+    if not self.update_puzzle_data then
+        self.update_puzzle_data = GlobalEvent:getInstance():Bind(ActionEvent.updatePuzzleData ,function(bid)
+            if not bid or bid ~= self.holiday_bid then return end
+            self:setData()
+        end)
+    end
+    if not self.update_puzzle_task_data then
+        self.update_puzzle_task_data = GlobalEvent:getInstance():Bind(ActionEvent.updatePuzzleTaskData ,function(bid)
+            if not bid or bid ~= self.holiday_bid then return end
+            self:updateTaskRed()
+        end)
+    end
+    -- 道具数量更新
+    if not self.update_add_good_event then
+        self.update_add_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS,function(bag_code, data_list)
+            for i,v in pairs(data_list) do
+                if v.base_id == self.item_id_1 then
+                    self:updateCostPanel1()
+                elseif v.base_id == self.item_id_2 then
+                    self:updateCostPanel2()
+                end
+            end
+        end)
+    end
+    if not self.update_modify_good_event then
+        self.update_modify_good_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM,function(bag_code, data_list)
+            for i,v in pairs(data_list) do
+                if v.base_id == self.item_id_1 then
+                    self:updateCostPanel1()
+                elseif v.base_id == self.item_id_2 then
+                    self:updateCostPanel2()
+                end
+            end
+        end)
+    end
+    
+    if not self.update_puzzle_click_event then
+        self.update_puzzle_click_event = GlobalEvent:getInstance():Bind(ActionEvent.updatePuzzleClickEvent,function()
+            self.is_can_click = true
+        end)
+    end
+end
+
+--注册选项框事件
+function ActionPuzzlePanel:registerCheckBoxEvent(btn)
+    if not btn then return end
+	btn:addEventListener(function(sender,event_type)
+	    if event_type == ccui.CheckBoxEventType.selected then
+            playButtonSound2()
+            self.is_optional = true
+	        self:updateChoosePanel(true)
+	    elseif event_type == ccui.CheckBoxEventType.unselected then 
+            playButtonSound2()
+            self.is_optional = false
+            self:updateChoosePanel(true)
+	    end
+    end)
+end
+function ActionPuzzlePanel:updateHeroPanel()
+    local cfg = Config.HolidayPuzzleData.data_const[self.camp_id]
+    if not cfg then return end
+    if cfg.bg_show.val ~= "" then
+        loadSpriteTexture(self.bg, PathTool.getTargetRes("holiday_puzzle", cfg.bg_show.val,false,false), LOADTEXT_TYPE)
+    end
+    if cfg.ninja_show.val ~= "" then
+        if not self.hero_sprite then
+            self.hero_sprite = createSprite(PathTool.getTargetRes("holiday_puzzle", cfg.ninja_show.val,false,false),0,0,self.hero_icon,cc.p(1,0),LOADTEXT_TYPE)
+        else
+            loadSpriteTexture(self.hero_sprite, PathTool.getTargetRes("holiday_puzzle", cfg.ninja_show.val,false,false), LOADTEXT_TYPE)
+        end
+    elseif cfg.ninja_eff_show and cfg.ninja_eff_show.val ~= "" then
+        if self.hero_eff then
+			self.hero_eff:clearTracks()
+			self.hero_eff:removeFromParent()
+			self.hero_eff = nil
+		end
+        if not self.hero_eff then
+            self.hero_eff = createEffectSpine(cfg.ninja_eff_show.val,cc.p(0,0),cc.p(1,0),true)
+            self.hero_icon:addChild(self.hero_eff)
+        end
+    end
+end
+function ActionPuzzlePanel:updateChoosePanel(status)
+    if not self.have_num_2 or not self.need_num_2 then return end
+    if self.is_optional then
+        if self.have_num_2 < self.need_num_2 then
+            self.is_optional = false
+            self.checkbox:setSelected(self.is_optional)
+            self.btn_txt:setString(TI18N("语言_c_3671"))
+            self.choose_eff:setVisible(false)
+            self:updateGoBtnRed()
+            if status then
+                BackpackController:getInstance():openTipsSource(true, self.item_id_2)
+            end
+            self.item_panel_1:setVisible(true)
+            return
+        end
+    end
+    self.checkbox:setSelected(self.is_optional)
+    if self.is_optional then
+        self.btn_txt:setString(TI18N("语言_c_898"))
+        if self.choose_num == 0 then
+            for i = 1, 16 do
+                local status = model:getPuzzleBlackStatus(self.holiday_bid,i)
+                if status then
+                    self.choose_eff:setVisible(true)
+                    self.choose_eff:setPosition(cc.p(self.black_list[i]:getPositionX(),self.black_list[i]:getPositionY()))
+                    self.choose_num = i
+                    break
+                end
+            end
+        else
+            if self.black_list[self.choose_num] then
+                self.choose_eff:setPosition(cc.p(self.black_list[self.choose_num]:getPositionX(),self.black_list[self.choose_num]:getPositionY()))
+                self.choose_eff:setVisible(true)
+            end
+        end
+        self.item_panel_1:setVisible(false)
+    else
+        self.btn_txt:setString(TI18N("语言_c_3671"))
+        self.choose_eff:setVisible(false)
+        self.item_panel_1:setVisible(true)
+    end
+    self:updateGoBtnRed()
+end
+
+function ActionPuzzlePanel:setTimePanel( )
+   self.surplus_time:setPositionX(720-self.surplus_time:getContentSize().width - 10)
+   self.surplus_txt:setPositionX(self.surplus_time:getPositionX() - 10)
+end
+
+function ActionPuzzlePanel:setUpdatePanel()
+    local cfg = Config.HolidayPuzzleData.data_const[self.camp_id]
+    if not cfg then return end
+    loadSpriteTexture(self.puzzle_img,PathTool.getTargetRes("holiday_puzzle", cfg.pic_show.val,false,false),LOADTEXT_TYPE)
+    self.ultimate_item:setData(cfg.final_reward.val)
+    self.item_id_1 = cfg.item_id_1.val
+    self.item_id_2 = cfg.item_id_2.val
+    local item_cfg1 = Config.ItemData.data_get_data(self.item_id_1)
+    loadSpriteTexture(self.icon_1,PathTool.getItemRes(item_cfg1.icon),LOADTEXT_TYPE)
+    self.tip1:setString(cfg.holiday_title.desc)
+    self.tip2:setString(cfg.holiday_desc.desc)
+    self.gift_btn:setVisible(cfg.jump_id.val ~= 0)
+    local reward_cfg = Config.HolidayPuzzleData.data_line_reward[self.camp_id]
+    for i = 1, 9 do
+        if reward_cfg[i] and reward_cfg[i].reward and reward_cfg[i].reward[1] then
+            self.item_list[i]:setData(reward_cfg[i].reward[1])
+        end
+    end
+    local action_vo = controller:getActionSubTabVo(self.holiday_bid)
+    local bg_res = PathTool.getWelfareBannerRes(action_vo.aim_title)
+    loadSpriteTexture(self.title_img, bg_res, LOADTEXT_TYPE)
+    self:updateChoosePanel(false)
+end
+function ActionPuzzlePanel:setData()
+    self.is_can_click = true
+    self.choose_num = 0
+    self.data = model:getPuzzleData(self.holiday_bid)
+    if not self.data or not next(self.data) then return end
+    self:updateBlackPanel()
+    self:updateCostPanel1()
+    self:updateCostPanel2()
+    self:updateLineItemPanel()
+    self:updateFinalItemPanel()
+    self:updateChoosePanel(false)
+end
+--刷新16个遮罩的状态
+function ActionPuzzlePanel:updateBlackPanel()
+    local id = model:getPuzzleBlackID(self.holiday_bid)
+    if self.black_eff then
+        self.black_eff:clearTracks()
+        self.black_eff:removeFromParent()
+        self.black_eff = nil
+    end
+    local cfg = Config.HolidayPuzzleData.data_const[self.camp_id]
+    local num = 0.1
+    if cfg and cfg.spine_jump and cfg.spine_jump.val then
+        num = cfg.spine_jump.val
+    end
+    for i = 1, 16 do
+        if i == id then
+            if not self.black_eff then
+                self.black_eff = createEffectSpine("E24141", cc.p(self.black_list[i]:getPositionX(), self.black_list[i]:getPositionY()), cc.p(0.5, 0.5), false, PlayerAction.action,function()
+                    self.black_eff:setVisible(false)
+                end)
+                delayOnce(function()
+                    if self.black_list and self.black_list[i] then
+                        local status = model:getPuzzleBlackStatus(self.holiday_bid,i)
+                        self.black_list[i]:setVisible(status)   
+                    end
+                end,num)
+                self.black_eff:setScale(0.8)
+                self.puzzle_img:addChild(self.black_eff)
+            end
+        else
+            local status = model:getPuzzleBlackStatus(self.holiday_bid,i)
+            self.black_list[i]:setVisible(status)
+        end
+    end
+end
+--刷新连线道具的领取状态
+function ActionPuzzlePanel:updateLineItemPanel()
+    for i = 1, 9 do
+        local status = model:getPuzzleLineBlackStatus(self.holiday_bid,i)
+        self.item_list[i]:setGotIcon(status)
+    end
+end
+--刷新最终大奖的领取状态
+function ActionPuzzlePanel:updateFinalItemPanel()
+    local status = self.data and self.data.exp_reward == 1 or false
+    self.ultimate_item:setGotIcon(status)
+    if self.data and self.data.act_list and next(self.data.act_list) and tableLen(self.data.act_list) >= 16 and not status then
+        addRedPointToNodeByStatus(self.ultimate_item,true,10,10)
+        self.ultimate_item:setCanDungeonReceiveIcon(true)
+        if not self.ultimate_eff then
+            self.ultimate_eff = createEffectSpine("E20989", cc.p(0,0), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+            -- self.ultimate_eff:setScale(0.8)
+            self.ultimate_node:addChild(self.ultimate_eff,1)
+        end
+    else
+        addRedPointToNodeByStatus(self.ultimate_item,false,10,10)
+        self.ultimate_item:setCanDungeonReceiveIcon(false)
+        if self.ultimate_eff then
+            self.ultimate_eff:clearTracks()
+            self.ultimate_eff:removeFromParent()
+            self.ultimate_eff = nil
+        end
+    end
+end
+function ActionPuzzlePanel:onClickItem()
+    if self.ultimate_eff then
+        controller:cs16604(self.holiday_bid,0)
+    else
+        local cfg = Config.HolidayPuzzleData.data_const[self.camp_id]
+        if not cfg then return end
+        local config = Config.ItemData.data_get_data(cfg.final_reward.val[1])
+        TipsManager:getInstance():showGoodsTips(config,nil,nil,nil)
+    end
+end
+--刷新道具1消耗拥有
+function ActionPuzzlePanel:updateCostPanel1()
+    local config = Config.HolidayPuzzleData.data_cost[self.camp_id]
+    if not config then return end
+    local cfg = config[1]
+    self.have_num = BackpackController:getInstance():getModel():getItemNumByBid(self.item_id_1)
+    local num = self.data and self.data.draw_num1 or 0
+    self.need_num = 0
+    if cfg[num + 1] then
+        self.need_num = cfg[num + 1]
+    else
+        self.need_num = cfg[#cfg]
+    end
+    self.num_1:setString(self.have_num .. "/" .. self.need_num)
+    if self.have_num >= self.need_num then
+        self.num_1:setTextColor(cc.c3b(0x0e,0xa8,0x0e))
+    else
+        self.num_1:setTextColor(cc.c3b(0xff,0x15,0x15))
+    end
+    local _w = math.max(111,self.num_1:getContentSize().width+40)
+    self.item_panel_1:setContentSize(cc.size(_w,29))
+    self.icon_1:setPositionX(0)
+    self.num_1:setPositionX(_w/2+10)
+end
+--刷新道具2消耗拥有
+function ActionPuzzlePanel:updateCostPanel2()
+    local config = Config.HolidayPuzzleData.data_cost[self.camp_id]
+    if not config then return end
+    local cfg = config[2]
+    self.have_num_2 = BackpackController:getInstance():getModel():getItemNumByBid(self.item_id_2)
+    local num = self.data and self.data.draw_num2 or 0
+    self.need_num_2 = 0
+    if cfg[num + 1] then
+        self.need_num_2 = cfg[num + 1]
+    else
+        self.need_num_2 = cfg[#cfg]
+    end
+    local item_cfg2 = Config.ItemData.data_get_data(self.item_id_2)
+    local color_txt = ""
+    if self.have_num_2 >= self.need_num_2 then
+        color_txt = "#0ea80e"
+    else
+        color_txt = "#ff1515"
+    end
+    self.checkname:setString(string.format(TI18N("语言_c_6957"),PathTool.getItemRes(item_cfg2.icon),color_txt,self.have_num_2,self.need_num_2))
+    if self.data.act_list and next(self.data.act_list) and tableLen(self.data.act_list) >= 16 then
+        addRedPointToNodeByStatus(self.checkname,false)
+    else
+        addRedPointToNodeByStatus(self.checkname,self.have_num_2 >= self.need_num_2,25,18)
+    end
+    self.checkname:addTouchEventListener(function (  )
+        BackpackController:getInstance():openTipsSource(true, self.item_id_2)
+    end)
+end
+function ActionPuzzlePanel:updateGoBtnRed()
+    if self.data.act_list and next(self.data.act_list) and tableLen(self.data.act_list) >= 16 then
+        addRedPointToNodeByStatus(self.btn_go,false)
+    else
+        if self.is_optional then
+            if self.have_num_2 and self.need_num_2 then
+                addRedPointToNodeByStatus(self.btn_go,self.have_num_2 >= self.need_num_2,10,10)
+            end
+        else
+            if self.have_num and self.need_num then
+                addRedPointToNodeByStatus(self.btn_go,self.have_num >= self.need_num,10,10)
+            end
+        end
+    end
+end
+function ActionPuzzlePanel:openTaskPanel()
+    if not self.is_open_task then return end
+    if self.holiday_bid and self.holiday_bid ~= 0 then
+        local list = model:getPuzzleTaskData(self.holiday_bid)
+        for k, v in pairs(list) do
+            if v.finish ~= 2 then
+                self.is_open_task = false
+                controller:openActionPuzzleTaskPanel(true,self.holiday_bid)
+                break
+            end
+        end
+    end
+end
+function ActionPuzzlePanel:updateTaskRed()
+    local cfg = Config.HolidayPuzzleData.data_quest_list[self.camp_id]
+    if not cfg then return end
+    local status = false
+    for k, v in pairs(cfg) do
+        if model:getPuzzleTaskRed(self.holiday_bid,v.id) then
+            status = true
+            break
+        end
+    end
+    addRedPointToNodeByStatus(self.task_btn,status,10,10)
+    self:openTaskPanel()
+end
+function ActionPuzzlePanel:DeleteMe()
+    if self.hero_eff then
+        self.hero_eff:clearTracks()
+        self.hero_eff:removeFromParent()
+        self.hero_eff = nil
+    end
+    self.holiday_bid = 0
+    if self.update_puzzle_data then
+        GlobalEvent:getInstance():UnBind(self.update_puzzle_data)
+        self.update_puzzle_data = nil
+    end
+    if self.update_puzzle_task_data then
+        GlobalEvent:getInstance():UnBind(self.update_puzzle_task_data)
+        self.update_puzzle_task_data = nil
+    end
+    
+    if self.update_add_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_add_good_event)
+        self.update_add_good_event = nil
+    end
+    if self.update_modify_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+        self.update_modify_good_event = nil
+    end
+    if self.update_puzzle_click_event then
+        GlobalEvent:getInstance():UnBind(self.update_puzzle_click_event)
+        self.update_puzzle_click_event = nil
+    end
+    if self.black_eff then
+        self.black_eff:clearTracks()
+        self.black_eff:removeFromParent()
+        self.black_eff = nil
+    end
+end

@@ -1,0 +1,461 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--    阵容推荐页面
+-- <br/> 2020-03-18
+-- --------------------------------------------------------------------
+HeroLineupItem = class("HeroLineupItem",function()
+    return ccui.Layout:create()
+end)
+local _controller = HeroController:getInstance()
+local _model = _controller:getModel()
+
+function HeroLineupItem:ctor()
+    self.cell_width = 119*0.9
+    self.hero_item_list = {}
+    self.four_blank_img = {}
+    -- 精灵
+    self.elfin_item_list = {}
+    self.jinqi_item_list = {}
+    self.partner_id2 = 0
+    self.show_elfin_jinqi = 1
+    --9个位置
+    self.nine_position = {
+        [1] = cc.p(self.cell_width * 2.5 + 70, self.cell_width * 0.5 + 20),
+        [2] = cc.p(self.cell_width * 2.5 + 70, self.cell_width * 1.5 + 20),
+        [3] = cc.p(self.cell_width * 2.5 + 70, self.cell_width * 2.5 + 20),
+        [4] = cc.p(self.cell_width * 1.5 + 70, self.cell_width * 0.5 + 20),
+        [5] = cc.p(self.cell_width * 1.5 + 70, self.cell_width * 1.5 + 20),
+        [6] = cc.p(self.cell_width * 1.5 + 70, self.cell_width * 2.5 + 20),
+        [7] = cc.p(self.cell_width * 0.5 + 70, self.cell_width * 0.5 + 20),
+        [8] = cc.p(self.cell_width * 0.5 + 70, self.cell_width * 1.5 + 20),
+        [9] = cc.p(self.cell_width * 0.5 + 70, self.cell_width * 2.5 + 20),
+    }
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_lineup_item"))
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+    self:initView()
+end
+
+function HeroLineupItem:initView()
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    -- 通用进场动效
+    ActionHelp.itemUpAction(self.main_container, 720, 0, 0.25)
+
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.top_title_bg = self.top_panel:getChildByName("top_title_bg")
+    self.top_title_txt = self.top_title_bg:getChildByName("top_title_txt")
+    self.top_fight = self.top_panel:getChildByName("top_fight")
+    self.head_img = self.top_panel:getChildByName("head_img")
+    local pos = {2,4,6,7,9}--一开始默认 第一个阵法位置
+    for index=1,5 do
+        self.hero_item_list[index] = HeroExhibitionItem.new(0.9, false)
+        self.hero_item_list[index]:setPosition(self.nine_position[pos[index]])
+        self.top_fight:addChild(self.hero_item_list[index])
+    end
+    for i=1,4 do
+        self.four_blank_img[i] = self.top_fight:getChildByName("hero_info_21_"..i) 
+    end
+    local panel = self.top_panel:getChildByName("panel")
+    self.top_elfin_btn = panel:getChildByName("top_elfin_btn")
+    self.top_equip_btn = panel:getChildByName("top_equip_btn")
+    self.top_jinqi_btn =  panel:getChildByName("top_jinqi_btn")
+    self.tips = panel:getChildByName("tips")
+    self.tips:setString(TI18N("语言_c_5455"))
+    self.left_btn = panel:getChildByName("left_btn")
+    self.right_btn = panel:getChildByName("right_btn")
+    local jinqi_hide_status = JinqiController:getInstance():getModel():checkJinqiHideStatus()
+    if not jinqi_hide_status then
+        self.left_btn:setVisible(false)
+        self.right_btn:setVisible(false)
+        self.tips:setVisible(false)
+        panel:getChildByName("Image_2"):setVisible(false)
+    end
+
+    self.top_name_label = self.top_panel:getChildByName("top_name_label")
+    self.top_attk_bg = self.top_panel:getChildByName("attk_bg")
+    self.top_attk_label = self.top_panel:getChildByName("top_attk_label")    
+
+    self.top_title_txt:setString(TI18N("语言_c_5226"))
+    self.top_title_bg:setContentSize(cc.size(self.top_title_txt:getContentSize().width + 60, self.top_title_bg:getContentSize().height))
+end
+function HeroLineupItem:registerEvent()
+    for index, value in ipairs(self.hero_item_list) do
+        registerButtonEventListener(value, function ()
+            if self.data.partner_infos[index] then
+                self:onClickHeroItemByIndex(index)
+            end
+        end, false, 1)
+    end
+    if not self.hero_data_event then
+        self.hero_data_event = GlobalEvent:getInstance():Bind(HeroEvent.Hero_Data_Event, function(data)
+            if data.bid ~= 0 then
+                local config = Config.PartnerData.data_partner_base[data.bid]
+                local camp_type = 1
+                local type = 1
+                if config then
+                    camp_type = config.camp_type
+                    type = config.type
+                end
+                data.camp_type = camp_type
+                data.type = type
+                HeroController:getInstance():openHeroTipsPanel(true, data, {is_show_form_btn = false})
+            end
+        end)
+    end
+    for index, value in ipairs(self.elfin_item_list) do
+        registerButtonEventListener(value, function ()
+            if self.data.sprites[index] and self.data.sprites[index].item_bid and self.data.sprites[index].item_bid ~= 0 then
+                local item_bid = 0
+                for key, value in pairs(self.data.sprites) do
+                    if index == value.pos then
+                        item_bid = value.item_bid
+                    end
+                end
+                if item_bid == 0 then
+                    return
+                end
+                local spirecfg = Config.SpriteData.data_elfin_data(item_bid).skill
+                local config = Config.SkillData.data_get_skill(spirecfg)
+                if config then
+                    TipsManager:getInstance():showSkillTips(config)
+                end
+            end
+        end, false, 1)
+    end
+    for index, value in ipairs(self.jinqi_item_list) do
+        registerButtonEventListener(value, function ()
+            if self.data.prohibitors[index] and self.data.prohibitors[index].id and self.data.prohibitors[index].id ~= 0 then
+                local jinqi_info = 0
+                for key, value in pairs(self.data.prohibitors) do
+                    if index == value.pos then
+                        jinqi_info = value
+                    end
+                end
+                if jinqi_info then
+                    local bid = jinqi_info.id or 0
+                    local jinqi_cfg = Config.ProhibitorData.data_get_proh_star[bid]
+                    if bid == 0 or not jinqi_cfg then
+                    else
+                        local star = jinqi_info.star
+                        local jinqi_skill_id = jinqi_cfg[star].active_skill[1]
+                        local skill_cfg = Config.SkillData.data_get_skill(jinqi_skill_id)
+                        if skill_cfg then
+                            TipsManager:getInstance():showSkillTips(skill_cfg)
+                        end
+                    end
+                end
+            end
+        end, false, 1)
+    end
+    registerButtonEventListener(self.hallows_item, function ()
+        if not self.data.hallows_id or self.data.hallows_id == 0 then return end
+		local max_vo = HallowsController:getInstance():getModel():makeHighestHallowVo(self.data.hallows_id)
+		HallowsController:getInstance():openHallowsTips(true, max_vo)
+        -- HallowsController:getInstance():openHallowsTips(true, self.data.hallows_id)
+    end, false, 1)
+    registerButtonEventListener(self.left_btn, function ()
+        self:onClickChangeBtn()
+    end, true, 1)
+    registerButtonEventListener(self.right_btn, function ()
+        self:onClickChangeBtn()
+    end, true, 1)
+end
+function HeroLineupItem:onClickChangeBtn()
+    if self.show_elfin_jinqi == 1 then
+        self.show_elfin_jinqi = 2
+        self.right_btn:setVisible(false)
+        self.left_btn:setVisible(true)
+    else
+        self.show_elfin_jinqi = 1
+        self.left_btn:setVisible(false)
+        self.right_btn:setVisible(true)
+    end
+    doStopAllActions(self.top_equip_btn)
+    doStopAllActions(self.top_elfin_btn)
+    doStopAllActions(self.top_jinqi_btn)
+    if self.show_elfin_jinqi == 1 then
+        local action1 = cc.MoveTo:create(0.1, cc.p(58, 46))
+        local action2 = cc.MoveTo:create(0.1, cc.p(148, 0))
+        local action3 = cc.MoveTo:create(0.1, cc.p(267, 0))
+        self.top_equip_btn:runAction(cc.Sequence:create(action1))
+        self.top_elfin_btn:runAction(cc.Sequence:create(action2))
+        self.top_jinqi_btn:runAction(cc.Sequence:create(action3))
+    elseif self.show_elfin_jinqi == 2 then
+        -- local action1 = cc.MoveTo:create(0.1, cc.p(-52, 46))
+        -- local action2 = cc.MoveTo:create(0.1, cc.p(27, 0))
+        -- local action3 = cc.MoveTo:create(0.1, cc.p(148, 0))
+        local action1 = cc.MoveTo:create(0.1, cc.p(-147, 46))
+        local action2 = cc.MoveTo:create(0.1, cc.p(-77, 0))
+        local action3 = cc.MoveTo:create(0.1, cc.p(27, 0))
+        self.top_equip_btn:runAction(cc.Sequence:create(action1))
+        self.top_elfin_btn:runAction(cc.Sequence:create(action2))
+        self.top_jinqi_btn:runAction(cc.Sequence:create(action3))
+    end
+end
+
+function HeroLineupItem:setData(data)
+    self.data = data
+    -- print("vardump++++++++++",vardump(data))
+    local type = self.data.formation_type
+    local formation_config = Config.FormationData.data_form_data[type]
+    if formation_config then
+        self:initFormationData(formation_config)
+    end
+    self:registerEvent()
+end
+
+function HeroLineupItem:initFormationData(formation_config)
+    if not formation_config then return end
+    -- self.dic_index_pos = {}
+    -- self.dic_pos_index = {}
+    local dic_pos_index = {}
+    self.pos_name_list = {}
+    self.pos_rect_list = {}
+    local width = self.cell_width - 10
+    for i,v in ipairs(formation_config.pos) do
+        local index = v[1] 
+        local pos = v[2] 
+        -- self.dic_index_pos[index] = pos
+        dic_pos_index[pos] = index
+        -- self:updatePosItemByIndex(pos, index)
+        --更新位置
+        if self.hero_item_list[index] then
+            self.hero_item_list[index]:setPosition(self.nine_position[pos])
+        end
+        if pos <= 3 then
+            self.pos_name_list[index] = 1 --位置 前
+        elseif pos > 3 and pos <= 6 then
+            self.pos_name_list[index] = 2 --位置 中
+        else
+            self.pos_name_list[index] = 3 --位置 后
+        end
+
+        local x = self.nine_position[pos].x
+        local y = self.nine_position[pos].y
+        local rect = cc.rect( x - width*0.5 ,y - width*0.5 , width, width)
+        self.pos_rect_list[index] = rect
+        -- self.hero_item_list[index]:addCallBack(function() self:onClickHeroItemByIndex(index) end)
+        self.hero_item_list[index]:setData(self.data.partner_infos[index])
+    end
+    --神器
+    local size = self.top_equip_btn:getContentSize()
+    if not self.hallows_item then
+        self.hallows_item = BackPackItem.new(false, true, false, 0.8)
+        self.hallows_item:showAddIcon(true)
+        self.hallows_item:setPosition(cc.p(size.width * 0.5, size.height * 0.5))
+        self.top_equip_btn:addChild(self.hallows_item)
+        if self.data.hallows_id ~= 0 then
+            local config = Config.HallowsData.data_base[self.data.hallows_id]
+            self.hallows_item:setBaseData(config.item_id)
+            self.hallows_item:showAddIcon(false)
+        else
+            self.hallows_item:showAddIcon(true)
+        end
+        self.hallows_item:setMagicIcon(self.data.hallows_look_id)
+    end
+    --精灵
+    local elfin_bid_list = self.data.sprites
+    local function getElfinBidByPos( pos )
+        local elfin_bid
+        for k,v in pairs(elfin_bid_list) do
+            if v.pos == pos then
+                elfin_bid = v.item_bid
+                break
+            end
+        end
+        return elfin_bid
+    end
+    for i=1,4 do
+        local elfin_bid = getElfinBidByPos(i)
+        local elfin_item = self.elfin_item_list[i]
+        if elfin_item == nil then
+            elfin_item = SkillItem.new(true, true, true, 0.4)
+            local pos_x = 24.3
+            local pos_y = 72.5
+            if i == 3 or i == 4 then
+                pos_y = 24.3
+            end
+            if i == 2 or i == 4 then
+                pos_x = 72.5
+            end
+            elfin_item:setPosition(cc.p(pos_x, pos_y))
+            self.top_elfin_btn:addChild(elfin_item)
+        end
+        -- local item_bid = ElfinController:getInstance():getModel():getElfinItemByPos(i)
+        if elfin_bid then
+            local bid = elfin_bid or 0
+            elfin_item:showLockIcon(false)
+            local elfin_cfg = Config.SpriteData.data_elfin_data(bid)
+            if bid == 0 or not elfin_cfg then -- 已解锁，但未放置精灵
+                elfin_item:setData()
+            else
+                local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+                if skill_cfg then
+                    elfin_item:setData(skill_cfg)
+                end
+            end
+        else
+            elfin_item:setData()
+            elfin_item:showLockIcon(true)
+        end
+        -- elfin_item:addCallBack(self:openSkillTip(i))
+        self.elfin_item_list[i] = elfin_item
+    end
+
+    --禁器
+    local jinqi_list = self.data.prohibitors
+    local jinqi_aoyi = self.data.prohibitor_aoyi_order
+    local function getJInqiInfoByPos( pos )
+        local jinqi_info
+        for k,v in pairs(jinqi_list) do
+            if v.pos == pos then
+                jinqi_info = v
+                break
+            end
+        end
+        return jinqi_info
+    end
+    for i=1,4 do
+        local jinqi_info = getJInqiInfoByPos(i)
+        local jinqi_item = self.jinqi_item_list[i]
+        if jinqi_item == nil then
+            jinqi_item = SkillItem.new(true, true, true, 0.4)
+            local pos_x = 24.3
+            local pos_y = 72.5
+            if i == 3 or i == 4 then
+                pos_y = 24.3
+            end
+            if i == 2 or i == 4 then
+                pos_x = 72.5
+            end
+            jinqi_item:setPosition(cc.p(pos_x, pos_y))
+            self.top_jinqi_btn:addChild(jinqi_item)
+        end
+        
+        if jinqi_info then
+            local bid = jinqi_info.id or 0
+            jinqi_item:showLockIcon(false)
+            local jinqi_cfg = Config.ProhibitorData.data_get_proh_star[bid]
+            if bid == 0 or not jinqi_cfg then
+                jinqi_item:setData()
+            else
+                local star = jinqi_info.star
+                local jinqi_skill_id = jinqi_cfg[star].active_skill[1]
+                local skill_cfg = Config.SkillData.data_get_skill(jinqi_skill_id)
+                if skill_cfg then
+                    jinqi_item:setData(skill_cfg)
+                end
+            end
+        else
+            jinqi_item:setData()
+            local lock_st = self:getJinPosInfo(i,jinqi_aoyi)
+            if lock_st then
+                jinqi_item:showLockIcon(false)
+            else
+                jinqi_item:showLockIcon(true)
+            end
+        end
+        self.jinqi_item_list[i] = jinqi_item
+    end
+    --头像
+    self.play_head = PlayerHead.new(PlayerHead.type.circle)
+	self.play_head:setPosition(cc.p(23,23))
+	self.play_head:setAnchorPoint(cc.p(0.5,0.5))
+	self.play_head:setTouchEnabled(true)
+    self.play_head:setSwallowTouches(false)
+	self.play_head:setScale(1)
+	self.head_img:addChild(self.play_head)
+    -- self.play_head = self:createPlayerHead(105,60)
+    local face_id = self.data.face_id
+    local avatar_bid = self.data.avatar_bid
+    local vo = Config.AvatarData.data_avatar[avatar_bid]
+    if vo then
+        local res_id = vo.res_id or 1
+        local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+        self.play_head:showBg(res, nil, false, vo.offy)
+    end
+
+    self.play_head:setHeadRes(face_id, false, LOADTEXT_TYPE, self.data.face_file, self.data.face_update_time)
+    self.play_head:setLev(self.data.lev)
+    
+    self.play_head:addCallBack(function( )
+        self.data.srv_id = self.data.sid
+        FriendController:getInstance():openFriendCheckPanel(true,self.data)
+    end)
+    --名字战力
+    self.top_name_label:setString(self.data.name)
+    self.top_attk_label:setString(MoneyTool.moneyFormat(self.data.power))
+
+    --没使用的要变灰变暗
+    local index = 1
+    for pos=1,9 do
+        if dic_pos_index[pos] == nil then
+            self.four_blank_img[index]:setPosition(self.nine_position[pos])
+            index = index + 1
+            if index > 4 then
+                break
+            end
+        end
+    end
+end
+-- function HeroLineupItem:onClickSkillItem( sender, event_type )
+--     local skill_cfg = sender:getData()
+--     -- if skill_cfg and next(skill_cfg) ~= nil then
+--         TipsManager:getInstance():showSkillTips(skill_cfg, false, false, false, 0)
+--     -- end
+-- end
+function HeroLineupItem:getJinPosInfo(pos,lev)
+    local base_cfg = Config.ProhibitorData.data_get_constant.position_unlock.val
+    local now_step = lev
+    local unlock_step = nil
+    local unlock_status = false
+    for i, v in ipairs(base_cfg) do
+        local info = v
+        if v[1] == pos and v[2] <= now_step then
+            unlock_status = true
+            unlock_step = v[2] 
+        end
+    end
+    return unlock_status
+end
+
+--点击英雄
+function HeroLineupItem:onClickHeroItemByIndex(index)
+    if self.data.partner_infos[index].bid then
+        HeroController:getInstance():sender11051(self.data.rid,self.data.sid,_model.recommend_bid,self.data.partner_infos[index].bid)
+    end
+end
+function HeroLineupItem:DeleteMe()
+    if self.hero_data_event then
+        GlobalEvent:getInstance():UnBind(self.hero_data_event)
+        self.hero_data_event = nil
+    end
+    for k, item in pairs(self.elfin_item_list) do
+        item:DeleteMe()
+        item = nil
+    end
+    for k, item in pairs(self.hero_item_list) do
+        item:DeleteMe()
+        item = nil
+    end
+    for k, item in pairs(self.four_blank_img) do
+        item:DeleteMe()
+        item = nil
+    end
+    -- doStopAllActions(self.main_container)
+    doStopAllActions(self.top_equip_btn)
+    doStopAllActions(self.top_elfin_btn)
+    doStopAllActions(self.top_jinqi_btn)
+
+    -- if self.item_scrollview then
+    --     self.item_scrollview:DeleteMe()
+    -- end
+    -- self.item_scrollview = nil
+end

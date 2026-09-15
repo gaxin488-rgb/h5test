@@ -1,0 +1,131 @@
+--******** 文件说明 ********
+-- @Author:      hyxing 
+-- @description: facebook分享界面
+-- @DateTime:    2019-06-28 10:46:25
+-- *******************************
+FaceBookPanel = class("FaceBookPanel", function()
+	return ccui.Widget:create()
+end) 
+local controller = WelfareController:getInstance()
+function FaceBookPanel:ctor()
+    self.item_list = {}
+    self:createRootWnd()
+    self:registerEvent()
+end
+
+function FaceBookPanel:createRootWnd()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("welfare/facebook_panel"))
+	self:addChild(self.root_wnd)
+	self:setPosition(-40, -80)
+	self:setAnchorPoint(0, 0)
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+
+	local image_bg = main_container:getChildByName("image_bg")
+	local res = PathTool.getPlistImgForDownLoad("bigbg/welfare","txt_cn_facebook")
+	if not self.load_bg then
+		self.load_bg = loadSpriteTextureFromCDN(image_bg, res, ResourcesType.single, self.load_bg)
+	end
+	self.item_scrollview = main_container:getChildByName("item_scrollview")
+	self.item_scrollview:setScrollBarEnabled(false)
+	self:setData()
+
+	self.btn_shard = main_container:getChildByName("btn_shard")
+	self.btn_shard_label = self.btn_shard:getChildByName("Text_7")
+	self.btn_shard_label:setString("")
+	self.btn_home = main_container:getChildByName("btn_home")
+	self.btn_home:getChildByName("Text_7"):setString(TI18N("访问主页"))
+	controller:sender16658()
+end
+
+function FaceBookPanel:registerEvent()
+	registerButtonEventListener(self.btn_shard, function() 
+        self:btnShard()
+    end, true, 1)
+    registerButtonEventListener(self.btn_home, function() 
+        self:btnHome()
+    end, true, 1)
+
+    if self.bind_facebook_event == nil then
+		self.bind_facebook_event = GlobalEvent:getInstance():Bind(WelfareEvent.UpdateBindFacebookStatus, function(data) 
+			self.data = data
+			if self.clearShardTicket then
+				self:clearShardTicket()
+			end
+			self:setShardBtnStatus()
+		end)
+	end
+end
+function FaceBookPanel:setShardBtnStatus()
+	if self.data and self.btn_shard_label then
+		if self.data.code == 0 then
+			self.btn_shard_label:setString(TI18N("立即分享"))
+		elseif self.data.code == 1 then
+			self.btn_shard_label:setString(TI18N("领取奖励"))
+		end
+	end
+end
+
+function FaceBookPanel:setData()
+	local data_info = Config.HolidayClientData.data_info
+	if data_info and data_info[WelfareIcon.facebook] then
+		local data_list = data_info[WelfareIcon.facebook].items or {}
+		local setting = {}
+	    setting.scale = 0.9
+	    setting.max_count = 5
+	    setting.is_center = true
+	    setting.space_x = 15
+	    self.item_list = commonShowSingleRowItemList(self.item_scrollview, self.item_list, data_list, setting)
+	end
+end
+function FaceBookPanel:btnShard()
+	if self.data then
+		if self.data.code == 0 then
+			callFunc("shareLinkToFB", "https://www.facebook.com/sszgxm")
+			if self.shard_ticket == nil then
+		        self.shard_ticket = GlobalTimeTicket:getInstance():add(function()
+		            controller:sender16657()
+		            if self.clearShardTicket then
+		            	self:clearShardTicket()
+		            end
+		        end,3)
+		    end
+		elseif self.data.code == 1 then
+			controller:sender16659()
+		end
+	end
+end
+function FaceBookPanel:clearShardTicket()
+	if self.shard_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.shard_ticket)
+        self.shard_ticket = nil
+    end
+end
+function FaceBookPanel:btnHome()
+	if IS_IOS_PLATFORM == true then
+		sdkCallFunc("openSyW", "https://www.facebook.com/sszgxm")
+	else
+		sdkCallFunc("openUrl", "https://www.facebook.com/sszgxm")
+	end
+end
+function FaceBookPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool)
+end
+
+function FaceBookPanel:DeleteMe()
+	self:clearShardTicket()
+    if self.load_bg then
+        self.load_bg:DeleteMe()
+        self.load_bg = nil
+    end
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    if self.bind_facebook_event then
+		GlobalEvent:getInstance():UnBind(self.bind_facebook_event)
+		self.bind_facebook_event = nil
+	end
+end

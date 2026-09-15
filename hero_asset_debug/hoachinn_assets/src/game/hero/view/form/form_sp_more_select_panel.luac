@@ -1,0 +1,448 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      多个sp光环选择界面
+-- <br/> 2018年11月20日
+-- --------------------------------------------------------------------
+FormSpMoreSelectPanel = FormSpMoreSelectPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+
+function FormSpMoreSelectPanel:__init(fun_form_type)
+    self.from_type = fun_form_type or 1
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Mini   
+    self.is_full_screen = false
+    self.layout_name = "hero/form_sp_more_select_panel"
+
+    self.res_list = {}
+    self.skill_item_list={}
+    self.click_pos = 0
+end
+
+function FormSpMoreSelectPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container, 1)
+
+	local win_title = main_container:getChildByName("win_title")
+	win_title:setString(TI18N("语言_c_1985"))
+    local image_2 = main_container:getChildByName("imgTitleBg")
+    moveTextBg(win_title,image_2,60,image_2:getContentSize().width)
+    self.line_txt = {}
+    for i=1,4 do
+        local num_txt = main_container:getChildByName("num_txt_"..i)
+        num_txt.line = num_txt:getChildByName("line")
+        self.line_txt[i] = num_txt
+        num_txt:setVisible(false)
+    end
+    self.right_btn = main_container:getChildByName("right_btn")
+    self.right_btn:getChildByName("label"):setString(TI18N("语言_c_1986"))
+
+	self.tips_txt = createRichLabel(22, 274, cc.p(0.5, 0.5), cc.p(338, 328), -6, nil, 500)
+	self.tips_txt:setString(TI18N("语言_c_7055"))
+	main_container:addChild(self.tips_txt)
+    self.click_skill_tip = main_container:getChildByName("click_skill_tip")
+    self.click_skill_tip:setVisible(false)
+	local tip = main_container:getChildByName("tip")
+    tip:setString(TI18N("语言_c_7257"))
+    setTextMaxWidth(tip,600,-6)
+	local lay_scrollview = main_container:getChildByName("lay_scrollview")
+    if not self.list_view then
+        local scroll_view_size = lay_scrollview:getContentSize()
+        local setting = {
+            item_class = FormSpMoreSelectItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 4,                    -- 第一个单元的Y起点
+            space_y = 0,                   -- y方向的间隔
+            item_width = 583,               -- 单元的尺寸width
+            item_height = 148,              -- 单元的尺寸height
+            -- row = 1,                        -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            -- need_dynamic = true
+        }
+        self.list_view = CommonScrollViewLayout.new(lay_scrollview, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+end
+
+function FormSpMoreSelectPanel:register_event()
+    -- registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 1)
+    registerButtonEventListener(self.background, handler(self, self.onClickSaveBtn) ,false, 1)
+    registerButtonEventListener(self.right_btn, handler(self, self.onClickSaveBtn), true)
+    --sp光环更改
+    self:addGlobalEvent(HeroEvent.Hero_Sp_Skill_Update_Event, function (data)
+        if not data then return end
+        local status = true
+        for i,v in pairs(self.chose_skill_list) do
+            if v.pos == data.pos then
+                status = false
+                if v.id == data.id and v.skill_bid ~= 0 and v.show_bid ~= 0 then
+                    table.remove(self.chose_skill_list, i)
+                else
+                    self.chose_skill_list[i].id = data.id
+                    self.chose_skill_list[i].pos = data.pos
+                    self.chose_skill_list[i].skill_bid = data.skill_bid
+                    self.chose_skill_list[i].show_bid = data.show_bid
+                end
+                break
+            end
+        end
+        if status then
+            local list = {
+                id = data.id,
+                pos = data.pos,
+                skill_bid = data.skill_bid,
+                show_bid = data.show_bid,
+            }
+            table.insert(self.chose_skill_list, list)
+        end
+        local _list = {}
+        for i,v in pairs(self.chose_skill_list) do
+            _list[v.pos] = v
+        end
+        self.chose_skill_list = _list
+        self:updateSkillList()
+        local pos = deepCopy(self.click_pos)
+        self.click_pos = 0
+        self:onClickSkillItem(pos)
+    end)
+end
+
+--关闭
+function FormSpMoreSelectPanel:onClickBtnClose()
+    controller:openFormSpMoreSelectPanel(false)
+end
+
+function FormSpMoreSelectPanel:onClickSaveBtn(  )
+    for key,value in pairs(self.setting.select_skill or {}) do
+        local list = {}
+        for i,v in pairs(value.sp_skills) do
+            table.insert(list, v)
+        end
+        table.sort(list, function(a,b) return a.pos < b.pos end)
+        self.setting.select_skill[key].sp_skills = list
+    end
+    local list = self.setting.select_skill
+    local status = false
+    for i,v in pairs(list) do
+        if v.order == self.setting.order then
+            v.sp_skills = self.chose_skill_list
+            status = true
+        end
+    end
+    if not status then
+        local _list = {
+            order = self.setting.order,
+            sp_skills=self.chose_skill_list
+        }
+        table.insert(list,_list)
+    end
+    if next(list) and #list > 1 then
+        for key,value in pairs(list) do
+            if next(value.sp_skills) and tableLen(value.sp_skills) > 1 then
+                table.sort(value.sp_skills, function(a,b) return a.pos < b.pos end)
+            end
+        end
+    end
+    local data = {
+        type = self.from_type,  --布阵类型
+        formations = list   --技能列表
+    }
+    GlobalEvent:getInstance():Fire(HeroEvent.Hero_Sp_Skill_Get_Event, data)
+    self:onClickBtnClose()
+end
+--setting.form_data  上阵忍者
+--setting.select_skill 当前的已选择的的技能列表
+--setting.order 队伍序号
+function FormSpMoreSelectPanel:openRootWnd(setting)
+    self.setting = deepCopy(setting) or {}
+    self.form_data = self.setting.form_data or {}
+    self.chose_skill_list = {}
+    if self.setting.select_skill and next(self.setting.select_skill) then
+        for i,v in pairs(self.setting.select_skill) do
+            if v.order == self.setting.order then
+                self.chose_skill_list = v.sp_skills
+            end
+        end
+    else
+        self.setting.select_skill = {}
+        self.chose_skill_list = {}
+    end
+    self.order = self.setting.order
+    self.halo_num = PotentialController:getInstance():getModel():getHaloNum()
+    self.halo_lev = PotentialController:getInstance():getModel():getHaloLv()
+    self:setSpSkillList()
+    self:updateSkillList()
+    if self.click_pos == 0 then
+        self:onClickSkillItem(1)
+    end
+end
+
+function FormSpMoreSelectPanel:setSpSkillList()
+    self.sp_skill_list = {}
+    for key, value in pairs(self.form_data) do
+        for k, v in pairs(value.skills or {}) do
+            local cfg = Config.SkillData.data_get_skill(v.skill_bid)
+            local hero_cfg = Config.SkillExtensionData.data_get_sp_halo_skill_group[value.bid]
+            if cfg and hero_cfg and cfg.group == hero_cfg.sp_halo_skill_group then
+                for i = 1, self.halo_num do
+                    if not self.sp_skill_list[i] then
+                        self.sp_skill_list[i] = {}
+                    end
+                    
+                    local list = {}
+                    list.bid = value.bid
+                    list.id = value.partner_id
+                    if i == 1 then
+                        list.skill_bid = v.skill_bid
+                        list.show_bid = v.skill_bid
+                    else
+                        local limit_list = Config.PotentialData.data_const.halo_level_star.val
+                        local skill_bid = 0
+                        if hero_cfg["sp_halo_show_skill_"..i] then
+                            local skill_list = hero_cfg["sp_halo_show_skill_"..i]
+                            local _lev = 1
+                            for index, star_limit in ipairs(limit_list) do
+                                if value.star >= star_limit[1] then
+                                    _lev = star_limit[2]
+                                end
+                            end
+                            _lev = math.min(_lev, self.halo_lev)
+                            for _, v1 in pairs(skill_list) do
+                                if v1[1] == _lev then
+                                    skill_bid = v1[2]
+                                end
+                            end
+                        end
+                        list.show_bid = skill_bid
+                        list.skill_bid = v.skill_bid
+                    end
+                    list.pos = i
+                    table.insert(self.sp_skill_list[i],list)
+                end
+            end
+        end
+    end
+end
+
+-- 更新底部四个精灵技能图标
+function FormSpMoreSelectPanel:updateSkillList(  )
+    -- self.halo_num
+    local num = 1
+    if self.from_type ~= PartnerConst.Fun_Form.LostTowerDreamTeam then
+        local lock_list = Config.PotentialData.data_const.halo_lock.val
+        for i=1,4 do
+            if PotentialController:getInstance():getModel():getHaloIsOpen(i) then
+                num = i
+            end
+        end
+    end
+    for i=1,num do
+		local skill_list = {}
+        for _, v in pairs(self.chose_skill_list) do
+            if v.pos == i then
+                skill_list = v
+            end
+        end
+
+		local skill_item = self.skill_item_list[i]
+
+        if not skill_item then
+            skill_item = SkillItem.new(true, true, false, 0.9, true)
+            skill_item.elfin_pos = i
+            self.main_container:addChild(skill_item)
+            skill_item:setPosition(cc.p(64 + (540/num)*(i-0.5), 232))
+            self.line_txt[i]:setPositionX(64 + (540/num)*(i-0.5))
+            self.line_txt[i]:setVisible(true)
+            if self.line_txt[i].line then
+                if self.line_txt[i-1] then
+                    local _x = self.line_txt[i-1]:getPositionX()
+                    local _x2 = self.line_txt[i]:getPositionX()
+                    self.line_txt[i].line:setContentSize(cc.size(_x2 - _x - 35,3))
+                    self.line_txt[i].line:setPositionX(-(_x2 - _x)*0.5+10)
+                end
+            end
+            self.skill_item_list[i] = skill_item
+            local click_fun = function ()
+                if i <= self.halo_num then
+                    self:onClickSkillItem(i)
+                else
+                    if PotentialController:getInstance():getModel():getHaloIsOpen(i) then
+                        local str = TI18N("语言_c_7069")
+                        CommonAlert.show( str, TI18N("语言_c_63"), function()
+                            JumpController:getInstance():jumpViewByEvtData({764})
+                        end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_3114"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+                    else
+                        message(TI18N("语言_c_1891"))
+                    end
+                end
+            end
+            skill_item:addCallBack(click_fun)
+            skill_item:setClickInfo({clickScroll=true})
+            skill_item:addLongTimeTouchCallback()
+        end
+
+        if i <= self.halo_num then
+            local skill_bid = skill_list and skill_list.show_bid or 0
+			skill_item.skill_bid = skill_bid
+            skill_item:showLockIcon(false)
+            local skill_cfg = Config.SkillData.data_get_skill(skill_bid)
+            if skill_bid == 0 or not skill_cfg then -- 已解锁，但未放置精灵
+                skill_item:setData()
+            else
+                if skill_cfg then
+                    skill_item:setData(skill_cfg)
+                end
+            end
+        else
+            -- 未解锁精灵位置
+            skill_item.skill_bid = 0
+            skill_item:setData() 
+            skill_item:showLockIcon(true)
+        end
+	end
+end
+
+function FormSpMoreSelectPanel:onClickSkillItem(pos)
+	if pos == self.click_pos then return end
+    self.click_pos = pos
+    local item = self.skill_item_list[pos]
+    self.click_skill_tip:setPosition(cc.p(item:getPositionX(), item:getPositionY() - 12))
+    self.click_skill_tip:setVisible(true)
+    self.all_skill_data = {}
+    if next(self.sp_skill_list[self.click_pos]) then
+        for i, v in pairs(self.sp_skill_list[self.click_pos]) do
+            v.is_equip = false
+            local status = true
+            for key, value in pairs(self.chose_skill_list) do
+                if v.id == value.id and value.show_bid ~= 0 and value.skill_bid ~= 0 then
+                    v.is_equip = true
+                    if v.pos ~= value.pos then
+                        status = false
+                    end
+                end
+            end
+            if status and v.show_bid ~= 0 then
+                table.insert(self.all_skill_data, v)
+            end
+        end
+    end
+    self.list_view:setData(self.all_skill_data)
+end
+function FormSpMoreSelectPanel:close_callback()
+    if self.list_view then
+		self.list_view:DeleteMe()
+		self.list_view = nil
+	end
+    for i, v in pairs(self.skill_item_list) do
+        v:removeFromParent()
+        v=nil
+    end
+    self.skill_item_list = {}
+    self:onClickBtnClose()
+end
+
+-------------------------------------------------------------------------------------------------------
+--item 类
+FormSpMoreSelectItem = class("FormSpMoreSelectItem", function()
+    return ccui.Widget:create()
+end)
+
+function FormSpMoreSelectItem:ctor()
+    self:config()
+    self:layoutUI()
+    self:registerEvent()
+end
+
+function FormSpMoreSelectItem:config()
+
+end
+
+function FormSpMoreSelectItem:layoutUI()
+    self.size = cc.size(583, 148)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+    self:setContentSize(self.size)
+    local csbPath = PathTool.getTargetCSB("hero/form_sp_skill_select_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.item_icon = SkillItem.new(true, true, true, 1, false)
+    self.item_icon:setPosition(cc.p(80, 80))
+    self.main_container:addChild(self.item_icon)
+
+    self.name_label =  createLabel(24, Config.ColorData.data_color4[184], nil, 154, 117, "", self.main_container, 2, cc.p(0,0.5))
+
+    local word_width = 270
+
+    self.desc_scroll = self.main_container:getChildByName("desc_scroll")
+    self.desc_scroll:setScrollBarEnabled(false)
+    self.dec_label = createRichLabel(21, cc.c3b(0x68,0x45,0x2a), cc.p(0,1), cc.p(0,0), -4, 0, word_width)
+    self.desc_scroll:addChild(self.dec_label)
+
+    self.comfirm_btn = self.main_container:getChildByName("comfirm_btn")
+    self.comfirm_label = self.comfirm_btn:getChildByName("label")
+    self.comfirm_label:setColor(cc.c3b(0xff,0xff,0xff))
+end
+
+
+function FormSpMoreSelectItem:registerEvent()
+    registerButtonEventListener(self.comfirm_btn, handler(self, self.onClickComfirmBtn) ,true, 2)
+end
+
+function FormSpMoreSelectItem:onClickComfirmBtn()
+    GlobalEvent:getInstance():Fire(HeroEvent.Hero_Sp_Skill_Update_Event, self.data)
+end
+
+function FormSpMoreSelectItem:setData(data)
+    if not data then return end
+    self.data = data
+    self.cfg = Config.SkillData.data_get_skill(self.data.show_bid)
+    if self.cfg then
+        local name_str = string_format("%s (%s)", self.cfg.name, string.format(TI18N("语言_c_540"),self.cfg.level))
+        self.name_label:setString(transformTextToShort(name_str, 30))
+        addEvt2showAllTextTips(self.name_label,name_str,30)
+        self.dec_label:setString(self.cfg.des, 30)
+        local _h = math.max(self.desc_scroll:getContentSize().height,self.dec_label:getContentSize().height)
+        self.desc_scroll:setInnerContainerSize(cc.size(self.desc_scroll:getContentSize().width,_h))
+        self.dec_label:setPositionY(_h)
+        self.item_icon:setData(self.cfg)
+        self:setBtnStatus(self.data.is_equip)
+        self.comfirm_btn:setVisible(true)
+    else
+        self.comfirm_btn:setVisible(false)
+    end
+end
+
+--是否装备
+function FormSpMoreSelectItem:setBtnStatus(is_equip)
+    if is_equip  then
+        local btn_res_id = PathTool.getResFrame("common", "common_1018")
+        self.comfirm_btn:loadTexture(btn_res_id, LOADTEXT_TYPE_PLIST)
+        self.comfirm_label:setString(TI18N("语言_c_3187"))
+        self.comfirm_label:enableOutline(Config.ColorData.data_color4[263], 2)
+    else
+        local btn_res_id = PathTool.getResFrame("common", "common_1017")
+        self.comfirm_btn:loadTexture(btn_res_id, LOADTEXT_TYPE_PLIST)
+        self.comfirm_label:setString(TI18N("语言_c_3188"))
+        self.comfirm_label:enableOutline(Config.ColorData.data_color4[264], 2) 
+    end
+end
+
+function FormSpMoreSelectItem:DeleteMe()
+    if self.item_icon then
+        self.item_icon:DeleteMe()
+        self.item_icon = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

@@ -1,0 +1,266 @@
+-- --------------------------------------------------------------------
+
+-- --------------------------------------------------------------------
+MinigameController = MinigameController or BaseClass(BaseController)
+
+function MinigameController:config()
+    self.model = MinigameModel.New(self)
+    self.dispather = GlobalEvent:getInstance()
+end
+
+function MinigameController:getModel()
+    return self.model
+end
+
+function MinigameController:getChampionModel()
+
+end
+
+function MinigameController:registerEvents()
+end
+
+--==============================--
+--desc:请求一些相关数据
+--time:
+--@return 
+--==============================--
+function MinigameController:requestInitProtocal()
+end
+
+function MinigameController:registerProtocals()
+    self:RegisterProtocal(29500, "handle29500")  --红蓝对冲基础信息
+    self:RegisterProtocal(29501, "handle29501")
+    self:RegisterProtocal(29502, "handle29502")
+    self:RegisterProtocal(29503, "handle29503")
+end
+
+--[[
+    @desc:红蓝对冲基础信息
+    author:{author}
+    time:2018-05-14 20:53:44
+    --@num: 
+    return
+    -- #rpc{
+    --     code = 29500
+    --     ,req_desc = "红蓝对冲基础信息"
+    --     ,req = [
+    --     ]
+    --     ,reply_desc = "红蓝对冲基础信息"
+    --     ,reply = [
+    --     {uint8, level, "红蓝对战等级"}
+    --         ,{uint8, count, "每日对战次数"}
+    --         ,{uint32, win_count, "当前等级的胜场次数"}
+    --         ,{uint32, total_count, "当前等级的总战斗次数"}
+    --     ]
+    -- }
+]]
+function MinigameController:requestMinigameBase()
+    local protocal = {}
+    self:SendProtocal(29500, protocal)
+end
+
+function MinigameController:handle29500(data)
+    -- print("-------------->>>>>handle29500 ", vardump(data))
+    self.model:setBaseData(data)
+    MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.redblue, self.model:checkTimesEnought())
+    GlobalEvent:getInstance():Fire(MinigameEvent.Enter_basedata_back)
+    -- self:requestMinigameBegin()
+end
+
+--[[
+    @desc:红蓝对冲基础信息
+    author:{author}
+    time:2018-05-14 20:53:44
+    --@num: 
+    return
+    -- ,#rpc{
+    --     code = 29501
+    --     ,req_desc = "请求开始红蓝对冲战斗"
+    --     ,req = [
+    --     ]
+    --     ,reply = [
+    --         {int8, flag, ""}
+    --         ,{uint32, level_id, "关卡id"}
+    --     ]
+    -- }
+]]
+function MinigameController:requestMinigameBegin()
+    local protocal = {}
+    self:SendProtocal(29501, protocal)
+end
+
+function MinigameController:handle29501(data)
+    -- print("-------------->>>>>handle29501 ", vardump(data))
+    self.model:beginRun(data)
+    if self.model:checkEnterData() then
+        if self.minigame_window then
+            self.minigame_window:loadBattleRes(function()
+                MinigameController:getInstance():openMinigameView(true)
+            end)
+        end
+    end
+end
+
+--[[
+    @desc:红蓝对冲基础信息
+    author:{author}
+    time:2018-05-14 20:53:44
+    --@num: 
+    return
+    -- ,#rpc{
+    --     code = 29502
+    --     ,req_desc = "红蓝对冲战斗结果返回"
+    --     ,req = [
+    --         {uint8, is_win, "对战结果 0失败 1成功"}
+    --     ]
+    --     ,reply = [
+    --         {int8, flag, "结果 1成功 其他 有作弊风险"}
+    --         ,{uint8, is_win, "对战结果 0失败 1成功"}
+    --         ,{uint8, msg, "提示信息"}
+    --         ,{uint8, level, "红蓝对战等级"}
+    --         ,{uint8, count, "每日对战次数"}
+    --         ,{uint32, win_count, "当前等级的胜场次数"}
+    --         ,{uint32, total_count, "当前等级的总战斗次数"}
+    --     ]
+    -- }
+]]
+function MinigameController:requestMinigameResult(result)
+    local protocal = {}
+    protocal.is_win = result
+    self:SendProtocal(29502, protocal)
+end
+
+function MinigameController:handle29502(data)
+    -- print("-------------->>>>>handle29502 ", vardump(data))
+    local base_data = self.model:getBaseData()
+    data.old_level = base_data.level
+    data.result = (data.flag == 1 and data.is_win == 1) and 1 or 2
+    if data.result == 2 then
+        message(data.msg)
+    end
+    self.model:settlementResult(data)
+    self:openMinigameBattleResult(true, data)
+    MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.redblue, self.model:checkTimesEnought())
+end
+
+
+--排行榜
+function MinigameController:send_29503( rank_type,start,num ,is_cluster)
+    --请求排行榜
+    local cluster = 0
+    if is_cluster == true then
+        cluster = 1
+    end
+    local protocal = {}
+    protocal.type = rank_type
+    protocal.start = start or 1
+    protocal.num = num or 100
+    protocal.is_cluster = cluster
+    self:SendProtocal(29503,protocal)
+end
+function MinigameController:handle29503( data )
+    if data then
+        GlobalEvent:getInstance():Fire(MinigameEvent.MinigameRankEvent_Get_Rank_data,data)
+    end
+end
+
+
+function MinigameController:openMinigameView(status, data)
+    if not status then
+        if self.minigame_view ~= nil then
+            self.minigame_view:close()
+            self.minigame_view = nil
+        end
+    else
+        if self.minigame_view == nil then
+            self.minigame_view = Minigameview.New(data)
+        end
+        self.minigame_view:open()
+    end
+end
+
+function MinigameController:getMinigameView()
+    return self.minigame_view
+end
+
+function MinigameController:openMinigameWindow(status, setting)
+    if not status then
+        if self.minigame_window ~= nil then
+            self.minigame_window:close()
+            self.minigame_window = nil
+            -- print("fire----------------------------------------------------")
+            GlobalEvent:getInstance():Fire(GuideEvent.Check_Guide_Open_Event) --检测是否触发剧情
+        end
+    else
+        if self.minigame_window == nil then
+            self.minigame_window = MinigameWindow.New()
+        end
+        self.minigame_window:open(setting)
+    end
+end
+
+function MinigameController:getMinigameWindowsRoot()
+    return self.minigame_window.root_wnd
+end
+
+function MinigameController:openMinigameBattleResult(status, setting)
+    if not status then
+        if self.minigame_battle_result ~= nil then
+            self.minigame_battle_result:close()
+            self.minigame_battle_result = nil
+        end
+    else
+        if self.minigame_battle_result == nil then
+            self.minigame_battle_result = MinigameBattleResult.new()
+        end
+        if self.minigame_battle_result.open then
+            self.minigame_battle_result:open(setting)
+        end
+    end
+end
+
+function MinigameController:openMinigameCardDesView(status, setting)
+    if not status then
+        if self.minigame_card_des_view ~= nil then
+            self.minigame_card_des_view:close()
+            self.minigame_card_des_view = nil
+        end
+    else
+        if self.minigame_card_des_view == nil then
+            self.minigame_card_des_view = MinigameCardDesView.New()
+        end
+        self.minigame_card_des_view:open(setting)
+    end
+end
+
+function MinigameController:openMinigameRankHall(status, setting)
+    if not status then
+        if self.minigame_rank_hall ~= nil then
+            self.minigame_rank_hall:close()
+            self.minigame_rank_hall = nil
+        end
+    else
+        if self.minigame_rank_hall == nil then
+            self.minigame_rank_hall = MinigameRankHall.New()
+        end
+        self.minigame_rank_hall:open(setting)
+    end
+end
+
+function MinigameController:openMinigameLevelUpView(status, setting)
+    if not status then
+        if self.minigame_levelup_view ~= nil then
+            self.minigame_levelup_view:close()
+            self.minigame_levelup_view = nil
+        end
+    else
+        if self.minigame_levelup_view == nil then
+            self.minigame_levelup_view = MinigameLevelUpView.New()
+        end
+        self.minigame_levelup_view:open(setting)
+    end
+end
+
+function MinigameController:checkCanPlayGuide()
+    return self.minigame_window ~= nil or self.minigame_battle_result ~= nil
+end

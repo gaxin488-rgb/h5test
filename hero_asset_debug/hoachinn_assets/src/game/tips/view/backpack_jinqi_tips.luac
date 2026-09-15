@@ -1,0 +1,258 @@
+-- --------------------------------------------------------------------
+-- 禁器tips
+-- --------------------------------------------------------------------
+BackpackJinqiTips = BackpackJinqiTips or BaseClass(BaseView)
+local table_insert = table.insert
+local jinqi_controller = JinqiController:getInstance()
+
+function BackpackJinqiTips:__init()
+    -- self.btn_junp = 0
+    self.ctrl = BackpackController:getInstance()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "tips/backpack_jinqi_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+    self.star_list = {}
+    self.win_type = WinType.Tips   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.btn_list = {}
+    self.config = Config.CityData.data_base
+end
+
+function BackpackJinqiTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+
+    -- 基础属性,名字,类型和评分等
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.goods_item =  BackPackItem.new(true,true,nil,0.95,false)
+    self.goods_item:setPosition(cc.p(68,68))
+    self.base_panel:addChild(self.goods_item)
+    self.name = self.base_panel:getChildByName("name")
+    self.name:ignoreContentAdaptWithSize(true)
+    self.name:setTextAreaSize(cc.size(270, 0))
+    setTextSpacing(self.name, -8)
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    self.equip_type:ignoreContentAdaptWithSize(true)
+    self.equip_type:setTextAreaSize(cc.size(285, 0))
+    setTextSpacing(self.equip_type, -8)
+    
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    self.bar = self.base_panel:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.bar_num = self.base_panel:getChildByName("bar_num")
+    local star_layer = self.base_panel:getChildByName("star_layer")
+    for i = 1, 5 do
+        local star = star_layer:getChildByName("star_"..i)
+        local star_select = star:getChildByName("star_select")
+        local a = {}
+        a.star = star 
+        a.star_select = star_select
+        self.star_list[i] = a
+    end
+
+    -- 作用描述
+    self.usedesc_panel = self.container:getChildByName("usedesc_panel")
+    self.use_desc = self.usedesc_panel:getChildByName("desc")
+    self.use_desc:ignoreContentAdaptWithSize(true)
+    self.use_desc:setTextAreaSize(cc.size(400, 0))
+    setTextSpacing(self.use_desc, -6)
+    self.usedesc_panel_height = self.usedesc_panel:getContentSize().height
+
+    -- 描述部分
+    self.desc_panel = self.container:getChildByName("desc_panel")
+    self.desc_panel_size = self.desc_panel:getContentSize()
+    self.scroll_view = self.desc_panel:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.scroll_size = self.scroll_view:getContentSize()
+    self.desc_label = createRichLabel(22, cc.c4b(0xa1,0x97,0x8b,0xff), cc.p(0, 1), cc.p(20, 100), 8, nil, 380) 
+    self.scroll_view:addChild(self.desc_label)
+
+    -- 按钮部分
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+end
+function BackpackJinqiTips:register_event()
+    if self.background then 
+        self.background:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                self:close()
+            end
+        end)
+    end
+    if self.close_btn then 
+        self.close_btn:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                self:close()
+            end
+        end)
+    end
+end
+
+--引入 setting 
+--setting.is_market_place 是否宝库显示
+function BackpackJinqiTips:openRootWnd(item_bid,setting)
+    if not item_bid then return end
+    self.setting = setting or {}
+    if type(item_bid) == "number" then
+        local config = Config.ItemData.data_get_data(item_bid)
+        if not config then return end
+        self.data = config
+        self.item_config = config
+    else
+        self.data = item_bid
+        if self.data.config then
+            self.item_config = self.data.config
+        else
+            self.item_config = item_bid
+        end
+    end
+
+    self:setBaseInfo()
+end
+
+--==============================--
+--desc:设置基础属性
+--time:2018-10-22 10:18:13
+--@return 
+--==============================--
+function BackpackJinqiTips:setBaseInfo()
+    if self.data == nil or self.item_config == nil then return end
+    if self.item_config.type ~= BackPackConst.item_type.JINQI_CHIP then
+        return
+    end
+    local data = self.data
+
+    self.goods_item:setBaseData(self.item_config.id)
+
+    local quality = 0
+    if self.item_config.quality >= 0 and self.item_config.quality <= 6 then
+        quality = self.item_config.quality
+    end
+    local color = BackPackConst.quality_color[quality]
+    self.name:setTextColor(color) 
+    if self.item_config.name then
+        self.name:setString(self.item_config.name)
+    end
+    if self.item_config.type_desc then
+        self.equip_type:setString(TI18N("语言_c_1728")..self.item_config.type_desc)
+    end
+    self.equip_type:setPositionY(self.name:getPositionY() - self.name:getContentSize().height)
+    self.use_desc:setString(self.item_config.use_desc or "")
+
+    -- 描述
+    self.desc_label:setString(self.item_config.desc)
+    local label_size = self.desc_label:getContentSize()
+
+    self.item_scrollview_size = cc.size(410,0)
+    local item_scrollview_height = 0
+    local max_height = math.max(label_size.height+item_scrollview_height, self.scroll_size.height)
+
+    self.scroll_view:setContentSize(cc.size(self.scroll_size.width, math.min(max_height, 320)))
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_size.width, max_height))
+    self.desc_label:setPositionY(max_height)
+
+    self:setJinqiStarInfo()
+    self:adjustContentSizeAndPos()
+end
+
+-- 禁器星级相关
+function BackpackJinqiTips:setJinqiStarInfo()
+    local id = self.item_config.id
+    local jinqi_id = jinqi_controller:getModel():getJinqiIdByChipId(id)
+    local jinqi_data = jinqi_controller:getModel():getJinqiDataById(jinqi_id)
+    local star = 0
+    if jinqi_data then --已激活
+        star = jinqi_data.star
+        local star_cfg = Config.ProhibitorData.data_get_proh_star[jinqi_id]
+        local cfg = star_cfg[star]
+        if cfg and cfg.cost and next(cfg.cost) then
+            local cost_id = cfg.cost[1][1]
+            self.cost_id = cost_id
+            local cost_num = cfg.cost[1][2]
+            local own_num = BackpackController:getInstance():getModel():getItemNumByBid(cost_id)
+            self.bar_num:setString(own_num.."/"..cost_num)
+            self.bar:setPercent(own_num/cost_num * 100)
+        else
+            self.bar_num:setString("max")
+            self.bar:setPercent(100)
+        end
+    else
+        local cfg = Config.ProhibitorData.data_get_prohibitor[jinqi_id]
+        local cost = cfg.cost[1]
+        local item_id = cost[1]
+        local need_num = cost[2]
+        local own_num =  BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+        self.bar_num:setString(own_num.."/"..need_num)
+        self.bar:setPercent(own_num/need_num * 100)
+    end
+    self:setStarPanel(star)
+end
+
+function BackpackJinqiTips:setStarPanel(star)
+    for i, v in ipairs(self.star_list) do
+        v.star_select:setVisible(false)
+        if i <= star then
+            v.star_select:setVisible(true)
+        end
+    end
+end
+
+-- 调整位置和坐标
+function BackpackJinqiTips:adjustContentSizeAndPos()
+    local target_height = self.container_init_size.height 
+
+    local show_use_desc = true
+    if self.item_config.use_desc == nil or self.item_config.use_desc == "" then
+        show_use_desc = false
+        target_height = target_height - self.usedesc_panel_height
+        self.usedesc_panel:setVisible(false)
+    end
+
+    if self.desc_label then
+        local label_size = self.desc_label:getContentSize()
+        local addH = label_size.height
+        if self.item_scrollview_size then
+            addH = addH + self.item_scrollview_size.height
+        end
+        if addH > self.scroll_size.height then
+            local add_height = addH - self.scroll_size.height
+            add_height = math.min(add_height, 220)
+            target_height = target_height + add_height
+            self.desc_panel:setContentSize(cc.size(self.desc_panel_size.width, self.desc_panel_size.height + add_height))
+        end
+    end
+
+    self.container:setContentSize(cc.size(self.container_init_size.width, target_height))
+    local y = target_height-4
+    self.base_panel:setPositionY(y)
+    y = y - self.base_panel:getContentSize().height
+
+    if show_use_desc == true then
+        self.usedesc_panel:setPositionY(y - 2) 
+        self.desc_panel:setPositionY(self.usedesc_panel:getPositionY()-self.usedesc_panel:getContentSize().height)
+    else
+        self.desc_panel:setPositionY(y - 2) 
+    end
+    self.scroll_view:setPositionY(self.desc_panel:getContentSize().height-16)
+end
+
+function BackpackJinqiTips:close_callback()
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+        self.item_scrollview = nil
+    end
+    if self.goods_item then 
+        self.goods_item:DeleteMe()
+    end
+   self.goods_item = nil
+end

@@ -1,0 +1,362 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2019-04-30
+-- --------------------------------------------------------------------
+ShinobiModel = ShinobiModel or BaseClass()
+
+function ShinobiModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function ShinobiModel:config()
+	self.myBaseInfo = {}  -- 个人基础信息
+	self.challengeRoleData = {}  -- 挑战角色列表
+	self.challengeAwardData = {} -- 挑战次数奖励数据
+	self.ShinobiStatus = ShinobiConst.Open_Status.Close  -- 活动开启状态
+	self.honourRoleData = {} -- 赛季荣耀数据
+
+	self.shinobi_red_list = {} -- 红点数据
+end
+--设置主界面忍界联赛提示
+function ShinobiModel:checkShowPrompt() 
+	if self.myBaseInfo and next(self.myBaseInfo) ~= nil then
+		local is_show = true
+		local status = self.myBaseInfo.status
+		if status ~= 3 then
+			is_show = false
+		end
+		local open_status = self:getShinobiIsOpen(true)
+		
+		if not is_show or not open_status then
+			return false
+		end
+		return true
+	end
+end
+function ShinobiModel:checkCanChallenge()
+	local is_can = false
+	for i,v in pairs(self.challengeRoleData) do --打完了也不需要
+		if v.is_challenged == 0 then
+			is_can = true
+			break
+		end
+	end
+	return is_can
+end
+
+-- 设置个人基础信息
+function ShinobiModel:setShinobiMyBaseInfo( data )
+	self.myBaseInfo = data
+end
+
+-- 更新刷新按钮的CD时间
+function ShinobiModel:updateRefreshTime( ref_time )
+	if self.myBaseInfo and ref_time then
+		self.myBaseInfo.ref_time = ref_time
+	end
+end
+
+-- 获取历史最佳段位
+function ShinobiModel:getShinobiBestRank( )
+	if self.myBaseInfo then
+        return self.myBaseInfo.best_dan
+	end
+end
+
+function ShinobiModel:getShinobiMyBaseInfo(  )
+	return self.myBaseInfo
+end
+
+-- 获取我的个人积分
+function ShinobiModel:getMyShinobiScore(  )
+	if self.myBaseInfo then
+		return self.myBaseInfo.score or 0
+	end
+	return 0
+end
+
+function ShinobiModel:setShinobiAutoBattle( is_auto )
+	if self.myBaseInfo then
+		self.myBaseInfo.is_auto = is_auto
+	end
+end
+
+-- 是否跳过战斗 0：不跳过 1：跳过
+function ShinobiModel:getShinobiAutoBattle(  )
+	if self.myBaseInfo then
+		return self.myBaseInfo.is_auto or 0
+	end
+	return 0
+end
+
+-- 本赛季挑战次数
+function ShinobiModel:getShinobiChallengeNum(  )
+	if self.myBaseInfo then
+		return self.myBaseInfo.season_combat_num or 0
+	end
+	return 0
+end
+
+-- 是否达到隐藏两队的要求
+function ShinobiModel:checkIsCanHideTwoTeam(  )
+	local hide_cfg = Config.ArenaShinobiData.data_const["second_hide_rank"]
+	if hide_cfg and self.myBaseInfo and self.myBaseInfo.rank and self.myBaseInfo.rank > 0 and self.myBaseInfo.rank <= hide_cfg.val then
+		return true
+	end
+	return false
+end
+
+-- 设置挑战角色数据
+function ShinobiModel:setChallengeRoleData( data )
+	self.challengeRoleData = data
+end
+
+-- 获取挑战队列长度
+function ShinobiModel:getChallengeLen( )
+	-- print("获取挑战队列长度",vardump(self.challengeRoleData))
+	return math.floor(#self.challengeRoleData/3)  or 0
+end
+
+-- 获取挑战队列长度
+function ShinobiModel:getChallengRed(index,isleft)
+	if self.myBaseInfo.status~=3 then return false end
+	if self.challengeRoleData or next(self.challengeRoleData)~=nil then 
+		for i,v in ipairs(self.challengeRoleData) do 
+			if isleft then
+                if i<=index*3-3 then
+                    if v.is_challenged ==0 then
+						return true
+					end
+				end
+			else
+				if i>index*3 then
+                    if v.is_challenged ==0 then
+						return true
+					end
+				end
+			end
+		end
+	else
+        return false
+	end	
+	return false
+end
+
+-- 更新挑战角色数据
+function ShinobiModel:updateChallengeRoleData( data )
+	for _,newData in pairs(data) do
+		for k,oldData in pairs(self.challengeRoleData) do
+			if newData.idx == oldData.idx then
+				self.challengeRoleData[k] = newData
+				GlobalEvent:getInstance():Fire(ShinobiEvent.Update_Single_Challenge_Role_Event, newData)
+				break
+			end
+		end
+	end
+end
+
+function ShinobiModel:getChallengeCount(rid,srv_id)   
+   if self.challengeRoleData then
+    	for i,v in pairs(self.challengeRoleData) do
+		    if v.rid==rid and v.srv_id and srv_id and v.srv_id == srv_id then
+                return  v.is_challenged
+			end
+		end
+   end
+   return 0
+end
+
+function ShinobiModel:getChallengeRoleData(index)
+	local temp={}
+	if self.challengeRoleData and next(self.challengeRoleData)~=nil then
+	   for i,v in ipairs(self.challengeRoleData) do
+           if i<=index*3 and i>(index-1)*3 then
+              table.insert(temp,v)
+		   end
+	   end
+	end
+	return temp
+end
+
+-- 判断是否有挑战角色数据
+function ShinobiModel:checkIsHaveChallengeData(  )
+	if self.challengeRoleData and next(self.challengeRoleData) ~= nil then
+		return true
+	end
+	return false
+end
+
+-- 设置挑战次数奖励数据
+function ShinobiModel:setChallengeAwardData( data )
+	self.challengeAwardData = data
+	self:checkShinobiPrompt()
+end
+
+--检测是否要显示气泡
+function ShinobiModel:checkShinobiPrompt()
+	-- local is_time = ArenapeakchampionController:getInstance():getModel():isBeforeOpenMacthTime()
+	-- if not is_time then return end
+	local status = self:checkShowPrompt()
+	if status then
+        -- PromptController:getInstance():getModel():addPromptData({type = PromptTypeConst.Shinobi})
+    else
+        PromptController:getInstance():getModel():removePromptDataByTpye(PromptTypeConst.Shinobi)
+    end
+end
+function ShinobiModel:checkShinobiPrompt1()
+	local status = self:checkCanChallenge()
+	if status then
+        -- PromptController:getInstance():getModel():addPromptData({type = PromptTypeConst.Shinobi})
+    else
+        PromptController:getInstance():getModel():removePromptDataByTpye(PromptTypeConst.Shinobi)
+    end
+end
+
+function ShinobiModel:getChallengeAwardData(  )
+	return self.challengeAwardData
+end
+
+-- 根据次数判断奖励领取状态 1不可领取 2可领取 3已领取
+function ShinobiModel:getChallengeAwardStatus( num )
+	local award_status = 1
+	if self.challengeAwardData.had_combat_num and self.challengeAwardData.had_combat_num >= num then
+		award_status = 2
+		for k,v in pairs(self.challengeAwardData.num_list or {}) do
+			if v.num == num then
+				award_status = 3
+				break
+			end
+		end
+	end
+	return award_status
+end
+
+-- 判断是否有奖励数据
+function ShinobiModel:checkIsHaveAwardData(  )
+	if self.challengeAwardData and next(self.challengeAwardData) ~= nil then
+		return true
+	end
+	return false
+end
+
+-- 设置活动开启状态
+function ShinobiModel:setShinobiStatus( status )
+	self.ShinobiStatus = status
+	if not self._first_login_flag and status == ShinobiConst.Open_Status.Open then
+		self._first_login_flag = true
+		self:updateShinobiRedStatus(ShinobiConst.Red_Index.Open, true)
+	else
+		self:updateShinobiRedStatus(ShinobiConst.Red_Index.Open, false)
+	end
+end
+
+function ShinobiModel:getShinobiStatus(  )
+	return self.ShinobiStatus
+end
+
+-- 忍界联赛活动是否开启
+function ShinobiModel:checkShinobiIsOpen( )
+	-- if self.ShinobiStatus == ShinobiConst.Open_Status.Open then
+    --     return true
+    -- end
+    -- local open_cfg = Config.ArenaShinobiData.data_const["close_attention"]
+    -- if open_cfg then
+    --     message(open_cfg.desc)
+    -- end
+    return true
+end
+
+-- 忍界联赛功能开启状态
+function ShinobiModel:getShinobiIsOpen( not_tips )
+	if not Config.ArenaShinobiData then return false end
+	local role_vo = RoleController:getInstance():getRoleVo()
+	local lev_limt_cfg = Config.ArenaShinobiData.data_shinobi_const["character_level"]
+	if role_vo and role_vo.lev < lev_limt_cfg.val then
+		if not not_tips then
+			message(lev_limt_cfg.desc)
+		end
+		return false, lev_limt_cfg.desc
+	end
+	-- local world_lv = RoleController:getInstance():getModel():getWorldLev()
+	-- local world_lv_cfg = Config.ArenaShinobiData.data_const["world_lev_open"]
+	-- if world_lv < world_lv_cfg.val then
+	-- 	if not not_tips then
+	-- 		message(world_lv_cfg.desc)
+	-- 	end
+	-- 	return false, world_lv_cfg.desc
+	-- end
+	return true
+end
+
+-- 根据排名获取对应的奖励数据
+function ShinobiModel:getShinobiRankAward( rank )
+	for k,cfg in pairs(Config.ArenaShinobiData.data_rank_award) do
+		if rank <= cfg.max and rank >= cfg.min then
+			return cfg.items
+		end
+	end
+end
+
+-- 是否屏蔽功能
+function ShinobiModel:isHideShinobi()
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	local featuresId = MainuiConst.FeaturesShield.shinobi
+    if not table.indexof(nohideIds,featuresId) then
+		return true
+	end
+end
+
+--设置赛季荣耀数据
+function ShinobiModel:setHonourRoleData( data )
+	self.honourRoleData = data
+
+	local red_status = false
+	for k,v in pairs(self.honourRoleData) do
+		if v.worship_status == 0 then
+			red_status = true
+			break
+		end
+	end
+	self:updateShinobiRedStatus(ShinobiConst.Red_Index.Like, red_status)
+end
+
+function ShinobiModel:getHonourRoleData(  )
+	return self.honourRoleData
+end
+
+-- 红点相关
+function ShinobiModel:updateShinobiRedStatus( type, status )
+    local _status = self.shinobi_red_list[type]
+    if _status == status then return end
+    self.shinobi_red_list[type] = status
+	local arena_status = self:checkShinobiRedStatus()
+	MainSceneController:getInstance():setBuildRedStatus(CenterSceneBuild.shinobi, {bid = CrossgroundConst.Red_Type.Shinobi, status = arena_status})
+	-- 更新天梯界面红点
+	GlobalEvent:getInstance():Fire(ShinobiEvent.Update_Red_Status_Event,status)
+end
+
+function ShinobiModel:checkShinobiRedStatus(  )
+	if self.shinobi_red_list then
+	    return self.shinobi_red_list[1] and self.shinobi_red_list[4] 
+	else
+		return false
+	-- for k,v in pairs(self.shinobi_red_list) do
+	-- 	if v == true then
+	-- 	    return true
+	-- 	end
+	end
+end
+
+-- 根据红点类型获取红点状态
+function ShinobiModel:getShinobiRedStatus( red_type )
+	return self.shinobi_red_list[red_type] or false
+end
+
+function ShinobiModel:__delete()
+end

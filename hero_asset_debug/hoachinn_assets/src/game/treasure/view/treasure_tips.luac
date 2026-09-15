@@ -1,0 +1,572 @@
+-- --------------------------------------------------------------------
+-- z装备新版tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+TreasureTips = TreasureTips or BaseClass(BaseView)
+
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function TreasureTips:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "treasure/treasure_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+    self.win_type = WinType.Tips
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.base_list = {} --基础属性列表
+    self.node_list = {} --节点效果列表
+    self.exclusive_list = {} --专属效果列表
+    self.wakeUp_list = {} --觉醒效果列表
+    self.is_act = true --是否已经激活
+    self.btn_list = {}
+    self.btn_pos_list = {
+        [1] = {
+            [1] = 253,
+        },
+        [2] = {
+            [1] = 101,
+            [2] = 405,
+        },
+        [3] = {
+            [1] = 101,
+            [2] = 253,
+            [3] = 405,
+        }
+    }
+    self.take_num = nil--效果生效数量
+end
+
+function TreasureTips:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+        self.background:setSwallowTouches(true)
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.main_panel:setVisible(false)
+
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.base_size = self.base_panel:getContentSize()
+    self.base_bg = self.base_panel:getChildByName("base_bg")
+    self.close_btn = self.base_panel:getChildByName("close_btn")
+    self.name = self.base_panel:getChildByName("name")
+    self.lv = self.base_panel:getChildByName("lv")
+    self.equip_type = self.base_panel:getChildByName("equip_type")
+    self.baseattr_panel = self.container:getChildByName("baseattr_panel")
+    self.baseattr_size = self.baseattr_panel:getContentSize()
+    self.baseattr_label = self.baseattr_panel:getChildByName("label")
+    self.baseattr_label:setString(TI18N("语言_c_6071"))
+    self.node_panel = self.container:getChildByName("node_panel")
+    self.node_size = self.node_panel:getContentSize()
+    self.node_label = self.node_panel:getChildByName("label")
+    self.node_label:setString(TI18N("语言_c_6076"))
+    self.exclusive_panel = self.container:getChildByName("exclusive_panel")
+    self.exclusive_size = self.exclusive_panel:getContentSize()
+    self.exclusive_label = self.exclusive_panel:getChildByName("label")
+    self.exclusive_label:setString(TI18N("语言_c_6077"))
+    self.wakeUp_panel = self.container:getChildByName("wakeUp_panel")
+    self.wakeUp_size = self.wakeUp_panel:getContentSize()
+    self.wakeUp_label = self.wakeUp_panel:getChildByName("label")
+    self.wakeUp_label:setString(TI18N("语言_c_6078"))
+    self.take_panel = self.container:getChildByName("take_panel")
+    self.take_panel_size = self.take_panel:getContentSize()
+    self.desc_panel = self.container:getChildByName("desc_panel")
+    self.desc_size = self.desc_panel:getContentSize()
+    self.line = self.desc_panel:getChildByName("line")
+    self.scroll_view = self.desc_panel:getChildByName("scroll_view")
+    self.scroll_view:setScrollBarEnabled(false)
+    self.tab_panel = self.container:getChildByName("tab_panel")
+    self.tab_size = self.tab_panel:getContentSize()
+    self.go_btn = self.tab_panel:getChildByName("go_btn")
+    self.go_label = self.go_btn:getChildByName("label")
+    self.go_label:setString(TI18N("语言_c_7"))
+    self.source_btn = self.tab_panel:getChildByName("source_btn")
+    self.source_label = self.source_btn:getChildByName("label")
+    self.source_label:setString(TI18N("语言_c_6079"))
+    self.act_btn = self.tab_panel:getChildByName("act_btn")
+    self.act_label = self.act_btn:getChildByName("label")
+    self.act_label:setString(TI18N("语言_c_6080"))
+    self.upgrade_btn = self.tab_panel:getChildByName("upgrade_btn")
+    self.upgrade_label = self.upgrade_btn:getChildByName("label")
+    self.upgrade_label:setString(TI18N("语言_c_6081"))
+    self.upstar_btn = self.tab_panel:getChildByName("upstar_btn")
+    self.upstar_label = self.upstar_btn:getChildByName("label")
+    self.upstar_label:setString(TI18N("语言_c_6082"))
+    self.wakeup_btn = self.tab_panel:getChildByName("wakeup_btn")
+    self.wakeup_label = self.wakeup_btn:getChildByName("label")
+    self.wakeup_label:setString(TI18N("语言_c_6083"))
+end
+
+function TreasureTips:register_event()
+    registerButtonEventListener(self.close_btn, function() self:onClickCloseBtn() end ,true, 3) 
+    registerButtonEventListener(self.background, function() self:onClickCloseBtn() end ,false, 3) 
+    registerButtonEventListener(self.source_btn, function() self:onClickSourceBtn() end ,true, 3) 
+    registerButtonEventListener(self.go_btn, function() self:onClickGoBtn() end  ,true, 3) 
+    registerButtonEventListener(self.act_btn, function() self:onClickActBtn() end  ,true, 3) 
+    registerButtonEventListener(self.upgrade_btn, function() self:onClickUpGradeBtn() end  ,true, 3) 
+    registerButtonEventListener(self.upstar_btn, function() self:onClickUpstarBtn() end  ,true, 3) 
+    registerButtonEventListener(self.wakeup_btn, function() self:onClickWakeupBtn() end  ,true, 3) 
+    if not self.treasure_act then
+        self.treasure_act = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Act_Event, function (data)
+            controller:openTreasureTips(false)
+        end)
+    end
+    if not self.treasure_attr_event then
+        self.treasure_attr_event = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Attr_Event, function (data)
+            self.take_num = data.num
+            self:initData()
+        end)
+    end
+end
+--前往
+function TreasureTips:onClickGoBtn()
+    controller:openTreasureTips(false)
+    controller:openTreasureMainWindow(false)
+    HeroController:getInstance():openHeroResonateWindow(true)
+end
+--来源
+function TreasureTips:onClickSourceBtn()
+    local cfg = Config.NinjaTreasureData.data_base_info[self.data.id]
+    local item_config = Config.ItemData.data_get_data(cfg.need_id)
+    BackpackController:getInstance():openTipsSource(true, item_config)
+end
+--激活 合成
+function TreasureTips:onClickActBtn()
+    controller:sender22308(self.data.id)
+    controller:openTreasureTips(false)
+end
+--升级
+function TreasureTips:onClickUpGradeBtn()
+    controller:openTreasureUpWindow(true,self.data,1)
+    controller:openTreasureTips(false)
+end
+--升星
+function TreasureTips:onClickUpstarBtn()
+    controller:openTreasureUpWindow(true,self.data,2)
+    controller:openTreasureTips(false)
+end
+--觉醒
+function TreasureTips:onClickWakeupBtn()
+    controller:openTreasureUpWindow(true,self.data,3)
+    controller:openTreasureTips(false)
+end
+
+--关闭
+function TreasureTips:onClickCloseBtn()
+    controller:openTreasureTips(false)
+end
+
+function TreasureTips:openRootWnd(data,list)
+    if not data then return end
+    self.data = data 
+    local list = list or {}
+    self.is_book = list.is_book or false -- 是否是图鉴
+    self.is_btn = list.is_btn or false  -- 是否显示按钮
+    if not self.data or not self.data.config or type(self.data.config) ~= "table" or not self.data.config.quality then return end
+    self.lev_cfg = Config.NinjaTreasureData.data_lv_info[self.data.config.quality]
+    self.star_cfg = Config.NinjaTreasureData.data_star_info[self.data.id][self.data.star]
+    self.wake_cfg = Config.NinjaTreasureData.data_awake_info[self.data.id]
+    self.skill_cfg = Config.NinjaTreasureData.data_skill_info[self.star_cfg.skill_id]
+    if self.wake_cfg then
+        self.wake_skill_cfg = Config.NinjaTreasureData.data_skill_info[self.wake_cfg.skill]
+    end
+    if self.skill_cfg and self.skill_cfg.max and self.skill_cfg.max ~= 0 and not data.isother then
+        TreasureController:getInstance():sender22316(self.skill_cfg.skill)
+        return
+    end
+    if PLATFORM_NAME == "dev" or PLATFORM_NAME == "release" then
+        TreasureController:getInstance():sender22327(self.data.id)
+    end
+    self:initData()
+end
+function TreasureTips:initData()
+    self.main_panel:setVisible(true)
+    if not self.data.quality then 
+        return self.base_panel:getContentSize().height 
+    end
+    self.base_height = self:setBasePanel()
+    self.attr_height = self:setBaseAttr()
+    self.node_height = self:setNodePanel()
+    self.exclusive_height = self:setExclusivePanel()
+    self.wakeup_height = self:setWakeupPanel()
+    self.take_height = self:setTakePanel()
+    self:setDescPanel()
+    self.desc_height = self.desc_size.height
+    self.btn_height = 0
+    if not self.is_btn then
+        self.tab_panel:setVisible(false)
+    else
+        self.tab_panel:setVisible(true)
+        self.btn_height = self:setBtnPanel()
+    end
+    local _height = self.base_height + self.attr_height + self.node_height + self.exclusive_height + self.wakeup_height + self.desc_height + self.btn_height + self.take_height
+    self.container:setContentSize(cc.size(522,_height))
+
+    self.base_panel:setPositionY(_height)
+    self.baseattr_panel:setPositionY(_height - self.base_height)
+    self.node_panel:setPositionY(_height - self.base_height - self.attr_height)
+    self.exclusive_panel:setPositionY(_height - self.base_height - self.attr_height - self.node_height)
+    self.wakeUp_panel:setPositionY(_height - self.base_height - self.attr_height - self.node_height - self.exclusive_height)
+    self.take_panel:setPositionY(_height - self.base_height - self.attr_height - self.node_height - self.exclusive_height - self.wakeup_height)
+    self.desc_panel:setPositionY(_height - self.base_height - self.attr_height - self.node_height - self.exclusive_height - self.wakeup_height - self.take_height - 10)
+    if self.is_act then
+        self.tab_panel:setPositionY(_height - self.base_height - self.attr_height - self.node_height - self.exclusive_height - self.wakeup_height - self.take_height - self.desc_height + 40)
+    else
+        self.tab_panel:setPositionY(_height - self.base_height - self.attr_height - self.node_height - self.exclusive_height - self.wakeup_height - self.take_height - self.desc_height)
+    end
+end
+--基础信息
+function TreasureTips:setBasePanel()
+    local background_res = PathTool.getResFrame("common_2", "tips_"..self.data.quality)
+    self.base_bg:loadTexture(background_res,LOADTEXT_TYPE_PLIST)
+    self.treasure_item = TreasureItem.new(false,1,false,false,false)
+    self.base_panel:addChild(self.treasure_item)
+    self.treasure_item:setPosition(cc.p(72,68))
+    self.treasure_item:setData(self.data)
+    self.treasure_item:setLev(false)
+    self.name:setChangeScaleOffWidth(self.base_panel:getContentSize().width - 230)
+    setTextSpacing(self.name,-10)
+    self.name:setString(self.data.name)
+    local color = BackPackConst.getEquipTipsColor(self.data.quality)
+    self.name:setTextColor(color)
+    self.lv:setTextColor(color)
+    if self.data.lev and self.data.lev ~= 0 then
+        self.lv:setString(string.format(TI18N("语言_c_6118"),self.data.lev))
+        self.is_act = true
+    else
+        self.is_act = false
+        self.lv:setString(string.format(TI18N("语言_c_6118"),1))
+    end
+    self.lv:setTextColor(color) 
+    self.equip_type:setString(TI18N("语言_c_6063"))
+    self.equip_type:setTextColor(color)
+    return self.base_panel:getContentSize().height
+end
+--基础属性
+function TreasureTips:setBaseAttr()
+    local attr = {}
+    -- if self.data.is_speed == 1 and self.is_act then
+    --     for key, value in pairs(self.data.attr) do
+    --         if key ~= "speed" then
+    --             attr[key] = value
+    --         end
+    --     end
+    -- else
+        attr = deepCopy(self.data.attr)
+    -- end
+    -- self.baseattr_panel:setContentSize(cc.size(522,tableLen(attr) * 40 + 50))
+    
+    if self.data.quality == 5 then
+        if not self.exclusive_tip then
+            self.exclusive_tip = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0), cc.p(24, 0), -4, nil, 456)
+            self.baseattr_panel:addChild(self.exclusive_tip)
+            self.exclusive_tip:setString(TI18N("语言_c_6736"))
+        end
+        self.exclusive_tip:setVisible(true)
+        self.baseattr_panel:setContentSize(cc.size(522,tableLen(attr) * 40 + 50 + self.exclusive_tip:getContentSize().height + 10))
+    else
+        if self.exclusive_tip then
+            self.exclusive_tip:setVisible(false)
+        end
+        self.baseattr_panel:setContentSize(cc.size(522,tableLen(attr) * 40 + 50))
+    end
+    self.baseattr_label:setPositionY(self.baseattr_panel:getContentSize().height - 33)
+    local index = 1
+    for k, v in pairs(attr) do
+        if not self.base_list[index] then
+            self.base_list[index] = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0.5), cc.p(4, 28), -4, nil, 456)
+            self.baseattr_panel:addChild(self.base_list[index])
+        end
+        local label = self.base_list[index]
+        local _x = 24
+        -- local _y = 20 + (tableLen(attr) - index) * 40
+        local _y = self.baseattr_panel:getContentSize().height - 30 - index * 40
+        label:setPosition(cc.p(_x,_y))
+        local attr_name = Config.AttrData.data_key_to_name[k]
+        if attr_name then
+            local icon = PathTool.getAttrIconByStr(k)
+            local is_per = PartnerCalculate.isShowPerByStr(k)
+            if is_per == true then
+                v = (v*0.1).."%"
+            end
+            local attr_str = string.format("<img src='%s' scale=1 /> <div fontcolor=#FEEEBA> %s：</div><div fontcolor=#ffeedd>%s</div>", PathTool.getResFrame("common", icon), attr_name, v)
+            label:setString(attr_str)
+        end
+        index = index + 1
+    end
+    return self.baseattr_panel:getContentSize().height
+end
+--节点效果
+function TreasureTips:setNodePanel()
+    if tableLen(self.data.node_effect) == 0 then
+        self.node_panel:setVisible(false)
+        return 0
+    end
+    local _height = 0
+    local index = 1
+    for k, v in pairs(self.data.node_effect) do
+        if not self.node_list[index] then
+            self.node_list[index] = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0, 0), cc.p(4, 0), -4, nil, 456)
+            self.node_panel:addChild(self.node_list[index])
+        end
+        local star_res = PathTool.getResFrame("common", "common_90012")
+        local txt_col = "#ffffff"
+        if v.is_open then
+            star_res = PathTool.getResFrame("common", "common_90011")
+            txt_col = "#FEEEBA"
+        end
+        local attr_str = string.format("<img src='%s' scale=0.5 /><div fontcolor=%s>%s</div>", star_res, txt_col, v.txt)
+        self.node_list[index]:setString(attr_str)
+        _height = _height + self.node_list[index]:getContentSize().height
+        index = index + 1
+    end
+    self.node_panel:setContentSize(cc.size(522,_height + 55))
+    self.node_label:setPositionY(self.node_panel:getContentSize().height - 33)
+    for k, v in pairs(self.node_list) do
+        local label = v
+        local _x = 24
+        local _y = _height - label:getContentSize().height
+        _height = _y
+        label:setPosition(cc.p(_x,_y))
+    end
+    return self.node_panel:getContentSize().height
+end
+--专属效果
+function TreasureTips:setExclusivePanel()
+    if tableLen(self.data.exclusive_effect) == 0 then
+        self.exclusive_panel:setVisible(false)
+        return 0
+    end
+    local _height = 0
+    local index = 1
+    for k, v in pairs(self.data.exclusive_effect) do
+        if not self.exclusive_list[index] then
+            self.exclusive_list[index] = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0,0), cc.p(4, 0), -4, nil, 456)
+            self.exclusive_panel:addChild(self.exclusive_list[index])
+        end
+        local star_res = PathTool.getResFrame("common", "common_90012")
+        local txt_col = "#ffffff"
+        if v.is_open then
+            star_res = PathTool.getResFrame("common", "common_90011")
+            txt_col = "#FEEEBA"
+        end
+        local attr_str = string.format("<img src='%s' scale=0.5 /><div fontcolor=%s>%s</div>", star_res, txt_col, v.txt2 or v.txt)
+        self.exclusive_list[index]:setString(attr_str)
+        _height = _height + self.exclusive_list[index]:getContentSize().height
+        index = index + 1
+    end
+    self.exclusive_panel:setContentSize(cc.size(522,_height + 55))
+    self.exclusive_label:setPositionY(self.exclusive_panel:getContentSize().height - 33)
+    for k, v in pairs(self.exclusive_list) do
+        local label = v
+        local _x = 24
+        local _y = _height - label:getContentSize().height
+        _height = _y
+        label:setPosition(cc.p(_x,_y))
+    end
+    return self.exclusive_panel:getContentSize().height
+end
+--觉醒效果
+function TreasureTips:setWakeupPanel()
+    if tableLen(self.data.wakeup_effect) == 0 then
+        self.wakeUp_panel:setVisible(false)
+        return 0
+    end
+    local _height = 0
+    if not self.wakeUp_list[1] then
+        self.wakeUp_list[1] = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0,0), cc.p(4, 20), -4, nil, 456)
+        self.wakeUp_panel:addChild(self.wakeUp_list[1])
+    end
+    local txt_col = "#ffffff"
+    local star_res = PathTool.getResFrame("common", "common_90012")
+    if self.data.is_wakeup == 1 then
+        star_res = PathTool.getResFrame("common", "common_90011")
+        txt_col = "#FEEEBA"
+    end
+    local attr_str = string.format("<img src='%s' scale=0.5 /><div fontcolor=%s>%s</div>", star_res, txt_col, self.data.wakeup_effect.txt)
+    self.wakeUp_list[1]:setString(attr_str)
+    _height = _height + self.wakeUp_list[1]:getContentSize().height
+    self.wakeUp_panel:setContentSize(cc.size(522,_height + 55))
+    self.wakeUp_label:setPositionY(self.wakeUp_panel:getContentSize().height - 33)
+    self.wakeUp_list[1]:setPosition(cc.p(24,_height))
+    for k, v in pairs(self.wakeUp_list) do
+        local label = v
+        local _x = 24
+        local _y = _height - label:getContentSize().height
+        _height = _y
+        label:setPosition(cc.p(_x,_y))
+    end
+    return self.wakeUp_panel:getContentSize().height
+end
+--生效效果数量
+function TreasureTips:setTakePanel()
+    if not self.take_num then
+        self.take_panel:setVisible(false)
+        return 0
+    else
+        self.take_panel:setVisible(true)
+        if not self.take_txt then
+            self.take_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0,0), cc.p(22, 0), -4, nil, 456)
+            self.take_panel:addChild(self.take_txt)
+        end
+        local take_num = self.take_num
+        local max_num = self.skill_cfg.max
+        local num = 0
+        if take_num > max_num then
+            take_num = max_num
+        end
+        local parameter_list = {}
+        for k, v in pairs(self.skill_cfg.show_num) do
+            local coefficient = v[2]
+            if self.data.is_wakeup == 1 then
+                if self.wake_skill_cfg and self.wake_skill_cfg.max and self.wake_skill_cfg.max ~= 0 then
+                    coefficient = coefficient + self.wake_skill_cfg.show_num[k][2]
+                end
+            end
+            num = math.floor(take_num / v[1]) * coefficient
+            table.insert(parameter_list,num)
+        end
+        table.insert(parameter_list,1,max_num)
+        table.insert(parameter_list,2,take_num)
+        local txt_col = "#C1B7AB"
+        for k, v in pairs(self.data.exclusive_effect) do
+            if v.is_open then
+                txt_col = "#FEEEBA"
+            end
+        end
+        local txt = string.format("<div fontcolor=%s>%s</div>",txt_col,LangStringFormat(self.star_cfg.txt,parameter_list))
+        self.take_txt:setString(txt)
+
+        self.take_panel:setContentSize(cc.size(522,self.take_txt:getContentSize().height + 20))
+        return self.take_panel:getContentSize().height
+    end
+end
+--描述
+function TreasureTips:setDescPanel()
+    self.desc_txt = createRichLabel(22, cc.c4b(0xc1,0xb7,0xab,0xff), cc.p(0,1), cc.p(0, 0), -4, nil, 456)
+    self.scroll_view:addChild(self.desc_txt)
+    self.desc_txt:setString(self.data.config.desc)
+    if self.desc_txt:getContentSize().height > self.scroll_view:getContentSize().height then
+        self.scroll_view:setBounceEnabled(true)
+    else
+        self.scroll_view:setBounceEnabled(false)
+    end
+    local _height = math.max(self.desc_txt:getContentSize().height,self.scroll_view:getContentSize().height)
+    self.scroll_view:setInnerContainerSize(cc.size(self.scroll_view:getContentSize().width,_height))
+    self.desc_txt:setPositionY(_height)
+end
+
+--按钮
+function TreasureTips:setBtnPanel()
+    self.btn_list = {}
+    if self.is_act then
+        self.go_btn:setVisible(false)
+        self.source_btn:setVisible(false)
+        self.act_btn:setVisible(false)
+        local cfg = Config.NinjaTreasureData.data_base_info[self.data.id]
+        local hatch_open_limit = Config.NinjaTreasureData.data_constant["hatch_open_limit"].val
+        local is_wake = true
+        if cfg and cfg.quality == 5 and hatch_open_limit == 1 then
+            is_wake = false
+        end
+        if (self.data.is_wakeup == 1 or not is_wake) and self.data.lev >= tableLen(self.lev_cfg) then
+            self.upgrade_btn:setVisible(true)
+            table.insert(self.btn_list,self.upgrade_btn)
+            self.upstar_btn:setVisible(true)
+            table.insert(self.btn_list,self.upstar_btn)
+            self.wakeup_btn:setVisible(is_wake)
+            if is_wake then
+                table.insert(self.btn_list,self.wakeup_btn)            
+            end
+        else
+            self.upgrade_btn:setVisible(false)
+            self.upstar_btn:setVisible(false)
+            self.wakeup_btn:setVisible(false)
+            if self.data.lev < tableLen(self.lev_cfg) then
+                self.upgrade_btn:setVisible(true)
+                table.insert(self.btn_list,self.upgrade_btn)
+            end
+            if self.data.is_wakeup == 0 and self.data.star >= self.data.max_star then
+                local ex_cfg = Config.NinjaTreasureData.data_awake_info[self.data.id]
+	            if ex_cfg then
+                    self.wakeup_btn:setVisible(is_wake)
+                    if is_wake then
+                        table.insert(self.btn_list,self.wakeup_btn) 
+                    end
+                end           
+            end
+            local ex_cfg = Config.NinjaTreasureData.data_awake_info[self.data.id]
+            if self.data.star < self.data.max_star or not ex_cfg then
+                self.upstar_btn:setVisible(true)
+                table.insert(self.btn_list,self.upstar_btn)
+            end
+        end
+        for key, value in pairs(self.btn_list) do
+            value:setPositionX(self.btn_pos_list[tableLen(self.btn_list)][key])
+        end
+        if self.upgrade_btn:isVisible() then
+            addRedPointToNodeByStatus(self.upgrade_btn,model:getCanUpLevForIdRed(self.data),15,10)
+        end
+        if self.upstar_btn:isVisible() then
+            addRedPointToNodeByStatus(self.upstar_btn,model:getCanUpstarForIdRed(self.data),15,10)
+        end
+        if self.wakeup_btn:isVisible() then
+            addRedPointToNodeByStatus(self.wakeup_btn,model:getCanWakeUpForIdRed(self.data),15,10)
+        end
+        return self.tab_panel:getContentSize().height - 40
+    else
+        self.upgrade_btn:setVisible(false)
+        self.upstar_btn:setVisible(false)
+        self.wakeup_btn:setVisible(false)
+        local cfg = Config.NinjaTreasureData.data_base_info[self.data.id]
+        local have_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(cfg.need_id) or 0
+        local need_num = cfg.item_num
+        local str = LangStringFormat(TI18N("语言_c_6086"),{have_num,need_num})
+        self.act_tip = createLabel(22,cc.c3b(0xff,0x00,0x00),nil,253,80,str,self.tab_panel,nil,cc.p(0.5,0.5))
+        local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+        if next(cfg.open_limit) and tree_lev < cfg.open_limit[1][2] then
+            self.source_btn:setVisible(false)
+            self.act_btn:setVisible(false)
+            self.go_btn:setVisible(true)
+            self.act_tip:setString(string.format(TI18N("语言_c_6222"),cfg.open_limit[1][2]))
+        else
+            self.go_btn:setVisible(false)
+            if have_num >= need_num then
+                self.act_tip:setTextColor(cc.c3b(0x00,0xff,0x00))
+                self.source_btn:setVisible(false)
+            else
+                self.act_tip:setTextColor(cc.c3b(0xff,0x00,0x00))
+                self.act_btn:setVisible(false)
+            end
+        end
+        if self.act_btn:isVisible() then
+            addRedPointToNodeByStatus(self.act_btn,model:getTreasureRedStatusByRedBid(self.data.id or self.data.item_bid),15,10)
+        end
+        return self.tab_panel:getContentSize().height
+    end
+
+    return self.tab_panel:getContentSize().height
+end
+
+function TreasureTips:close_callback()
+    controller:openTreasureTips(false)
+    if self.treasure_act then
+        GlobalEvent:getInstance():UnBind(self.treasure_act)
+        self.treasure_act = nil
+    end
+    if self.treasure_attr_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_attr_event)
+        self.treasure_attr_event = nil
+    end
+end

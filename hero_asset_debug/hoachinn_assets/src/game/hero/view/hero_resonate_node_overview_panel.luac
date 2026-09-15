@@ -1,0 +1,332 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      共鸣水晶二阶段升级
+-- <br/> 2020年3月6日
+-- --------------------------------------------------------------------
+HeroResonateNodeOverviewPanel = HeroResonateNodeOverviewPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+
+function HeroResonateNodeOverviewPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big   
+    self.is_full_screen = false
+    self.layout_name = "hero/hero_resonate_node_overview_panel"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist }
+    }
+    
+end
+
+function HeroResonateNodeOverviewPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.panel_bg = self.main_container:getChildByName("panel_bg")
+    self.title = self.main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_c_6492"))
+    self.item_scroll = self.main_container:getChildByName("item_scroll")
+
+end
+
+function HeroResonateNodeOverviewPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+end
+
+--关闭
+function HeroResonateNodeOverviewPanel:onClickBtnClose()
+    controller:openHeroResonateNodeOverviewPanel(false)
+end
+
+function HeroResonateNodeOverviewPanel:openRootWnd()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.item_scroll:getContentSize()
+        self.setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 561,                -- 单元的尺寸width
+            item_height = 230,               -- 单元的尺寸height
+            -- row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.item_scroll, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, self.setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    local cfg = Config.ResonateData.data_crystal_cost_h
+    self.list_data = {}
+    for k, v in pairs(cfg) do
+        if next(v.attr_show) then
+            table.insert(self.list_data,v)
+        end
+    end
+    table.sort(self.list_data,function(a,b) return a.lev < b.lev end)
+    self.child_scrollview:reloadData()
+    local max_level = 0
+    for k, v in ipairs(self.list_data) do
+        if model:checkEnoughResLev(v.lev) then
+            max_level = math.max(max_level,k)
+        end        
+    end
+    if max_level > 1 then
+        self.child_scrollview:jumpToMoveByIndex(max_level)
+    end
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HeroResonateNodeOverviewPanel:createNewCell(width, height)
+    local cell = HeroResonateNodeOverviewItem.new()
+	return cell
+end
+
+--获取数据数量
+function HeroResonateNodeOverviewPanel:numberOfCells()
+    if not self.list_data then return 0 end
+    return #self.list_data
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HeroResonateNodeOverviewPanel:updateCellByIndex(cell, index)
+    if not self.list_data then return end
+    cell.index = index
+    local cell_data = self.list_data[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+function HeroResonateNodeOverviewPanel:close_callback()
+    self:onClickBtnClose()
+end
+
+
+
+--子项
+HeroResonateNodeOverviewItem = class("HeroResonateNodeOverviewItem", function()
+    return ccui.Widget:create()
+end)
+
+function HeroResonateNodeOverviewItem:ctor()
+    self.node_list = {}
+    self.cost_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function HeroResonateNodeOverviewItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_resonate_node_overview_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(561,230))
+	self:setTouchEnabled(true)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title_txt = self.main_container:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_c_6493"))
+    self.title_value = self.main_container:getChildByName("title_value")
+    self.title_value:setPositionX(self.title_txt:getPositionX() + self.title_txt:getContentSize().width + 10)
+    self.attr_txt = self.main_container:getChildByName("attr_txt")
+    setTextMaxWidth(self.attr_txt,150,-10)
+    self.attr_txt:setString(TI18N("语言_c_6494"))
+    self.cost_txt = self.main_container:getChildByName("cost_txt")
+    setTextMaxWidth(self.cost_txt,150,-10)
+    self.cost_txt:setString(TI18N("语言_c_6495"))
+end
+
+function HeroResonateNodeOverviewItem:setData( data )
+    self.data = data
+    self.title_value:setString(data.lev)
+    self:setAttrList()
+    self:setNodeList()
+end
+--额外属性
+function HeroResonateNodeOverviewItem:setAttrList( )
+    for k, v in pairs(self.node_list) do
+        v:setVisible(false)
+    end
+    if self.data.attr_show and next(self.data.attr_show) ~= nil then
+        for i = 1, tableLen(self.data.attr_show[1]) do
+            if not self.node_list[i] then
+                local item = ccui.Layout:create()
+                item:setAnchorPoint(cc.p(0, 1))
+                item:setContentSize(cc.size(361, 30))
+                self.main_container:addChild(item)
+                item:setPosition(cc.p(200,210 - i*30))
+                item.icon = createSprite(PathTool.getResFrame("common", "common_90021"),10,15,item,cc.p(0.5,0.5))
+                item.icon:setScale(0.8)
+                if item.txt then
+                    item.txt:removeAllChildren()
+                    item.txt:removeFromParent()
+                    item.txt = nil
+                end
+                if not item.txt then
+                    if model:checkEnoughResLev(self.data.lev) then
+                        item.txt = createLabel(20,cc.c3b(0x49,0xd8,0x09),nil,30,15,"",item,nil,cc.p(0,0.5))
+                    else
+                        item.txt = createLabel(20,cc.c3b(0x89,0x78,0x65),nil,30,15,"",item,nil,cc.p(0,0.5))
+                    end
+                end
+                self.node_list[i] = item
+            end
+            local item = self.node_list[i]
+            item:setVisible(true)
+            if model:checkEnoughResLev(self.data.lev) then
+                item.txt:setTextColor(cc.c3b(0x49,0xd8,0x09))
+            else
+                item.txt:setTextColor(cc.c3b(0x89,0x78,0x65))
+            end
+            local res_id = PathTool.getAttrIconByStr(self.data.attr_show[1][i][1])
+            local res = PathTool.getResFrame("common",res_id)
+            loadSpriteTexture(item.icon, res, LOADTEXT_TYPE_PLIST)
+            item.txt:setString(string.format(self.data.attr_show[1][i][2],self.data.attr_show[1][i][3]))
+        end
+    end
+end
+--额外消耗
+function HeroResonateNodeOverviewItem:setNodeList( )
+    local cfg = Config.ResonateData.data_crystal_cost_h[self.data.lev - 1]
+    if cfg then
+        for k, v in pairs(self.cost_list) do
+            v:removeAllChildren()
+            v:removeFromParent()
+            v = nil
+        end
+        self.cost_list = {}
+        if cfg.lev_up_expend2 and next(cfg.lev_up_expend2) ~= nil then
+            for i = 1, tableLen(cfg.lev_up_expend2) do
+                if not self.cost_list[i] then
+                    local item = ccui.Layout:create()
+                    item:setAnchorPoint(cc.p(0, 0))
+                    item:setContentSize(cc.size(361, 30))
+                    self.main_container:addChild(item)
+                    item:setPosition(cc.p(200,90 - i*40))
+                    if not item.hero_item then
+                        local hero_item = HeroExhibitionItem.new(0.25, false, 0, false,true)
+                        hero_item:setPosition(cc.p(9,18))
+                        item:addChild(hero_item)
+                        item.hero_item = hero_item
+                    end
+                    local data = self:getHeroData(cfg.lev_up_expend2[i][1], cfg.lev_up_expend2[i][2], cfg.lev_up_expend2[i][3])
+                    item.hero_item:setData(data)
+                    item.hero_item:setLev(nil)
+                    if item.txt then
+                        item.txt:removeAllChildren()
+                        item.txt:removeFromParent()
+                        item.txt = nil
+                    end
+                    if not item.txt then
+                        if model:checkEnoughResLev(cfg.lev) then
+                            item.txt = createLabel(20,cc.c3b(0x49,0xd8,0x09),nil,30,15,"",item,nil,cc.p(0,0.5))
+                        else
+                            item.txt = createLabel(20,cc.c3b(0x89,0x78,0x65),nil,30,15,"",item,nil,cc.p(0,0.5))
+                        end
+                    end
+                    item.txt:setString(TI18N("语言_c_6489").."*"..cfg.lev_up_expend2[i][3])
+                    self.cost_list[i] = item
+                end
+                
+                if model:checkEnoughResLev(self.data.lev) then
+                    self.cost_list[i].txt:setTextColor(cc.c3b(0x49,0xd8,0x09))
+                else
+                    self.cost_list[i].txt:setTextColor(cc.c3b(0x89,0x78,0x65))
+                end
+            end
+        end
+        if cfg.lev_up_expend3 and next(cfg.lev_up_expend3) ~= nil then
+            for i = 1, tableLen(cfg.lev_up_expend3) do
+                if not self.cost_list[i] then
+                    local item = ccui.Layout:create()
+                    item:setAnchorPoint(cc.p(0, 0))
+                    item:setContentSize(cc.size(361, 30))
+                    self.main_container:addChild(item)
+                    item:setPosition(cc.p(200,90 - i*40))
+                    if not item.hero_item then
+                        local hero_item = HeroExhibitionItem.new(0.25, false, 0, false,true)
+                        hero_item:setPosition(cc.p(9,18))
+                        item:addChild(hero_item)
+                        item.hero_item = hero_item
+                    end
+                    local data = self:getHeroData(nil, cfg.lev_up_expend3[i][2], cfg.lev_up_expend3[i][3], cfg.lev_up_expend3[i][1])
+                    item.hero_item:setData(data)
+                    item.hero_item:setLev(nil)
+                    local default_head_id = model:getRandomHeroHeadByQuality(cfg.lev_up_expend3[i][2])
+                    item.hero_item:setDefaultHead(default_head_id)
+                    if item.txt then
+                        item.txt:removeAllChildren()
+                        item.txt:removeFromParent()
+                        item.txt = nil
+                    end
+                    if not item.txt then
+                        if model:checkEnoughResLev(cfg.lev) then
+                            item.txt = createLabel(20,cc.c3b(0x49,0xd8,0x09),nil,30,15,"",item,nil,cc.p(0,0.5))
+                        else
+                            item.txt = createLabel(20,cc.c3b(0x89,0x78,0x65),nil,30,15,"",item,nil,cc.p(0,0.5))
+                        end
+                    end
+                    item.txt:setString(string.format(TI18N("语言_c_3022"),cfg.lev_up_expend3[i][2]).."*"..cfg.lev_up_expend3[i][3])
+                    self.cost_list[i] = item
+                end
+                
+                if model:checkEnoughResLev(self.data.lev) then
+                    self.cost_list[i].txt:setTextColor(cc.c3b(0x49,0xd8,0x09))
+                else
+                    self.cost_list[i].txt:setTextColor(cc.c3b(0x89,0x78,0x65))
+                end
+            end
+        end
+    end
+end
+function HeroResonateNodeOverviewItem:register_event( )
+    
+end
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function HeroResonateNodeOverviewItem:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+
+function HeroResonateNodeOverviewItem:DeleteMe()
+
+end

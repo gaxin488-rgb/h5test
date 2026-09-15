@@ -1,0 +1,352 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--      金装升星
+-- <br/> 2018年11月15日
+-- --------------------------------------------------------------------
+HeroHighEquipTabUpstarPanel = class("HeroHighEquipTabUpstarPanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local table_insert = table.insert
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function HeroHighEquipTabUpstarPanel:ctor(parent)  
+    self:config()
+    self:layoutUI()
+    self:registerEvents()
+end
+function HeroHighEquipTabUpstarPanel:config()
+    self.star_list = {}
+end
+
+function HeroHighEquipTabUpstarPanel:layoutUI()
+    local csbPath = PathTool.getTargetCSB("hero/hero_high_equip_upstar_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    --升级信息
+    self.img_title = self.main_container:getChildByName("img_title")
+    self.name_bg = self.main_container:getChildByName("name_bg")
+    self.equip_eff = self.main_container:getChildByName("equip_eff")
+    local equip_name = self.main_container:getChildByName("equip_name")
+    equip_name:setVisible(false)
+    local posx = equip_name:getPositionX()
+    local posy = equip_name:getPositionY()
+    self.equip_name = createRichLabel(22, cc.c4b(0xff, 0xdd, 0x68, 0xff), cc.p(0.5, 0.5), cc.p(posx,posy))
+    self.main_container:addChild(self.equip_name)
+
+    self.star_layer = self.main_container:getChildByName("star_layer")
+    for i = 1, 6, 1 do
+        local _star = {}
+        local star = self.star_layer:getChildByName("star_"..i)
+        local select = star:getChildByName("star_select")
+        local unselect = star:getChildByName("star_unselect")
+        _star.select = select
+        _star.unselect = unselect
+        self.star_list[i] = _star
+    end
+
+    self.equip_icon = self.main_container:getChildByName("equip_img")
+    self.help_btn = self.main_container:getChildByName("help_btn")
+
+    self.attr_panel = self.main_container:getChildByName("attr_panel")
+    self.tip1 = self.attr_panel:getChildByName("tip1")
+    self.tip1:setString(TI18N("语言_c_6796"))
+    self.attr1_icon = self.attr_panel:getChildByName("attr1_icon")
+    self.attr_name1 = self.attr_panel:getChildByName("attr_name1")
+    self.now_attr1 = self.attr_panel:getChildByName("now_attr1")
+    self.next_attr1 = self.attr_panel:getChildByName("next_attr1")
+    
+    self.attr2_icon = self.attr_panel:getChildByName("attr2_icon")
+    self.attr_name2 = self.attr_panel:getChildByName("attr_name2")
+    self.now_attr2 = self.attr_panel:getChildByName("now_attr2")
+    self.next_attr2 = self.attr_panel:getChildByName("next_attr2")
+    self.Sprite_17 = self.attr_panel:getChildByName("Sprite_17")
+    self.Sprite_17_0 = self.attr_panel:getChildByName("Sprite_17_0")
+
+
+    self.up_panel = self.main_container:getChildByName("up_panel")
+    local tip = self.up_panel:getChildByName("tip")
+    tip:setString(TI18N("语言_c_6797"))
+    self.full_tips = self.up_panel:getChildByName("full_tips")
+    self.full_tips:setString(TI18N("语言_c_6533"))
+    self.full_tips:setVisible(false)
+
+    local left_tips_icon = self.up_panel:getChildByName("left_tips_icon")
+    local right_tips_icon = self.up_panel:getChildByName("right_tips_icon")
+    setLeftRightImg(left_tips_icon,tip,right_tips_icon,20)
+    self.plan_list = self.up_panel:getChildByName("plan_list")
+
+    self.confirm_btn = self.main_container:getChildByName("confirm_btn")
+    self.confirm_btn:getChildByName("label"):setString(TI18N("语言_c_6754"))
+end
+
+--事件
+function HeroHighEquipTabUpstarPanel:registerEvents()
+
+    registerButtonEventListener(self.confirm_btn, function() self:onClickUpBtn()  end ,true, 2)
+
+    registerButtonEventListener(self.help_btn, function(param, sender, event_type) 
+        local str = Config.PartnerGoldeqmData.data_get_constant.des.val
+        TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition(), nil, nil, 500)
+    end ,true, 2)
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                for i, item in pairs(temp_del) do
+                    if item.base_id == self.cost_item_id then
+                        self:setRedStatus()
+                    end
+                end
+            end
+        end)
+    end
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            if bag_code ~= BackPackConst.Bag_Code.EQUIPS then 
+                for i, item in pairs(temp_list) do
+                    if item.base_id == self.cost_item_id then
+                        self:setRedStatus()
+                    end
+                end
+            end
+        end)
+    end
+end
+
+function HeroHighEquipTabUpstarPanel:onClickUpBtn()
+    if not self.gold_info then return end
+    local star = self.gold_info.star_level
+    local equip_bid = self.equip_data.config.id
+    local cfg = Config.PartnerGoldeqmData.data_get_eqm_star 
+    local now_key = getNorKey(equip_bid, star)
+    local cost = cfg(now_key).cost
+    if cost and next(cost) then
+        local item_id = cost[1][1]
+        local need_num = cost[1][2]
+        local own_num = BackpackController:getInstance():getModel():getItemNumByBid(item_id)
+        local item_info = Config.ItemData.data_get_data(item_id)
+        local item_name = item_info.name
+        local str = string.format(TI18N("语言_c_6837"),need_num,item_name) 
+        local function call_back()
+            controller:sender11443(self.partner_id,self.equip_data.id)
+        end
+        CommonAlert.show(str, TI18N("语言_c_63"), call_back, TI18N("语言_c_62"), nil, CommonAlert.type.rich)
+    end
+
+end
+
+function HeroHighEquipTabUpstarPanel:setData(equip_data, partner_id)
+    if not equip_data then
+        return
+    end
+    self.equip_data = equip_data
+    self.partner_id = partner_id
+    self:updateInfo()
+end
+
+function HeroHighEquipTabUpstarPanel:updateInfo()
+    self.gold_info = BackpackController:getInstance():getModel():getGoldEquipData(self.equip_data.id)
+    if not self.gold_info then
+        return
+    end
+
+    local eqm_jie = self.gold_info.refine_level
+    local eqm_name = self.equip_data.config.name
+    -- self.equip_name:setString(eqm_name .. "+" .. eqm_jie)
+    self.equip_name:setString(string.format("<div outline=2,#3e1200>%s</div><div fontcolor=#13ff13 fontsize=26 outline=2,#3e1200> +%s</div>",eqm_name,eqm_jie))
+    local star = self.gold_info.star_level
+    local soul_level = self.gold_info.soul_level
+    self:setStarPanel(star,soul_level)
+
+    local equip_bid = self.equip_data.config.id
+    loadSpriteTexture(self.equip_icon, PathTool.getResFrame("goldeqm", "goldeqm_" .. equip_bid), LOADTEXT_TYPE_PLIST)
+    self:doEquipIconAction()
+    local cfg = Config.PartnerGoldeqmData.data_get_eqm_star 
+    local now_key = getNorKey(equip_bid, star)
+    local now_info = cfg(now_key)
+    local next_key = getNorKey(equip_bid, (star+1))
+    local next_info = cfg(next_key)
+    if next_info and next(next_info) then --未满级
+        
+        local now_attr2 = now_info.per_attr --百分比属性
+        local attr1 = now_attr2[1]
+        local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr1[1], attr1[2])
+        self.attr_name1:setString(attr_name)
+        self.now_attr1:setString(attr_val)
+        loadSpriteTexture(self.attr1_icon, PathTool.getResFrame("common", PathTool.getAttrIconByStr(attr1[1])), LOADTEXT_TYPE_PLIST)
+
+        local now_attr = now_info.attr --普通属性
+        if now_attr and next(now_attr) then
+            local attr2 = now_attr[1]
+            local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr2[1], attr2[2])
+            self.attr_name2:setString(attr_name)
+            self.now_attr2:setString(attr_val)
+            loadSpriteTexture(self.attr2_icon, PathTool.getResFrame("common", PathTool.getAttrIconByStr(attr2[1])), LOADTEXT_TYPE_PLIST)  
+        end
+
+        local next_attr2 = next_info.per_attr
+        local attr1 = next_attr2[1]
+        local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr1[1], attr1[2])
+        self.next_attr1:setString(attr_val)
+
+        local next_attr = next_info.attr
+        local attr2 = next_attr[1]
+        local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr2[1], attr2[2])
+        self.next_attr2:setString(attr_val)
+        if not now_attr[1] then
+            self.now_attr2:setString(0)
+            self.attr_name2:setString(attr_name)
+            loadSpriteTexture(self.attr2_icon, PathTool.getResFrame("common", PathTool.getAttrIconByStr(attr2[1])), LOADTEXT_TYPE_PLIST) 
+        end
+    else
+        local now_attr = now_info.per_attr
+        local attr1 = now_attr[1]
+        -- local attr_name = Config.AttrData.data_key_to_name[attr1[1]]
+        -- local attr_val = attr1[2]
+        local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr1[1], attr1[2])
+        self.attr_name1:setString(attr_name)
+        self.now_attr1:setString(attr_val)
+        self.now_attr1:setVisible(false)
+        self.next_attr1:setString(attr_val)
+        loadSpriteTexture(self.attr1_icon, PathTool.getResFrame("common", PathTool.getAttrIconByStr(attr1[1])), LOADTEXT_TYPE_PLIST)  
+        local now_attr2 = now_info.attr
+        local attr2 = now_attr2[1]
+        -- local attr_name = Config.AttrData.data_key_to_name[attr2[1]]
+        -- local attr_val = attr2[2]
+        local res, attr_name, attr_val = commonGetAttrInfoByKeyValue(attr2[1], attr2[2])
+        self.attr_name2:setString(attr_name)
+        self.now_attr2:setString(attr_val)
+        self.now_attr2:setVisible(false)
+        self.next_attr2:setString(attr_val)
+        loadSpriteTexture(self.attr2_icon, PathTool.getResFrame("common", PathTool.getAttrIconByStr(attr2[1])), LOADTEXT_TYPE_PLIST) 
+        -- self.next_attr1:setString("已满级")
+        self.Sprite_17:setVisible(false)
+        self.Sprite_17_0:setVisible(false)
+    end
+    self:createCostList()
+    self:setRedStatus()
+end
+
+function HeroHighEquipTabUpstarPanel:createCostList()
+    local star = self.gold_info.star_level
+    local equip_bid = self.equip_data.config.id
+    local cfg = Config.PartnerGoldeqmData.data_get_eqm_star 
+    local now_key = getNorKey(equip_bid, star)
+    local cost = cfg(now_key).cost
+    if cost and next(cost) then
+        if not self.cost_list_item then
+            self.cost_list_item = BackPackItem.new(false, true, false, 1, false, true,false)
+            self.plan_list:addChild(self.cost_list_item)
+        end
+        self.cost_list_item:setPosition(cc.p(self.plan_list:getContentSize().width/2, self.plan_list:getContentSize().height/2 + 20))
+        self.cost_list_item:setBaseData(cost[1][1])
+        self.cost_item_id = cost[1][1]
+        local own_num = BackpackController:getInstance():getModel():getItemNumByBid(cost[1][1])
+        self.cost_list_item:setNeedNum2(cost[1][2], own_num)
+        if cost[1][2] <= own_num then
+            self.cost_list_item:setNeedNumColor(cc.c4b(0x26, 0x95, 0x2f, 0xff))
+        else
+            self.cost_list_item:setNeedNumColor(cc.c4b(0xff, 0x15, 0x15, 0xff))
+        end
+        self.cost_list_item:setNeedNumBg(false)
+        self.confirm_btn:setVisible(true)
+    else
+        self.cost_item_id = nil
+        self.full_tips:setVisible(true)
+        self.confirm_btn:setVisible(false)
+        if self.cost_list_item then
+            self.cost_list_item:setVisible(false)
+        end
+    end
+end
+
+function HeroHighEquipTabUpstarPanel:setVisibleStatus(bool)
+    self:setVisible(bool)
+end
+
+function HeroHighEquipTabUpstarPanel:setStarPanel(star,soul_level)
+    local res = PathTool.getResFrame("common","common_90074")
+    if soul_level >=5 and soul_level<10 then
+        res =  PathTool.getResFrame("common","common_1_215",false,"common_1")
+    elseif soul_level >= 10 then
+        res =  PathTool.getResFrame("common","common_1_216",false,"common_1")
+    end
+
+    for i, v in ipairs(self.star_list) do
+        v.select:setVisible(false)
+        if i <= star then
+            v.select:setVisible(true)
+            loadSpriteTexture(v.select, res, LOADTEXT_TYPE_PLIST)
+        end
+    end
+end
+
+function HeroHighEquipTabUpstarPanel:doEquipIconAction()
+    doStopAllActions(self.equip_icon)
+    local action = cc.Sequence:create(cc.MoveTo:create(1.5, cc.p(360, 902)),cc.MoveTo:create(1.5, cc.p(360, 882)),cc.MoveTo:create(1.5, cc.p(360, 862)),cc.MoveTo:create(1.5, cc.p(360, 882)))
+    self.equip_icon:runAction(cc.RepeatForever:create(action))
+
+    local equip_bid = self.equip_data.config.id
+    local cfg = Config.PartnerGoldeqmData.data_get_top_preview[equip_bid]
+    local eff_info = cfg.effect
+    local eff_list = string.split(eff_info,",")
+    if not self.eff then
+        self.eff = createEffectSpine(eff_list[1], cc.p(23, 23), cc.p(0.5, 0.5), true, eff_list[2])
+        self.equip_eff:addChild(self.eff)
+    end
+end
+
+--计算强化相关红点
+function HeroHighEquipTabUpstarPanel:setRedStatus()
+    local gold_info = self.gold_info
+    local vo = {id = self.equip_data.config.id,
+        refine_level = gold_info.refine_level,
+        enchant_level = gold_info.enchant_level,
+        star_level = gold_info.star_level,
+        soul_level = gold_info.soul_level,
+    }
+    --local red_1 = HeroController:getInstance():getModel():checkGoldEqmCanUplv(vo)
+    local red_2 = HeroController:getInstance():getModel():checkGoldEqmCanUpStar(vo)
+    --local red_3 = HeroController:getInstance():getModel():checkGoldEqmCanSoul(vo)
+    local status = red_2
+    addRedPointToNodeByStatus(self.confirm_btn, status,5,5)
+end
+
+--移除
+function HeroHighEquipTabUpstarPanel:DeleteMe()
+    doStopAllActions(self.equip_icon)
+    if self.eff then
+        self.eff:clearTracks()
+        self.eff:removeFromParent()
+        self.eff = nil
+    end
+    if self.cost_list_item then
+        self.cost_list_item:DeleteMe()
+        self.cost_list_item = nil
+    end
+    if self.modify_goods_event then
+        GlobalEvent:getInstance():UnBind(self.modify_goods_event)
+        self.modify_goods_event = nil
+    end
+    if self.add_goods_event then
+        GlobalEvent:getInstance():UnBind(self.add_goods_event)
+        self.add_goods_event = nil
+    end
+    if self.del_goods_event then
+        GlobalEvent:getInstance():UnBind(self.del_goods_event)
+        self.del_goods_event = nil
+    end
+end

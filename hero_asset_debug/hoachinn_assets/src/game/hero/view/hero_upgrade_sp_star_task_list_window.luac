@@ -1,0 +1,491 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+-- --------------------------------------------------------------------
+HeroUpgradeSpStarTaskListWindow = HeroUpgradeSpStarTaskListWindow or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local math_ceil = math.ceil
+
+local tab_info = {
+    [1] = {name=string.format(TI18N("语言_c_6876"),15),star=15},
+    [2] = {name=TI18N("语言_roo_fe_03_5"),star=16},
+}
+
+function HeroUpgradeSpStarTaskListWindow:__init()
+    self.view_tag = ViewMgrTag.WIN_TAG
+    self.win_type = WinType.Full
+    self.layout_name = "hero/hero_upgrade_sp_star_task_list_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("artifact_golden", "artifact_golden"), type = ResourcesType.plist},
+    }
+    self:config()
+end
+
+function HeroUpgradeSpStarTaskListWindow:config()
+    self.tab_list = {}
+    self.item_list = {}
+end
+
+function HeroUpgradeSpStarTaskListWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    local top_y = display.getTop()
+    local bottom_y = display.getBottom()
+    local add_height = getScreenAddHeight()
+
+    self.bottombg1 = self.root_wnd:getChildByName("bottombg1")
+    self.bottombg1:setPositionY(bottom_y+63)
+    self.bottombg2 = self.root_wnd:getChildByName("bottombg2")
+    local _size = self.bottombg2:getContentSize()
+    _size.height = _size.height + add_height
+    self.bottombg2:setContentSize(_size)
+    self.bottombg2:setPositionY(bottom_y+160)
+
+    self.Panel_1 = self.root_wnd:getChildByName("Panel_1")
+    self.banner = self.Panel_1:getChildByName("banner")
+    self.icon = self.Panel_1:getChildByName("icon")
+    self.hero_img = self.Panel_1:getChildByName("hero_img")
+    local posy = self.bottombg2:getPositionY() + self.bottombg2:getContentSize().height - 5
+    self.Panel_1:setPositionY(posy)
+
+    self.tab_view = self.root_wnd:getChildByName("tab_view")
+    local posy = self.bottombg2:getPositionY() + self.bottombg2:getContentSize().height - 57
+    self.tab_view:setPositionY(posy)
+
+    for i = 1, 2, 1 do
+        local object = {}
+        local tab = self.tab_view:getChildByName("tab_"..i)
+        local select = tab:getChildByName("select")
+        local normal = tab:getChildByName("normal")
+        local name = tab:getChildByName("name")
+        name:setString(tab_info[i].name)
+        object.tab = tab
+        object.select = normal
+        object.select:setVisible(false)
+        object.normal = select 
+        object.name = name
+        object.star = tab_info[i].star
+        self.tab_list[i] = object
+    end
+
+    self.close_btn = self.root_wnd:getChildByName("close_btn")
+    self.close_btn:setPositionY(bottom_y+150)
+    self.main_container = self.root_wnd:getChildByName("container")
+    local _size = self.main_container:getContentSize()
+    _size.height = _size.height + add_height
+    self.main_container:setContentSize(_size)
+    self.main_container:setPositionY(bottom_y+166)
+
+    self.scroller_bg = self.main_container:getChildByName("scroller_bg")
+    local _size = self.scroller_bg:getContentSize()
+    _size.height = _size.height + add_height
+    self.scroller_bg:setContentSize(_size)
+
+    self.task_panel = self.main_container:getChildByName("task_panel")
+    local _size = self.task_panel:getContentSize()
+    _size.height = _size.height + add_height
+    self.task_panel:setContentSize(_size)
+
+    self.task_scroller = self.task_panel:getChildByName("task_scroller")
+    local _size = self.task_scroller:getContentSize()
+    _size.height = _size.height + add_height
+    self.task_scroller:setContentSize(_size)
+
+    self.task_scroller:setScrollBarEnabled(false)
+end
+
+function HeroUpgradeSpStarTaskListWindow:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.close_btn, handler(self, self.onClickBtnClose) ,true, 2)
+    for i = 1, 2, 1 do
+        registerButtonEventListener(self.tab_list[i].tab, function ()
+            self:changeType(i)
+        end, true, 2)
+    end
+    self:addGlobalEvent(TipsEvent.TipsGoToEvent, function( )
+        self:onClickBtnClose()
+    end)
+end
+
+function HeroUpgradeSpStarTaskListWindow:openRootWnd(object)
+    self.hero_vo = object
+    self:changeType(1)
+    self:updateTopBanner()
+end
+
+function HeroUpgradeSpStarTaskListWindow:changeType(index)
+    index = index or 1
+    if self.cur_index == index then return end
+    if self.cur_tab ~= nil then
+        self.cur_tab.normal:setVisible(true)
+        self.cur_tab.select:setVisible(false)
+        self.cur_tab.name:setTextColor(cc.c3b(0xf9, 0xee, 0xd0))
+    end
+    self.cur_index = index
+    self.cur_tab = self.tab_list[self.cur_index]
+    if self.cur_tab ~= nil then
+        self.cur_tab.normal:setVisible(false)
+        self.cur_tab.select:setVisible(true)
+        self.cur_tab.name:setTextColor(cc.c3b(0xf8, 0xef, 0x76))
+    end
+    self:updateInfo()
+end
+
+function HeroUpgradeSpStarTaskListWindow:updateTopBanner()
+    local partner_config = Config.PartnerData.data_partner_base[self.hero_vo.bid]
+    if partner_config then
+        local partnerName = partner_config.name
+        local bustid = partner_config.bustid
+	    local bust_res = PathTool.getPartnerBustRes(bustid)
+	    if not self.bust_load then
+	        self.bust_load = createResourcesLoad(bust_res, ResourcesType.single, function()
+	            if self.hero_img and not tolua.isnull( self.hero_img) then
+                    loadSpriteTexture(self.hero_img, bust_res, LOADTEXT_TYPE)
+                end
+	    	end,self.bust_load)
+	    end
+    end
+end
+
+function HeroUpgradeSpStarTaskListWindow:updateInfo()
+    local star = self.cur_tab.star
+    local total_height = 0
+    for k, v in pairs(self.item_list) do
+        v:setVisible(false)
+    end
+    for i = 1, 10, 1 do
+        local key = getNorKey(self.hero_vo.bid, star, i)
+        local star_rank_config = Config.PartnerData.data_partner_star_step(key)
+        if star_rank_config then
+            if not self.item_list[i] then
+                self.item_list[i] = HeroUpgradeSpStarTaskItem.new()
+                self.item_list[i]:setAnchorPoint(cc.p(0, 1))
+                self.task_scroller:addChild(self.item_list[i])
+            end
+            self.item_list[i]:setData(star_rank_config)
+            self.item_list[i]:setVisible(true)
+            local size = self.item_list[i]:getItemSize()
+            total_height = total_height + size.height + 5
+        end
+    end
+    -- self.task_scroller:setContentSize()
+    self.task_scroller:setInnerContainerSize(cc.size(700,total_height))
+
+    for k, v in ipairs(self.item_list) do
+        if v:isVisible() then
+            v:setPositionY(total_height)
+            local size = v:getItemSize()
+            total_height = total_height - size.height - 5
+        end
+    end
+end
+
+--关闭
+function HeroUpgradeSpStarTaskListWindow:onClickBtnClose()
+    controller:openSpStarTaskListPanel(false)
+end
+
+function HeroUpgradeSpStarTaskListWindow:close_callback()
+    if self.hero_item_list then
+        for i,v in ipairs(self.hero_item_list) do
+             v:DeleteMe()
+        end
+        self.hero_item_list = nil
+    end
+    if self.cost_item_list then
+        for i,v in ipairs(self.cost_item_list) do
+            v:DeleteMe()
+        end
+        self.cost_item_list = nil
+    end
+
+    if self.upgrade_star_select_event then
+        GlobalEvent:getInstance():UnBind(self.upgrade_star_select_event)
+        self.upgrade_star_select_event = nil
+    end
+
+    controller:openSpStarTaskListPanel(false)
+end
+
+
+
+
+
+
+
+
+
+
+
+HeroUpgradeSpStarTaskItem = class("HeroUpgradeSpStarTaskItem", function()
+    return ccui.Layout:create()
+end)
+
+function HeroUpgradeSpStarTaskItem:ctor()
+	self:configUI()
+	self:register_event()
+    self.task_item = {}
+end
+
+function HeroUpgradeSpStarTaskItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("hero/hero_upgrade_sp_star_task_item"))
+    self:addChild(self.root_wnd)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    self.Image_1 = self.main_container:getChildByName("Image_1")
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.title = self.title_bg:getChildByName("title")
+    self.list = self.main_container:getChildByName("list")
+end
+
+function HeroUpgradeSpStarTaskItem:register_event()
+end
+
+function HeroUpgradeSpStarTaskItem:setData(data)
+    self.data = data
+    -- print(vardump(data))
+    local star = data.star
+    local step = data.star_step
+    if star < 16 then
+        self.title:setString(string.format(TI18N("语言_c_7719"),star,step))
+    else
+        self.title:setString(string.format(TI18N("语言_c_7720"),step))
+    end
+    local task_list = data.task_list
+    for k, v in pairs(self.task_item) do
+        if v then
+            v:DeleteMe()
+        end
+    end
+    self.task_item = {}
+    local total_height = 0
+    for i, v in ipairs(task_list) do
+        local task_id = v
+        local cfg = Config.PartnerStarTaskData.data_get[task_id]
+        local item = HeroUpgradeSpStarTaskItemItem.new(cfg,i)
+        item:setAnchorPoint(cc.p(0,1))
+        self.list:addChild(item)
+        self.task_item[i] = item
+        if cfg.source_id == 1 then
+            item.__height = 180
+            total_height = total_height + 180
+        else
+            item.__height = 100
+            total_height = total_height + 100
+        end
+    end
+    self.list:setContentSize(cc.size(700,total_height))
+    self.list:setInnerContainerSize(cc.size(700,total_height))
+    self.size = cc.size(700,total_height+36)
+    for i, v in ipairs(self.task_item) do
+        local item = v
+        v:setPositionY(total_height)
+        total_height = total_height - item.__height
+    end
+
+    self:setContentSize(self.size)
+    self.root_wnd:setContentSize(self.size)
+    self.main_container:setContentSize(self.size)
+    self.Image_1:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self.main_container:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self.Image_1:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self.list:setPositionY(self.size.height-36)
+    self.title_bg:setPositionY(self.size.height)
+end
+
+function HeroUpgradeSpStarTaskItem:getItemSize()
+    return self.root_wnd:getContentSize()
+end
+
+function HeroUpgradeSpStarTaskItem:DeleteMe()
+	self:removeAllChildren()
+	self:removeFromParent()
+end
+
+
+
+HeroUpgradeSpStarTaskItemItem = class("HeroUpgradeSpStarTaskItemItem", function()
+    return ccui.Layout:create()
+end)
+
+function HeroUpgradeSpStarTaskItemItem:ctor(data,index)
+    self.task_item = {}
+    self.hero_item_list = {}
+    self.cost_item_list = {}
+    self.index = index
+    self.data = data
+	self:configUI()
+	self:register_event()
+    self:setData()
+end
+
+function HeroUpgradeSpStarTaskItemItem:configUI()
+    local res = "hero/hero_upgrade_sp_star_task_item_item"
+    if self.data.source_id == 1 then
+        res = "hero/hero_upgrade_sp_star_task_item_item2"
+    end
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB(res))
+    self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.rich_node = self.main_container:getChildByName("rich_node")
+    self.label_des_rich = self.rich_node:getChildByName("label_des_rich")
+    setTextMaxWidth( self.label_des_rich , 460, -6)
+    -- self.label_des_rich = createRichLabel(22,cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0.5), nil,nil,nil,440)
+    -- self.rich_node:addChild(self.label_des_rich)
+
+    self.bar_bg = self.main_container:getChildByName("bar_bg")
+    self.bar = self.main_container:getChildByName("bar")
+    self.bar:setScale9Enabled(true)
+    self.progress_txt = self.main_container:getChildByName("progress_txt")
+    self.line = self.main_container:getChildByName("line")
+    self.item_node = self.main_container:getChildByName("item_node")
+    self.tips = self.main_container:getChildByName("tips")
+    self.tips:setString(TI18N("语言_c_7721"))
+end
+
+function HeroUpgradeSpStarTaskItemItem:register_event()
+end
+
+function HeroUpgradeSpStarTaskItemItem:setData()
+    -- self.label_des_rich:setString(self.data.desc)
+    self.label_des_rich:setTouchEnabled(true)
+    self.label_des_rich:setString(transformTextToShort(self.data.desc, 60))
+    addEvt2showAllTextTips(self.label_des_rich,self.data.desc,60)
+    local task_data = model:getSpTaskHeroDataById(self.data.id)
+    if self.data.source_id == 1 then
+        local progress = self.data.progress[1]
+        self:updateItemDataByConfig(progress.param,self.item_node)
+        self.bar_bg:setVisible(false)
+        self.bar:setVisible(false)
+        self.progress_txt:setVisible(false)
+        self.tips:setString(TI18N("语言_c_7721"))
+    else
+        local progress = self.data.progress[1]
+        local target_val = progress.target_val
+        self.bar:setPercent(task_data.value/target_val*100)
+        self.progress_txt:setString(task_data.value .. "/" .. target_val)
+        self.tips:setString("")
+    end 
+end
+
+--升星物品材料
+function HeroUpgradeSpStarTaskItemItem:updateItemDataByConfig(star_config, item_node)
+    -- print("%%%%%%%%%%%",vardump(star_config))
+    if not star_config then return end
+    item_node.hero_item_data_list = item_node.hero_item_data_list or {}
+
+    --指定的 {10402,4,1} : 10402: 表示bid, 4: 表示星级 1:表示数量
+    local index = 1
+    for i,expend in ipairs(star_config[1][2]) do
+        item_node.hero_item_data_list[index] = self:getHeroData(expend[1], expend[2], expend[3])
+        index = index + 1
+    end
+    --随机的 {1,4,2} : 1 表示阵营  4: 表示星级 2表示数量
+    for i,expend in ipairs(star_config[2][2]) do
+        item_node.hero_item_data_list[index] = self:getHeroData(nil, expend[2], expend[3], expend[1])
+        index = index + 1
+    end
+    item_node.hero_item_list = item_node.hero_item_list or {}
+    for i,item in ipairs(item_node.hero_item_list) do
+        item:setVisible(false)
+    end
+
+    for i,hero_vo in ipairs(item_node.hero_item_data_list) do
+        if item_node.hero_item_list[i] == nil then
+            item_node.hero_item_list[i] = HeroExhibitionItem.new(0.7, false)
+            item_node.hero_item_list[i]:setSwallowTouches(false)
+            item_node.hero_item_list[i]:setPosition( (i-1) * (HeroExhibitionItem.Width * 0.7 + 3) , 0)
+            item_node:addChild(item_node.hero_item_list[i])
+        end
+        item_node.hero_item_list[i]:setVisible(true)
+        if hero_vo.bid == 0 then
+            --随机卡的头像id
+            local default_head_id = model:getRandomHeroHeadByQuality(hero_vo.star)
+            item_node.hero_item_list[i]:setData(hero_vo)
+            item_node.hero_item_list[i]:setDefaultHead(default_head_id)
+            item_node.hero_item_list[i]:setHeroName(true, string_format(TI18N("语言_c_3022"), hero_vo.star))
+        else
+            item_node.hero_item_list[i]:setData(hero_vo)
+            -- item_node.hero_item_list[i]:setHeroName(true, hero_vo.name)
+            item_node.hero_item_list[i]:setHeroName(false)
+        end
+        item_node.hero_item_list[i]:setHeadUnEnabled(false)
+    end
+
+    -- 额外材料
+    item_node.cost_item_list = item_node.cost_item_list or {}
+    for k,item in pairs(item_node.cost_item_list) do
+        item:setVisible(false)
+    end
+
+    local start_index = #item_node.hero_item_data_list
+    if star_config[3][2] then
+        for i,v in ipairs(star_config[3][2]) do
+            local bid = v[1]
+            local need_num = v[2]
+            local item = item_node.cost_item_list[i]
+            if not item then
+                item = BackPackItem.new(false, true, false, 0.7)
+                item:setSwallowTouches(false)
+                item_node:addChild(item)
+                item_node.cost_item_list[i] = item
+            end
+            item:setPosition( (start_index+i-1) * (BackPackItem.Width * 0.7 + 3) , 0)
+            local have_num = BackpackController:getInstance():getModel():getBackPackItemNumByBid(bid)
+            item:setBaseData(bid)
+            item:setNeedNum(need_num, nil, 1, true, 2)
+            item:setDefaultTip()
+            item:setVisible(true)
+        end
+    end
+end
+
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function HeroUpgradeSpStarTaskItemItem:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s", count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = camp_type
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+
+function HeroUpgradeSpStarTaskItemItem:DeleteMe()
+	self:removeAllChildren()
+	self:removeFromParent()
+end

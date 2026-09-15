@@ -1,0 +1,254 @@
+-- --------------------------------------------------------------------
+-- 忍界传奇
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: {DATE}s
+-- --------------------------------------------------------------------
+local controller = ActionController:getInstance()
+ActionLegendTrialSkinPanel = class("ActionLegendTrialSkinPanel", function()
+    return ccui.Widget:create()
+end)
+
+function ActionLegendTrialSkinPanel:ctor(bid)
+    self.holiday_bid = bid
+	self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("legendary_ninja","legendary_ninja"),type = ResourcesType.plist}
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    -- self.resources_load:addAllList(self.res_list, function()
+    --     self:loadResListCompleted()
+    -- end)
+    self:loadResListCompleted()
+end
+
+function ActionLegendTrialSkinPanel:loadResListCompleted()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionLegendTrialSkinPanel:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("legendtrial/action_legend_trial_panel"))
+	self.root_wnd:setPosition(-40,-65)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setAnchorPoint(0,0)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.surplus_txt = self.main_container:getChildByName("surplus_txt")
+    self.surplus_txt:setString(TI18N("语言_c_1113"))
+    self.surplus_time = self.main_container:getChildByName("surplus_time")
+    self.surplus_time:setPositionX(self.surplus_txt:getPositionX() + self.surplus_txt:getContentSize().width)
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.list_layer = self.main_container:getChildByName("list_layer")
+    self.btn_list = {}
+    for i=1,6 do 
+        local node = self.list_layer:getChildByName("pos_"..i)
+        local item = ActionLegendTrialItem.new()
+        node:addChild(item)
+        self.btn_list[i] = node
+        node.item = item
+    end
+    controller:sender29130(self.holiday_bid)
+    
+    self.image_top_bg = self.main_container:getChildByName("image_top_bg")
+    self.image_title_bg = self.main_container:getChildByName("image_title_bg")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+
+    self.text_top = self.main_container:getChildByName("text_top")
+    self.text_top:setVisible(false)
+    self.rich_top = createRichLabel(22, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0.5, 0.5), cc.p(self.text_top:getPosition()), -10, nil, 600)
+    -- self.rich_top:setHorizontalLayoutType(2)
+    -- local str = string.format(TI18N("语言_c_3634"))
+    -- self.rich_top:setString(str)
+    self.main_container:addChild(self.rich_top)
+
+    controller:setHolidayStatus(self.holiday_bid, false)
+end
+
+function ActionLegendTrialSkinPanel:setData(data)
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if tab_vo then
+        self.list_config = data
+        for i=1,6 do
+            local info = self.list_config[i]
+            local node = self.btn_list[i]
+            if info then
+                node.item:setData(info, self.holiday_bid,tab_vo.camp_id)
+                node:setVisible(true)
+            else
+                node:setVisible(false)
+            end
+        end
+        self:setLessTime(tab_vo.remain_sec)
+        loadSpriteTexture(self.image_top_bg, PathTool.checkRes(string.format("resource/legendary_ninja/%s.png",tab_vo.reward_title)), LOADTEXT_TYPE)
+        loadSpriteTexture(self.image_title_bg, PathTool.getResFrame("legendary_ninja",tab_vo.aim_title), LOADTEXT_TYPE_PLIST)
+        loadSpriteTexture(self.image_bg, PathTool.getResFrame("legendary_ninja",tab_vo.top_banner), LOADTEXT_TYPE_PLIST)
+        local str = "<div outline=2,#000000>"..tab_vo.title2.."</div>"
+        self.rich_top:setString(str)
+    end
+end
+
+function ActionLegendTrialSkinPanel:register_event(  )
+    registerButtonEventListener(self.btn_rule, function(param,sender, event_type)
+        local desc = TI18N("语言_c_5199")
+        TipsManager:getInstance():showCommonTips(desc, sender:getTouchBeganPosition(),nil,nil,500)
+    end, true, 2)
+    if not self.update_action_even_event then
+        self.update_action_even_event = GlobalEvent:getInstance():Bind(ActionEvent.Update_LegendTrial_Info,function (data)
+            if not data then return end
+            self:setData(data)
+        end)
+    end
+end
+
+function ActionLegendTrialSkinPanel:setVisibleStatus(bool)
+    bool = bool or false
+    self:setVisible(bool) 
+    if bool then
+        MainuiController:getInstance():requestOpenBattleRelevanceWindow(BattleConst.Fight_Type.LegendTrial)
+    else
+        BattleController:getInstance():openBattleView(false)
+        -- 还原ui战斗类型
+        MainuiController:getInstance():resetUIFightType()
+    end
+end
+
+--设置倒计时
+function ActionLegendTrialSkinPanel:setLessTime( less_time )
+    if tolua.isnull(self.surplus_time) then return end
+    self.surplus_time:stopAllActions()
+    if less_time > 0 then
+        self:setTimeFormatString(less_time)
+        self.surplus_time:runAction(cc.RepeatForever:create(cc.Sequence:create(
+            cc.DelayTime:create(1), cc.CallFunc:create(function()
+            less_time = less_time - 1
+            if less_time < 0 then
+                self.surplus_time:stopAllActions()
+            else
+                self:setTimeFormatString(less_time)
+            end
+        end)
+        )))
+    else
+        self:setTimeFormatString(less_time)
+    end
+end
+
+function ActionLegendTrialSkinPanel:setTimeFormatString(time)
+    self.rest_time = time
+    if time > 0 then
+        self.surplus_time:setString(TimeTool.GetTimeFormatDayIIIIII(time))
+    else
+        self.surplus_time:setString("")
+    end
+    local t_width = self.surplus_txt:getContentSize().width + self.surplus_time:getContentSize().width + 10
+    if t_width > self.time_bg:getContentSize().width then
+        self.time_bg:setContentSize(cc.size(t_width, self.time_bg:getContentSize().height))
+    end
+end
+
+function ActionLegendTrialSkinPanel:DeleteMe()
+    doStopAllActions(self.surplus_time)
+    if self.update_action_even_event then
+        GlobalEvent:getInstance():UnBind(self.update_action_even_event)
+        self.update_action_even_event = nil
+    end
+end
+
+
+
+-- --------------------------------------------------------------------
+-- 忍界传说-子项
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: {DATE}
+-- --------------------------------------------------------------------
+ActionLegendTrialItem = class("ActionLegendTrialItem", function()
+    return ccui.Widget:create()
+end)
+
+
+function ActionLegendTrialItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ActionLegendTrialItem:configUI(  )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("legendtrial/action_legend_trial_item"))
+    self.root_wnd:setAnchorPoint(0.5,0)
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.hero_node =self.main_container:getChildByName("hero_node")
+
+    self.title_bg = self.main_container:getChildByName("title_bg")
+    self.star_num = self.title_bg:getChildByName("star_num")
+    self.star_img = self.title_bg:getChildByName("star_img")
+    self.lv_txt = self.title_bg:getChildByName("lv_txt")
+end
+
+function ActionLegendTrialItem:register_event()
+    registerButtonEventListener(self.main_container,function()
+        local tab_vo = controller:getActionSubTabVo(ActionRankCommonType.legend_trialskin)
+        if not tab_vo or tab_vo.remain_sec <= 0 then
+            message(TI18N("语言_c_1472"))
+            return
+        end
+        if self.data then
+            local status = controller:getModel():checkCurPointOpen(self.data.id)
+            if not status then
+                message(TI18N("语言_c_5207"))
+                return
+            end
+        else
+            message(TI18N("语言_c_5207"))
+            return
+        end
+        controller:openActionLegendTrialSkinFightInfo(true, {bid = self.holiday_bid, info = self.data, camp_id = self.camp_id})
+    end,false,2)
+end
+
+function ActionLegendTrialItem:updateSpine()
+    if self.hero_node.spine then
+        self.hero_node:removeAllChildren()
+        self.hero_node.spine = nil
+    end
+    local config = Config.PartnerData.data_partner_base[self.data.mode_id]
+    local hero_vo = HeroVo.New()
+    hero_vo.bid = config.bid
+    hero_vo.lev = self.data.lev
+    hero_vo.star = self.data.star
+    hero_vo.camp_type = config.camp_type
+    self.hero_node.spine = BaseRole.new(BaseRole.type.partner, hero_vo, nil, {scale = 0.45,skin_id = self.data.mode_skin_id})
+    self.hero_node.spine:setAnimation(0,PlayerAction.show,true) 
+    self.hero_node.spine:setCascade(true)
+    local x, y = self.hero_node:getPosition()
+    self.hero_node.spine:setAnchorPoint(cc.p(0.5,0.5)) 
+    self.hero_node:addChild(self.hero_node.spine)
+    self.hero_node.spine:setOpacity(0)
+    local action = cc.FadeIn:create(0.2)
+    self.hero_node.spine:runAction(action)
+end
+
+function ActionLegendTrialItem:setData(data, holiday_bid, camp_id)
+    self.data = data
+    self.holiday_bid = holiday_bid
+    self.camp_id = camp_id
+    self:updateSpine()
+    self.star_num:setString(data.star)
+    self.lv_txt:setString("- "..string.format(TI18N("语言_c_4520"), data.lev))
+
+    local status = controller:getModel():checkCurPointOpen(self.data.id)
+    setChildUnEnabled(not status, self)
+    self.hero_node.spine:setUnEnabled(not status)
+end
+
+function ActionLegendTrialItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

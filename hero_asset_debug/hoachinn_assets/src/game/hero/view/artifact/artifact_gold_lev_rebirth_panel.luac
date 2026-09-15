@@ -1,0 +1,133 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2019-01-16 21:22:19
+-- @description    : 
+		-- 金色秘卷重置
+---------------------------------
+ArtifactGoldLevRebirthPanel = ArtifactGoldLevRebirthPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model =  controller:getModel()
+
+
+function ArtifactGoldLevRebirthPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "hero/artifact_gold_lev_rebirth_panel"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("quenching", "quenching"), type = ResourcesType.plist},
+	}
+	self.attr_item_list = {}
+    --材料列表
+    self.hero_item_list = {}
+    self.cost_item_list = {} -- 升星额外消耗的材料
+end
+
+function ArtifactGoldLevRebirthPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	self.container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(self.main_container , 1) 
+
+	self.Image_2 = self.container:getChildByName("Image_2")
+	self.confirm_btn = self.container:getChildByName("confirm_btn")
+    self.cost_val = createRichLabel(24, cc.c4b(0xf8, 0xef, 0x76, 0xff), cc.p(0.5,0.5), cc.p(80,32),FONT_COMMON_LINE_SPACE)
+    self.confirm_btn:addChild(self.cost_val)
+	self.win_title = self.container:getChildByName("win_title")
+	self.win_title:setString(TI18N("语言_c_5014"))
+	autoSizeTitleBg(self.win_title,self.Image_2,60,332)
+	self.close_btn = self.container:getChildByName("close_btn")
+	self.scroll_view = self.container:getChildByName("scroll_view")
+	self.dec_val = createRichLabel(24, cc.c4b(0x68, 0x45, 0x2a, 0xff), cc.p(0,1), cc.p(0,40),FONT_COMMON_LINE_SPACE,nil,610)
+    self.scroll_view:addChild(self.dec_val)
+    self.dec_val:setString(TI18N("语言_c_7544"))
+	local label_siez = self.dec_val:getContentSize()
+    local max_height = math.max(label_siez.height,104)
+    self.scroll_view:setInnerContainerSize(cc.size(622, max_height))
+    if label_siez.height <= 65 then
+        self.scroll_view:setTouchEnabled(false)
+    end
+    self.dec_val:setPositionY(max_height)
+	self.list_view = self.container:getChildByName("list_view")
+	self.right_tips_icon = self.container:getChildByName("right_tips_icon")
+	self.tips = self.container:getChildByName("tips")
+	self.left_tips_icon = self.container:getChildByName("left_tips_icon")
+	self.tips:setString(TI18N("语言_c_6746"))
+	setLeftRightImg(self.left_tips_icon,self.tips,self.right_tips_icon,30)
+	local size = self.list_view:getContentSize()
+    local setting = {
+        item_class = ArtifactGoldResetItem,      -- 单元类
+        start_x = 16,                  -- 第一个单元的X起点
+        space_x = 32,                    -- x方向的间隔
+        start_y = 6,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = 119,               -- 单元的尺寸width
+        item_height = 119,              -- 单元的尺寸height
+        row = 4,                        -- 行数，作用于水平滚动类型
+        col = 4,                         -- 列数，作用于垂直滚动类型
+        once_num = 4,
+        need_dynamic = true,
+		is_backpack_item = true,
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.list_view, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, size, setting)
+end
+
+function ArtifactGoldLevRebirthPanel:register_event(  )
+    registerButtonEventListener(self.close_btn, function ( )
+		controller:openArtifactGoldLevRebirthPanel(false)
+    end)
+    registerButtonEventListener(self.background, function ( )
+		controller:openArtifactGoldLevRebirthPanel(false)
+    end)
+
+    registerButtonEventListener(self.confirm_btn, function() self:onConfirmButton() end ,true, 2)
+end
+
+function ArtifactGoldLevRebirthPanel:onConfirmButton()
+	controller:sender11483(self.pid,self.artifact_id,2)
+    controller:openArtifactGoldLevRebirthPanel(false)
+end
+
+function ArtifactGoldLevRebirthPanel:openRootWnd(pid,artifact_vo)
+	if not artifact_vo then return end
+    self.pid = pid
+	self.artifact_id = artifact_vo.artifact_id
+    self.artifact_lev = artifact_vo.enhance_level
+    self.skill_data = Config.PartnerArtifactGoldenData.data_enhance[self.artifact_id]
+    if not self.skill_data then return end
+    self.item_data = {}
+    local list = {}
+	for i,v in pairs(self.skill_data) do
+        if v.enhance_level < self.artifact_lev then
+            for key,value in pairs(v.cost_level_up) do
+                if list[value[1]] then
+                    list[value[1]] = list[value[1]] + value[2]
+                else
+                    list[value[1]] = value[2]
+                end
+            end
+        end
+    end
+    for k,v in pairs(list) do
+        local _list = {k,v}
+        table.insert(self.item_data,_list)
+    end
+	self.item_scrollview:setData(self.item_data, nil, nil, {is_show_tips = true, is_other = true})
+    self.cost_cfg = Config.PartnerArtifactGoldenData.data_enhance_reset[self.artifact_lev]
+    if not self.cost_cfg then return end
+	local cost = self.cost_cfg.cost[1]
+	self.cost_val:setString(string.format(TI18N("语言_c_4039"),PathTool.getItemRes(Config.ItemData.data_get_data(cost[1]).icon),cost[2]))
+	local _w = math.max(self.confirm_btn:getContentSize().width, self.cost_val:getContentSize().width + 20)
+	self.confirm_btn:setContentSize(cc.size(_w,self.confirm_btn:getContentSize().height))
+	self.cost_val:setPositionX(_w/2)
+end
+
+function ArtifactGoldLevRebirthPanel:close_callback(  )
+	controller:openArtifactGoldLevRebirthPanel(false)
+end

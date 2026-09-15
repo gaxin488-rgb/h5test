@@ -1,0 +1,156 @@
+---------------------------------
+-- 
+-- 
+-- @date 2021/5
+-- @description: 勇者之路 魂器背包 item
+---------------------------------
+local _string_format = string.format
+
+BraveRoadBagItem = class('BraveRoadBagItem',function()
+    return ccui.Widget:create()
+end)
+
+function BraveRoadBagItem:ctor(callback)
+    self.callback = callback
+    self:configUI()
+    self:registerEvent()
+end
+
+function BraveRoadBagItem:configUI()
+    self.size = cc.size(195, 362)
+    self:setAnchorPoint(cc.p(0.5, 0.5))
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("braveroad/brave_road_bag_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("container")
+    container:setSwallowTouches(false)
+    self.container = container
+
+    self.pos_node = container:getChildByName("pos_node")
+    local name_bg = container:getChildByName("name_bg")
+    self.name_txt = name_bg:getChildByName("name_txt")
+    self.icon_sp = container:getChildByName("icon_sp")
+    local item = ExclusiveItem.new()
+    self.icon_sp:addChild(item)
+    self.icon_sp.itemIcon = item
+    item:setScale(0.8)
+    item:setPosition(cc.p(self.icon_sp:getContentSize().width/2, self.icon_sp:getContentSize().height/2))
+
+    self.quality_sp = container:getChildByName("quality_sp")
+
+    self.node_head = container:getChildByName("node_head")
+
+    self.scrollview_des = container:getChildByName("scrollview_des")
+    self.scrollview_des:setScrollBarEnabled(false)
+    self.scrollview_des:setSwallowTouches(false)
+    local size = self.scrollview_des:getContentSize()
+    self.desc_txt = createRichLabel(16, cc.c4b(88, 56, 37), cc.p(0.5, 1), cc.p(size.width/2, 0), 0, 0, size.width)
+    self.scrollview_des:addChild(self.desc_txt)
+    self.scrollview_des.size = size
+end
+
+function BraveRoadBagItem:registerEvent()
+    registerButtonEventListener(self.container, handler(self, self.onClickItem), false, 2)
+end
+
+function BraveRoadBagItem:onClickItem(  )
+    local partner_cfg = Config.PartnerData.data_partner_base[self.horcruxes_cfg.partner_id]
+    local data = {panel_type = HERO_SOUL_TYPE, config = partner_cfg, other_view = true, lev = self.horcruxes_vo.h_lev}
+    HeroController:getInstance():openExclusivePropsPanel(true, data)
+end
+
+function BraveRoadBagItem:setData(horcruxes_cfg, horcruxes_vo)
+    if not horcruxes_cfg then return end
+    self.horcruxes_vo = horcruxes_vo
+    self.horcruxes_cfg = horcruxes_cfg
+    if not self.horcruxes_cfg then return end
+
+    -- 名称
+    self.name_txt:setString(self.horcruxes_cfg.name)
+    self.name_txt:setTextColor(self:getNameColorByQuality(self.horcruxes_cfg.quality))
+
+    -- 描述
+    self.desc_txt:setString(self.horcruxes_cfg.story)
+    local des_size = self.desc_txt:getContentSize()
+    if des_size.height + 6 > self.scrollview_des.size.height then
+        self.scrollview_des:setInnerContainerSize(cc.size(self.scrollview_des.size.width, des_size.height + 6))
+        self.desc_txt:setPositionY(des_size.height + 6 - 3)
+    else
+        self.desc_txt:setPositionY(self.scrollview_des.size.height - 3)
+    end
+    -- 图标
+    local res_id = PathTool.getQualityBg(self.horcruxes_cfg.quality)
+    local item_data = {}
+    item_data.is_lock = false
+    item_data.bg = res_id
+    item_data.icon = PathTool.getSoulHorcruxIcon(self.horcruxes_cfg.icon)
+    item_data.lev = self.horcruxes_vo.h_lev
+    item_data.callback = function()
+        self:onClickItem()
+    end
+    self.icon_sp.itemIcon:setData(item_data)
+
+    -- 品质图标  显示所属英雄的小图片
+    local qua_icon_res = self:getQualityIconRes(self.horcruxes_cfg.quality)
+    loadSpriteTexture(self.quality_sp, qua_icon_res, LOADTEXT_TYPE_PLIST)
+
+    local size = cc.size(86, 86)
+    local mask_res = PathTool.getResFrame("common", "common_1032") 
+    local mask_cir = PathTool.getResFrame("common", "common_1031") 
+    self.mark_bg = createSprite(mask_cir, 0, 0, self.node_head, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 6)
+    local mask = createSprite(mask_res, size.width/2, size.height/2, nil, cc.p(0.5, 0.5))
+    self.clipNode = cc.ClippingNode:create(mask)
+    self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+    self.clipNode:setContentSize(size)
+    self.clipNode:setCascadeOpacityEnabled(true)
+    self.clipNode:setAlphaThreshold(0)
+    self.node_head:addChild(self.clipNode,2)
+    self.icon = ccui.ImageView:create()
+    self.icon:setCascadeOpacityEnabled(true)
+    self.icon:setAnchorPoint(0.5,0.5)
+    self.icon:setPosition(size.width/2,size.height/2)
+    self.clipNode:addChild(self.icon,3)
+    local partner_cfg = Config.PartnerData.data_partner_base[self.horcruxes_cfg.partner_id]
+    local res = PathTool.getHeadIcon(partner_cfg.bid)
+    self.icon:loadTexture( res, LOADTEXT_TYPE)
+    self.node_head:setScale(0.4)
+end
+
+-- 根据品质获取名称字色
+function BraveRoadBagItem:getNameColorByQuality( quality )
+    if quality > PlanesafkConst.Buff_Quility.Orange then
+        quality = PlanesafkConst.Buff_Quility.Orange
+    end
+    if quality == PlanesafkConst.Buff_Quility.Orange then 
+        return Config.ColorData.data_color4[246] 
+    elseif quality == PlanesafkConst.Buff_Quility.Purple then 
+        return Config.ColorData.data_color4[245] 
+    else
+        return Config.ColorData.data_color4[244]
+    end
+end
+
+-- 根据品质获取品质图标资源
+function BraveRoadBagItem:getQualityIconRes( quality )
+    if quality > PlanesafkConst.Buff_Quility.Orange then
+        quality = PlanesafkConst.Buff_Quility.Orange
+    end
+    if quality == PlanesafkConst.Buff_Quility.Blue then
+        return PathTool.getResFrame("planes", "planes_buff_10", false, "planes_buff")
+    elseif quality == PlanesafkConst.Buff_Quility.Purple then
+        return PathTool.getResFrame("planes", "planes_buff_12", false, "planes_buff")
+    elseif quality == PlanesafkConst.Buff_Quility.Orange then
+        return PathTool.getResFrame("planes", "planes_buff_8", false, "planes_buff")
+    else
+        return PathTool.getResFrame("planes", "planes_buff_10", false, "planes_buff")
+    end
+end
+
+function BraveRoadBagItem:DeleteMe()
+    self:removeAllChildren()
+	self:removeFromParent()
+end

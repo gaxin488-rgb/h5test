@@ -1,0 +1,524 @@
+-- --------------------------------------------------------------------
+-- 技能tips
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+
+ElfinAttachSkillTips = ElfinAttachSkillTips or BaseClass(BaseView) 
+
+local string_format = string.format
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+function ElfinAttachSkillTips:__init( ... )
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "tips/elfin_attach_skill_tips"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+    }
+    self.win_type = WinType.Tips   
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG 
+    self.background_blur_enable = false
+end
+
+--[[
+@功能:构建UI
+@参数:
+@返回值:
+]]
+function ElfinAttachSkillTips:open_callback( ... )
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.background:setSwallowTouches(true)
+
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+
+    self.container = self.main_panel:getChildByName("container")            -- 背景,需要动态设置尺寸
+    self.container_init_size = self.container:getContentSize()
+
+    self.base_panel = self.container:getChildByName("base_panel")
+    -- self.base_panel:setScale9Enabled(true)
+
+    self.base_panel_height = self.base_panel:getContentSize().height
+    self._base_panel = self.base_panel:getChildByName("base_panel")
+    -- self.skill_item = SkillItem.new(false,false,false,nil,nil,false)
+    -- self.skill_item:setPosition(76, 68)
+    -- self.base_panel:addChild(self.skill_item)
+    -- self.skill_name = self.base_panel:getChildByName("name")
+    -- self.skill_type = self.base_panel:getChildByName("skill_type")
+    -- self.runic_power = createRichLabel(22,cc.c3b(0xff,0xee,0xdd),cc.p(0,1),cc.p(146,60),nil,nil,400)
+    -- self.base_panel:addChild(self.runic_power)
+
+
+   
+    self._elfinNode = self._base_panel:getChildByName("_elfinNode")
+
+    self._skillNode = self._base_panel:getChildByName("_skillNode")
+    
+	self._elfinItem = BackPackItem.new(false, false, nil, 0.95, nil, false)
+	self._elfinNode:addChild(self._elfinItem)
+
+	self._skillItem = SkillItem.new(false,false,false, 0.88,nil,false)
+	self._skillNode:addChild(self._skillItem)
+
+    self.skill_name = createRichLabel(22,cc.c3b(0xfe,0xed,0xdc),cc.p(0,1),cc.p(287,115),-4,nil,330)
+    self._base_panel:addChild(self.skill_name)
+
+    self.button_panel = self.container:getChildByName("button_panel")
+    self.attach_btn = self.button_panel:getChildByName("attach_btn")
+    self.attach_btn_label = self.attach_btn:getChildByName("Text_1")
+
+    self.line = self.container:getChildByName("line")
+    self.line:setVisible(false)
+end
+
+function ElfinAttachSkillTips:register_event()
+    if self.background then 
+        self.background:addTouchEventListener(function(sender, event_type) 
+            if event_type == ccui.TouchEventType.ended then
+                playCloseSound()
+                self:close()
+            end
+        end)
+    end
+
+    registerButtonEventListener(self.attach_btn, function ()
+        if not self.__data or not self._elfinId or not self._targetElfinId then
+            return
+        end
+        if not _model:checkSpriteIsOwn(self._targetElfinId) then
+            local itemCfg = Config.ItemData.data_get_data(self._targetElfinId)
+            message(itemCfg.name..TI18N("语言_c_7335"))
+            return
+        end
+
+        local use_bid = self._elfinId --当前精灵
+        local target_bid = self._targetElfinId --目标精灵
+        -- 
+        -- _controller:checkSend26574(srcId, targetId)
+
+        -- local status = self.model:getAttachStatus(target_bid, use_bid)
+        local s_id = _model:getAttachElfinById(target_bid) --卸下
+        if self.__data.in_attch and s_id == use_bid then
+            _controller:send26574(0, target_bid, 0, 0)
+        else
+            local tips
+            local use_bid_place = 1
+            local curr_target_bid = 0
+            if self.__data.in_form then
+                local itemCfg = Config.ItemData.data_get_data(use_bid)
+                if itemCfg then
+                    tips = string.format(TI18N("语言_c_d_249"), itemCfg.name)
+                end
+                use_bid_place = 2
+            elseif self.__data.in_attch then 
+                local tId = _model:getAttachSrc(use_bid)
+                if tId then
+                    local itemCfg = Config.ItemData.data_get_data(tId)
+                    if itemCfg then
+                        tips = string.format(TI18N("语言_c_d_247"), itemCfg.name)
+                    end
+                end
+                use_bid_place = 3
+                curr_target_bid = tId
+            end
+            if tips then
+                local call_back = function()
+                    _controller:send26574(use_bid, target_bid, use_bid_place, curr_target_bid)
+                end
+                CommonAlert.show(
+                    tips,
+                    TI18N("语言_c_3"),
+                    call_back,
+                    TI18N("语言_c_62"),
+                    nil,
+                    CommonAlert.type.rich
+                )
+            else
+                _controller:send26574(use_bid, target_bid, use_bid_place, curr_target_bid)
+            end
+	    end
+        self:close()
+    end)
+end
+
+
+
+
+function ElfinAttachSkillTips:_replaceDesString(str)
+    return string.gsub(str, "([%d%.]+%%)", "<div fontcolor=00ff00>%1</div>")
+end
+
+function ElfinAttachSkillTips:_updateBtnStatus()
+    if not self._elfinId or not self._targetElfinId then
+        return
+    end
+    local use_bid = self._elfinId --当前精灵
+    local target_bid = self._targetElfinId --目标精灵
+    local s_id = _model:getAttachElfinById(target_bid) --卸下s
+    if self.__data.in_attch and s_id == use_bid then
+        self.attach_btn_label:setString(TI18N("语言_c_d_241"))
+    else
+        self.attach_btn_label:setString(TI18N("语言_c_d_240"))
+    end
+    -- local status = _model:getAttachStatus(self._targetElfinId, self._elfinId)
+    -- if status == ElfinConst.AttachStatus.NoActive then
+    --     self.button_panel:setVisible(false)
+    -- else
+    --     self.button_panel:setVisible(true)
+    --     if status == ElfinConst.AttachStatus.Cur then
+    --         self.attach_btn_label:setString(TI18N("语言_c_d_241"))
+    --     else
+    --         self.attach_btn_label:setString(TI18N("语言_c_d_240"))
+    --     end
+    -- end
+
+end
+
+--[[
+@功能:设置技能信息
+@参数:Config.Skill   ,  Config.RoleCareerSkill
+@返回值:
+]]
+function ElfinAttachSkillTips:updateVo( skill_vo, is_lock, not_show_next, hide_flag, fire_cd, hallows_atk_val ,skill_level)
+    if not self._elfinId then
+        return
+    end
+
+    local elfin_item_cfg = Config.ItemData.data_get_data(self._elfinId)
+    local quality = 0
+    if elfin_item_cfg.quality >= 0 and elfin_item_cfg.quality <= 5 then
+        quality = elfin_item_cfg.quality
+    end
+    local background_res = PathTool.getResFrame("common_2", "tips_"..quality)
+	if elfin_item_cfg.quality > 5 then
+		background_res = PathTool.getResFrame("tips", "tips_20")
+	end
+	self.base_panel:loadTexture(background_res, LOADTEXT_TYPE_PLIST)
+    self.base_panel:setCapInsets(cc.rect(330, 45, 10, 10))--九宫
+
+    self._elfinItem:setData({bid = self._elfinId})
+    self._skillItem:setData(skill_vo)
+    self:_updateBtnStatus()
+
+    self.skill_vo = skill_vo
+    local level = skill_vo.level or 1
+    local skill_level = skill_level or 0
+    if skill_vo.client_lev and skill_vo.client_lev>0 then
+        level = skill_vo.client_lev
+    end
+
+    self.skill_name:setString(string.format("<div fontcolor=#feeddc outline=2,#000000>%s :\n</div><div fontcolor=#f3a445  outline=2,#000000>%s</div>", TI18N("语言_c_d_260"), skill_vo.name))
+
+    local total_max = 809
+
+    local scrollmax = 538
+    local total_width = 600
+    self.skill_scroll = createScrollView(total_width,scrollmax,0,0,self.container,ccui.ScrollViewDir.vertical)
+	self.skill_scroll:setTouchEnabled(true)
+
+    -- 统计最大高度
+    local total_height = 20 --4 + self.base_panel_height
+
+    local skill_des_height = 0
+    if self.skill_vo.des ~= "" then
+        if self.skill_desc == nil then
+            self.skill_desc = createRichLabel(22,cc.c4b(0xfe,0xee,0xba,0xff),cc.p(0,1),cc.p(22,10),0,nil,560)
+            self.skill_scroll:addChild(self.skill_desc)
+        end
+        if self.skill_vo.hallows_atk and self.skill_vo.hallows_atk > 0 and hallows_atk_val then
+            local skill_atk_val = self.skill_vo.hallows_atk
+            local total_atk_val = skill_atk_val + hallows_atk_val
+            local str = string.format(self.skill_vo.des, total_atk_val, hallows_atk_val)
+
+            str = self:_replaceDesString(str)
+
+            self.skill_desc:setString(str)
+        else
+            local str = self:_replaceDesString(self.skill_vo.des)
+            self.skill_desc:setString(string.format("<div>%s</div>",str))
+        end
+        skill_des_height = self.skill_desc:getContentSize().height 
+        total_height  = total_height + skill_des_height + 2
+    end
+
+    local extend_desc_height = 0
+    if self.extend_desc == nil then
+        self.extend_desc = createRichLabel(22,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),nil,nil,560)
+        self.skill_scroll:addChild(self.extend_desc)
+    end
+    if not hide_flag then
+        local extend_str = ""
+        if self.skill_vo.cd == 0 then
+            extend_str = TI18N("语言_c_1731")
+        else
+            extend_str = string_format(TI18N("语言_c_4894"), TI18N("语言_c_1732"),self.skill_vo.cd, TI18N("语言_c_1733") )
+        end
+        if fire_cd and fire_cd ~= 0 then
+            fire_cd = fire_cd
+        else
+            fire_cd = self.skill_vo.fire_cd or 0
+        end
+        if fire_cd ~= 0 then
+            extend_str = extend_str..string_format(TI18N("语言_c_4894"), TI18N("语言_c_1734"), fire_cd, TI18N("语言_c_1735")) 
+        end
+        self.extend_desc:setString(extend_str)
+    end
+
+    extend_desc_height = self.extend_desc:getContentSize().height
+    total_height  = total_height + extend_desc_height + 18
+
+    local buff_desc_str = ""
+    local buff_desc_height = 0
+    if self.skill_vo.buff_des ~= nil and self.skill_vo.buff_des[1] and next(self.skill_vo.buff_des[1]) then
+        -- self.line:setVisible(true)
+        if self.line_1 == nil then
+            self.line_1 = createSprite(PathTool.getResFrame("tips","tips_8"), 300, 0, self.skill_scroll, cc.p(0.5, 1), LOADTEXT_TYPE_PLIST)
+            self.line_1:setScaleX(10)
+        end
+
+        local buff_config = Config.SkillData.data_get_buff 
+        for i, v in ipairs(self.skill_vo.buff_des[1]) do
+            local config = buff_config[v]
+            if config then
+                if buff_desc_str ~= "" then
+                    buff_desc_str = buff_desc_str.."<div fontcolor=#a1978b>\n</div>"
+                end
+                local buff_desc = string_format("<div fontcolor=#ffeedd>【%s】</div><div fontcolor=#a1978b>\n%s</div>", config.name, config.desc)
+                buff_desc_str = buff_desc_str..buff_desc
+            end
+        end
+    end
+    if buff_desc_str ~= "" then
+        if self.buff_desc == nil then
+            self.buff_desc = createRichLabel(20,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),0,nil,560)
+            self.skill_scroll:addChild(self.buff_desc)
+        end
+        buff_desc_str = self:_replaceDesString(buff_desc_str)
+        self.buff_desc:setString(buff_desc_str)
+        buff_desc_height = self.buff_desc:getContentSize().height
+        total_height  = total_height + self.buff_desc:getContentSize().height + 10
+    end
+
+    -- 下级描述
+    local next_skill_des_height = 0
+    local next_buff_desc_height = 0
+    local next_extend_desc_height = 0
+    if self.skill_vo.open_desc ~= "" and not not_show_next and not hide_flag then
+        if self.line_2 == nil then
+            self.line_2 = createSprite(PathTool.getResFrame("tips","tips_8"), 300, 0, self.skill_scroll, cc.p(0.5, 1), LOADTEXT_TYPE_PLIST)
+            self.line_2:setScaleX(10)
+        end
+        local next_skill_des = ""
+        if is_lock then -- 未开启
+            next_skill_des = self.skill_vo.open_desc
+        elseif self.skill_vo.next_id == 0 then -- 已满级
+            next_skill_des = string_format(TI18N("语言_c_1736"))
+        else
+            next_skill_des = self.skill_vo.skill_desc
+        end
+        if self.next_skill_txt == nil then
+            self.next_skill_txt = createRichLabel(22,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),0,nil,560)
+            self.skill_scroll:addChild(self.next_skill_txt)
+        end
+        
+        --下级技能效果描述
+        if self.skill_vo.next_id then
+            local nextskillvo = Config.SkillData.data_get_skill(self.skill_vo.next_id)
+            if nextskillvo and nextskillvo.des ~= "" then
+                next_skill_des = next_skill_des.."\n"..TI18N("语言_c_1737") --不用处理
+                if nextskillvo.hallows_atk and nextskillvo.hallows_atk > 0 and hallows_atk_val then
+                    local skill_atk_val = nextskillvo.hallows_atk
+                    local total_atk_val = skill_atk_val + hallows_atk_val
+                    local str = string.format(nextskillvo.des, total_atk_val, hallows_atk_val)
+                    next_skill_des = next_skill_des.."\n"..str
+                else
+                    next_skill_des = next_skill_des.."\n"..nextskillvo.des
+                end
+                next_skill_des = next_skill_des.."</div>"
+            end
+            next_skill_des = self:_replaceDesString(next_skill_des)
+            self.next_skill_txt:setString(next_skill_des)
+            next_skill_des_height = self.next_skill_txt:getContentSize().height
+            total_height  = total_height + next_skill_des_height + 25
+            
+            if nextskillvo then
+                if self.next_extend_desc == nil then
+                    self.next_extend_desc = createRichLabel(22,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),nil,nil,560)
+                    self.skill_scroll:addChild(self.next_extend_desc)
+                end
+                local next_hide_flag = hide_flag
+                local next_fire_cd = nextskillvo.fire_cd
+                if not next_hide_flag then
+                    local next_extend_str = ""
+                    if nextskillvo.cd == 0 then
+                        next_extend_str = TI18N("语言_c_1731")
+                    else
+                        next_extend_str = string_format(TI18N("语言_c_4894"), TI18N("语言_c_1732"),nextskillvo.cd, TI18N("语言_c_1733") )
+                    end
+                    if next_fire_cd and next_fire_cd ~= 0 then
+                        next_fire_cd = next_fire_cd
+                    else
+                        next_fire_cd = nextskillvo.next_fire_cd or 0
+                    end
+                    if next_fire_cd ~= 0 then
+                        next_extend_str = next_extend_str..string_format(TI18N("语言_c_4894"), TI18N("语言_c_1734"), next_fire_cd, TI18N("语言_c_1735")) 
+                    end
+                    self.next_extend_desc:setString(next_extend_str)
+                end
+            
+                next_extend_desc_height = self.next_extend_desc:getContentSize().height
+                total_height  = total_height + next_extend_desc_height + 18
+            
+                local next_buff_desc_str = ""
+                if nextskillvo.buff_des ~= nil and nextskillvo.buff_des[1] and next(nextskillvo.buff_des[1]) then
+                    -- self.line:setVisible(true)
+                    if self.line_3 == nil then
+                        self.line_3 = createSprite(PathTool.getResFrame("tips","tips_8"), 300, 0, self.skill_scroll, cc.p(0.5, 1), LOADTEXT_TYPE_PLIST)
+                        self.line_3:setScaleX(7.6)
+                    end
+            
+                    local next_buff_config = Config.SkillData.data_get_buff 
+                    for i, v in ipairs(nextskillvo.buff_des[1]) do
+                        local config = next_buff_config[v]
+                        if config then
+                            if next_buff_desc_str ~= "" then
+                                next_buff_desc_str = next_buff_desc_str.."<div fontcolor=#a1978b>\n</div>"
+                            end
+                            local buff_desc = string_format("<div fontcolor=#ffeedd>【%s】</div><div fontcolor=#a1978b>\n%s</div>", config.name, config.desc)
+                            next_buff_desc_str = next_buff_desc_str..buff_desc
+                        end
+                    end
+                end
+                if next_buff_desc_str ~= "" then
+                    if self.next_buff_desc == nil then
+                        self.next_buff_desc = createRichLabel(20,cc.c4b(0xff,0xee,0xdd,0xff),cc.p(0,1),cc.p(22,10),0,nil,560)
+                        self.skill_scroll:addChild(self.next_buff_desc)
+                    end
+                    next_buff_desc_str = self:_replaceDesString(next_buff_desc_str)
+                    self.next_buff_desc:setString(next_buff_desc_str)
+                    next_buff_desc_height = self.next_buff_desc:getContentSize().height
+                    total_height  = total_height + self.next_buff_desc:getContentSize().height + 10
+                end
+            end
+        else
+            self.next_skill_txt:setString(next_skill_des)
+            total_height  = total_height + self.next_skill_txt:getContentSize().height + 25
+        end
+    end
+   -- total_height = total_height + 40
+
+
+    -- local x_base_top = 4;
+    -- local x_base_sp = 2;
+    -- local x_base_down = 10;
+    -- local x_s_all = x_base_top + x_base_sp + x_base_down;
+    local container_heigth = total_height + 4 + self.base_panel_height
+    local btnSize
+    if self.button_panel:isVisible() then
+        btnSize = self.button_panel:getContentSize()
+        container_heigth = container_heigth + btnSize.height
+    else
+        btnSize = cc.size(0, 0)
+    end
+    if container_heigth > total_max then
+        container_heigth = total_max
+    end
+    self.container:setContentSize(cc.size(self.container_init_size.width, container_heigth))
+    self.base_panel:setPositionY(container_heigth-4)
+    self.skill_scroll:setPosition(cc.p(15, btnSize.height))
+    self.button_panel:setPositionY(btnSize.height)
+    
+    local s_info_height = math.min(total_height,scrollmax)
+    self.skill_scroll:setContentSize(cc.size(self.skill_scroll:getContentSize().width, s_info_height))
+	self.skill_scroll:setInnerContainerSize(cc.size(self.skill_scroll:getContentSize().width,total_height))
+
+    local x_change = -20
+
+    local moveY = 0
+    if self.skill_desc then
+        self.skill_desc:setPositionY(total_height-6-moveY + x_change)
+        moveY = moveY + skill_des_height;
+    end
+    if self.extend_desc then
+        self.extend_desc:setPositionY(total_height-24-moveY+ x_change)
+        moveY = moveY + extend_desc_height;
+    end
+    if self.line_1 then
+        self.line_1:setPositionY(total_height-30-moveY+ x_change)
+    end
+    if self.buff_desc then
+        self.buff_desc:setPositionY(total_height-38-moveY+ x_change)
+    end
+    moveY = moveY + buff_desc_height;
+    if self.line_2 then
+        self.line_2:setPositionY(total_height-44-moveY+ x_change)
+    end
+    if self.next_skill_txt then
+        self.next_skill_txt:setPositionY(total_height-52-moveY+ x_change)
+    end
+    
+    moveY = moveY + next_skill_des_height;
+    if self.next_extend_desc then --冷却时间
+        self.next_extend_desc:setPositionY(total_height-62-moveY+ x_change)
+    end
+    
+    moveY = moveY + next_extend_desc_height;
+    if self.line_3 then
+        self.line_3:setPositionY(total_height-70-moveY+x_change)
+    end
+
+    if self.next_buff_desc then
+        self.next_buff_desc:setPositionY(total_height-80-moveY+ x_change)
+    end
+end
+
+function ElfinAttachSkillTips:setPosition(x, y)
+    -- self.root_wnd:setAnchorPoint(cc.p(0, 1))
+    -- self.root_wnd:setPosition(cc.p(x, y))
+end
+
+
+function ElfinAttachSkillTips:setPos(x, y)
+    -- self.root_wnd:setPosition(cc.p(x, y))
+end
+
+function ElfinAttachSkillTips:getContentSize()
+    return self.root_wnd:getContentSize()
+end
+
+--[[
+@功能:打开技能tips
+@参数:
+@返回值:
+]]
+function ElfinAttachSkillTips:openRootWnd( config, data)
+    self.__data = data
+    self._elfinId = data.id
+    self._targetElfinId = data.targetId
+    self:updateVo(config, false, false, false, 0, 0, config.level)
+
+    if not _model:checkSpriteIsOwn(self._targetElfinId) then
+        setChildUnEnabled(true, self.attach_btn)
+    else
+        setChildUnEnabled(false, self.attach_btn)
+    end
+
+    delayRun(self.root_wnd, 114, function()
+        TipsManager:getInstance():hideTips()
+    end)
+end
+
+function ElfinAttachSkillTips:close_callback( ... )
+    -- if self.root_root then
+    --     self.root_root:removeAllChildren()
+    --     self.root_root:removeFromParent()
+    -- end
+end

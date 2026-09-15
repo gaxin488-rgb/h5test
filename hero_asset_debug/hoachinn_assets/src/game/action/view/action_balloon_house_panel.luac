@@ -1,0 +1,867 @@
+----------------------------
+-- 
+-- @Date:   2020-1-4
+-- @Description:   不放回抽奖
+----------------------------
+ActionBalloonHousePanel =
+    class(
+    "ActionBalloonHousePanel",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+local controller = ActionController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local flip_delay = 30
+local flip_open_delay = 30
+local item_count = 20
+
+function ActionBalloonHousePanel:ctor(bid)
+    self.holiday_bid = bid
+    self:loadResources()
+    self.camp_id = model:getBalloonHouseCampId()
+    self.bag_item_list = {} --奖励
+end
+
+function ActionBalloonHousePanel:loadResources()
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("optional_ballon", "optional_ballon"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("optional_ballon", "txt_cn_optional_ballon_bg_1"), type = ResourcesType.single}
+    }
+    self.resources_load = ResourcesLoad.New(true)
+    self.resources_load:addAllList(
+        self.res_list,
+        function()
+            if self and self.configUI then
+                self:configUI()
+                self:register_event()
+            end
+        end
+    )
+end
+
+function ActionBalloonHousePanel:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_balloon_house_panel"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setPosition(-40, -80)
+    self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.image_bg = self.main_container:getChildByName("image_bg")
+    self.can_flip = false
+    local str = "txt_cn_optional_ballon_bg_1"
+    local tab_vo = controller:getActionSubTabVo(self.holiday_bid)
+    if tab_vo and tab_vo.reward_title ~= "" and tab_vo.reward_title then
+        str = tab_vo.reward_title
+    end
+    self.ui_cfg = Config.HolidayOptionalBallonData.data_get_ui[tab_vo.camp_id]
+    local bg_res = PathTool.getPlistImgForDownLoad("optional_ballon", str)
+    if not self.background_load then
+        self.background_load = loadSpriteTextureFromCDN(self.image_bg, bg_res, ResourcesType.single, self.background_load)
+    end
+    self.txt_time_title = self.main_container:getChildByName("txt_time_title")
+    self.txt_time_title:setString(TI18N("语言_c_1242"))
+    self.txt_time_value = self.main_container:getChildByName("txt_time_value")
+    self.txt_time_value:setString("")
+    local tx = self.txt_time_title:getPositionX() + self.txt_time_title:getContentSize().width + 5
+    self.txt_time_value:setPositionX(tx)
+    self.btn_tips = self.main_container:getChildByName("btn_tips")
+    self.btn_next = self.main_container:getChildByName("btn_next")
+    self.btn_next:getChildByName("txt_next"):setString(TI18N("语言_c_1550"))
+    self.txt_click_tips = self.main_container:getChildByName("txt_click_tips")
+    self.txt_click_tips:setString(TI18N("语言_c_6265"))
+    self.Image_3 = self.main_container:getChildByName("Image_3")
+    if self.ui_cfg["optional_ballon_tipbtn"].val ~= "" then
+        local res = PathTool.getResFrame("optional_ballon", self.ui_cfg["optional_ballon_tipbtn"].val)
+        self.Image_3:loadTexture(res, LOADTEXT_TYPE_PLIST)
+    end
+    self.Image_3:setPositionX(716+self.ui_cfg["optional_ballon_tipbtn"].pos[1])
+    self.Image_3:setPositionY(539+self.ui_cfg["optional_ballon_tipbtn"].pos[2])
+    local temp_width = self.txt_click_tips:getContentSize().width
+    self.Image_3:setContentSize(cc.size(math.max(temp_width+60,190), 31))
+    self.txt_wheels = self.main_container:getChildByName("txt_wheels")
+    self.txt_wheels:setString(TI18N("语言_c_1552"))
+    self.icon_num = self.main_container:getChildByName("icon_num")
+    self.icon_sprite = self.main_container:getChildByName("icon_sprite")
+    local res = PathTool.getResFrame("optional_ballon", self.ui_cfg["optional_ballon_dart"].val)
+    loadSpriteTexture(self.icon_sprite, res, LOADTEXT_TYPE_PLIST)
+    self.icon_sprite:setPositionX(32+self.ui_cfg["optional_ballon_dart"].pos[1])
+    self.icon_sprite:setPositionY(573+self.ui_cfg["optional_ballon_dart"].pos[2])
+    self.icon_bg = self.main_container:getChildByName("icon_bg")
+    self.addtimes_btn = self.main_container:getChildByName("addtimes_btn")
+
+    -- 皮肤预览按钮
+    self.battle_preview_btn = self.main_container:getChildByName("battle_preview_btn")
+    self.preview_btn_label = self.battle_preview_btn:getChildByName("preview_btn_label")
+    self.preview_btn_label:setString(TI18N("语言_c_823"))
+    self.line_1 = self.main_container:getChildByName("line_1")
+    local res = PathTool.getResFrame("optional_ballon", self.ui_cfg["optional_ballon_decorationl"].val)
+    loadSpriteTexture(self.line_1, res, LOADTEXT_TYPE_PLIST)
+    self.line_1:setPositionX(0+self.ui_cfg["optional_ballon_decorationl"].pos[1])
+    self.line_1:setPositionY(312+self.ui_cfg["optional_ballon_decorationl"].pos[2])
+    self.line_2 = self.main_container:getChildByName("line_2")
+    local res = PathTool.getResFrame("optional_ballon", self.ui_cfg["optional_ballon_decorationr"].val)
+    loadSpriteTexture(self.line_2, res, LOADTEXT_TYPE_PLIST)
+    self.line_2:setPositionX(720+self.ui_cfg["optional_ballon_decorationr"].pos[1])
+    self.line_2:setPositionY(312+self.ui_cfg["optional_ballon_decorationr"].pos[2])
+    -- 终极大奖
+    self.item_ultimate_reward = self.main_container:getChildByName("item_ultimate_reward")
+    self.item_ultimate_reward.lock_icon = self.item_ultimate_reward:getChildByName("lock_icon")
+    self.item_ultimate_reward.replace = self.item_ultimate_reward:getChildByName("replace")
+    self.item_ultimate_reward.icon = BackPackItem.new(true, true)
+    self.item_ultimate_reward.icon:setAnchorPoint(0.5, 0.5)
+    self.item_ultimate_reward.icon:setPosition(self.item_ultimate_reward:getContentSize().width / 2, self.item_ultimate_reward:getContentSize().height / 2)
+    self.item_ultimate_reward.icon:setTouchEnabled(false)
+    self.item_ultimate_reward.icon:setSwallowTouches(false)
+    self.item_ultimate_reward:addChild(self.item_ultimate_reward.icon)
+
+    self.effect_mask = self.main_container:getChildByName("effect_mask")
+
+    -- 福袋列表
+    self.fortune_bag_list = self.main_container:getChildByName("fortune_bag_list")
+    self.scroll_view_size = self.fortune_bag_list:getContentSize()
+    local setting = {
+        item_class = BalloonHouseItem, -- 单元类
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 7, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 95, -- 单元的尺寸width
+        item_height = 111, -- 单元的尺寸height
+        row = 4, -- 行数，作用于水平滚动类型
+        col = 5, -- 列数，作用于垂直滚动类型
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.fortune_bag_list, cc.p(0, 0), ScrollViewDir.horizontal, ScrollViewStartPos.top, self.scroll_view_size, setting)
+    self.item_scrollview:setClickEnabled(false)
+
+    controller:sender28341()
+    controller:sender28335()
+end
+
+function ActionBalloonHousePanel:register_event()
+    if not self.update_balloon_house_draw_event then
+        self.update_balloon_house_draw_event =
+            GlobalEvent:getInstance():Bind(
+                ActionEvent.BALLOON_HOUSE_DRAW_BASE_EVENT,
+            function(data)
+                if not data then
+                    return
+                end
+                -- 自选奖励
+                if self.can_flip then
+                    self.data = data
+                    self:setRewardData(data)
+                    self:beginBagFlip()
+                else
+                    if self.setPanelData then
+                        self:setPanelData(data)
+                    end
+                end
+                if self.setGuideEffect then
+                    self:setGuideEffect()
+                    self:setUltimateReward(data)
+                end
+            end
+        )
+    end
+
+    registerButtonEventListener(
+        self.addtimes_btn,
+        function()
+            local controller = ActionController:getInstance()
+            local tab_vo = controller:getActionSubTabVo(Config.HolidayOptionalBallonData.data_constant[self.camp_id].optional_ballon_store.val or 991043)
+            if tab_vo then
+                controller.action_operate:handleSelectedTab(controller.action_operate.tab_list[tab_vo.bid])
+            else
+                message(TI18N("语言_c_1472"))
+            end
+        end,
+        true,
+        1,
+        nil,
+        0.8
+    )
+
+    registerButtonEventListener(
+        self.btn_tips,
+        function(param, sender, event_type)
+            if self.data then
+                local rule_data = {
+                    start_time = self.data.start_time,
+                    end_time = self.data.end_time,
+                    round = self.data.round,
+                    optional_id = self.data.optional_id or 0
+                }
+                controller:BalloonHouseRuleWindow(true, rule_data)
+            end
+        end,
+        true,
+        1
+    )
+
+    -- 道具数量更新
+    if not self.update_add_good_event then
+        self.update_add_good_event =
+            GlobalEvent:getInstance():Bind(
+            BackpackEvent.ADD_GOODS,
+            function(bag_code, data_list)
+                if self.updataItem then
+                    self:updataItem(bag_code, data_list)
+                end
+            end
+        )
+    end
+    if not self.update_modify_good_event then
+        self.update_modify_good_event =
+            GlobalEvent:getInstance():Bind(
+            BackpackEvent.MODIFY_GOODS_NUM,
+            function(bag_code, data_list)
+                if self.updataItem then
+                    self:updataItem(bag_code, data_list)
+                end
+            end
+        )
+    end
+
+    registerButtonEventListener(self.btn_next, function(param, sender, event_type) controller:sender28342() end, true, 1)
+    registerButtonEventListener(self.item_ultimate_reward, function(param, sender, event_type) self:clickSelectUltimate() end, false, 1)
+    registerButtonEventListener(self.item_ultimate_reward.replace, function(param, sender, event_type) self:clickSelectUltimate() end, false, 1)
+    registerButtonEventListener(self.battle_preview_btn, function() TimesummonController:getInstance():send23219(self.holiday_bid) end, true, 1)
+end
+
+function ActionBalloonHousePanel:updataItem(bag_code, data_list)
+    if self.draw_consume then
+        local is_update = false
+        if data_list ~= nil then
+            for i,v in pairs(data_list) do
+                if v.base_id == self.draw_consume[1] then
+                    is_update = true
+                    break
+                end
+            end
+        end
+        if is_update then
+            local item_config = Config.ItemData.data_get_data(self.draw_consume[1])
+            local count = BackpackController:getInstance():getModel():getItemNumByBid(self.draw_consume[1])
+            self.icon_num:setString(count or 0)
+        end
+    end
+end
+
+function ActionBalloonHousePanel:clickSelectUltimate()
+    if not self.data then
+        return
+    end
+    local isWinUltimate = false
+    for k, v in pairs(self.data.award_list) do
+        if v.id >= 10000 then
+            isWinUltimate = true
+            break
+        end
+    end
+    if isWinUltimate then
+        local constant_cfg = Config.HolidayOptionalBallonData.data_constant[self.camp_id]
+        if constant_cfg and constant_cfg.max_round and constant_cfg.max_round.val == self.data.round then
+            message(TI18N("语言_c_1553"))
+        else
+            message(TI18N("语言_c_1554"))
+        end
+    elseif not self.opening then
+        local select_panel_data = {
+            cur_round = self.data.round,
+            select_type_id = self.data.optional_id
+        }
+        controller:openBalloonHouseSelectWindow(true, select_panel_data)
+    end
+end
+
+-- 开始打开福袋
+function ActionBalloonHousePanel:beginOpenBagFlip(cell)
+    if self.opening ~= nil and self.opening then
+        return
+    end
+    self.flip_num = -flip_open_delay
+    self.opening = true
+    cell_data = cell:getData()
+    self:clearTimeTicket()
+    cell:setOpenItemFlip()
+    self:setRewardData()
+    self.opening_ticket =
+        GlobalTimeTicket:getInstance():add(
+        function()
+            self.opening = false
+            if self.opening_ticket ~= nil then
+                GlobalTimeTicket:getInstance():remove(self.opening_ticket)
+                self.opening_ticket = nil
+            end
+        end,
+        1.2,
+        1
+    )
+end
+
+-- 开始福袋翻转福袋
+function ActionBalloonHousePanel:beginBagFlip()
+    self.bag_item_list = self.item_scrollview:getItemList()
+    self.flip_num = -flip_delay
+    self:clearTimeTicket()
+    local function _callback()
+        if self.fortune_bag_list then
+            self:clearTimeTicket()
+            local function effEnd()
+                self.bag_effect:setVisible(false)
+            end
+            if self.main_container and self.bag_effect == nil then
+                local id = self.ui_cfg["optional_ballon_spinecurtain"].val
+                local posx = 360 + self.ui_cfg["optional_ballon_spinecurtain"].pos[1]
+                local posy = 428 + self.ui_cfg["optional_ballon_spinecurtain"].pos[2]
+                self.bag_effect =
+                    createEffectSpine(id, cc.p(posx, posy), cc.p(0.5, 0.5), false, PlayerAction.action_1,handler(self, effEnd))
+                self.effect_mask:addChild(self.bag_effect,10)
+            elseif self.bag_effect then
+                self.bag_effect:setVisible(true)
+                self.bag_effect:setToSetupPose()
+                self.bag_effect:setAnimation(0, PlayerAction.action_1, false)
+            end
+            local function animationEventFunc(event)
+                if event.eventData.name == "hide" then
+                    self:endBagFlip()
+                end
+            end
+            self.bag_effect:registerSpineEventHandler(animationEventFunc, sp.EventType.ANIMATION_EVENT)
+        end
+    end
+    self.time_ticket = GlobalTimeTicket:getInstance():add(_callback, 1 / (flip_delay * 2))
+end
+
+-- 结束翻转福袋
+function ActionBalloonHousePanel:endBagFlip()
+    self.can_flip = false
+    self.bag_item_list = self.item_scrollview:getItemList()
+    if self.bag_item_list then
+        for k, v in pairs(self.bag_item_list) do
+            if v.resetItemFlip then
+                v:resetItemFlip()
+            end
+        end
+        self.flip_num = self.flip_num + 1
+    end
+    if self.data then
+        self:setPanelData(self.data)
+    end
+end
+
+function ActionBalloonHousePanel:clearTimeTicket()
+    if self.time_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_ticket)
+        self.time_ticket = nil
+    end
+    if self.time_open_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.time_open_ticket)
+        self.time_open_ticket = nil
+    end
+end
+
+function ActionBalloonHousePanel:setRewardData(data)
+    if not data then
+        return
+    end
+    local data_list = {}
+    local config = Config.HolidayOptionalBallonData.data_normal_award[self.camp_id]
+    local ultimate_config = Config.HolidayOptionalBallonData.data_optional_award[self.camp_id]
+    local normal_cfg_index = 1
+    local round_config = {} --当前轮次普通奖励
+    if config and config[data.round] then
+        for k, v in pairs(config[data.round]) do
+            table_insert(round_config, v)
+        end
+        table.sort(
+            round_config,
+            function(a, b)
+                return a.id < b.id
+            end
+        )
+    end
+    for i = 1, item_count do --循环给每个item赋值
+        local data_item = {
+            pos = i,
+            is_open = false,
+            gold_time = data.gold_time,
+            original_gold_time = data.original_gold_time,
+            is_ultimate = false
+        }
+        if self.is_select_ultimate then --已经选择了自选奖励（处理下发的数据）
+            for k, v in pairs(data.award_list) do
+                if v.pos == i then
+                    data_item.is_open = true
+                    if v.id < 10000 and round_config then
+                        for k1, v1 in pairs(round_config) do
+                            if v1.id == v.id then
+                                data_item.rewards = v1.rewards
+                                break
+                            end
+                        end
+                    else
+                        if ultimate_config and ultimate_config[v.id] then
+                            data_item.rewards = ultimate_config[v.id].rewards
+                        end
+                    end
+                    break
+                end
+            end
+        else --没有选择自选奖励（显示配置数据）
+            data_item.is_open = true
+            if i ~= (math.ceil(#round_config / 2) + 1) then
+                if round_config and round_config[normal_cfg_index] then
+                    data_item.rewards = round_config[normal_cfg_index].rewards
+                end
+                normal_cfg_index = normal_cfg_index + 1
+            else
+                data_item.is_ultimate = true
+                data_item.round = data.round
+                if ultimate_config and ultimate_config[data.optional_id] then
+                    data_item.rewards = ultimate_config[data.optional_id].rewards
+                end
+            end
+        end
+        data_list[i] = deepCopy(data_item)
+    end
+    self.item_scrollview:setData(
+        data_list,
+        function(cell)
+            local data = cell:getData()
+            local constant_cfg = Config.HolidayOptionalBallonData.data_constant[self.camp_id]
+            local draw_consume
+            local count = 0
+            if constant_cfg and constant_cfg.draw_expend and constant_cfg.draw_expend.val then
+                draw_consume = constant_cfg.draw_expend.val[1]
+            end
+            if draw_consume then
+                count = BackpackController:getInstance():getModel():getItemNumByBid(draw_consume[1])
+            end
+            if not data.is_open then
+                if count >= draw_consume[2] then --有足够消耗道具
+                    -- controller:sender28302(data.pos)
+                    self:beginOpenBagFlip(cell)
+                else
+                    if data.gold_time > 0 then --可以优惠价用钻石购买
+                        local replace_consume = {}
+                        if constant_cfg and constant_cfg.draw_expend_value and constant_cfg.draw_expend_value.val then
+                            replace_consume = constant_cfg.draw_expend_value.val[1]
+                        end
+                        local original_consume = {}
+                        if constant_cfg and constant_cfg.draw_original_price and constant_cfg.draw_original_price.val then
+                            original_consume = constant_cfg.draw_original_price.val[1]
+                        end
+                        local iconsrc = PathTool.getItemRes(Config.ItemData.data_get_data(replace_consume[1] or 3).icon)
+                        local iconsrc1 = PathTool.getItemRes(Config.ItemData.data_get_data(original_consume[1] or 3).icon)
+                        local str =string_format(TI18N("语言_c_6459"),iconsrc1,original_consume[2],iconsrc,replace_consume[2],data.gold_time)
+                        local alert =
+                            CommonAlert.show(
+                            str,
+                            TI18N("语言_c_63"),
+                            function()
+                                local have_num = BackpackController:getInstance():getModel():getItemNumByBid(original_consume[1])
+                                if replace_consume[2] > have_num then
+                                    message(TI18N("语言_c_1254"))
+                                    return
+                                end
+                                -- controller:sender28302(data.pos)
+                                if self and self.beginOpenBagFlip then
+                                    self:beginOpenBagFlip(cell)
+                                end
+                            end,
+                            TI18N("语言_c_62"),
+                            nil,
+                            CommonAlert.type.rich
+                        )
+                        -- local line = createImage(title_bg, PathTool.getResFrame("welfare", "welfare_40"), 243, 103, cc.p(0.5, 0.5), true, 1, true)
+                        -- line:setScaleX(0.9)
+                        -- alert.alert_panel:addChild(line)
+                    else
+                        if data.original_gold_time > 0 then --可以原价用钻石购买
+                            if constant_cfg and constant_cfg.draw_original_price and constant_cfg.draw_original_price.val then
+                                original_consume = constant_cfg.draw_original_price.val[1]
+                            end
+                            local iconsrc = PathTool.getItemRes(Config.ItemData.data_get_data(original_consume[1] or 3).icon)
+                            local str =
+                                string_format(TI18N("语言_c_6458"), iconsrc, original_consume[2], data.original_gold_time)
+                            local alert =
+                                CommonAlert.show(
+                                str,
+                                TI18N("语言_c_63"),
+                                function()
+                                    local have_num = BackpackController:getInstance():getModel():getItemNumByBid(original_consume[1])
+                                    if original_consume[2] > have_num then
+                                        message(TI18N("语言_c_1254"))
+                                        return
+                                    end
+                                    -- controller:sender28302(data.pos)
+                                    if self and self.beginOpenBagFlip then
+                                        self:beginOpenBagFlip(cell)
+                                    end
+                                end,
+                                TI18N("语言_c_62"),
+                                nil,
+                                CommonAlert.type.rich
+                            )
+                        else
+                            local str = TI18N("语言_c_1556")
+                            CommonAlert.show(
+                                str,
+                                TI18N("语言_c_1314"),
+                                function()
+                                    local controller = ActionController:getInstance()
+                                    local tab_vo = controller:getActionSubTabVo(constant_cfg.optional_ballon_store.val)
+                                    if tab_vo then
+                                        controller:openActionMainPanel(false)
+                                        controller:openActionMainPanel(true, nil, tab_vo.bid)
+                                    else
+                                        message(TI18N("语言_c_1472"))
+                                    end
+                                end,
+                                TI18N("语言_c_62")
+                            )
+                        end
+                    end
+                end
+            else
+                if data.is_ultimate and data.round then
+                    local select_panel_data = {
+                        cur_round = data.round,
+                        select_type_id = 0
+                    }
+                    controller:openBalloonHouseSelectWindow(true, select_panel_data)
+                end
+            end
+        end
+    )
+    local list = self.item_scrollview:getItemList()
+    for i = 1, tableLen(list) do
+        list[i]:setZOrder(99-i)
+    end
+end
+
+function ActionBalloonHousePanel:setGuideEffect()
+    -- 引导手指
+    if not self.data then
+        return
+    end
+    self.is_select_ultimate = self.data.optional_id ~= nil and self.data.optional_id ~= 0
+    if self.data.round == 1 and not self.is_select_ultimate then
+        if self.guide_effect == nil then
+            local _x, _y = self.item_ultimate_reward:getPosition()
+            self.guide_effect = createEffectSpine(PathTool.getEffectRes(240), cc.p(_x, _y), cc.p(0.5, 0.5), true, PlayerAction.action_1)
+            self:addChild(self.guide_effect)
+        else
+            self.guide_effect:setVisible(true)
+        end
+    elseif self.guide_effect then
+        self.guide_effect:setVisible(false)
+    end
+end
+
+function ActionBalloonHousePanel:setPanelData(data)
+    if not data then
+        return
+    end
+    self.data = data
+    local constant_cfg = Config.HolidayOptionalBallonData.data_constant[self.camp_id]
+    self.is_select_ultimate = data.optional_id ~= nil and data.optional_id ~= 0
+    -- 已经选择了自选奖励的话不用翻转效果和洗牌特效
+    self.can_flip = not self.is_select_ultimate
+    --活动时间
+    if data.start_time and data.end_time then
+        local nowtime = GameNet:getInstance():getTime()
+        local surplustime = data.end_time - nowtime
+        commonCountDownTime(self.txt_time_value, surplustime)
+        -- self.txt_time_value:setString(TimeTool.getMD2(data.start_time) .. "-" .. TimeTool.getMD2(data.end_time))
+    end
+
+    -- 下一轮按钮显示
+    if data.next_round then
+        self.btn_next:setVisible(data.next_round == 1)
+    end
+
+    -- 抽完最后一张提示
+    if data.award_list and #data.award_list >= item_count then
+        message(TI18N("语言_c_1557"))
+    end
+
+    -- 抽奖消耗
+    if constant_cfg and constant_cfg.draw_expend and constant_cfg.draw_expend.val then
+        self.draw_consume = constant_cfg.draw_expend.val[1]
+    end
+    if self.draw_consume then
+        local item_config = Config.ItemData.data_get_data(self.draw_consume[1])
+        if item_config then
+            local res = PathTool.getItemRes(item_config.icon)
+            loadSpriteTexture(self.icon_sprite, res, LOADTEXT_TYPE)
+        end
+        count = BackpackController:getInstance():getModel():getItemNumByBid(self.draw_consume[1])
+        self.icon_num:setString(count or 0)
+        -- self.icon_bg:setContentSize(cc.size(self.icon_sprite:getContentSize().width*0.5 + self.icon_num:getContentSize().width + 100,28))
+    end
+
+    -- 设置期数
+    if data.round ~= nil then
+        local str = string_format(TI18N("语言_c_1558"), StringUtil.numToChinese(data.round))
+        self.txt_wheels:setString(str)
+    end
+
+    -- 福袋奖励
+    self:setRewardData(data)
+    -- self:setBagOpening(false)
+end
+
+-- 设置自选奖励
+function ActionBalloonHousePanel:setUltimateReward(data)
+    if not data then
+        return
+    end
+    self.is_select_ultimate = data.optional_id ~= nil and data.optional_id ~= 0
+    local ultimate_config = Config.HolidayOptionalBallonData.data_optional_award[self.camp_id]
+    self.item_ultimate_reward.lock_icon:setVisible(not self.is_select_ultimate)
+    self.item_ultimate_reward.replace:setVisible(self.is_select_ultimate)
+    self.item_ultimate_reward.icon:setVisible(self.is_select_ultimate)
+    if self.is_select_ultimate and ultimate_config[data.optional_id] then
+        self.item_ultimate_reward.icon:setData()
+        local vo = {}
+        vo = deepCopy(Config.ItemData.data_get_data(ultimate_config[data.optional_id].rewards[1][1]))
+        vo.quantity = ultimate_config[data.optional_id].rewards[1][2]
+        self.item_ultimate_reward.icon:setData(vo,false,true)
+    end
+    if not self.ultimaet_add_effect then
+        local size = self.item_ultimate_reward.lock_icon:getContentSize()
+        self.ultimaet_add_effect = createEffectSpine(PathTool.getEffectRes(353), cc.p(size.width / 2, size.height / 2), cc.p(0.5, 0.5), true, PlayerAction.action)
+        self.item_ultimate_reward.lock_icon:addChild(self.ultimaet_add_effect)
+    end
+end
+
+function ActionBalloonHousePanel:DeleteMe()
+    if self.background_load then
+        self.background_load:DeleteMe()
+        self.background_load = nil
+    end
+    doStopAllActions(self.txt_time_value)
+    if self.update_balloon_house_draw_event then
+        GlobalEvent:getInstance():UnBind(self.update_balloon_house_draw_event)
+        self.update_balloon_house_draw_event = nil
+    end
+    if self.reward_item_list then
+        for i, v in pairs(self.reward_item_list) do
+            v:DeleteMe()
+        end
+        self.reward_item_list = nil
+    end
+    doStopAllActions(self.cur_reward_scrollview)
+    if self.opening_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.opening_ticket)
+        self.opening_ticket = nil
+    end
+    if self.bag_effect then
+        self.bag_effect:clearTracks()
+        self.bag_effect:removeFromParent()
+        self.bag_effect = nil
+    end
+    if self.ultimaet_add_effect then
+        self.ultimaet_add_effect:clearTracks()
+        self.ultimaet_add_effect:removeFromParent()
+        self.ultimaet_add_effect = nil
+    end
+    if self.guide_effect then
+        self.guide_effect:clearTracks()
+        self.guide_effect:removeFromParent()
+        self.guide_effect = nil
+    end
+    if self.update_add_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_add_good_event)
+        self.update_add_good_event = nil
+    end
+    if self.update_modify_good_event then
+        GlobalEvent:getInstance():UnBind(self.update_modify_good_event)
+        self.update_modify_good_event = nil
+    end
+    self:clearTimeTicket()
+end
+
+-- --------------------------------------------------------------------
+-- 不放回抽奖福袋
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2020-01-4
+-- --------------------------------------------------------------------
+BalloonHouseItem =
+    class(
+    "BalloonHouseItem",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+function BalloonHouseItem:ctor()
+    self.balloon_index = math.random(1,3)
+    self.balloon_roat = math.random(-10,10)
+    self:configUI()
+    self:register_event()
+end
+
+function BalloonHouseItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_balloon_house_item"))
+    self:addChild(self.root_wnd)
+    self:setContentSize(cc.size(95, 111))
+    self:setAnchorPoint(0, 0)
+    local tab_vo = controller:getActionSubTabVo(ActionRankCommonType.BalloonHouse)
+    self.ui_cfg = Config.HolidayOptionalBallonData.data_get_ui[tab_vo.camp_id]
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+
+    self.bag_bg = self.main_container:getChildByName("bag_bg")
+    self.bag_line = self.bag_bg:getChildByName("bag_line")
+    local res = PathTool.getResFrame("optional_ballon", self.ui_cfg["optional_ballon_knit"].val)
+    loadSpriteTexture(self.bag_line, res, LOADTEXT_TYPE_PLIST)
+    self.bag_line:setPositionX(42+self.ui_cfg["optional_ballon_knit"].pos[1])
+    self.bag_line:setPositionY(92+self.ui_cfg["optional_ballon_knit"].pos[2])
+    self.bag_line:setZOrder(3)
+    self.bag_fg = self.main_container:getChildByName("bag_fg")
+    self.bag_fg:setRotation(self.balloon_roat)
+    local res = PathTool.getResFrame("optional_ballon", string.format(self.ui_cfg["optional_ballon_1"].val,1+self.balloon_index))
+    self.bag_fg:loadTexture(res, LOADTEXT_TYPE_PLIST)
+    self.bag_fg:setPositionX(47.5+self.ui_cfg["optional_ballon_1"].pos[1])
+    self.bag_fg:setPositionY(50+self.ui_cfg["optional_ballon_1"].pos[2])
+    self.bag_fg:setLocalZOrder(20)
+    self.bag_fg:setVisible(false)
+
+    self.goods_item = BackPackItem.new(true, true)
+    self.goods_item:setScale(0.75)
+    self.goods_item:setAnchorPoint(0.5, 0.5)
+    self.goods_item:setPosition(self.bag_bg:getContentSize().width / 2, self.bag_bg:getContentSize().height / 2)
+    -- self.goods_item:setPosition(self.bag_bg:getContentSize().width / 2, 37)
+    self.goods_item:setTouchEnabled(false)
+    self.goods_item:setSwallowTouches(false)
+    self.bag_bg:addChild(self.goods_item)
+    self.goods_item:setZOrder(1)
+    self.goods_item:setVisible(false)
+end
+
+function BalloonHouseItem:register_event()
+    self.main_container:addTouchEventListener(
+        function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self.touch_end = sender:getTouchEndPosition()
+                local is_click = true
+                if self.touch_began ~= nil then
+                    is_click = math.abs(self.touch_end.x - self.touch_began.x) <= 20 and math.abs(self.touch_end.y - self.touch_began.y) <= 20
+                end
+                if is_click == true then
+                    playButtonSound2()
+                    if self.callback then
+                        self:callback()
+                    end
+                end
+            elseif event_type == ccui.TouchEventType.moved then
+            elseif event_type == ccui.TouchEventType.began then
+                self.touch_began = sender:getTouchBeganPosition()
+            elseif event_type == ccui.TouchEventType.canceled then
+            end
+        end
+    )
+end
+
+function BalloonHouseItem:setData(data)
+    if data == nil then
+        return
+    end
+    self.data = data
+    self:resetItemFlip()
+    if data.rewards and next(data.rewards) ~= nil then
+        local vo = {}
+        vo = deepCopy(Config.ItemData.data_get_data(data.rewards[1][1]))
+        vo.quantity = data.rewards[1][2]
+        self.goods_item:setData(vo,false,true)
+    elseif data.is_open then
+        self.goods_item:setData({})
+    end
+    if data.is_open then
+        self.bag_bg:setVisible(true)
+        self.goods_item:setVisible(true)
+        self.bag_fg:setVisible(false)
+    else
+        self.bag_bg:setVisible(false)
+        self.goods_item:setVisible(false)
+        self.bag_fg:setVisible(true)
+    end
+end
+
+function BalloonHouseItem:addCallBack(value)
+    self.callback = value
+end
+
+function BalloonHouseItem:getData()
+    return self.data
+end
+
+function BalloonHouseItem:getItemPosition()
+    if self then
+        return cc.p(self:getPosition())
+    end
+end
+
+function BalloonHouseItem:resetItemFlip()
+    self.bag_bg:setScaleX(1)
+    self.bag_fg:setScaleX(1)
+    if self.data.is_open then
+        self.bag_bg:setVisible(true)
+        self.goods_item:setVisible(true)
+        self.bag_fg:setVisible(false)
+    else
+        self.bag_bg:setVisible(false)
+        self.goods_item:setVisible(false)
+        self.bag_fg:setVisible(true)
+    end
+end
+
+function BalloonHouseItem:setOpenItemFlip()
+    local action = "action"..self.balloon_index
+    self.bag_fg:setVisible(false)
+    if self.main_container and self.bag_effect == nil then
+        local id = self.ui_cfg["optional_ballon_spineballon"].val
+        local posx = 47.5 + self.ui_cfg["optional_ballon_spineballon"].pos[1]
+        local posy = 50 + self.ui_cfg["optional_ballon_spineballon"].pos[2]
+        self.bag_effect =
+            createEffectSpine(id, cc.p(posx, posy), cc.p(0.5, 0.5), false, action, handler(self, self.endBagFlip))
+        self.main_container:addChild(self.bag_effect,1)
+        self.bag_effect:setRotation(self.balloon_roat)
+    elseif self.bag_effect then
+        self.bag_effect:setVisible(true)
+        self.bag_effect:setToSetupPose()
+        self.bag_effect:setAnimation(0, action, false)
+    end
+end
+function BalloonHouseItem:endBagFlip()
+    controller:sender28337(self.data.pos)
+end
+
+function BalloonHouseItem:DeleteMe()
+    if self.goods_item then
+        self.goods_item:DeleteMe()
+    end
+    if self.resources_load ~= nil then
+        self.resources_load:DeleteMe()
+        self.resources_load = nil
+    end
+    if self.bag_effect then
+        self.bag_effect:clearTracks()
+        self.bag_effect:removeFromParent()
+        self.bag_effect = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

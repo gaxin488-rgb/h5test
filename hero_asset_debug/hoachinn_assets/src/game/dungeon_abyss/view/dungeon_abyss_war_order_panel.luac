@@ -1,0 +1,814 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 圣夜奇境战令主界面
+-- @DateTime:    2020-2-20
+-- *******************************
+DungeonAbyssWarOrderPanel = DungeonAbyssWarOrderPanel or BaseClass(BaseView)
+
+local controller = DungeonAbyssController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local config = Config.DungeonAbyssCircleData.data_constant
+local charge_cfg = Config.ChargeData.data_charge_data
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function DungeonAbyssWarOrderPanel:__init(type, diff)
+    self.is_full_screen = true
+    self.win_type = WinType.Big
+
+    self.layout_name = "dungeon_abyss/dungeon_abyss_war_order_panel"
+    self.res_list = {{path = PathTool.getPlistImgForDownLoad("planesafkorderaction", "planesafkorderaction"),type = ResourcesType.plist}, 
+    {path = PathTool.getPlistImgForDownLoad("oncewarorder", "oncewarorder"),type = ResourcesType.plist},
+    {path = PathTool.getPlistImgForDownLoad("starplan", "starplan"), type = ResourcesType.plist},
+    {path = PathTool.getPlistImgForDownLoad("monopoly", "monopolyenter"),type = ResourcesType.plist},
+    {path = PathTool.getPlistImgForDownLoad("monopoly","monopolyboard"), type = ResourcesType.plist},
+    {path = PathTool.getPlistImgForDownLoad("dungeon_abyss_circle","dungeon_ab_c_order_2"), type = ResourcesType.single},
+    {path = PathTool.getPlistImgForDownLoad("dungeon_abyss_circle","dungeon_ab_c_order_1"), type = ResourcesType.single}}
+
+    self.reward_list = {}
+    self.cur_type = type or 1
+    self.diff = diff or 1
+end
+
+function DungeonAbyssWarOrderPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    -- self.background:setScale(display.getMaxScale())
+    self.background:ignoreContentAdaptWithSize(true)
+    self.background:setContentSize(cc.size(display.width, display.height))
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.icon_img = self.main_container:getChildByName("icon_img")
+    -- 解锁奖励总览
+    self.btn_open_lock = self.main_container:getChildByName("btn_open_lock")
+    self.btn_open_lock_label = self.btn_open_lock:getChildByName("name")
+    self.title_bg=self.main_container:getChildByName("title_bg")
+    self.title_txt = self.title_bg:getChildByName("title_txt")
+    self.title_txt:setString(TI18N("语言_dun_aby_cir_5_1"))
+
+    self.type_btn_panel = self.main_container:getChildByName("type_btn_panel")
+
+    self.Image_1 =self.main_container:getChildByName("Image_1")
+    self.medal_title=self.Image_1:getChildByName("medal_title")
+    self.medal_num=self.Image_1:getChildByName("medal_num")
+    self.medal_title:setString(TI18N("语言_c_5311"))
+    setTextMaxWidth(self.medal_title,210)
+
+    self.Image_4 =self.main_container:getChildByName("Image_4")
+    self.Text_33=self.Image_4:getChildByName("Text_33")
+    self.Text_33:setString(TI18N("语言_c_5311"))
+
+    self.Image_2 = self.main_container:getChildByName("Image_2")
+    -- self.win_title = self.main_container:getChildByName("win_title")
+    -- self.win_title:setString(TI18N("语言_dun_he_09_15"))
+    -- autoSizeTitleBg(self.win_title,self.Image_2,60)
+    self.btn_rule = self.main_container:getChildByName("btn_rule")
+    self.btn_close = self.main_container:getChildByName("btn_close")
+
+    self.Image_4_0 = self.main_container:getChildByName("Image_4_0") 
+    self.label_cur = self.Image_4_0:getChildByName("label_cur") 
+    self.label_need = self.Image_4_0:getChildByName("label_need") 
+    
+    local tips_bg = self.main_container:getChildByName("Image_7")
+    tips_bg:getChildByName("coin_label"):setString(TI18N("语言_hol_sta_pa_01_2"))
+    self.goods_item = self.main_container:getChildByName("goods_item")
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.time_str = self.main_container:getChildByName("time_str")
+    self.time_str:setString(TI18N("语言_c_6707"))
+    self.time_txt = self.main_container:getChildByName("time_txt")
+    self.time_txt:setTextColor(cc.c3b(8, 233, 8))
+    -- self.task_panel=self.main_container:getChildByName("task_panel")
+    -- self.task_con = self.task_panel:getChildByName("task_con")
+    -- self.task_tip_bg = self.task_panel:getChildByName("tip_bg")
+    -- self.task_tip = self.task_panel:getChildByName("tip")
+    -- self.task_time_txt = self.task_panel:getChildByName("time_txt")
+    -- self.task_panel:setVisible(false)
+	self.main_container:setVisible(true)
+    self.limit_list = {}
+
+    --根据任务id 保存的列表
+    self.dic_task_list = {}
+    self:initOrderPanel()
+    self:initTypeBtnList()
+end
+
+-- 初始化Tab按钮列表
+function DungeonAbyssWarOrderPanel:initTypeBtnList()
+    self.tab_array = {
+        TI18N("语言_dun_aby_c_6"),
+        TI18N("语言_dun_aby_c_7")
+    }
+    self.tab_btn_list = {}
+    for i=1,2 do
+        local tab_btn = {}
+        local item = self.type_btn_panel:getChildByName("tab_btn_"..i)
+        tab_btn.btn = item
+        tab_btn.index = i
+        tab_btn.select_bg = item:getChildByName("select_img")
+        tab_btn.select_bg:setVisible(false)
+        tab_btn.title = item:getChildByName("label")
+        tab_btn.title:getVirtualRenderer():setLineSpacing(-10)
+        tab_btn.title:setTextColor(cc.c4b(247,238,117,255))
+        tab_btn.title:enableOutline(cc.c4b(58,41,10,255), 2)
+        tab_btn.title:setFontSize(25)
+        tab_btn.title:setChangeScaleOffWidth(60)
+        tab_btn.title:setString(self.tab_array[i])
+        tab_btn.red_point = item:getChildByName("red_point")
+        tab_btn.red_point:setVisible(false)
+        self.tab_btn_list[tab_btn.index] = tab_btn
+    end
+
+    for index, tab_btn in ipairs(self.tab_btn_list) do
+        registerButtonEventListener(tab_btn.btn, function() self:_onClickTabBtn(tab_btn.index) end ,false, 2) 
+    end
+end
+
+-- 更新红点显示
+function DungeonAbyssWarOrderPanel:updateTaskAwardRedStatus(  )
+    if not self.tab_btn_list then return end
+    for k,tab_btn in pairs(self.tab_btn_list) do
+        local red_status
+        red_status = model:getOrderRedStatus(tab_btn.index)
+        tab_btn.red_point:setVisible(red_status)
+    end
+end
+
+-- 点击Tab按钮
+function DungeonAbyssWarOrderPanel:_onClickTabBtn( index, is_first )
+    -- if self.select_btn and self.select_btn.index == index then return end
+    --print("*********************** _onClickTabBtn", index)
+    if not is_first and self.cur_type == index then
+        return
+    end
+    if self.select_btn then 
+        self.select_btn.select_bg:setVisible(false)
+        self.select_btn.title:setTextColor(cc.c4b(249,238,208,255))
+        self.select_btn.title:enableOutline(cc.c4b(58,41,10,255), 2)
+    end
+    self.select_btn = self.tab_btn_list[index]
+    if self.select_btn then 
+        self.select_btn.select_bg:setVisible(true)
+        self.select_btn.title:setTextColor(cc.c4b(248,239,118,255))
+        self.select_btn.title:enableOutline(cc.c4b(92,39,5,255), 2)
+        self:updateSubTabBtn(index)
+    end
+end
+
+function DungeonAbyssWarOrderPanel:updateSubTabBtn( index )
+    if index == 1 then
+        self.cur_type = 1
+    else
+        self.cur_type = 2
+    end
+    self:setData()
+end
+
+--设置倒计时
+function DungeonAbyssWarOrderPanel:setLessTime(txt,less_time,node,node_bg)
+    if tolua.isnull(node) then
+        return
+    end
+    local less_time = less_time or 0
+    node:stopAllActions()
+    if less_time > 0 then
+        self:setTimeFormatString(txt,less_time,node,node_bg)
+        node:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1),
+            cc.CallFunc:create(function()
+                less_time = less_time - 1
+                if less_time < 0 then
+                    node:stopAllActions()
+                    controller:openDungeonAbyssWarOrderPanel(false)
+                else
+                    self:setTimeFormatString(txt,less_time,node,node_bg)
+                end
+            end))))
+    else
+        self:setTimeFormatString(txt,less_time,node,node_bg)
+    end
+end
+
+function DungeonAbyssWarOrderPanel:setTimeFormatString( txt,time ,node,node_bg)
+    if time > 0 then
+        local str = string.format(txt,TimeTool.GetTimeForFunction(time))
+        node:setString(str)
+    else
+        node:setString(TI18N("语言_c_5434"))
+    end
+    if node_bg then
+        local total_width = self.time_str:getContentSize().width+node:getContentSize().width+10
+        node_bg:setContentSize(cc.size(total_width,node_bg:getContentSize().height))
+        local s_px = node_bg:getPositionX()
+        self.time_str:setPositionX(s_px - total_width + 5 + self.time_str:getContentSize().width)
+        node:setPositionX(s_px - total_width + 5 + self.time_str:getContentSize().width)
+    end
+end
+function DungeonAbyssWarOrderPanel:updateSlideShowByVertical()
+    local container_y = self.reward_goods_item:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+function DungeonAbyssWarOrderPanel:setChangeLevelStatus()
+    local title_pos = 1
+    local data = model:getOrderData(self.cur_type)
+    if model:getOrderStatus(self.cur_type) then
+        for key, value in pairs(data.order_awards or {}) do
+            if value.reward1 == 0 or value.reward1 == 1 or value.reward2 == 0 or value.reward2 == 1 then
+                title_pos = value.id
+                break
+            end
+        end
+    else
+        for key, value in pairs(data.order_awards or {}) do
+            if value.reward1 == 0 or value.reward1 == 1 then
+                title_pos = value.id
+                break
+            end
+        end
+    end
+    self:jumpToMoveByY(139 * (title_pos - 1))
+end
+function DungeonAbyssWarOrderPanel:jumpToMoveByY(y)
+    if not y then
+        return
+    end
+    local pos = y
+    if pos < 0 then
+        pos = 0
+    end
+
+    local len = #self.reward_list or 1
+    local scroll_view_size = self.goods_item:getContentSize()
+    local pos_per = pos * 100 / (len * 139 - scroll_view_size.height)
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_goods_item:scrollToPercentVertical(pos_per, 0.5, true)
+end
+function  DungeonAbyssWarOrderPanel:initOrderPanel()
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    local scroll_view_size = self.goods_item:getContentSize()
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔 k, 
+        item_width = 720, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true,
+        checkovercallback = handler(self, self.updateSlideShowByVertical)
+    }
+    self.reward_goods_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,
+        ScrollViewStartPos.top, scroll_view_size, setting)
+    self.reward_goods_item:setSwallowTouches(true)
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_goods_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    ---进度条相关
+    if self.reward_num_item then
+        self.reward_num_item:DeleteMe()
+        self.reward_num_item = nil
+    end
+    local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+    local setting = {
+        start_x = -2, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 0, -- y方向的间隔
+        item_width = 100, -- 单元的尺寸width
+        item_height = 139, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.reward_num_item = CommonScrollViewSingleLayout.new(self.goods_item, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size2, setting)
+    self.reward_num_item:setClickEnabled(false)
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),ScrollViewFuncType.CreateNewCell) -- 创建cell
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),ScrollViewFuncType.NumberOfCells) -- 获取数量
+    self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+end
+
+function DungeonAbyssWarOrderPanel:initAdvanceOrderPanel()
+    if self.item_scrollview == nil then
+        local scroll_view_size = self.task_con:getContentSize()
+        local setting = {
+            start_x = 0,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 688,                -- 单元的尺寸width
+            item_height = 152,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.item_scrollview = CommonScrollViewSingleLayout.new(self.task_con, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.CreateNewCell3), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.NumberOfCells3), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.item_scrollview:registerScriptHandlerSingle(handler(self,self.UpdateyIndexCell), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+end
+
+--奖励列表
+function DungeonAbyssWarOrderPanel:CreateNewCell3()
+    local cell = HeavenHighMoonItem.new()
+    return cell
+end
+
+function DungeonAbyssWarOrderPanel:NumberOfCells3()
+    if not self.limit_list then return 0 end
+    return #self.limit_list
+end
+
+function DungeonAbyssWarOrderPanel:UpdateyIndexCell(cell, index)
+    cell.index = index
+    local cell_data = self.limit_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+function DungeonAbyssWarOrderPanel:initAwardConfig()
+    self.tab_btn_list[2].btn:setVisible(model:checkAdvanceIsOpen())
+
+    self.btn_open_lock:setVisible(not model:getOrderStatus(self.cur_type))
+    local val = charge_cfg[config["charge"..self.cur_type].val].val
+    self.btn_open_lock_label:setString(string.format(TI18N("语言_dun_he_09_10"),val))
+    local less_time=0
+    local data= model:getOrderData(self.cur_type)
+    local end_time= data.end_time or GameNet:getInstance():getTime()
+    local cur_time = GameNet:getInstance():getTime()
+    less_time = end_time - cur_time
+    self:setLessTime("%s",less_time,self.time_txt,self.time_bg)
+
+    self:initOrderPanel()
+    if self.cur_type == 1 then
+        self.reward_list = deepCopy(Config.DungeonAbyssCircleData.data_task_data[self.cur_type][1])
+    else
+        self.reward_list = deepCopy(Config.DungeonAbyssCircleData.data_task_data[self.cur_type][self.diff])
+    end
+    table.sort(self.reward_list, SortTools.KeyLowerSorter("id"))
+    self.reward_goods_item:reloadData()
+    self.reward_num_item:reloadData()
+
+    if self.comp_bar_bg and not tolua.isnull(self.comp_bar_bg) and self.comp_bar and not tolua.isnull(self.comp_bar) and
+        self.bar_layout and not tolua.isnull(self.bar_layout) then
+        local len = #self.reward_list or 1
+        self.comp_bar_bg:setContentSize(cc.size(139 * (len - 1), 27))
+        self.comp_bar:setContentSize(cc.size(139 * (len - 1), 15))
+        self.bar_layout:setPosition(cc.p(57, 139 * (len - 1) + 139 / 2))
+    end
+    self:setChangeLevelStatus()
+    local need_id = Config.DungeonAbyssCircleData.data_constant["task_item_id_"..self.cur_type].val
+    local nextCfg = model:getReceiveFinishNext(self.cur_type, self.diff)
+    -- local num1 = BackpackController:getInstance():getModel():getItemNumByBid(need_id)
+    local num1 = model:getTotalStarCount(self.cur_type)--role_vo:getActionAssetsNumByBid(need_id)
+    local num2 = nextCfg and nextCfg.need or 0
+    local str = num1.."/"..num2
+    self.medal_num:setString(str)
+    self.label_cur:setString(num1)
+    self.label_need:setString("/"..num2)
+    if self.cur_type == 1 then
+        local res = PathTool.getTargetRes("dungeon_abyss_circle","dungeon_ab_c_order_1",false,false)
+        self.background:loadTexture(res, LOADTEXT_TYPE)
+        local res = PathTool.getResFrame("dungeon_abyss_circle", "dungeon_ab_c_22")
+        loadSpriteTexture(self.icon_img, res, LOADTEXT_TYPE_PLIST)
+        self.medal_title:setString(Config.DungeonAbyssCircleData.data_constant["order_key_1"].desc)
+        self.Text_33:setString(Config.DungeonAbyssCircleData.data_constant["order_key_2"].desc)
+        self.time_bg:setVisible(false)
+        self.time_str:setVisible(false)
+        self.time_txt:setVisible(false)
+        self.title_txt:setString(TI18N("语言_dun_aby_cir_5_1"))
+    else
+        local res = PathTool.getTargetRes("dungeon_abyss_circle","dungeon_ab_c_order_2",false,false)
+        self.background:loadTexture(res, LOADTEXT_TYPE)
+        local res = PathTool.getResFrame("dungeon_abyss_circle", "dungeon_ab_c_23")
+        loadSpriteTexture(self.icon_img, res, LOADTEXT_TYPE_PLIST)
+        self.medal_title:setString(Config.DungeonAbyssCircleData.data_constant["order_high_key_1"].desc)
+        self.Text_33:setString(Config.DungeonAbyssCircleData.data_constant["order_high_key_2"].desc)
+        self.time_bg:setVisible(true)
+        self.time_str:setVisible(true)
+        self.time_txt:setVisible(true)
+        self.title_txt:setString(TI18N("语言_dun_aby_cir_5_2"))
+    end
+end
+
+function DungeonAbyssWarOrderPanel:setData()
+    self:initAwardConfig()
+    self:updateTaskAwardRedStatus()
+end
+
+-- 奖励列表
+function DungeonAbyssWarOrderPanel:createTaskCell()
+    local cell = DungeonAbyssWarOrderItem.new(self.cur_type, self.diff)
+    return cell
+end
+
+function DungeonAbyssWarOrderPanel:numberOfTaskCells()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function DungeonAbyssWarOrderPanel:updateTaskCellByIndex(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+
+-- 进度条
+-- 功勋数数列表
+function DungeonAbyssWarOrderPanel:createTaskCell2()
+    local cell = DungeonAbyssRewardItem.new(self.cur_type, self.diff)
+    return cell
+end
+
+function DungeonAbyssWarOrderPanel:numberOfTaskCells2()
+    if not self.reward_list then
+        return 0
+    end
+    return #self.reward_list
+end
+
+function DungeonAbyssWarOrderPanel:updateTaskCellByIndex2(cell, index)
+    if not self.reward_list then
+        return
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+
+function DungeonAbyssWarOrderPanel:register_event()
+    if not self.update_base_data then
+        self.update_base_data = GlobalEvent:getInstance():Bind(DungeonAbyssEvent.Update_Base_Data, function ()
+            self:setData()
+        end)
+    end
+    if not self.update_advance_data then
+        self.update_advance_data = GlobalEvent:getInstance():Bind(DungeonAbyssEvent.Update_Advance_Data, function ()
+            self:setData()
+        end)
+    end
+    if not self.task_reward_event then
+        self.task_reward_event = GlobalEvent:getInstance():Bind(DungeonAbyssEvent.Update_Reward_Event, function ()
+            self:setData()
+        end)
+    end
+    registerButtonEventListener(self.btn_open_lock, function()
+        controller:openDungeonAbyssBuyCardWindow(true,self.cur_type)
+    end, true, 1)
+
+    -- 关闭按钮
+    registerButtonEventListener(self.btn_close, function()
+        controller:openDungeonAbyssWarOrderPanel(false)
+    end, true, 2)
+    -- registerButtonEventListener(self.background, function()
+    --     controller:openDungeonAbyssWarOrderPanel(false)
+    -- end, true, 2)
+
+    -- 帮助说明
+    registerButtonEventListener(self.btn_rule, function(param, sender, event_type)
+        local cfg = config["dungeon_ab_circle_order_1"]
+        if self.cur_type == 2 then
+            cfg = config["dungeon_ab_circle_order_2"]
+        end
+        if cfg then
+            local config_desc = cfg.desc
+            TipsManager:getInstance():showCommonTips(config_desc, sender:getTouchBeganPosition(), nil, nil, 500)
+        end
+    end, false, 1)
+end
+
+
+function DungeonAbyssWarOrderPanel:openRootWnd()
+    self:_onClickTabBtn(self.cur_type, true)
+    self:setData()
+end
+
+function DungeonAbyssWarOrderPanel:close_callback()
+    self.time_txt:stopAllActions()
+    if self.reward_goods_item then
+        self.reward_goods_item:DeleteMe()
+        self.reward_goods_item = nil
+    end
+    if self.reward_num_item then
+        self.reward_num_item:DeleteMe()
+        self.reward_num_item = nil
+    end
+    if self.task_reward_event then
+        GlobalEvent:getInstance():UnBind(self.task_reward_event)
+        self.task_reward_event = nil
+    end
+
+    if self.update_base_data then
+        GlobalEvent:getInstance():UnBind(self.update_base_data)
+        self.update_base_data = nil
+    end
+    if self.update_advance_data then
+        GlobalEvent:getInstance():UnBind(self.update_advance_data)
+        self.update_advance_data = nil
+    end
+    if self.item_scrollview then
+        self.item_scrollview:DeleteMe()
+    end
+    self.item_scrollview = nil
+    controller:openDungeonAbyssWarOrderPanel(false)
+end
+
+--------------------------------
+-- 功勋子项
+DungeonAbyssRewardItem = class("DungeonAbyssRewardItem", function()
+    return ccui.Widget:create()
+end)
+
+function DungeonAbyssRewardItem:ctor(type, diff)
+    self.cur_type = type or 1
+    self.diff = diff or 1
+    if self.cur_type == 1 then
+        self.diff = 1
+    end
+    self.size = cc.size(100, 139)
+    self:configUI()
+    self:register_event()
+end
+
+function DungeonAbyssRewardItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+    self.size.width / 2, self.size.height / 5 + 11, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+    self.size.height / 5 + 11, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function DungeonAbyssRewardItem:register_event()
+end
+
+function DungeonAbyssRewardItem:setData(data,index)
+    if not data then
+        return
+    end
+    self.data = data
+    -- self.orderReceive = model:getOrderReceive(index)
+    if not self.select_img then 
+        local resid= Config.DungeonAbyssCircleData.data_constant["task_item_id_"..self.cur_type].val
+        local itemcfg = Config.ItemData.data_get_data(resid)
+        self.select_bg = createSprite(PathTool.getResFrame("dungeon_abyss_circle","dungeon_ab_c_20"),self.size.width / 2, self.size.height / 2 + 6,self.root_wnd,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+        setChildUnEnabled(true,self.select_bg)
+        self.select_img = createSprite(PathTool.getResFrame("dungeon_abyss_circle","dungeon_ab_c_20"),self.size.width / 2, self.size.height / 2 + 6,self.root_wnd,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+    end
+    self.select_img:setVisible(false)
+    -- 进度条相关
+    local cfg = Config.DungeonAbyssCircleData.data_task_data[self.cur_type][self.diff]
+    if cfg[self.data.id+1] then
+        if self.comp_bar == nil then
+            local size = cc.size(139, 27)
+            local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+            local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.root_wnd:addChild(bar_layout, 1)
+                bar_layout:setPosition(cc.p(50, 77))
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 0, 1)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+            self.comp_bar_bg:setContentSize(cc.size(139, 27))
+            self.comp_bar:setContentSize(cc.size(139, 15))
+        end
+        if self.bar_layout then
+            self.bar_layout:setVisible(true)
+        end
+        local id = model:getReceiveFinish(self.cur_type, self.diff)
+        if self.data then
+            if self.data.id < id then
+                self.comp_bar:setPercent(100)
+                self.select_img:setVisible(true)
+            elseif self.data.id == id then
+                self.select_img:setVisible(true)
+                local nextData = cfg[index + 1]
+                if nextData then
+                    local diff = self.diff
+                    if self.cur_type == 1 then
+                        diff = 1
+                    end
+                    local nowData = Config.DungeonAbyssCircleData.data_task_data[self.cur_type][diff][index]
+                    local need_id = Config.DungeonAbyssCircleData.data_constant["task_item_id_"..self.cur_type].val
+                    local num1 = model:getTotalStarCount(self.cur_type)--role_vo:getActionAssetsNumByBid(need_id)
+                    self.comp_bar:setPercent((num1 - nowData.need)/(nextData.need - nowData.need)*100)
+                else
+                    self.comp_bar:setPercent(0)
+                end
+            else
+                self.comp_bar:setPercent(0)
+            end
+        else
+            self.comp_bar:setPercent(0)
+        end
+    else
+        if self.bar_layout then
+            self.bar_layout:setVisible(false)
+        end
+        local id = model:getReceiveFinish(self.cur_type, self.diff)
+        if self.data.id == id then
+            self.select_img:setVisible(true)
+        end
+    end
+    self.num_txt:setString(data.need)
+    self.select_bg:setLocalZOrder(9)
+    self.select_img:setLocalZOrder(10)
+    self.num_bg:setLocalZOrder(11)
+    self.num_txt:setLocalZOrder(12)
+    self:setLocalZOrder(index)
+end
+
+function DungeonAbyssRewardItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end
+
+
+DungeonAbyssWarOrderItem = class("DungeonAbyssWarOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function DungeonAbyssWarOrderItem:ctor(type, diff)
+    self.cur_type = type or 1
+    self.diff = diff or 1
+    if self.cur_type == 1 then
+        self.diff = 1
+    end
+    self:configUI()
+    self:register_event()
+end
+
+function DungeonAbyssWarOrderItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("dungeon_abyss/dungeon_abyss_war_order_item"))
+    self:setContentSize(cc.size(720, 139))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.goods_item = main_container:getChildByName("goods_item") -- 付费礼物
+    self.goods_item:setScrollBarEnabled(false)
+    self.free_goods_item = main_container:getChildByName("free_goods_item") -- 免费礼物
+    self.free_goods_item:setScrollBarEnabled(false)
+    self.finish_img = main_container:getChildByName("finish_img")
+    self.finish_img:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_name = self.btn_get:getChildByName("name")
+    self.btn_name:setString("")
+end
+
+function DungeonAbyssWarOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        local is_unlock = model:getOrderStatus(self.cur_type)
+        if is_unlock then -- 战令已解锁
+            if self.orderReceive.award1 == 1 or self.orderReceive.award2 == 1 then
+                controller:sender22505(self.cur_type)
+            else
+                controller:openDungeonAbyssWarOrderPanel(false)
+            end
+        else -- 未解锁
+            if self.orderReceive.award1 == 1 then -- 可领取
+                controller:sender22505(self.cur_type)
+            elseif self.orderReceive.award1 == 2 then -- 前往购买
+                if config["charge"..self.cur_type] and charge_cfg[config["charge"..self.cur_type].val] and charge_cfg[config["charge"..self.cur_type].val].val then
+                    local val = charge_cfg[config["charge"..self.cur_type].val].val
+                    local str = string.format(TI18N("语言_dun_aby_c_8"),val)
+                    if self.cur_type == 1 then
+                        str = string.format(TI18N("语言_dun_aby_c_8"),val)
+                    else
+                        str = string.format(TI18N("语言_dun_aby_c_9"),val)
+                    end
+                    CommonAlert.show( str, TI18N("语言_c_63"), function()
+                        local cdata = charge_cfg[config["charge"..self.cur_type].val]
+                        sdkOnPay(cdata.val, nil, cdata.id, cdata.name)
+                    end, TI18N("语言_c_62"),nil,nil,nil,{timer=0, timer_for=true, off_y = 10, title = TI18N("语言_c_5014"), extend_aligment = cc.TEXT_ALIGNMENT_CENTER })
+                end
+            elseif self.orderReceive.award1 == 0 then -- 前往过关
+                controller:openDungeonAbyssWarOrderPanel(false)
+            end
+        end
+    end, true, 1)
+end
+
+function DungeonAbyssWarOrderItem:setData(data,index)
+    if not data then
+        return
+    end
+    self.data = data
+    self.orderReceive = model:getOrderReceive(self.cur_type, index) or {}
+    local free_effect_id = false
+    local free_data_list = data.reward or {}
+    local status = self.orderReceive.award1 == 0
+    local setting1 = {}
+    setting1.start_x = 10
+    setting1.scale = 0.7
+    setting1.is_tip = true
+    setting1.lock = status
+    setting1.is_lock_bg = status
+    setting1.show_effect_id = free_effect_id
+    setting1.is_get_status = self.orderReceive.award1 == 2 or false
+    setting1.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.free_item_list = commonShowSingleRowItemList(self.free_goods_item, self.free_item_list, free_data_list,setting1)
+
+    -- 进阶奖励
+    local is_locak_status = model:getOrderStatus(self.cur_type) -- 战令解锁状态
+    local pay_effect_id = false
+    -- 付费道具
+    local data_list = data.rmb_reward or {}
+    local rmbStatus = self.orderReceive.award2 == 0
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.7
+    setting.lock = rmbStatus
+    setting.is_lock_bg = rmbStatus
+    setting.is_tip = true
+    setting.show_effect_id = pay_effect_id
+    setting.is_get_status = self.orderReceive.award2 == 2 or false
+    setting.max_count = 2
+    setting.get_status_res = PathTool.getResFrame("planesafkorderaction", "txt_cn_planesafkaction_1")
+    self.item_list = commonShowSingleRowItemList(self.goods_item, self.item_list, data_list, setting)
+
+    if self.btn_get then
+        addRedPointToNodeByStatus(self.btn_get, false, 10, 10)
+        if is_locak_status then -- 战令已经解锁
+            if self.orderReceive.award2 == 1 then -- 可领取
+                self.btn_name:enableOutline(Config.ColorData.data_color4[264], 2)
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 10, 10)
+                setChildUnEnabled(false,self.btn_get)
+            elseif self.orderReceive.award2 == 2 then -- 已领取
+                self.btn_get:setVisible(false)
+                self.finish_img:setVisible(true)
+                addRedPointToNodeByStatus(self.btn_get, false, 10, 10)
+            elseif self.orderReceive.award2 == 0 then -- 前往过关
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(false,self.btn_get)
+                addRedPointToNodeByStatus(self.btn_get, false, 10, 10)
+            end
+        else -- 战令未解锁时
+            if self.orderReceive.award1 == 1 then -- 可领取
+                self.btn_name:setString(TI18N("语言_c_988"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                addRedPointToNodeByStatus(self.btn_get, true, 10, 10)
+                setChildUnEnabled(false,self.btn_get)
+            elseif self.orderReceive.award1 == 2 then -- 前往购买
+                self.btn_name:setString(TI18N("语言_c_2684"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(false,self.btn_get)
+                addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+            elseif self.orderReceive.award1 == 0 then
+                self.btn_name:setString(TI18N("语言_c_108"))
+                self.btn_get:setVisible(true)
+                self.finish_img:setVisible(false)
+                setChildUnEnabled(false,self.btn_get)
+                addRedPointToNodeByStatus(self.btn_get, false, 5, 5)
+            end
+        end
+    end
+end
+
+function DungeonAbyssWarOrderItem:DeleteMe()
+    if self.item_list then
+        for i, v in pairs(self.item_list) do
+            v:DeleteMe()
+        end
+        self.item_list = nil
+    end
+    if self.common_goods_item then
+        self.common_goods_item:DeleteMe()
+        self.common_goods_item = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

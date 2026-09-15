@@ -1,0 +1,148 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      sp忍者介绍
+-- <br/> 2020-03-18
+-- --------------------------------------------------------------------
+HeroSpShowWindow = HeroSpShowWindow or BaseClass(BaseView)
+
+local _controller = HeroController:getInstance()
+local _model = _controller:getModel()
+
+local offset_y = 5
+
+function HeroSpShowWindow:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big   
+    self.layout_name = "hero/hero_sp_show_window"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("hero", "sp_hero_desc"), type = ResourcesType.plist},
+    }
+	self.item_list = {}
+    self.list = {}
+end
+
+function HeroSpShowWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+
+    -- 通用进场动效
+    ActionHelp.itemUpAction(self.main_container, 720, 0, 0.25)
+    self.panel_bg = self.main_container:getChildByName("panel_bg")
+    self.Image_2 = self.main_container:getChildByName("Image_2")
+    self.bg = self.main_container:getChildByName("bg")
+    self.win_title = self.Image_2:getChildByName("win_title")
+    self.win_title:setString(TI18N("语言_c_6784"))
+    local _w = math.max(self.Image_2:getContentSize().width,self.win_title:getContentSize().width+100)
+    self.Image_2:setContentSize(cc.size(_w,self.Image_2:getContentSize().height))
+    self.win_title:setPositionX(_w*0.5)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+    self.scroll = createScrollView(self.bg:getContentSize().width,self.bg:getContentSize().height-15,1,10,self.bg,ccui.ScrollViewDir.vertical)
+end
+
+function HeroSpShowWindow:register_event()
+    registerButtonEventListener(self.background,function()
+        self:onClickBtnClose()
+    end,false, 1)
+    registerButtonEventListener(self.close_btn,function()
+        self:onClickBtnClose()
+    end,false, 1)
+end
+
+--关闭
+function HeroSpShowWindow:onClickBtnClose()
+    _controller:openHeroSpShowWindow(false)
+end
+
+function HeroSpShowWindow:createItemList(  )
+    local list = Config.PartnerData.data_partner_sp_desc[self.hero_bid]
+	if list == nil then return end
+    table.sort(list,function(a,b) return a.num < b.num end)
+    self.list = list
+	self.max_height = math.max((133+offset_y)*#list,self.scroll:getContentSize().height)
+	self.scroll:setInnerContainerSize(cc.size(self.scroll:getContentSize().width,self.max_height))
+
+	for k,v in pairs(list) do
+		delayRun(self.scroll,0.05*k,function (  )
+			local item = HeroSpShowItem.new(2)
+			item:setData(v)
+			self.scroll:addChild(item)
+			item:hideBg()
+			item:setPosition(5,self.max_height-3-(133+offset_y)*(k-1))
+			self.item_list[k] = item
+
+			item:setBtnCallBack(function ( cell )
+				if self.cur_select ~= nil and (self.cur_index and self.cur_index~=k) then 
+					self.cur_select:setSelect(false)
+					self.cur_select:showMessagePanel(false)
+				end
+				self.cur_select = cell
+				self.cur_index = k
+				local status = self.cur_select:getIsShow()
+				if status then 
+					--位置缩回去
+					self.scroll:setInnerContainerSize(cc.size(self.scroll:getContentSize().width,self.max_height))
+					--local height = self.max_height
+					for k,v in pairs(self.item_list) do
+						v:setPosition(5,self.max_height-3-(133+offset_y)*(k-1))
+					end
+					self.cur_select:setSelect(false)
+					self.cur_select:showMessagePanel(false)
+				else
+					self.cur_select:setSelect(true)
+					self.cur_select:showMessagePanel(true)
+					self.cur_select:hideBgII()
+					self.height = self.cur_select:getMsgPanleSize().height
+					self:adjustPos()
+				end
+
+				--调整一下scrollview位置
+				local scroll_height = self.max_height
+				if self.height then 
+					scroll_height = self.max_height+self.height
+				end
+				if self.cur_select then
+                    local offset_height = (self.cur_index - 1) * 136
+                    local temp_percent = offset_height / self.max_height * 100
+                    if self.height then
+                    offset_height = (self.cur_index - 1) * 190
+                    temp_percent = offset_height / scroll_height * 100
+                    end
+                    self.scroll:jumpToPercentVertical(math.ceil(temp_percent))
+				end
+			end)
+		end)
+	end
+end
+function HeroSpShowWindow:adjustPos(  )
+	if self.cur_select ~= nil then 
+        local _w = math.max((133+offset_y)*#self.list+self.height,self.scroll:getContentSize().height)
+		self.scroll:setInnerContainerSize(cc.size(self.scroll:getContentSize().width,_w))
+        local height = _w
+		for k,v in pairs(self.item_list) do
+			if k<=self.cur_index then 
+				v:setPosition(5,height-3-(133+offset_y)*(k-1))
+			else
+				v:setPosition(5,height-self.height-3-(133+offset_y)*(k-1))
+			end
+		end
+	end
+end
+
+function HeroSpShowWindow:openRootWnd(hero_bid)
+    self.hero_bid = hero_bid
+    self:createItemList()
+end
+function HeroSpShowWindow:close_callback()
+	if self.item_list and self.item_list ~= nil then 
+		for k,v in pairs(self.item_list) do
+			v:DeleteMe()
+		end
+	end
+    _controller:openHeroSpShowWindow(false)
+end

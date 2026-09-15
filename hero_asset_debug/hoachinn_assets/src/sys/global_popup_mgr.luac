@@ -1,0 +1,113 @@
+-- Created by yuanqi
+-- Date: 2020/05/07
+-- Time: 16:33
+-- 弹窗管理
+GlobalPopupMgr = GlobalPopupMgr or BaseClass()
+
+-- 需要检测弹窗的窗口
+NeedCheckPopupWindow = {
+	Common = "Common",
+	RfmPersonnalGiftWindow = "RfmPersonnalGiftWindow",
+}
+
+-- 弹窗是检测是否有包含里面layout_name的窗口
+CheckPopupLayoutName = {
+	[NeedCheckPopupWindow.Common] = {
+	},
+	[NeedCheckPopupWindow.RfmPersonnalGiftWindow] = {
+		"mainui/item_exhibition_view",
+	}
+}
+
+function GlobalPopupMgr:__init()
+	if GlobalPopupMgr.Instance ~= nil then
+		error("[GlobalPopupMgr] accempt to create singleton twice!")
+	end
+	GlobalPopupMgr.Instance = self
+end
+
+function GlobalPopupMgr:getInstance()
+	if GlobalPopupMgr.Instance == nil then
+		GlobalPopupMgr.New()
+		self:registerEvents()
+		-- 需要在某些窗口关闭之后才弹出的窗口
+		self.delayWinMap = {}
+	end
+	return GlobalPopupMgr.Instance
+end
+
+function GlobalPopupMgr:registerEvents()
+	--监听窗口关闭事件 检测事件触发
+    self.close_base_view_event = GlobalEvent:getInstance():Bind(EventId.CLOSE_BASE_VIEW,function()
+        self:checkPopupWindow()
+    end)
+end
+
+--==============================--
+--desc:增加需要关闭其他窗口弹出的窗口
+--time:2020-05-07
+--@return 
+--==============================--
+function GlobalPopupMgr:addPopupWindow(winName, data)
+	if winName == nil then return end
+	if self.delayWinMap ~= nil then
+		for i, v in ipairs(self.delayWinMap) do
+			if v.winName == winName then
+				return
+			end
+		end
+	else
+		self.delayWinMap = {}
+	end
+	local win_data = {}
+	win_data.winName = winName
+	win_data.data = data or {}
+	table.insert(self.delayWinMap, win_data)
+end
+
+--==============================--
+--desc:检查需要关闭其他窗口后弹出的窗口
+--time:2020-05-07
+--@return 
+--==============================--
+function GlobalPopupMgr:checkPopupWindow()
+	if self.delayWinMap == nil or  next(self.delayWinMap) == nil then return end
+	if GuideController:getInstance():isInGuide() then return end -- 在剧情或者在引导中不处理
+	if StoryController:getInstance():getModel():isStoryState() then return end
+	for i = #self.delayWinMap, 1, -1 do
+		local can_popup = true
+		for winK, winV in pairs(BaseView.winMap) do
+			for layk, layV in pairs(CheckPopupLayoutName[NeedCheckPopupWindow.Common]) do
+				if winV.layout_name == layV then
+					can_popup = false
+				end
+			end
+			if self.delayWinMap[i].winName and CheckPopupLayoutName[self.delayWinMap[i].winName] then
+				for layk, layV in pairs(CheckPopupLayoutName[self.delayWinMap[i].winName]) do
+					if winV.layout_name == layV then
+						can_popup = false
+					end
+				end 
+			end
+		end
+		if can_popup then
+			local win_data = table.remove(self.delayWinMap, i)
+			self:endPopupWindow(win_data)
+		end
+	end
+end
+
+--==============================--
+--desc:阻碍弹出窗口关闭之后打开弹出窗口
+--time:2020-05-07
+--@return 
+--==============================--
+function GlobalPopupMgr:endPopupWindow(win_data)
+	if win_data == nil or win_data.winName == nil then return end
+	if win_data.winName == NeedCheckPopupWindow.RfmPersonnalGiftWindow then
+		RfmPersonnalGiftController:getInstance():openRfmPersonalGiftView(true)
+	end
+end
+
+function GlobalPopupMgr:__delete()
+end

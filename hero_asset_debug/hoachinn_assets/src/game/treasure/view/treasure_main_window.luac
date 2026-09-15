@@ -1,0 +1,948 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- @description:
+--     魔导器主面板
+-- <br/>2018年10月26日
+--
+-- --------------------------------------------------------------------
+TreasureMainWindow = TreasureMainWindow or BaseClass(BaseView)
+local controller = TreasureController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+local hero_model = HeroController:getInstance():getModel()
+
+function TreasureMainWindow:__init(index)
+    self.index = index or 0
+    self.ctrl = TreasureController:getInstance()
+    self.model = self.ctrl:getModel()
+    self.win_type = WinType.Full
+    self.layout_name = "treasure/treasure_main_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+        {path = PathTool.getPlistImgForDownLoad("ninja_treasure", "ninja_treasure/ninja_treasure"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("ninja_treasure", "treasure_research"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("arenapeakchampion", "arenapeak_mian"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("ninja_treasure", "ninja_treasure_30"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("ninja_treasure", "ninja_treasure_49"), type = ResourcesType.single},
+        {path = PathTool.getPlistImgForDownLoad("ninja_treasure", "ninja_treasure_57"), type = ResourcesType.single},
+    }
+    self.quality_list = {}
+    self.data_list = {}
+    self.atr_list = {}
+    self.num_list = {}
+    self.type_num = 0
+    self.old_type_num = 0
+    self.atr_type = 0 -- 0收起 1展开
+    self.click_y = nil -- 当前选中
+    self.title_list = {}
+    self.click_index = 0
+    self.screen_status = true
+    self.camp_index = 0
+    self.other_index = 0
+end
+
+function TreasureMainWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.background:setVisible(false)
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.container_size = self.main_container:getContentSize()
+    self:playEnterAnimatianByObj(self.main_container , 1)
+    self.title_panel = self.main_container:getChildByName("title_panel")
+    for i = 1, 2 do
+        local item = self.title_panel:getChildByName("title_"..i)
+        item.unclick_bg = item:getChildByName("unclick_bg")
+        item.click_bg = item:getChildByName("click_bg")
+        item.title = item:getChildByName("title")
+        if TreasureConst.MainTitle[i] then
+            item.title:setString(TreasureConst.MainTitle[i])
+        end
+        setTextSpacing(item.title,-6)
+        self.title_list[i] = item 
+    end
+    self.research_panel = self.main_container:getChildByName("research_panel")
+    self.exit_btn = self.main_container:getChildByName("exit_btn")
+    self.main_panel = self.main_container:getChildByName("main_panel")
+    self.main_background = self.main_panel:getChildByName("background")
+    self.main_background:setScale(display.getMaxScale())
+    self.type_bg = self.main_panel:getChildByName("type_bg")
+    self.tip_btn = self.type_bg:getChildByName("tip_btn")
+    self.click_img = self.type_bg:getChildByName("click_img")
+    local posx_5 = {[1]=340,[2]=260,[3]=180,[4]=100}
+    for i=1,4 do
+        self.quality_list[i] = self.type_bg:getChildByName("quality_"..i)
+        self.quality_list[i].red = self.type_bg:getChildByName("quality_red_"..i)
+        self.quality_list[i]:setPositionX(posx_5[i])
+        self.quality_list[i].red:setPositionX(posx_5[i]+12)
+        self.quality_list[i].red:setVisible(false)
+    end
+    self.screen_panel = self.main_panel:getChildByName("screen_panel")
+    self.screen_panel:setVisible(false)
+    self.screen_bg = self.screen_panel:getChildByName("screen_bg")
+    self.camp_panel = self.screen_panel:getChildByName("camp_panel")
+    self.camp_btn_list = {}    
+    self.camp_redpoint_list = {}
+    self.camp_btn_list[0] = self.camp_panel:getChildByName("camp_btn0")
+    self.camp_btn_list[1] = self.camp_panel:getChildByName("camp_btn1")
+    self.camp_btn_list[2] = self.camp_panel:getChildByName("camp_btn2")
+    self.camp_btn_list[3] = self.camp_panel:getChildByName("camp_btn3")
+    self.camp_btn_list[4] = self.camp_panel:getChildByName("camp_btn4")
+    self.camp_btn_list[5] = self.camp_panel:getChildByName("camp_btn5")
+    self.camp_select = self.camp_panel:getChildByName("camp_select")
+    local x, y = self.camp_btn_list[0]:getPosition()
+    self.camp_select:setPosition(x - 0.5, y + 1)
+    self.camp_btn_size = self.camp_btn_list[1]:getContentSize()
+
+    self.other_panel = self.screen_panel:getChildByName("other_panel")
+    self.other_btn_list = {}    
+    self.other_redpoint_list = {}
+    self.other_btn_list[0] = self.other_panel:getChildByName("career_btn0")
+    self.other_btn_list[1] = self.other_panel:getChildByName("career_btn1")
+    self.other_btn_list[2] = self.other_panel:getChildByName("career_btn2")
+    self.other_btn_list[3] = self.other_panel:getChildByName("career_btn3")
+    self.career_select = self.other_panel:getChildByName("career_select")
+    local x, y = self.other_btn_list[0]:getPosition()
+    self.career_select:setPosition(x - 0.5, y + 1)
+    self.other_btn_size = self.other_btn_list[1]:getContentSize()
+
+    self.all_btn = self.screen_panel:getChildByName("all_btn")
+    self.all_red = self.screen_panel:getChildByName("all_red")
+    self.all_red:setVisible(false)
+    self:updateScreenPanel(false)
+
+    self.item_panel = self.main_panel:getChildByName("item_panel")
+    self.panel_bot = self.main_panel:getChildByName("panel_bot")
+    self.mp_gift_btn = self.main_panel:getChildByName("gift_btn")
+    self.mp_gift_txt = self.mp_gift_btn:getChildByName("label")
+    self.mp_gift_txt:setString(TI18N("语言_c_3435"))
+    setTextMaxWidth(self.mp_gift_txt,80,-10)
+    self.mp_shop_btn = self.main_panel:getChildByName("shop_btn")
+    self.mp_shop_txt = self.mp_shop_btn:getChildByName("label")
+    self.mp_shop_txt:setString(TI18N("语言_c_6232"))
+    setTextMaxWidth(self.mp_shop_txt,80,-10)
+    self.main_line_1 = self.main_panel:getChildByName("line_1")
+    self.main_line_1:setScale(display.getMaxScale())
+    self.main_line_2 = self.main_panel:getChildByName("line_2")
+    self.main_line_2:setScale(display.getMaxScale())
+    self.attributes_panel = self.main_panel:getChildByName("attributes_panel")
+    self.attributes_panel:setPositionX(700)
+    self.atr_bg = self.attributes_panel:getChildByName("atr_bg")
+    self.atr_name = self.attributes_panel:getChildByName("atr_name")
+    self.atr_name:setString(transformTextToShort(TI18N("语言_c_6061"),20))
+    addEvt2showAllTextTips(self.atr_name,TI18N("语言_c_6061"),20)
+    self.power_num = self.attributes_panel:getChildByName("power_num")
+    self.atr_btn = self.attributes_panel:getChildByName("atr_btn")
+    self.btn_panel = self.main_container:getChildByName("btn_panel")
+    self.war_btn = self.btn_panel:getChildByName("war_btn")
+    self.war_txt = self.war_btn:getChildByName("label")
+    self.war_txt:setString(TI18N("语言_c_6155"))
+    setTextMaxWidth(self.war_txt,80,-10)
+    self.shop_btn = self.btn_panel:getChildByName("shop_btn")
+    self.shop_txt = self.shop_btn:getChildByName("label")
+    self.shop_txt:setString(TI18N("语言_c_6156"))
+    setTextMaxWidth(self.shop_txt,80,-10)
+    self:adaptationScreen()
+end
+--设置适配屏幕
+function TreasureMainWindow:adaptationScreen()
+    local top_y = display.getTop(self.main_container)
+    local bottom_y = display.getBottom(self.main_container)
+    local left_x = display.getLeft(self.main_container)
+    local right_x = display.getRight(self.main_container)
+
+    local tab_y = self.title_panel:getPositionY()
+    self.title_panel:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.war_btn:getPositionY()
+    self.war_btn:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.shop_btn:getPositionY()
+    self.shop_btn:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.mp_shop_btn:getPositionY()
+    self.mp_shop_btn:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.mp_gift_btn:getPositionY()
+    self.mp_gift_btn:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.type_bg:getPositionY()
+    self.type_bg:setPositionY(top_y - (self.container_size.height - tab_y))
+    local tab_y = self.screen_panel:getPositionY()
+    self.screen_panel:setPositionY(top_y - (self.container_size.height - tab_y))
+    local close_btn_y = self.exit_btn:getPositionY()
+    self.exit_btn:setPositionY(bottom_y + close_btn_y)
+end
+function TreasureMainWindow:register_event()
+    registerButtonEventListener(self.exit_btn, handler(self, self._onClickBtnClose) ,false, 2)
+    registerButtonEventListener(self.war_btn, handler(self, self._onClickBtnWar) ,true, 2)
+    registerButtonEventListener(self.shop_btn, handler(self, self._onClickBtnShop) ,true, 2)
+    registerButtonEventListener(self.mp_shop_btn, handler(self, self._onClickBtnMpShop) ,true, 2)
+    registerButtonEventListener(self.mp_gift_btn, handler(self, self._onClickBtnMpGift) ,true, 2)
+    registerButtonEventListener(self.choose_btn, handler(self, self._onClickBtnChoose) ,false, 2)
+    registerButtonEventListener(self.tip_btn, function ( param, sender, event_type )
+        local rule_cfg = Config.NinjaTreasureData.data_constant["game_rule_title_1"]
+        if rule_cfg then
+            MainuiController:getInstance():openCommonExplainView(true, rule_cfg.val)
+        end
+    end, true)
+    registerButtonEventListener(self.atr_btn, handler(self, self._onClickBtnAtr) ,false, 2)
+    for i=1,tableLen(self.quality_list) do
+        registerButtonEventListener(self.quality_list[i], function()
+            self:_onClickBtnType(i,self.quality_list[i])
+        end,false, 2)
+    end
+
+    for i = 1, 2 do
+        registerButtonEventListener(self.title_list[i], function()
+            self:ClickTitleBtn(i)
+            self:getData()
+        end,false, 2)        
+    end
+
+    registerButtonEventListener(self.all_btn, function()
+        self:updateScreenPanel(not self.screen_status)
+    end ,true, 2)
+
+    --阵营按钮
+    for index, v in pairs(self.camp_btn_list) do
+        registerButtonEventListener(v, function() self:_onClickBtnShowByIndex(index) end ,true, 2)
+    end
+    --功能按钮
+    for index, v in pairs(self.other_btn_list) do
+        registerButtonEventListener(v, function() self:_onClickOtherBtnIndex(index) end ,true, 2)
+    end
+    if not self.open_treasure_list then
+        self.open_treasure_list = GlobalEvent:getInstance():Bind(TreasureEvent.Open_Treasure_List_Event, function (data)
+            if data.all_power then
+                self.power_num:setString(string.format(TI18N("语言_c_3245"),data.all_power))
+            end
+            if next(data) then
+                self:updateQualityRed()
+            end
+            self:setTitleRed1()
+            self:setTitleRed2()
+        end)
+    end
+    if not self.treasure_click_list then
+        self.treasure_click_list = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Click_Event, function ()
+            if self.task_view then
+                self.click_y = self.task_view.container:getPositionY()
+                if self.atr_type == 1 then
+                    self:_onClickBtnAtr()
+                end
+            end
+        end)
+    end
+    if not self.treasure_atr_list then
+        self.treasure_atr_list = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Atr_Event, function (data)
+            local atr_data = {}
+            atr_data.atk = data.atk
+            atr_data.hp_max = data.hp_max
+            atr_data.def = data.def
+            atr_data.speed = data.speed
+            self:setAtrPanel(atr_data)
+            self.power_num:setString(string.format(TI18N("语言_c_3245"),data.all_power))
+        end)
+    end
+    
+    if not self.treasure_order_event then
+        self.treasure_order_event = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Order_Event, function ()
+            addRedPointToNodeByStatus(self.war_btn,model:getOrderRed())
+        end)
+    end
+
+    if not self.close_battle_view then
+        self.close_battle_view = GlobalEvent:getInstance():Bind(BattleEvent.CLOSE_BATTLE_VIEW, function (status)
+            MainuiController:getInstance():getMainUi():changeBottomShowStatus(3)
+        end)
+    end
+
+    if not self.treasure_open_event then
+        self.treasure_open_event = GlobalEvent:getInstance():Bind(TreasureEvent.Treasure_Open_Event, function (status)
+            self:ClickTitleBtn(3)
+        end)
+    end
+end
+
+function TreasureMainWindow:setTitleRed2()
+    local status = self:updateQualityRedOne(5)
+    addRedPointToNodeByStatus(self.title_list[2],status,20,-10)
+end
+
+function TreasureMainWindow:setTitleRed1()
+    local status = false
+    for _,v in pairs(self.quality_list) do
+        if v.red:isVisible() then
+            status = true
+            break
+        end
+    end
+    addRedPointToNodeByStatus(self.title_list[1],status or model:getOrderRed() or model.first_red == true,-130,-10)
+end
+
+function TreasureMainWindow:ClickTitleBtn(index)
+    if index == 0 then
+        if self.data_list[5] and next(self.data_list[5]) then
+            index = 2
+        else
+            index = 1
+        end
+    end
+    if index == 2 then
+        if not self.data_list or not self.data_list[5] or not next(self.data_list[5]) then
+            message(TI18N("语言_c_4036"))
+            return
+        end
+    end
+    if index ~= 3 then
+        self.click_index = index
+    end
+    for i = 1, 2 do
+        if i == index then
+            self.title_list[i].click_bg:setVisible(true)
+            self.title_list[i].unclick_bg:setVisible(false)
+        else
+            self.title_list[i].click_bg:setVisible(false)
+            self.title_list[i].unclick_bg:setVisible(true)
+        end
+    end
+    if index == 1 or index == 2 then
+        self.main_panel:setVisible(true)
+        if self.research then
+            self.research:setVisible(false)
+        end
+        if index == 1 then
+            self.type_bg:setVisible(true)
+            self.screen_panel:setVisible(false)
+        else
+            self.type_bg:setVisible(false)
+            self.screen_panel:setVisible(true)
+        end
+    elseif index == 3 then
+        local status = model:IsTreasureResearchOpen()
+        if status == 2 then
+            local str = Config.NinjaTreasureResearchData.data_constant["open_tips"].val
+            message(str)
+            return
+        elseif status == 1 then
+            message(TI18N("语言_c_1891"))
+            return
+        end
+        self.main_panel:setVisible(false)
+        self.title_panel:setVisible(false)
+        if not self.research then
+            self.research = TreasureResearchWindow.new()
+            local size = self.research_panel:getContentSize()
+            self.research:setPosition(cc.p(size.width * 0.5 , size.height * 0.5))
+            self.research_panel:addChild(self.research)
+        end
+        self.research:setVisible(true)
+        self.research:RunRankPanel()
+    end
+end
+function TreasureMainWindow:setAtrPanel(data)
+    for key, value in pairs(TreasureConst.Attr) do
+        if not self.atr_list[key] then
+            self.atr_list[key] = createRichLabel(16, cc.c4b(0x7c,0x55,0x36,0xff), cc.p(0, 0.5), cc.p(4, 28), -4, nil, 470)
+            self.attributes_panel:addChild(self.atr_list[key])
+        end
+        local label = self.atr_list[key]
+        local _x = 24
+        local _y = 20 + (tableLen(data) - key) * 30
+        label:setPosition(cc.p(_x,_y))
+        local attr_name = Config.AttrData.data_key_to_name[value]
+        if attr_name then
+            local icon = PathTool.getAttrIconByStr(value)
+            local is_per = PartnerCalculate.isShowPerByStr(value)
+            if is_per == true then
+                data[value] = (data[value]*0.1).."%"
+            end
+            local attr_str = string.format("<img src='%s' scale=0.8 /><div fontcolor=#7c5536> %s：</div><div fontcolor=#7c5536>%s</div>", PathTool.getResFrame("common", icon), attr_name, data[value])
+            label:setString(attr_str)
+        end
+    end
+end
+function TreasureMainWindow:_onClickBtnAtr()
+    controller:sender22313()
+    if self.atr_type == 0 then
+        self.atr_btn:setScaleY(-2)
+        self.attributes_panel:setPositionX(560)
+        self.atr_type = 1
+    else
+        self.atr_btn:setScaleY(2)
+        self.attributes_panel:setPositionX(700)
+        self.atr_type = 0
+    end
+end
+function TreasureMainWindow:_onClickBtnType(i,v)
+    if self.type_num == i then return end
+    if not self.data_list[i] then
+        message(TI18N("语言_c_4036"))
+        return
+    end
+    self.type_num = i
+    if i ~= 5 then
+        self.old_type_num = i
+    end
+    if self.task_view then
+        for k, v in pairs(self.task_view.total_cache_list) do
+            for i, list in pairs(v) do
+                for i, item in pairs(list) do
+                    item:removeFromParent()
+                    if item.DeleteMe then
+                        item:DeleteMe()
+                    end
+                end
+            end
+        end
+        self.task_view.total_cache_list = {}
+    end
+    if self.task_view == nil then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            item_class = TreasureMainItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = -40,                    -- x方向的间隔
+            start_y = 30,                    -- 第一个单元的Y起点
+            space_y = 5,                   -- y方向的间隔
+            item_width = 310,               -- 单元的尺寸width
+            item_height = 200,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 2,
+            -- need_dynamic = true,
+            delay = 5,
+        }
+        self.task_view = CommonScrollViewLayout.new(self.item_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+        self.task_view.scroll_view:addEventListenerScrollView(function(sender, event_type)
+            if self.click_index == 1 then
+                if event_type == ccui.ScrollviewEventType.autoscrollEnded then
+                    self.scrolling_flag = false
+                end
+                if event_type == ccui.ScrollviewEventType.scrollToBottom then
+                    if self.scrolling_flag == false then -- 避免一次滑动执行多次
+                        self.scrolling_flag = true
+                        self:updateScroll(false)
+                    end
+                elseif event_type == ccui.ScrollviewEventType.scrollToTop then
+                    if self.scrolling_flag == false then -- 避免一次滑动执行多次
+                        self.scrolling_flag = true
+                        self:updateScroll(true)
+                    end
+                else
+                    if event_type == ccui.ScrollviewEventType.bounceBottom then
+                        if self.scrolling_flag == false then -- 避免一次滑动执行多次
+                            self.scrolling_flag = true
+                            self:updateScroll(false)
+                        end
+                    elseif event_type == ccui.ScrollviewEventType.bounceTop then
+                        if self.scrolling_flag == false then -- 避免一次滑动执行多次
+                            self.scrolling_flag = true
+                            self:updateScroll(true)
+                        end
+                    end
+                end
+            end
+        end)
+        self.task_view:addEndCallBack(function()
+            local item_list = self.task_view:getItemList()
+            for k,v in pairs(item_list) do
+                if k % 2 == 1 then
+                    v:setZOrder(k+1)
+                else
+                    v:setZOrder(k-1)
+                end
+            end
+        end)
+    end
+    if self.data_list[i] then
+        if self.click_index == 1 then
+            self.click_img:setPositionX(v:getPositionX())
+            self.task_view:setData(self.data_list[i])
+        else
+            local _list = deepCopy(self.data_list[i])
+            local list = {}
+            for k,v in pairs(_list) do
+                v.red = model:getTreasureRedStatusByRedBid(v.id) and 1 or 0
+                local hero_cfg = Config.PartnerData.data_partner_base[v.hero_id]
+                if self.camp_index == 0 or self.camp_index == hero_cfg.camp_type then
+                    if self.other_index == 0 then
+                        table.insert(list,v)
+                    elseif self.other_index == 1 then--评分S- S S+
+                        if hero_model:heroBidScore(v.hero_id) == 6 or hero_model:heroBidScore(v.hero_id) == 7 or hero_model:heroBidScore(v.hero_id) == 8 then
+                            table.insert(list,v)
+                        end
+                    elseif self.other_index == 2 then--评分SP
+                        if hero_model:heroBidScore(v.hero_id) == 9 then
+                            table.insert(list,v)
+                        end
+                    end
+                end
+            end
+            local sort_func = SortTools.tableCommonSorter({{"red", true},{"sort", false}})
+            table.sort(list,sort_func)
+            self.task_view:setData(list)
+        end
+    end
+end
+function TreasureMainWindow:updateScroll(status)
+    if status then
+        if self.type_num < 4 then
+            local num = self.type_num + 1
+            self:_onClickBtnType(num,self.quality_list[num],true)
+        end
+    else
+        if self.type_num > 1 then
+            local num = self.type_num - 1
+            self:_onClickBtnType(num,self.quality_list[num],true)
+        end
+    end
+end
+function TreasureMainWindow:_onClickBtnClose()
+    if self.research and self.research:isVisible() then
+        self.title_panel:setVisible(true)
+        self:ClickTitleBtn(self.click_index)
+        self:getData()
+    else
+        self.ctrl:openTreasureMainWindow(false)
+    end
+end
+function TreasureMainWindow:_onClickBtnWar()
+    self.ctrl:openTreasureOrderWindow(true)
+end
+function TreasureMainWindow:_onClickBtnShop()
+    controller:openTreasureShopWindow(true)
+end
+function TreasureMainWindow:_onClickBtnMpShop()
+    self.ctrl:openTreasureMainWindow(false)
+    MainuiController:getInstance():getMainUi():changeBottomShowStatus(1)
+    MallController:getInstance():openMallPanel(true,MallConst.MallType.SkillShop,0,MallConst.MallType.TreasureShop3)
+end
+function TreasureMainWindow:_onClickBtnMpGift()
+    self.ctrl:openTreasureMainWindow(false)
+    MainuiController:getInstance():getMainUi():changeBottomShowStatus(1)
+    local config = Config.SourceData.data_source_data[364]
+    if config then
+        BackpackController:getInstance():gotoItemSources(config.evt_type, config.extend)
+    end
+end
+function TreasureMainWindow:_onClickBtnChoose()
+    for key, value in pairs(self.lottery_data.draw_list) do
+        if value.group_id == TreasureConst.Lottery_List[self.cur_tab_index] then
+            controller:openTreasureClickWindow(true,TreasureConst.Lottery_List[self.cur_tab_index],value.wish_id)
+        end
+    end
+end
+
+function TreasureMainWindow:openRootWnd(index)
+    if model.first_red then
+        model.first_red = false
+    end
+    controller:sender22313()
+    MainuiController:getInstance():getMainUi():changeBottomShowStatus(3)
+    local txt_list = Config.NinjaTreasureData.data_constant["rarity_key"].val
+    for key, value in pairs(txt_list) do
+        local list = 0
+        table.insert(self.num_list,list)
+    end
+    self.data_base_info = deepCopy(Config.NinjaTreasureData.data_base_info)
+    --单个魔导器屏蔽
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("ninja_treasure_data")
+    for k, v in pairs(self.data_base_info) do
+        if (v.open == 0 and table.indexof(nohideIds,v.id)) or v.open == 1 then
+            local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+            if (next(v.show_limit) and tree_lev >= v.show_limit[1][2]) or not next(v.show_limit) then
+                if not self.data_list[v.quality] then
+                    self.data_list[v.quality] = {}
+                end
+                table.insert(self.data_list[v.quality],v)
+            end
+        end
+    end
+    self:ClickTitleBtn(self.index)
+    self:getData()
+    self.shop_btn:setVisible(model:getIsLotteryLimit())
+    self.war_btn:setVisible(model:getIsOrderLimit())
+    self.mp_shop_btn:setVisible(model:getIsShopLimit())
+    self.mp_gift_btn:setVisible(model:getIsMpGiftLimit())
+    addRedPointToNodeByStatus(self.war_btn,model:getOrderRed())
+    self:updateQualityRed()
+    self:setTitleRed2()
+    self:setTitleRed1()
+end
+
+function TreasureMainWindow:getData()
+    for key, value in pairs(self.data_list) do
+        local sort_func = SortTools.tableCommonSorter({{"sort", false}})
+        table.sort(value,sort_func)
+        for k, v in pairs(value) do
+            v.list = model:getTreasureForId(v.id)
+        end
+    end
+    -- local sort_func = SortTools.tableCommonSorter({{"quality", true},{"id", false}})
+    self:setData()
+end
+
+function TreasureMainWindow:updateQualityRed()
+    for i=1,tableLen(self.quality_list) do
+        local status = self:updateQualityRedOne(i)
+        self.quality_list[i].red:setVisible(status)
+    end
+end
+function TreasureMainWindow:updateQualityRedOne(i)
+    local status = false
+    if self.data_list[i] then
+        for k,v in pairs(self.data_list[i]) do
+            if model:getTreasureRedStatusByRedBid(v.id) then
+                status = true
+                break
+            end
+        end
+    end
+    return status
+end
+function TreasureMainWindow:setData()
+    if self.click_index == 2 then
+        self:_onClickBtnType(5,self.quality_list[5])
+        self.type_num = 0
+    else
+        if self.old_type_num == 0 then
+            local num = tableLen(self.data_list)
+            if num <= 4 then
+                self:_onClickBtnType(num,self.quality_list[num])
+            else
+                self:_onClickBtnType(4,self.quality_list[4])
+            end
+        else
+            self:_onClickBtnType(self.old_type_num,self.quality_list[self.old_type_num])
+        end
+    end
+end
+--status true展开 false关闭
+function TreasureMainWindow:updateScreenPanel(status)
+    if status == self.screen_status then return false end
+    self.screen_status = status
+    self.screen_bg:setVisible(status)
+    self.all_btn:setPositionY(status and -11 or 48)
+    self.all_btn:setRotation(status and -90 or 90)
+    self.all_red:setPositionY(status and 4 or 63)
+    self.other_panel:setVisible(status)
+end
+
+--显示根据类型 0表示全部
+function TreasureMainWindow:_onClickBtnShowByIndex(index)
+    if self.camp_select and self.camp_btn_list[index] then
+        local x, y = self.camp_btn_list[index]:getPosition()
+        self.camp_select:setPosition(x - 0.5, y + 1)
+    end
+    self.camp_index = index
+    self:setData()
+end
+function TreasureMainWindow:_onClickOtherBtnIndex(index)
+    if self.career_select and self.other_btn_list[index] then
+        local x, y = self.other_btn_list[index]:getPosition()
+        self.career_select:setPosition(x - 0.5, y + 1)
+    end
+    self.other_index = index
+    self:setData()
+end
+function TreasureMainWindow:close_callback()
+    doStopAllActions(self.crit_txt)
+    if self.task_view then
+        self.task_view:DeleteMe()
+        self.task_view = nil
+    end
+    if self.open_treasure_list then
+        GlobalEvent:getInstance():UnBind(self.open_treasure_list)
+        self.open_treasure_list = nil
+    end
+    if self.treasure_atr_list then
+        GlobalEvent:getInstance():UnBind(self.treasure_atr_list)
+        self.treasure_atr_list = nil
+    end
+    if self.treasure_click_list then
+        GlobalEvent:getInstance():UnBind(self.treasure_click_list)
+        self.treasure_click_list = nil
+    end
+    if self.treasure_lottery_info then
+        GlobalEvent:getInstance():UnBind(self.treasure_lottery_info)
+        self.treasure_lottery_info = nil
+    end  
+    if self.treasure_order_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_order_event)
+        self.treasure_order_event = nil
+    end  
+    if self.research_rank_red_event then
+        GlobalEvent:getInstance():UnBind(self.research_rank_red_event)
+        self.research_rank_red_event = nil
+    end  
+    if self.close_battle_view then
+        GlobalEvent:getInstance():UnBind(self.close_battle_view)
+        self.close_battle_view = nil
+    end  
+    if self.treasure_open_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_open_event)
+        self.treasure_open_event = nil
+    end  
+    if self.research then
+        self.research:DeleteMe()
+        self.research = nil
+    end
+    self.ctrl:openTreasureMainWindow(false)
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+--  (必填, 后续维护以及修改的人员)
+-- @description:
+--      寻访item
+-- Create: 2020-02-19
+-- --------------------------------------------------------------------
+TreasureMainItem = class("TreasureMainItem", function()
+    return ccui.Widget:create()
+end)
+
+function TreasureMainItem:ctor()
+	self.ctrl = ActionController:getInstance()
+	self.model = self.ctrl:getModel()
+
+	self:configUI()
+	self:register_event()
+end
+
+function TreasureMainItem:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("treasure/treasure_main_item"))
+    self:addChild(self.root_wnd)
+    self:setCascadeOpacityEnabled(true)
+    self:setContentSize(cc.size(310,200))
+    self:setAnchorPoint(0,0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container:setSwallowTouches(false)
+    self.bg = self.main_container:getChildByName("bg")
+    self.red_point = self.root_wnd:getChildByName("red_point")
+    self.red_point:setVisible(false)
+    self.unlock_panel = self.main_container:getChildByName("unlock_panel")
+    self.icon = self.unlock_panel:getChildByName("icon")
+    self.lv_bg = self.unlock_panel:getChildByName("lv_bg")
+    self.lv_txt = self.unlock_panel:getChildByName("lv_txt")
+    self.name_txt = self.unlock_panel:getChildByName("name_txt")
+    self.star_con = self.unlock_panel:getChildByName("star_con")
+    self.star_con:setLocalZOrder(2)
+    self.has_break = self.unlock_panel:getChildByName("has_break")
+    self.lock_panel = self.root_wnd:getChildByName("lock_panel")
+    self.lock = self.lock_panel:getChildByName("lock")
+    self.only_panel = self.main_container:getChildByName("only_panel")
+    self.hero_icon = self.only_panel:getChildByName("hero_icon")
+
+end
+
+function TreasureMainItem:register_event(  )
+    registerButtonEventListener(self.main_container, handler(self, self.clickSelf) ,false, 2,nil,nil,nil,true)    
+    registerButtonEventListener(self.only_panel, handler(self, self.clickOnlyPanel) ,false, 2,nil,nil,nil,true)
+    if not self.open_treasure_list then
+        self.open_treasure_list = GlobalEvent:getInstance():Bind(TreasureEvent.Open_Treasure_List_Event, function (data)
+            if self.data and next(self.data) then
+                if tableLen(data) == 1 and next(data) then
+                    for i,v in pairs(data) do
+                        if next(v) and self.data.id == v.item_bid then
+                            self.data.list = model:getTreasureForId(v.item_bid) or {}
+                            self:setData(self.data)
+                        end
+                    end
+                end
+                self:setResVis(model:getTreasureRedStatusByRedBid(self.data.id))
+            end
+        end)
+    end
+end
+
+function TreasureMainItem:clickOnlyPanel()
+    local list = {}
+    list.is_book = false
+    list.is_btn = true
+    TreasureController:getInstance():openTreasureOnlyTips(true, self.vo, list)
+    GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Click_Event,self:getPositionY())
+end
+function TreasureMainItem:clickSelf()
+    local list = {}
+    list.is_book = false
+    list.is_btn = true
+    TreasureController:getInstance():openTreasureTips(true, self.vo, list)
+    GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Click_Event,self:getPositionY())
+end
+function TreasureMainItem:setResVis(status)
+    self.red_point:setVisible(status)
+end
+function TreasureMainItem:setHeadIcon()
+    if self.data.hero_id and self.data.hero_id ~= 0 then
+        if not self.head_panel then
+            local vSize = cc.size(40,40)
+            local mask_res = PathTool.getResFrame("ninja_treasure","ninja_treasure_66",false,"ninja_treasure")
+            self.head_panel = ccui.Widget:create()
+            self.head_panel:setAnchorPoint(cc.p(0.5,0.5))
+            self.head_panel:setContentSize(vSize)
+            self.head_panel:setTouchEnabled(false)
+            -- self.head_panel:setPosition(vSize.width/2, vSize.height/2)
+            self.head_panel:setCascadeOpacityEnabled(true)
+            self.hero_icon:addChild(self.head_panel)
+            self.mark_bg = createSprite(mask_res, vSize.width/2, vSize.height/2, self.head_panel, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST, 1)
+            self.mask = createSprite(mask_res, vSize.width/2, vSize.height/2, nil, cc.p(0.5, 0.5))--模板
+            self.clipNode = cc.ClippingNode:create(self.mask)
+            self.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+            self.clipNode:setContentSize(vSize)
+            self.clipNode:setCascadeOpacityEnabled(true)
+            self.clipNode:setPosition(vSize.width/2,vSize.height/2)
+            self.clipNode:setAlphaThreshold(0)
+            self.head_panel:addChild(self.clipNode,2)
+
+            self.only_icon = ccui.ImageView:create()
+            self.only_icon:setCascadeOpacityEnabled(true)
+            self.only_icon:setAnchorPoint(0.5,0.5)
+            self.only_icon:setPosition(vSize.width/2,vSize.height/2+2)--底板
+            self.only_icon:setScale(0.6)
+            self.clipNode:addChild(self.only_icon,3)
+        end
+        self.only_icon:loadTexture(PathTool.getHeadIcon(self.data.hero_id), LOADTEXT_TYPE)
+        self.only_panel:setVisible(true)
+        if hero_model:heroBidScore(self.data.hero_id) == 9 then
+            if not self.sp_img then
+                local res =  PathTool.getResFrame("ninja_treasure","ninja_treasure_67",false,"ninja_treasure")
+                self.sp_img = createSprite(res,75,67,self.unlock_panel,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+                self.sp_img:setLocalZOrder(1)
+            end
+            self.sp_img:setVisible(true)
+        else
+            if self.sp_img then
+                self.sp_img:setVisible(false)
+            end
+        end
+    else
+        self.only_panel:setVisible(false)
+        if self.sp_img then
+            self.sp_img:setVisible(false)
+        end
+    end
+end
+function TreasureMainItem:setData(data)
+    self.data = data
+    self:setHeadIcon()
+    self:setResVis(model:getTreasureRedStatusByRedBid(self.data.id))
+    self.vo = TreasureVo.New()
+    self.vo:updataData(self.data.id)
+    if data._index % 2 == 1 then
+        self.lock:setPositionX(135)
+        self.star_con:setPositionX(135)
+        self.only_panel:setPositionX(212)
+        self.name_txt:setPositionX(135)
+        self.lv_bg:setPositionX(222)
+        self.lv_txt:setPositionX(220)
+        self.root_wnd:setPositionY(20)
+        if self.sp_img then
+            self.sp_img:setPosition(cc.p(40,68))
+        end
+    else
+        self.lv_bg:setPositionX(252)
+        self.lv_txt:setPositionX(250)
+        self.lock:setPositionX(170)
+        self.star_con:setPositionX(170)
+        self.only_panel:setPositionX(247)
+        self.name_txt:setPositionX(170)
+        self.root_wnd:setPositionY(0)
+        if self.sp_img then
+            self.sp_img:setPosition(cc.p(74,68))
+        end
+    end
+    local res = PathTool.getTreasureIconBg(data.quality,data._index % 2)
+    self.bg:loadTexture(res,LOADTEXT_TYPE_PLIST)
+    setTextMaxWidth(self.name_txt,220,-10)
+    local name_str = ""
+    if data and data.name then
+        name_str = data.name
+    end
+    self.name_txt:setString(name_str)
+    local cfg = {}
+    local base_cfg = Config.NinjaTreasureData.data_base_info[data.id]
+    local tree_lev = HeroController:getInstance():getModel().resonate_cystal_lev or 0
+	
+    if not self.data.list then
+        self.has_break:setVisible(false)
+        self.lv_bg:setVisible(false)
+        self.lv_txt:setVisible(false)
+        self.lock_panel:setVisible(true)
+        setChildUnEnabled(true,self.lock_panel)
+        if tree_lev >= base_cfg.open_limit[1][2] then
+            setChildUnEnabled(false,self.lock)
+        else
+            setChildUnEnabled(true,self.lock)
+        end
+        local star_cfg = Config.NinjaTreasureData.data_star_info[self.data.id]
+        self.star_setting = self:createStar(0,tableLen(star_cfg),self.star_con,self.star_setting)
+        cfg = star_cfg[1]
+        loadSpriteTexture(self.icon, string.format("resource/ninja_treasure/treasure_item/%s.png",cfg.icon), LOADTEXT_TYPE)
+        setChildUnEnabled(true,self.unlock_panel)
+    else
+        self.vo:setUpData(self.data.list)
+        if self.vo.is_wakeup == 1 then
+            self.star_con:setVisible(false)
+            self.has_break:setVisible(true)
+        else
+            self.star_con:setVisible(true)
+            self.has_break:setVisible(false)
+        end
+        setChildUnEnabled(false,self.lock)
+        setChildUnEnabled(false,self.lock_panel)
+        self.lock_panel:setVisible(false)
+        self.lv_bg:setVisible(true)
+        self.lv_txt:setVisible(true)
+        local star_cfg = Config.NinjaTreasureData.data_star_info[self.data.id]
+        cfg = star_cfg[self.data.list.star]
+        self.lv_txt:setString(string.format("%s/%s",data.list.lv,cfg.lv_max))
+        self.star_setting = self:createStar(self.data.list.star,tableLen(star_cfg),self.star_con,self.star_setting)
+        loadSpriteTexture(self.icon, string.format("resource/ninja_treasure/treasure_item/%s.png",cfg.icon), LOADTEXT_TYPE)
+        setChildUnEnabled(false,self.unlock_panel)
+    end
+    if data._index % 2 == 1 then
+        self.icon:setPosition(cc.p(130 + cfg.mv_pos[1],128 + cfg.mv_pos[2]))
+        self.has_break:setPositionX(130 + cfg.mv_pos[1])
+    else
+        self.icon:setPosition(cc.p(170 + cfg.mv_pos[1],128 + cfg.mv_pos[2]))
+        self.has_break:setPositionX(170 + cfg.mv_pos[1])
+    end
+end
+
+function TreasureMainItem:createStar(num ,max_num, star_con, star_setting)
+	local num = num or 0
+    local star_setting = star_setting or {}
+	if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+	for i,v in pairs(star_setting.star_list) do
+        v:setVisible(false)
+    end
+	local _cStar = function(star_count, max_count, star_list,moveW)
+        local width = 20
+        local x = - max_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,max_count do
+            if not star_list[i] then 
+				local res = PathTool.getResFrame("common","common_90074")
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,max_count-i,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+			if i > star_count then
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90093"), LOADTEXT_TYPE_PLIST)	
+			else
+				star_list[i]:loadTexture(PathTool.getResFrame("common","common_90074"), LOADTEXT_TYPE_PLIST)
+			end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+	_cStar(num,max_num, star_setting.star_list)
+	return star_setting
+end
+function TreasureMainItem:DeleteMe()
+    if self.open_treasure_list then
+        GlobalEvent:getInstance():UnBind(self.open_treasure_list)
+        self.open_treasure_list = nil
+    end
+end

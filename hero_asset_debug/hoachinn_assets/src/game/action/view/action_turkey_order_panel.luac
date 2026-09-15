@@ -1,0 +1,570 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2021.05
+-- @description    : 
+		-- 火鸡节战令
+--------------------------------- 
+local _controller = ActionController:getInstance()
+local _model = _controller:getModel()
+
+ActionTurkeyOrderPanel = ActionTurkeyOrderPanel or BaseClass(BaseView)
+
+function ActionTurkeyOrderPanel:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "action/action_turkey_order_panel"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("planesafkorderaction","planesafkorderaction"), type = ResourcesType.plist},
+	}
+    self.role_vo = RoleController:getInstance():getRoleVo()
+end
+
+function ActionTurkeyOrderPanel:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local container = self.root_wnd:getChildByName("container")
+	self.container = container
+    self:playEnterAnimatianByObj(container, 2)
+	self.item_panel = container:getChildByName("item_panel")
+    self.bg = container:getChildByName("bg")
+	self.btn_panel = container:getChildByName("btn_panel")
+	self.buy_btn_1 = self.btn_panel:getChildByName("buy_btn_1")
+	self.btn_txt_1 = self.buy_btn_1:getChildByName("btn_txt")
+	self.btn_txt_1:setString(TI18N("语言_c_6434"))
+	
+	self.buy_btn_2 = self.btn_panel:getChildByName("buy_btn_2")
+	self.btn_tip_2 = self.buy_btn_2:getChildByName("btn_tip")
+	self.tip_txt_2 = createRichLabel(24, cc.c3b(0xff,0xff,0xff), cc.p(0.5,0), cc.p(140,85),-10)
+	self.tip_txt_2:setHorizontalLayoutType(2)
+	self.buy_btn_2:addChild(self.tip_txt_2)
+	self.btn_txt_2 = self.buy_btn_2:getChildByName("btn_txt")
+	self.btn_txt_2:setString(TI18N("语言_c_6435"))
+	self.price_2 = createRichLabel(20, cc.c3b(0xff,0xff,0xff), cc.p(0.5,0.5), cc.p(self.buy_btn_2:getContentSize().width*0.5,17))
+	self.price_2:setHorizontalLayoutType(2)
+	self.buy_btn_2:addChild(self.price_2)
+	self.btn_lock_2 = self.buy_btn_2:getChildByName("btn_lock")
+
+	self.time_bg = container:getChildByName("time_bg")
+	self.time_tip = self.time_bg:getChildByName("time_tip")
+	self.time_tip:setString(TI18N("语言_c_6166"))
+	self.time_label = self.time_bg:getChildByName("time_label")
+
+    self.image_2 = container:getChildByName("image_2")
+	self.win_title = container:getChildByName("win_title")
+	self.close_btn = container:getChildByName("close_btn")
+end
+
+function ActionTurkeyOrderPanel:register_event(  )
+	registerButtonEventListener(self.close_btn, function (  )
+		_controller:openActionTurkeyOrderPanel(false)
+	end, true, 2)
+
+	registerButtonEventListener(self.background, function (  )
+		_controller:openActionTurkeyOrderPanel(false)
+	end, false, 2)
+
+	registerButtonEventListener(self.buy_btn_2, function (  )
+		self:clickBuyBtn()
+	end, false, 2)
+
+	if not self.treasure_order_event then
+        self.treasure_order_event = GlobalEvent:getInstance():Bind(ActionEvent.Turkey_Reward_Event, function ()
+            self:setData()
+        end)
+    end
+	if not self.treasure_order_con_event then
+        self.treasure_order_con_event = GlobalEvent:getInstance():Bind(ActionEvent.Treasure_Order_Con_Event, function ()
+            self:clickBuyBtn()
+        end)
+    end
+    if not self.tips_event then
+        self.tips_event = GlobalEvent:getInstance():Bind(MonopolyEvent.Get_Monopoly_War_Order_Popups, function (data)
+            if data.type == ActionStorageBool2.Turkey and data.flag == 0 then
+                local day_num = 0
+                local tabvo =  _controller:getActionSubTabVo(ActionRankCommonType.Turkey)
+	            local times = tabvo and tabvo.remain_sec or 0
+                if times > 0 then
+                    day_num = math.floor(times/86400)
+                end
+                if day_num == 7 or day_num == 3 or day_num == 0 then
+                    local _txt = TI18N("语言_c_6433")
+                    ActionController:getInstance():openEndWarnView(true,day_num,_txt)
+                    MonopolyController:getInstance():sender16811(ActionStorageBool2.Turkey)
+                end
+            end
+        end)
+    end
+end
+
+function ActionTurkeyOrderPanel:clickBuyBtn()
+    if _model:getTurkeyOrderBuy() == 1 then
+        message(TI18N("语言_c_1984"))
+        return
+    end
+	local function fun()
+        if self.charge_id then
+            local charge_data = Config.ChargeData.data_charge_data[self.charge_id]
+            if charge_data then
+                sdkOnPay(charge_data.val, nil, charge_data.id, charge_data.name)
+            else
+                message("error")
+            end
+        end
+	end
+    local str = TI18N("语言_c_6469")
+	CommonAlert.show(str, TI18N("语言_c_63"), fun, TI18N("语言_c_62"), nil, CommonAlert.type.rich, nil, nil, nil, true)
+end
+
+function ActionTurkeyOrderPanel:setData()
+	self.camp_id = _model:getTurkeyCampId()
+    self.const_cfg = Config.HolidayCollectManualData.data_const[self.camp_id]
+	self.reward_cfg = Config.HolidayCollectManualData.data_act_info[self.camp_id]
+	self.charge_id = self.const_cfg["charge_id"].val[1]
+	self.win_title:setString(self.const_cfg["order_name"].val[1])
+    moveTextBg(self.win_title,self.image_2,60,self.image_2:getContentSize().width)
+    local res = PathTool.getPlistImgForDownLoad("holiday_collect_manual",self.const_cfg["order_pic"].val[1])
+    loadSpriteTexture(self.bg, res, LOADTEXT_TYPE)
+	self.tip_txt_2:setString(TI18N("语言_c_6162"))
+	self.btn_tip_2:setContentSize(cc.size(math.max(self.tip_txt_2:getContentSize().width + 30,self.btn_tip_2:getContentSize().width),self.tip_txt_2:getContentSize().height + 20))
+    local tabvo =  _controller:getActionSubTabVo(ActionRankCommonType.Turkey)
+	self.end_time = tabvo and tabvo.remain_sec or 0
+    if self.end_time > 86400 then
+        _model:setCountDownTime(self.time_label,self.end_time - 86400)
+    else
+        self.time_label:setString(TI18N("语言_s_11"))
+    end
+	local charge_data = Config.ChargeData.data_charge_data[self.charge_id]
+    local val = 198
+    if charge_data then
+        val = GetMoneyNum(charge_data,"val")
+    end
+	self.price_2:setString(string.format(TI18N("语言_c_6172"),val))
+    self.btn_lock_2:setVisible( _model:getTurkeyOrderBuy() ~= 1)
+	if _model:getTurkeyOrderBuy() == 1 then
+        self.price_2:setString(TI18N("语言_c_6252"))
+	else
+        self.price_2:setString(string.format(TI18N("语言_c_6172"),val))
+	end
+	self:setRewardPanel()
+    self:updateScrollY()
+end
+function ActionTurkeyOrderPanel:updateScrollY()
+    local num_tol = tableLen(self.reward_cfg)
+    local list1 = _model:getOrderReceiveList1()
+    local list2 = _model:getOrderReceiveList2()
+    local data = deepCopy(self.reward_cfg)
+    local num = tableLen(data)
+    for key, value in pairs(data) do
+        if value.id > tableLen(list1) or value.id > tableLen(list2) then
+            num = value.id
+            break
+        end
+    end
+    local scroll_view_size = self.item_panel:getContentSize()
+    local pos_per = 124 * (num - 1) * 100 / (num_tol * 124 - scroll_view_size.height)
+
+    if pos_per > 100 then
+        pos_per = 100
+    end
+    self.reward_list:scrollToPercentVertical(pos_per, 0.5, true)
+end
+function ActionTurkeyOrderPanel:setRewardPanel()
+	if self.reward_list == nil then
+        local scroll_view_size = self.item_panel:getContentSize()
+        local setting = {
+            start_x = 0,
+            space_x = 0,
+            start_y = 5,
+            space_y = 4,
+            item_width = 650,
+            item_height = 124,
+            row = 0,
+            col = 1,
+            need_dynamic = true,
+            checkovercallback = handler(self, self.updateSlideShowByVertical)
+        }
+        self.reward_list = CommonScrollViewSingleLayout.new(self.item_panel, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size, setting)
+        self.reward_list:setSwallowTouches(true)
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.createTaskCell),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells),ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.reward_list:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+
+        --进度条相关
+        local scroll_view_size2 = cc.size(100, scroll_view_size.height)
+        local setting = {
+            start_x = 10, -- 第一个单元的X起点
+            space_x = 0, -- x方向的间隔
+            start_y = 5, -- 第一个单元的Y起点
+            space_y = 4, -- y方向的间隔
+            item_width = 55, -- 单元的尺寸width
+            item_height = 124, -- 单元的尺寸height
+            row = 0, -- 行数，作用于水平滚动类型
+            col = 1, -- 列数，作用于垂直滚动类型
+            need_dynamic = true
+        }
+        self.reward_num_item = CommonScrollViewSingleLayout.new(self.item_panel, cc.p(0, 0), ScrollViewDir.vertical,ScrollViewStartPos.top, scroll_view_size2, setting)
+        self.reward_num_item:setClickEnabled(false)
+        self.reward_num_item:registerScriptHandlerSingle(handler(self, self.createTaskCell2),ScrollViewFuncType.CreateNewCell) -- 创建cell
+        self.reward_num_item:registerScriptHandlerSingle(handler(self, self.numberOfTaskCells2),ScrollViewFuncType.NumberOfCells) -- 获取数量
+        self.reward_num_item:registerScriptHandlerSingle(handler(self, self.updateTaskCellByIndex2),ScrollViewFuncType.UpdateCellByIndex) -- 更新cell
+    end
+    self.reward_list:reloadData(nil,nil,true)
+    self.reward_num_item:reloadData(nil,nil,true)
+end
+
+-- 滑动的时候处理显示
+function ActionTurkeyOrderPanel:updateSlideShowByVertical()
+    local container_y = self.reward_list:getCurContainerPosY()
+    if container_y and self.reward_num_item and not tolua.isnull(self.reward_num_item) then
+        if self.reward_num_item.container and not tolua.isnull(self.reward_num_item.container) then
+            self.reward_num_item.container:setPositionY(container_y)
+            self.reward_num_item:checkRectIntersectsRect()
+        end
+    end
+end
+-- 奖励列表
+function ActionTurkeyOrderPanel:createTaskCell()
+    local cell = ActionTurkeyOrderItem.new()
+    return cell
+end
+
+function ActionTurkeyOrderPanel:numberOfTaskCells()
+    if not self.reward_cfg then
+        return 0
+    end
+    return #self.reward_cfg
+end
+
+function ActionTurkeyOrderPanel:updateTaskCellByIndex(cell, index)
+    if not self.reward_cfg then
+        return
+    end
+    local cell_data = self.reward_cfg[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+
+-- 进度条
+-- 功勋数数列表
+function ActionTurkeyOrderPanel:createTaskCell2()
+    local cell = ActionTurkeyOrderLineItem.new()
+    return cell
+end
+
+function ActionTurkeyOrderPanel:numberOfTaskCells2()
+    if not self.reward_cfg then
+        return 0
+    end
+    return #self.reward_cfg
+end
+
+function ActionTurkeyOrderPanel:updateTaskCellByIndex2(cell, index)
+    if not self.reward_cfg then
+        return
+    end
+    local cell_data = self.reward_cfg[index]
+    if not cell_data then
+        return
+    end
+    cell:setData(cell_data,index)
+end
+function ActionTurkeyOrderPanel:openRootWnd()
+	-- _controller:sender22324()
+    self:setData()
+    MonopolyController:getInstance():sender16810(ActionStorageBool2.Turkey)
+    MonopolyController:getInstance():sender16811(ActionStorageBool2.TurkeyWar)
+end
+
+function ActionTurkeyOrderPanel:close_callback(  )
+    if self.treasure_order_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_order_event)
+        self.treasure_order_event = nil
+    end
+    if self.tips_event then
+        GlobalEvent:getInstance():UnBind(self.tips_event)
+        self.tips_event = nil
+    end
+	if self.treasure_order_con_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_order_con_event)
+        self.treasure_order_con_event = nil
+    end
+	_controller:openActionTurkeyOrderPanel(false)
+end
+
+
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      传奇之征奖励子集
+-- Create: 2018-06-28
+-- --------------------------------------------------------------------
+ActionTurkeyOrderItem = class("ActionTurkeyOrderItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionTurkeyOrderItem:ctor()
+    self:configUI()
+    self:register_event()
+    self.item_list = {}
+    self.item_list2 = {}
+end
+
+function ActionTurkeyOrderItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_turkey_order_item"))
+    self:addChild(self.root_wnd)
+    self:setAnchorPoint(0, 0)
+    self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(650,124))
+	self:setTouchEnabled(true)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.Image_19 = self.main_container:getChildByName("Image_19")
+    self.free_layer = self.main_container:getChildByName("free_layer")
+    self.free_layer:setScrollBarEnabled(false)
+	self.title = self.main_container:getChildByName("title")
+    self.goods_con = self.main_container:getChildByName("goods_con")
+	self.goods_con:setScrollBarEnabled(false)
+    self.buy_img = self.main_container:getChildByName("buy_img")
+    self.btn_get = self.main_container:getChildByName("btn_get")
+    self.btn_get_txt = self.btn_get:getChildByName("Text_5")
+    self.btn_get_txt:setString(TI18N("语言_c_109"))
+    self.btn_go = self.main_container:getChildByName("btn_go")
+    self.btn_go_txt = self.btn_go:getChildByName("Text_5")
+    self.btn_go_txt:setString(TI18N("语言_c_108"))
+    self.btn_con = self.main_container:getChildByName("btn_con")
+    self.btn_con_txt = self.btn_con:getChildByName("Text_5")
+    self.btn_con_txt:setString(TI18N("语言_c_2684"))
+end
+
+function ActionTurkeyOrderItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        _controller:sender22413()
+	end, true)
+	registerButtonEventListener(self.btn_go, function()
+		_controller:openActionTurkeyOrderPanel(false)
+	end, true)
+	registerButtonEventListener(self.btn_con, function()
+        GlobalEvent:getInstance():Fire(ActionEvent.Treasure_Order_Con_Event)
+	end, true)
+end
+
+function ActionTurkeyOrderItem:setData(data,index)
+    self.rewardData = data
+	self.index = index
+	self.need_num = self.rewardData.num
+    self.camp_id = _model:getTurkeyCampId()
+    self.const_cfg = Config.HolidayCollectManualData.data_const[self.camp_id]
+    local txt = self.const_cfg["order_progress_tip"].val[1]
+    local str = string.format(txt,self.need_num,_model:getOrderScore())
+    self.title:setString(transformTextToShort(str,60))
+    addEvt2showAllTextTips(self.title,str,60)
+	local list = {}
+    for index, value in ipairs(self.rewardData.reward) do
+        table.insert(list,index,value)
+    end
+    for key, value in pairs(self.item_list) do
+        value:DeleteMe()
+        value = nil
+    end
+    self.item_list = {}
+	local scale_num = 0.7
+	for key, value in pairs(list) do
+        local item = BackPackItem.new(true,true,false,scale_num)
+        item:setBaseData(value[1],value[2])
+        table.insert(self.item_list,item)
+        self.free_layer:addChild(item)
+        item:setDefaultTip(true,false)
+    end
+	if tableLen(self.item_list) == 1 then
+		self.free_layer:setTouchEnabled(false)
+	else
+		self.free_layer:setTouchEnabled(true)
+	end
+    local list_num = 5
+    local _w = self.free_layer:getContentSize().width
+    local row_y = math.ceil(tableLen(self.item_list)/list_num)
+    local _h = math.max(self.free_layer:getContentSize().height,row_y * TreasureItem.Width * scale_num)
+    self.free_layer:setInnerContainerSize(cc.size(_w,_h))
+    for key, value in pairs(self.item_list) do
+        local _x = (119 * scale_num + 10) * key -(119 * scale_num*0.5)
+        local _y = self.free_layer:getContentSize().height*0.5
+        value:setPosition(cc.p(_x,_y))
+        if value.setReceiveIcon then
+            value:setReceiveIcon(_model:getOrderAwardsReceive(self.index,1))
+        end
+    end
+
+	local scale_num2 = 0.7
+	local list2 = {}
+    for index, value in ipairs(self.rewardData.charge_reward) do
+        table.insert(list2,index,value)
+    end
+    for key, value in pairs(self.item_list2) do
+        value:DeleteMe()
+        value = nil
+    end
+    self.item_list2 = {}
+	for key, value in pairs(list2) do
+        local item = BackPackItem.new(true,true,false,scale_num2)
+        item:setBaseData(value[1],value[2])
+        table.insert(self.item_list2,item)
+        self.goods_con:addChild(item)
+        item:setDefaultTip(true,false)
+    end
+	if tableLen(self.item_list2) <= 2 then
+		self.goods_con:setTouchEnabled(false)
+	else
+		self.goods_con:setTouchEnabled(true)
+	end
+	local list_num = 5
+    local _w = math.max(self.goods_con:getContentSize().width,tableLen(self.item_list2) * 129 * scale_num2)
+    local _h = self.goods_con:getContentSize().height
+    self.goods_con:setInnerContainerSize(cc.size(_w,_h))
+    for key, value in pairs(self.item_list2) do
+        local _x = (119 * scale_num2 + 10) * key -(119 * scale_num2*0.5)
+        local _y = self.goods_con:getContentSize().height*0.5
+        value:setPosition(cc.p(_x,_y))
+        if value.setReceiveIcon then
+            value:setReceiveIcon(_model:getOrderAwardsReceive(self.index,2))
+        end
+    end
+
+	self:setItemLock()
+	self:setStatus()
+end
+function ActionTurkeyOrderItem:setItemLock()
+	local lock_2 = _model:getTurkeyOrderBuy()
+	for key, value in pairs(self.item_list2) do
+		value:showOrderWarLock(lock_2 == 0)
+	end
+end
+function ActionTurkeyOrderItem:setStatus()
+	self.score = _model:getOrderScore()
+	self.btn_go:setVisible(false)
+	self.btn_get:setVisible(false)
+	self.buy_img:setVisible(false)
+	self.btn_con:setVisible(false)
+	if self.score >= self.need_num then --积分已满足
+		self.locl_status = _model:getOrderStaForId(self.index)
+		if self.locl_status == 1 then
+			self.btn_get:setVisible(true)
+		elseif self.locl_status == 2 then
+            self.buy_img:setVisible(true)
+		elseif self.locl_status == 3 then
+            self.btn_con:setVisible(true)
+		end
+	else--积分不满足
+		self.btn_go:setVisible(true)
+	end
+end
+function ActionTurkeyOrderItem:DeleteMe()
+end
+
+
+------------------------------------------
+-- 功勋子项
+ActionTurkeyOrderLineItem = class("ActionTurkeyOrderLineItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionTurkeyOrderLineItem:ctor()
+    self.size = cc.size(55, 124)
+    self:configUI()
+    self:register_event()
+end
+
+function ActionTurkeyOrderLineItem:configUI()
+    self.root_wnd = ccui.Layout:create()
+    self.root_wnd:setContentSize(self.size)
+    self.root_wnd:setAnchorPoint(0.5, 0.5)
+    self:addChild(self.root_wnd)
+    self.select_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_2"),
+        self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+	self.select_bg:setScale(0.7)
+    self.select_img = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_1"),
+        self.size.width / 2, self.size.height / 2 + 6, cc.p(0.5, 0.5), true)
+    self.select_img:setVisible(false)
+	self.select_img:setScale(0.7)
+    self.num_bg = createImage(self.root_wnd, PathTool.getResFrame("planesafkorderaction", "planesafkaction_11"),
+        self.size.width / 2, 60, cc.p(0.5, 0.5), true, nil, true)
+    self.num_bg:setCapInsets(cc.rect(19, 17, 2, 2))
+    self.num_bg:setContentSize(cc.size(71, 37))
+	self.num_bg:setScale(0.7)
+    self.num_txt = createLabel(20, Config.ColorData.data_color4[1], nil, self.size.width / 2 - 2,
+    60, "", self.root_wnd, nil, cc.p(0.5, 0.5))
+end
+
+function ActionTurkeyOrderLineItem:register_event()
+end
+
+function ActionTurkeyOrderLineItem:setData(data,index)
+    if not data then
+        return
+    end
+    self.data = data
+	self.camp_id = _model:getTurkeyCampId()
+    self.cfg = Config.HolidayCollectManualData.data_act_info[self.camp_id]
+	self.num_txt:setString(tostring(self.cfg[index].num))
+    local score = _model:getOrderScore()
+    if tonumber(score) >= tonumber(self.cfg[index].num) then
+        self.select_img:setVisible(true)
+    else
+        self.select_img:setVisible(false)
+    end
+    -- 进度条相关
+    local next_id = index + 1
+    if self.cfg[next_id] then
+        if self.comp_bar == nil then
+            local size = cc.size(75, 27)
+            local res = PathTool.getResFrame("planesafkorderaction", "planesafkaction_4")
+            local res1 = PathTool.getResFrame("planesafkorderaction", "planesafkaction_7")
+            local bar_layout = ccui.Layout:create()
+            bar_layout:setContentSize(cc.size(27, 27))
+            bar_layout:setAnchorPoint(0, 0)
+            bar_layout:setRotation(90)
+            if bar_layout then
+                self.root_wnd:addChild(bar_layout, 1)
+                bar_layout:setPosition(cc.p(26, 65))
+                self.bar_layout = bar_layout
+            end
+            local bg, comp_bar =
+                createLoadingBar(res, res1, size, self.bar_layout, cc.p(0, 0.5), 0, 0, true, true, 5, 1)
+            self.comp_bar_bg = bg
+            self.comp_bar = comp_bar
+            self.comp_bar_bg:setContentSize(cc.size(120, 27))
+            self.comp_bar:setContentSize(cc.size(105, 15))
+        end
+        if self.bar_layout then
+            self.bar_layout:setVisible(true)
+        end
+        if score >= self.cfg[index].num and score < self.cfg[next_id].num then
+            self.comp_bar:setPercent((score - self.cfg[index].num)/ (self.cfg[next_id].num - self.cfg[index].num) * 100)
+        elseif score >= self.cfg[next_id].num then
+            self.comp_bar:setPercent(100)
+        else
+            self.comp_bar:setPercent(0)
+        end
+    else
+        if self.bar_layout then
+            self.bar_layout:setVisible(false)
+        end
+    end
+    self.select_bg:setLocalZOrder(9)
+    self.select_img:setLocalZOrder(10)
+    self.num_bg:setLocalZOrder(11)
+    self.num_txt:setLocalZOrder(12)
+    self:setLocalZOrder(score)
+end
+
+function ActionTurkeyOrderLineItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

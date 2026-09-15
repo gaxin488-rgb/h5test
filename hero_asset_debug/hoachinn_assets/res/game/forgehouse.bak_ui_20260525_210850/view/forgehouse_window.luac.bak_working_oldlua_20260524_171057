@@ -1,0 +1,1098 @@
+ForgeHouseWindow = ForgeHouseWindow or BaseClass(BaseView)
+
+local controller = ForgeHouseController:getInstance()
+local model = controller:getModel()
+local backpackModel = BackpackController:getInstance():getModel()
+local partner_const = Config.PartnerEqmData.data_partner_const
+local eqm_comp_list = Config.PartnerEqmData.data_eqm_compose_id
+local special_comp_list = Config.PartnerEqmData.data_special_eqm_compose_id or {}
+local divine_comp_list = Config.PartnerEqmData.data_divine_eqm_compose_id or {}
+local forge_stone_comp_list = Config.PartnerEqmData.data_forge_stone_compose_id or {}
+local equip_sub_titles = {TI18N("语言_c_2298"), TI18N("语言_c_2299"), TI18N("语言_c_2300"), TI18N("语言_c_2301")}
+local special_sub_titles = {"Cổ Vật", "Pháp Bảo", "Luyện Chakra", "Đá Lục Đạo"}
+local divine_sub_titles = {"Vòng Tai", "Dây Chuyền", "Nhẫn", "Vòng Tay"}
+local forge_stone_sub_titles = {"N.Liệu C.C", "N/A", "N/A 1", "N/A 2"}
+function ForgeHouseWindow:__init()
+    self.is_full_screen = true
+    self.layout_name = "forgehouse/forgehouse_window"
+ 	self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("forgehouse", "forgehouse"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("artifact","artifact"), type = ResourcesType.plist },
+        {path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_64",true), type = ResourcesType.single },
+    	{path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_79",false), type = ResourcesType.single },
+    	{path = PathTool.getPlistImgForDownLoad("bigbg","bigbg_80",false), type = ResourcesType.single }
+    }
+    self.tab_list = {}
+    self.top_tab_list = {}
+    self.cur_index = nil
+    self.composite_number = 0
+    self.compCoinNumber = 0 --合成需要的金币
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    --点击合成
+    self.touch_comp_base = 1
+    self.is_selected = nil
+    self.is_tab_touch = true
+    self.active_comp_list = eqm_comp_list
+end
+
+function ForgeHouseWindow:open_callback()
+	local bg = self.root_wnd:getChildByName("bg")
+	bg:ignoreContentAdaptWithSize(true)
+	bg:loadTexture(PathTool.getPlistImgForDownLoad("bigbg","bigbg_64",true), LOADTEXT_TYPE)
+    bg:setScale(display.getMaxScale())
+
+	self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+	-- 装备
+	self.equip_container = self.main_container:getChildByName("equip_container")
+	-- 符文
+	self.artifact_container = self.main_container:getChildByName("artifact_container")
+
+	local image_stage = self.equip_container:getChildByName("image_stage")
+	local res = PathTool.getPlistImgForDownLoad("bigbg", "bigbg_80")
+    if not self.item_load then
+        self.item_load = createResourcesLoad(res, ResourcesType.single, function()
+            if not tolua.isnull(image_stage) then
+                image_stage:loadTexture(res,LOADTEXT_TYPE)
+            end
+        end,self.item_load)
+    end
+
+	-- 顶部标签页 (5 tab: Trang Bị | T.Bị Đ.Biệt | Thần Trang | Đá Rèn | Tạo Sách)
+	local tab_container = self.main_container:getChildByName("tab_container")
+
+    local TOP_TAB_COUNT = 5
+    local tab_name_list = {
+        [1] = TI18N("语言_c_2295"),
+        [2] = "T.Bị Đ.Biệt",
+        [3] = "Thần Trang",
+        [4] = "Đá Rèn",
+        [5] = TI18N("语言_c_2296"),
+    }
+
+    -- ============ LAYOUT PARAMS ============
+    local TAB_SPACING  = 6
+    local TAB_FONT     = 18
+    local TAB_H        = 48      -- chiều cao cố định mỗi tab
+
+    -- Mở rộng tab_container để 5 tab rộng rãi, căn giữa theo main_container
+    local orig_size = tab_container:getContentSize()
+    local main_w = self.main_container:getContentSize().width
+    local new_w  = math.floor(main_w * 0.92)  -- chiếm 92% chiều rộng cửa sổ chính
+    tab_container:setContentSize(cc.size(new_w, orig_size.height))
+    -- Căn giữa tab_container trong main_container
+    tab_container:setAnchorPoint(cc.p(0.5, 0.5))
+    local main_h = self.main_container:getContentSize().height
+    local tc_y = tab_container:getPositionY()
+    tab_container:setPositionX(main_w / 2)
+    -- Tắt clipping để tab không bị cắt
+    pcall(function() tab_container:setClippingEnabled(false) end)
+
+    local tc_size = tab_container:getContentSize()
+
+    -- Texture: seerpalace_10018 (unselected) / seerpalace_10019 (selected)
+    -- Kiểu thanh trang trí có viền, phong cách đặc biệt hơn
+    local UNSEL_FRAME = PathTool.getResFrame("common_2", "seerpalace_10018.png")
+    local SEL_FRAME   = PathTool.getResFrame("common_2", "seerpalace_10019.png")
+    -- Scale9 CapInsets cho 186×63 texture
+    local CAP_INSETS = cc.rect(25, 15, 136, 33)
+
+    -- Chia đều 5 tab
+    local avail_w = tc_size.width - (TOP_TAB_COUNT - 1) * TAB_SPACING
+    local tab_w   = math.floor(avail_w / TOP_TAB_COUNT)
+    local total_w = TOP_TAB_COUNT * tab_w + (TOP_TAB_COUNT - 1) * TAB_SPACING
+    local offset_x = math.floor((tc_size.width - total_w) / 2)
+
+    -- Lấy tab_btn_1 làm mẫu clone, ẩn tab_btn_2 gốc nếu có
+    local template_btn = tab_container:getChildByName("tab_btn_1")
+    local old_btn2 = tab_container:getChildByName("tab_btn_2")
+    if old_btn2 then old_btn2:setVisible(false) end
+
+    for i=1, TOP_TAB_COUNT do
+        local tab_btn
+        if i == 1 then
+            tab_btn = template_btn
+        else
+            tab_btn = template_btn:clone()
+            tab_btn:setName("tab_btn_"..i)
+            tab_container:addChild(tab_btn)
+        end
+
+        -- Size & position
+        tab_btn:setContentSize(cc.size(tab_w, TAB_H))
+        tab_btn:setAnchorPoint(cc.p(0, 0))
+        local y_offset = math.floor((tc_size.height - TAB_H) / 2)
+        tab_btn:setPosition(cc.p(offset_x + (i - 1) * (tab_w + TAB_SPACING), y_offset))
+        tab_btn:setTouchEnabled(true)
+        tab_btn:setSwallowTouches(true)
+
+        -- Background: seerpalace_10018 (unselected) / seerpalace_10019 (selected)
+        local unselect_bg = tab_btn:getChildByName('unselect_bg')
+        if unselect_bg then
+            unselect_bg:loadTexture(UNSEL_FRAME, LOADTEXT_TYPE_PLIST)
+            pcall(function()
+                unselect_bg:setScale9Enabled(true)
+                unselect_bg:setCapInsets(CAP_INSETS)
+            end)
+            unselect_bg:setContentSize(cc.size(tab_w, TAB_H))
+            unselect_bg:setAnchorPoint(cc.p(0.5, 0.5))
+            unselect_bg:setPosition(cc.p(tab_w / 2, TAB_H / 2))
+        end
+        local select_bg = tab_btn:getChildByName('select_bg')
+        if select_bg then
+            select_bg:loadTexture(SEL_FRAME, LOADTEXT_TYPE_PLIST)
+            pcall(function()
+                select_bg:setScale9Enabled(true)
+                select_bg:setCapInsets(CAP_INSETS)
+            end)
+            select_bg:setContentSize(cc.size(tab_w, TAB_H))
+            select_bg:setAnchorPoint(cc.p(0.5, 0.5))
+            select_bg:setPosition(cc.p(tab_w / 2, TAB_H / 2))
+        end
+
+        local object = {}
+        object.unselect_bg = unselect_bg
+        if object.unselect_bg then object.unselect_bg:setVisible(true) end
+        object.select_bg = select_bg
+        if object.select_bg then object.select_bg:setVisible(false) end
+
+        -- Label: căn giữa, 1 dòng (không giới hạn vùng text → không xuống hàng)
+        object.lable = tab_btn:getChildByName("title")
+        if object.lable then
+            object.lable:setString(tab_name_list[i])
+            object.lable:setAnchorPoint(cc.p(0.5, 0.5))
+            object.lable:setPosition(cc.p(tab_w / 2, TAB_H / 2))
+            object.lable:setFontSize(TAB_FONT)
+            object.lable:setTextAreaSize(cc.size(0, 0))
+            object.lable:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+            object.lable:setTextVerticalAlignment(cc.VERTICAL_TEXT_ALIGNMENT_CENTER)
+            -- Unselected style: trắng kem nhẹ + viền nâu đậm
+            object.lable:setTextColor(cc.c4b(0xFF, 0xFF, 0xFF, 0xFF))
+            object.lable:enableOutline(cc.c4b(0x6D, 0x35, 0x07, 0xFF), 2)
+        end
+
+        object.tab_btn = tab_btn
+        object.index = i
+
+        -- Red-dot: đặt góc trên-phải
+        object.tips = tab_btn:getChildByName("tips")
+        if object.tips then
+            object.tips:setPosition(cc.p(tab_w - 10, TAB_H - 6))
+        end
+        if object.index == ForgeHouseConst.Tab_Index.Artifact then
+            local red_status = HeroController:getInstance():getModel():getArtifactLuckyRedStatus()
+            if object.tips then object.tips:setVisible(red_status) end
+        else
+            if object.tips then object.tips:setVisible(false) end
+        end
+        self.top_tab_list[i] = object
+    end
+
+	self.close_btn = self.main_container:getChildByName("btn_return")
+
+	--预加载音效
+	AudioManager:getInstance():preLoadEffect(AudioManager.AUDIO_TYPE.COMMON, 'c_equipment_forging')
+end
+
+-- 初始化装备锻造界面
+function ForgeHouseWindow:initEquipLayout(  )
+	self.bar = self.equip_container:getChildByName("bar")
+	self.bar:setScale9Enabled(true)
+	self.bar_num = self.equip_container:getChildByName("bar_num")
+	self.bar_num:setString("")
+	self.btn_composite = self.equip_container:getChildByName("btn_composite")
+	self.btn_composite:getChildByName("Text_1"):setString(TI18N("语言_c_976"))
+	self.btn_comp = self.equip_container:getChildByName("btn_comp")
+	self.btn_comp:getChildByName("Text_1"):setString(TI18N("语言_c_2292"))
+
+	self.text_Field = self.equip_container:getChildByName("text_Field")
+    local function textFieldEvent(sender, eventType)
+        if eventType == ccui.TextFiledEventType.attach_with_ime then
+        elseif eventType == ccui.TextFiledEventType.detach_with_ime then
+	        	local data = self:getCurComposeData()
+	        	if data == nil then return end
+
+	        	local max_num = self:getComposeMaxNumber(data)
+	        	if self.text_Field:getString() == "" then
+	        		message(TI18N("语言_c_4363"))
+	        		self.composite_number = 0
+	        	else
+		        	local input_num = tonumber(self.text_Field:getString())
+		        	if type(input_num) == "number" and type(max_num) == "number" then
+		        		input_num = math.floor(input_num)
+		        		if input_num < 0 then
+		        			input_num = 0
+		        		end
+		        		if input_num > max_num then
+		        			input_num = max_num
+		        		end
+		        		self.composite_number = input_num
+		        	else
+		        		message(TI18N("语言_c_4517"))
+		        	end
+	        	end
+	        	self.text_Field:setString(self.composite_number)
+	        	self:refreshCostDisplay(data)
+	        	self:updateComposeButtonStatus(data)
+        elseif eventType == ccui.TextFiledEventType.insert_text then
+        elseif eventType == ccui.TextFiledEventType.delete_backward then
+        end
+    end
+    self.text_Field:setTextColor(cc.c4b(0xff,0xff,0xff,0xff))
+    self.text_Field:setPlaceHolderColor(cc.c4b(0xff,0xff,0xff,0xff))
+    self.text_Field:setTextHorizontalAlignment(cc.TEXT_ALIGNMENT_CENTER)
+    self.text_Field:addEventListener(textFieldEvent)
+
+	self.btn_all_composite = self.equip_container:getChildByName("btn_all_composite")
+	self.btn_all_composite_label = self.btn_all_composite:getChildByName("Text_1")
+	self.btn_all_composite_label:setString(TI18N("语言_c_2297"))
+	if self.role_vo.vip_lev < partner_const.synthesis_vip_lev.val and self.role_vo.lev < partner_const.synthesis_character_lev.val then
+		setChildUnEnabled(true, self.btn_all_composite)
+		self.btn_all_composite_label:disableEffect(cc.LabelEffect.OUTLINE)
+	end
+
+	local Image_1 = self.equip_container:getChildByName("Image_1")
+	local tab_container = Image_1:getChildByName("tab_container")
+	local title_list = {TI18N("语言_c_2298"),TI18N("语言_c_2299"),TI18N("语言_c_2300"),TI18N("语言_c_2301")}
+	for i=1,4 do
+		local tab = tab_container:getChildByName('tab_btn_'..i)
+		tab.title = tab:getChildByName("title")
+		tab.title:setString(title_list[i])
+		tab.title:setTextColor(cc.c4b(0xEE, 0xD1, 0xAF, 0xff))
+        tab.title:enableOutline(cc.c4b(0x53, 0x3D, 0x32, 0xff), 2)
+		tab.normal = tab:getChildByName("normal")
+		tab.select = tab:getChildByName("select")
+		tab.select:setVisible(false)
+		tab.redpoint = tab:getChildByName("redpoint")
+		tab.redpoint:setVisible(false)
+		tab.index = i
+		self.tab_list[i] = tab
+	end
+
+	self.scroll = self.equip_container:getChildByName("goods_con")
+	local scroll_view_size = self.scroll:getContentSize()
+    local setting = {
+        item_class = BackPackItem,      -- 单元类
+        start_x = 5,                    -- 第一个单元的X起点
+        space_x = 7,                    -- x方向的间隔
+        start_y = 0,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = BackPackItem.Width,               -- 单元的尺寸width
+        item_height = BackPackItem.Height,              -- 单元的尺寸height
+        row = 1,                        -- 行数，作用于水平滚动类型
+        col = 5,                         -- 列数，作用于垂直滚动类型
+    }
+    self.item_scrollview = CommonScrollViewLayout.new(self.scroll, cc.p(0, 0), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+
+    self.last_item = BackPackItem.new(nil,true,nil,0.8)
+    self.equip_container:addChild(self.last_item)
+    self.last_item:setPosition(cc.p(207, 1006))
+    self.last_item:setDefaultTip()
+
+    self.cur_item = BackPackItem.new(nil,true,nil,0.8)
+    self.equip_container:addChild(self.cur_item)
+    self.cur_item:setPosition(cc.p(506, 1006))
+    self.cur_item:setDefaultTip()
+
+    self.spriteGold = self.equip_container:getChildByName("spriteGold")
+    self.btn_add = self.equip_container:getChildByName("btn_add")
+    self.btn_redu = self.equip_container:getChildByName("btn_redu")
+    self.gold_bg = self.equip_container:getChildByName("gold_bg")
+    self.gold_num = self.equip_container:getChildByName("gold_num")
+    self.gold_num:setString("")
+    pcall(function() self.gold_num:setFontSize(16) end)
+    self.composite_num = self.equip_container:getChildByName("Image_3"):getChildByName("composite_num")
+    self.composite_num:setVisible(false)
+
+	self.cost_bg_default = cc.p(self.gold_bg:getPositionX(), self.gold_bg:getPositionY())
+	self.cost_bg_default_size = self.gold_bg:getContentSize()
+	self.cost_icon_default = cc.p(self.spriteGold:getPositionX(), self.spriteGold:getPositionY())
+	self.cost_num_default = cc.p(self.gold_num:getPositionX(), self.gold_num:getPositionY())
+
+	-- Tính tâm thực sự của gold_bg (bất kể anchor gốc là gì), rồi đổi anchor về 0.5,0.5
+	local ba = self.gold_bg:getAnchorPoint()
+	self.cost_bg_center = cc.p(
+		self.cost_bg_default.x + (0.5 - ba.x) * self.cost_bg_default_size.width,
+		self.cost_bg_default.y + (0.5 - ba.y) * self.cost_bg_default_size.height
+	)
+	self.gold_bg:setScale9Enabled(true)
+	self.gold_bg:setAnchorPoint(cc.p(0.5, 0.5))
+	self.gold_bg:setPosition(self.cost_bg_center)
+
+	self.extra_bg = self.gold_bg:clone()
+    self.equip_container:addChild(self.extra_bg)
+    self.extra_bg:setVisible(false)
+
+    self.extra2_bg = self.gold_bg:clone()
+    self.equip_container:addChild(self.extra2_bg)
+    self.extra2_bg:setVisible(false)
+
+    self.extra3_bg = self.gold_bg:clone()
+    self.equip_container:addChild(self.extra3_bg)
+    self.extra3_bg:setVisible(false)
+
+	self.extra_spriteGold = createImage(self.equip_container, nil, self.cost_bg_center.x, self.cost_bg_center.y, cc.p(0.5, 0.5), false, self.spriteGold:getLocalZOrder())
+	self.extra_spriteGold:setVisible(false)
+	self.extra_gold_num = createLabel(16, cc.c4b(0xff, 0xff, 0xff, 0xff), nil, self.cost_bg_center.x, self.cost_bg_center.y, "", self.equip_container, nil, cc.p(0, 0.5))
+	self.extra_gold_num:setVisible(false)
+
+	self.extra2_spriteGold = createImage(self.equip_container, nil, self.cost_bg_center.x, self.cost_bg_center.y, cc.p(0.5, 0.5), false, self.spriteGold:getLocalZOrder())
+	self.extra2_spriteGold:setVisible(false)
+	self.extra2_gold_num = createLabel(16, cc.c4b(0xff, 0xff, 0xff, 0xff), nil, self.cost_bg_center.x, self.cost_bg_center.y, "", self.equip_container, nil, cc.p(0, 0.5))
+	self.extra2_gold_num:setVisible(false)
+
+	self.extra3_spriteGold = createImage(self.equip_container, nil, self.cost_bg_center.x, self.cost_bg_center.y, cc.p(0.5, 0.5), false, self.spriteGold:getLocalZOrder())
+	self.extra3_spriteGold:setVisible(false)
+	self.extra3_gold_num = createLabel(16, cc.c4b(0xff, 0xff, 0xff, 0xff), nil, self.cost_bg_center.x, self.cost_bg_center.y, "", self.equip_container, nil, cc.p(0, 0.5))
+	self.extra3_gold_num:setVisible(false)
+
+	-- Tài nguyên phụ slot 4 và 5 (expend[6], expend[7])
+	self.extra4_spriteGold = createImage(self.equip_container, nil, self.cost_bg_center.x, self.cost_bg_center.y, cc.p(0.5, 0.5), false, self.spriteGold:getLocalZOrder())
+	self.extra4_spriteGold:setVisible(false)
+	self.extra4_gold_num = createLabel(16, cc.c4b(0xff, 0xff, 0xff, 0xff), nil, self.cost_bg_center.x, self.cost_bg_center.y, "", self.equip_container, nil, cc.p(0, 0.5))
+	self.extra4_gold_num:setVisible(false)
+
+	self.extra5_spriteGold = createImage(self.equip_container, nil, self.cost_bg_center.x, self.cost_bg_center.y, cc.p(0.5, 0.5), false, self.spriteGold:getLocalZOrder())
+	self.extra5_spriteGold:setVisible(false)
+	self.extra5_gold_num = createLabel(16, cc.c4b(0xff, 0xff, 0xff, 0xff), nil, self.cost_bg_center.x, self.cost_bg_center.y, "", self.equip_container, nil, cc.p(0, 0.5))
+	self.extra5_gold_num:setVisible(false)
+
+    self:register_equip_event()
+end
+
+function ForgeHouseWindow:getCurComposeData()
+	local index = self.cur_index or 1
+	local base = self.touch_comp_base or 1
+	local comp_list = self.active_comp_list or eqm_comp_list
+	if comp_list[index] then
+		return comp_list[index][base]
+	end
+end
+
+function ForgeHouseWindow:getExpendOwnNum(expend, expend_index)
+	if expend == nil then return 0 end
+	local item_cfg = Config.ItemData.data_get_data(expend[1])
+	local gain_type = item_cfg and item_cfg.gain_type or 1
+	local bag_code = BackPackConst.Gain_To_Bag_Code[gain_type] or BackPackConst.Bag_Code.BACKPACK
+	return backpackModel:getItemNumByBid(expend[1], bag_code) or 0
+end
+
+function ForgeHouseWindow:getComposeMaxNumber(data)
+	if data == nil or data.expend == nil then return 0 end
+	local max_num = nil
+	for expend_index, expend in ipairs(data.expend) do
+		if expend and expend[2] and expend[2] > 0 then
+			local own_num = self:getExpendOwnNum(expend, expend_index)
+			local cur_max = math.floor(own_num / expend[2])
+			if max_num == nil or cur_max < max_num then
+				max_num = cur_max
+			end
+		end
+	end
+	return math.max(max_num or 0, 0)
+end
+
+function ForgeHouseWindow:refreshSourceDisplay(data)
+	if data == nil or data.expend == nil or data.expend[1] == nil then return end
+	local base_expend = data.expend[1]
+	local num = self:getExpendOwnNum(base_expend, 1)
+	self.bar_num:setString(num.."/"..base_expend[2])
+	self.bar:setPercent(math.floor(num/base_expend[2]*100))
+end
+
+function ForgeHouseWindow:setCostNodeSize(bg_node, label_node)
+	if bg_node == nil or label_node == nil then return end
+	local size = label_node:getContentSize()
+	local width = size.width
+	if width < 100 then
+		width = 120
+	end
+	bg_node:setContentSize(cc.size(width+15, bg_node:getContentSize().height))
+end
+
+function ForgeHouseWindow:updateCostNodeLayout()
+	-- Thu thập các item đang hiển thị (mỗi item chỉ thêm 1 lần)
+	local items = {}
+	local function try_add(icon, label)
+		if icon and icon:isVisible() then
+			table.insert(items, {icon = icon, label = label})
+		end
+	end
+	try_add(self.spriteGold,        self.gold_num)
+	try_add(self.extra_spriteGold,  self.extra_gold_num)
+	try_add(self.extra2_spriteGold, self.extra2_gold_num)
+	try_add(self.extra3_spriteGold, self.extra3_gold_num)
+	try_add(self.extra4_spriteGold, self.extra4_gold_num)
+	try_add(self.extra5_spriteGold, self.extra5_gold_num)
+
+	-- Ẩn bg clone (không dùng)
+	if self.extra_bg  then self.extra_bg:setVisible(false)  end
+	if self.extra2_bg then self.extra2_bg:setVisible(false) end
+	if self.extra3_bg then self.extra3_bg:setVisible(false) end
+
+	local n = #items
+	if n == 0 then return end
+
+	-- ============ THÔNG SỐ LAYOUT ============
+	local ICON_SIZE   = 28   -- kích thước icon hiển thị (px)  → scale = 28/80 = 0.35
+	local ICON_GAP    = 5    -- khoảng cách icon → label
+	local LABEL_W     = 96   -- chiều rộng dành cho label
+	local SLOT_W      = ICON_SIZE + ICON_GAP + LABEL_W  -- 129px
+	local SLOT_H      = 32
+	local MAX_PER_ROW = 4    -- tối đa 4 item / hàng → 4 item vẫn hiển thị 1 hàng duy nhất
+	local H_GAP       = 8    -- khoảng cách ngang giữa các slot
+	local V_GAP       = 8    -- khoảng cách dọc giữa các hàng
+	local PAD_X       = 10   -- padding trái/phải của nền
+	local PAD_Y       = 8    -- padding trên/dưới của nền
+	-- Với 4 item: bg_w = 4*129 + 3*8 + 2*10 = 556px
+
+	local cx = self.cost_bg_center.x
+	local cy = self.cost_bg_center.y
+
+	-- Số hàng cần thiết
+	local num_rows = math.ceil(n / MAX_PER_ROW)
+
+	-- Kích thước nền
+	local max_cols = math.min(n, MAX_PER_ROW)
+	local bg_w = math.max(self.cost_bg_default_size.width,
+	                      max_cols * SLOT_W + (max_cols - 1) * H_GAP + PAD_X * 2)
+	local bg_h = math.max(self.cost_bg_default_size.height,
+	                      num_rows * SLOT_H + (num_rows - 1) * V_GAP + PAD_Y * 2)
+	self.gold_bg:setContentSize(cc.size(bg_w, bg_h))
+
+	-- Tổng chiều cao nội dung
+	local total_h  = num_rows * SLOT_H + (num_rows - 1) * V_GAP
+	local first_y  = cy + total_h / 2 - SLOT_H / 2
+
+	-- Đặt vị trí từng item
+	for i = 1, n do
+		local item = items[i]
+		local row  = math.ceil(i / MAX_PER_ROW)
+		local col  = (i - 1) % MAX_PER_ROW + 1
+
+		-- Số item trong hàng này (hàng cuối có thể ít hơn MAX_PER_ROW)
+		local row_start = (row - 1) * MAX_PER_ROW + 1
+		local row_end   = math.min(row * MAX_PER_ROW, n)
+		local row_count = row_end - row_start + 1
+
+		-- Căn giữa hàng theo nền
+		local row_w     = row_count * SLOT_W + (row_count - 1) * H_GAP
+		local start_x   = cx - row_w / 2
+
+		-- Y của hàng hiện tại
+		local iy = first_y - (row - 1) * (SLOT_H + V_GAP)
+
+		-- X của slot hiện tại
+		local ix = start_x + (col - 1) * (SLOT_W + H_GAP)
+
+		-- Scale icon đồng nhất
+		item.icon:setScale(ICON_SIZE / 80)
+		item.icon:setAnchorPoint(cc.p(0, 0.5))
+		item.label:setAnchorPoint(cc.p(0, 0.5))
+		item.icon:setPosition(ix, iy)
+		item.label:setPosition(ix + ICON_SIZE + ICON_GAP, iy)
+	end
+end
+
+function ForgeHouseWindow:updateSingleCostDisplay(icon_node, label_node, bg_node, expend, expend_index)
+	if icon_node == nil or label_node == nil then return end
+	if expend == nil then
+		if bg_node then
+			bg_node:setVisible(false)
+		end
+		icon_node:setVisible(false)
+		label_node:setVisible(false)
+		return
+	end
+
+	local display_count = self.composite_number or 0
+	if display_count <= 0 then
+		display_count = 1
+	end
+
+	local need_num = (expend[2] or 0) * display_count
+	local own_num = self:getExpendOwnNum(expend, expend_index)
+	local item_config = Config.ItemData.data_get_data(expend[1])
+	if item_config then
+		local res = PathTool.getItemRes(item_config.icon)
+		if icon_node.loadTexture then
+			icon_node:loadTexture(res, LOADTEXT_TYPE)
+		else
+			loadSpriteTexture(icon_node, res, LOADTEXT_TYPE)
+		end
+
+		-- Scale down icons to make them look uniform
+		if icon_node ~= self.spriteGold then
+			icon_node:setScale(0.35)
+        else
+            -- Scale main gold icon as well
+            icon_node:setScale(0.40)
+		end
+	end
+
+	local str = MoneyTool.GetMoneyString(own_num) .. "/" .. MoneyTool.GetMoneyString(need_num)
+	label_node:setString(str)
+	if own_num < need_num then
+		label_node:setTextColor(cc.c4b(0xff, 0x4f, 0x4f, 0xff))
+	else
+		label_node:setTextColor(cc.c4b(0xff, 0xff, 0xff, 0xff))
+	end
+
+	if bg_node then
+		bg_node:setVisible(true)
+		self:setCostNodeSize(bg_node, label_node)
+	end
+	icon_node:setVisible(true)
+	label_node:setVisible(true)
+end
+
+function ForgeHouseWindow:refreshCostDisplay(data)
+	if data == nil or data.expend == nil then return end
+
+	local main_cost = data.expend[2]
+	self.compCoinNumber = 0
+	if main_cost then
+		self.compCoinNumber = (main_cost[2] or 0) * (self.composite_number or 0)
+	end
+
+	self:updateSingleCostDisplay(self.spriteGold, self.gold_num, nil, main_cost, 2)
+
+	local extra1 = data.expend[3]
+	if extra1 then
+		self:updateSingleCostDisplay(self.extra_spriteGold, self.extra_gold_num, nil, extra1, 3)
+	else
+		self.extra_spriteGold:setVisible(false)
+		self.extra_gold_num:setVisible(false)
+	end
+
+	local extra2 = data.expend[4]
+	if extra2 then
+		self:updateSingleCostDisplay(self.extra2_spriteGold, self.extra2_gold_num, nil, extra2, 4)
+	else
+		if self.extra2_spriteGold then self.extra2_spriteGold:setVisible(false) end
+		if self.extra2_gold_num then self.extra2_gold_num:setVisible(false) end
+	end
+
+	local extra3 = data.expend[5]
+	if extra3 then
+		self:updateSingleCostDisplay(self.extra3_spriteGold, self.extra3_gold_num, nil, extra3, 5)
+	else
+		if self.extra3_spriteGold then self.extra3_spriteGold:setVisible(false) end
+		if self.extra3_gold_num then self.extra3_gold_num:setVisible(false) end
+	end
+
+	local extra4 = data.expend[6]
+	if extra4 then
+		self:updateSingleCostDisplay(self.extra4_spriteGold, self.extra4_gold_num, nil, extra4, 6)
+	else
+		if self.extra4_spriteGold then self.extra4_spriteGold:setVisible(false) end
+		if self.extra4_gold_num then self.extra4_gold_num:setVisible(false) end
+	end
+
+	local extra5 = data.expend[7]
+	if extra5 then
+		self:updateSingleCostDisplay(self.extra5_spriteGold, self.extra5_gold_num, nil, extra5, 7)
+	else
+		if self.extra5_spriteGold then self.extra5_spriteGold:setVisible(false) end
+		if self.extra5_gold_num then self.extra5_gold_num:setVisible(false) end
+	end
+
+	self:updateCostNodeLayout()
+end
+
+function ForgeHouseWindow:updateComposeButtonStatus(data)
+	local max_num = self:getComposeMaxNumber(data)
+	self:setTouchEnable_Add(max_num <= 0 or self.composite_number >= max_num)
+	self:setTouchEnable_Redu(self.composite_number <= 1)
+end
+
+function ForgeHouseWindow:refreshComposeInfo(data, keep_input_num)
+	if data == nil then return end
+	self:refreshSourceDisplay(data)
+
+	local max_num = self:getComposeMaxNumber(data)
+	if keep_input_num == true then
+		self.composite_number = math.max(math.min(self.composite_number or 0, max_num), 0)
+	else
+		self.composite_number = max_num
+	end
+	self.text_Field:setString(self.composite_number)
+	self:refreshCostDisplay(data)
+	self:updateComposeButtonStatus(data)
+end
+
+function ForgeHouseWindow:checkComposeResources(data, compose_number, show_tips)
+	if data == nil or data.expend == nil then return false end
+	compose_number = compose_number or self.composite_number or 0
+	if compose_number <= 0 then
+		if show_tips == true then
+			message(TI18N("语言_c_2304"))
+		end
+		return false
+	end
+
+	for expend_index, expend in ipairs(data.expend) do
+		local need_num = (expend[2] or 0) * compose_number
+		local own_num = self:getExpendOwnNum(expend, expend_index)
+		if own_num < need_num then
+			if show_tips == true then
+				if expend_index == 2 and Config.ItemData.data_assets_id2label[expend[1]] == "coin" then
+					message(TI18N("语言_c_2303"))
+				else
+					local item_config = Config.ItemData.data_get_data(expend[1])
+					if item_config and item_config.name then
+						message(item_config.name.."不足")
+					else
+						message(TI18N("资源不足"))
+					end
+				end
+			end
+			return false
+		end
+	end
+	return true
+end
+
+function ForgeHouseWindow:tabChangeView(index)
+	if self.is_tab_touch == nil then return end
+	if self.cur_index == index then return end
+	if self.cur_tab ~= nil then
+		self.cur_tab.select:setVisible(false)
+		self.cur_tab.title:setTextColor(cc.c4b(0xEE, 0xD1, 0xAF, 0xff))
+		self.cur_tab.title:enableOutline(cc.c4b(0x53, 0x3D, 0x32, 0xff), 2)
+		self.cur_tab.title:setFontSize(24)
+	end
+	self.cur_index = index
+	self.cur_tab = self.tab_list[self.cur_index]
+	if self.cur_tab ~= nil then
+		self.cur_tab.select:setVisible(true)
+		self.cur_tab.title:disableEffect(cc.LabelEffect.OUTLINE)
+		self.cur_tab.title:setTextColor(cc.c4b(0x60, 0x35, 0x1a, 0xff))
+		self.cur_tab.title:setFontSize(26)
+	end
+
+	self.touch_comp_base = 1
+	local list = (self.active_comp_list or eqm_comp_list)[self.cur_index]
+			local data = list and list[self.touch_comp_base]
+			if data == nil then return end
+
+		  self.last_item:setBaseData(data.expend[1][1])
+		  self.cur_item:setBaseData(data.id)
+			self:refreshComposeInfo(data)
+
+	self.item_scrollview:setData(list, function(cell)
+		if not self.is_selected then return end
+		local data = cell:getData()
+		local list_item = self.item_scrollview:getItemList()
+		for k, v in pairs(list_item) do
+			if v then
+				if data and v:getData() and v:getData().id == data.id then
+					v:setMaskVisible(true)
+					self.touch_comp_base = v:getData()._index
+				else
+					v:setMaskVisible(false)
+				end
+			end
+		end
+
+		if data == nil then return end
+		self.last_item:setBaseData(data.expend[1][1])
+		self.cur_item:setBaseData(data.id)
+		self:refreshComposeInfo(data)
+	end)
+
+	self.item_scrollview:addEndCallBack(function()
+		local list = self.item_scrollview:getItemList()
+		local status = false
+
+		for k, v in pairs(list) do
+			if v then
+				v:createSpriteMask()
+				v:createSpriteRedPoint()
+				if k == self.touch_comp_base then
+					v:setMaskVisible(true)
+				else
+					v:setMaskVisible(false)
+				end
+
+				local data = v:getData()
+				if data then
+					local can_compose = self:getComposeMaxNumber(data) > 0
+					v:setVisibleResPoint(can_compose)
+					if can_compose == true then
+						status = true
+					end
+				end
+			end
+		end
+		self.is_selected = true
+		self.tab_list[self.cur_index].redpoint:setVisible(status)
+	end)
+end
+
+
+function ForgeHouseWindow:setTouchEnable_Add(bool)
+	setChildUnEnabled(bool,self.btn_add)
+	self.btn_add:setTouchEnabled(not bool)
+end
+function ForgeHouseWindow:setTouchEnable_Redu(bool)
+	setChildUnEnabled(bool,self.btn_redu)
+	self.btn_redu:setTouchEnabled(not bool)
+end
+
+function ForgeHouseWindow:getGoldBGSize()
+    self:updateCostNodeLayout()
+end
+
+-- 注册装备界面相关的点击事件
+function ForgeHouseWindow:register_equip_event(  )
+	for i,tab_btn in pairs(self.tab_list) do
+    	registerButtonEventListener(tab_btn, function()
+	        self:tabChangeView(tab_btn.index)
+	    end,false, 3)
+    end
+    if self.role_vo ~= nil then
+        if self.role_assets_event == nil then
+            self.role_assets_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+                if key == "lev" or key == "vip_lev" then
+                    if self.role_vo.vip_lev >= partner_const.synthesis_vip_lev.val or 
+                    	self.role_vo.lev >= partner_const.synthesis_character_lev.val then
+                    	setChildUnEnabled(false, self.btn_all_composite)
+                    	self.btn_all_composite_label:enableOutline(Config.ColorData.data_color4[264], 2)
+                    end
+                end
+            end)
+        end
+    end
+
+    registerButtonEventListener(self.btn_comp, function()
+ 		controller:openEquipmentCompRecordWindow(true)
+    end,true,1)
+
+    registerButtonEventListener(self.btn_all_composite, function()
+    	if self.role_vo.vip_lev < partner_const.synthesis_vip_lev.val and self.role_vo.lev < partner_const.synthesis_character_lev.val then
+	    	local str = string.format(TI18N("语言_c_2302"),partner_const.synthesis_character_lev.val,partner_const.synthesis_vip_lev.val)
+	    	message(str)
+	    	return
+    	end
+   
+    	local comp_data = self.active_comp_list and self.active_comp_list[self.cur_index]
+    	if not comp_data or #comp_data == 0 then return end
+    	local base_id = comp_data[#comp_data].id
+    	if base_id then
+	    	controller:getModel():setCompSendID(base_id)
+	    	controller:send11079(base_id)
+	    end
+    end,true,1)
+	registerButtonEventListener(self.btn_composite, function()
+    	if self.text_Field:getString() == "" then
+    		message(TI18N("语言_c_4363"))
+    		return
+    	end
+
+    	self.cur_index = self.cur_index or 1
+    	if self.touch_comp_base and self.cur_index then
+			local data = self:getCurComposeData()
+			if data == nil then return end
+			if self:checkComposeResources(data, self.composite_number, true) ~= true then
+				return
+			end
+			local base_id = data.id
+			if self.composite_number<= 0 then
+				self.is_selected = true
+				message(TI18N("语言_c_2304"))
+			else
+				local function func()
+	        		controller:send11080(base_id,self.composite_number)
+		    	end
+		    	self.is_selected = nil
+				self.is_tab_touch = nil
+				self:releaseCompositeEffect()
+				AudioManager:getInstance():playEffect(AudioManager.AUDIO_TYPE.COMMON, "c_equipment_forging")
+				--[[ self.composite_effect = GlobalTimeTicket:getInstance():add(function()
+		            playEffectOnce(PathTool.getEffectRes(269), self.last_item:getPositionX()+165, self.last_item:getPositionY()-5, self.equip_container,func, nil, nil, nil, PlayerAction.action, 1)
+				end,0.4,1) ]]
+				playEffectOnce(PathTool.getEffectRes(269), self.last_item:getPositionX()+165, self.last_item:getPositionY()-5, self.equip_container,func, nil, nil, nil, PlayerAction.action, 1,nil,2)
+			end
+			if self.send_comp_ticket == nil then
+                self.send_comp_ticket = GlobalTimeTicket:getInstance():add(function()
+                    self.is_tab_touch = true
+					self.is_selected = true
+                    if self.send_comp_ticket ~= nil then
+                        GlobalTimeTicket:getInstance():remove(self.send_comp_ticket)
+                        self.send_comp_ticket = nil
+                    end
+                end,1)
+            end
+    	end
+    end,true, 1)
+
+    registerButtonEventListener(self.btn_add, function()
+		local data = self:getCurComposeData()
+		if data == nil then return end
+		local max_num = self:getComposeMaxNumber(data)
+		self.composite_number = math.min((self.composite_number or 0) + 1, max_num)
+		self.text_Field:setString(self.composite_number)
+		self:refreshCostDisplay(data)
+		self:updateComposeButtonStatus(data)
+    end,true, 1)
+
+    registerButtonEventListener(self.btn_redu, function()
+		local data = self:getCurComposeData()
+		if data == nil then return end
+		self.composite_number = math.max((self.composite_number or 0) - 1, 0)
+		self.text_Field:setString(self.composite_number)
+		self:refreshCostDisplay(data)
+		self:updateComposeButtonStatus(data)
+    end,true, 1)
+end
+
+function ForgeHouseWindow:releaseCompositeEffect()
+	if self.composite_effect ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.composite_effect)
+        self.composite_effect = nil
+    end
+end
+
+function ForgeHouseWindow:register_event()
+	self:addGlobalEvent(ForgeHouseEvent.Composite_Result, function()
+		self.is_tab_touch = true
+		self.is_selected = true
+		self.cur_index = self.cur_index or 1
+		local data = self:getCurComposeData()
+		if data == nil then return end
+		self:refreshComposeInfo(data)
+
+    	local list = self.item_scrollview:getItemList()
+    	local status = false
+		for k, v in pairs(list) do
+			if v then
+				local data = v:getData()
+				if data then
+					local can_compose = self:getComposeMaxNumber(data) > 0
+					v:setVisibleResPoint(can_compose)
+					if can_compose == true then
+						status = true
+					end
+				end
+			end
+		end
+		self.tab_list[self.cur_index].redpoint:setVisible(status)
+    end)
+
+    -- 符文祝福红点
+    self:addGlobalEvent(HeroEvent.Artifact_Lucky_Red_Event, function ( )
+    	local object = self.top_tab_list[ForgeHouseConst.Tab_Index.Artifact]
+    	if object then
+    		local red_status = HeroController:getInstance():getModel():getArtifactLuckyRedStatus()
+    		object.tips:setVisible(red_status)
+    	end
+    end)
+
+    registerButtonEventListener(self.close_btn, function()
+        controller:openForgeHouseView(false)
+    end,true, 2)
+
+    for k, object in pairs(self.top_tab_list) do
+		if object.tab_btn then
+			object.tab_btn:addTouchEventListener(function(sender, event_type)
+				if event_type == ccui.TouchEventType.ended then
+					playTabButtonSound()
+					self:changeSelectedTab(object.index)
+				end
+			end)
+		end
+    end
+end
+
+-- Chuyển nguồn dữ liệu cho equip tab (dùng chung equip_container)
+function ForgeHouseWindow:switchEquipDataSource(comp_list, title_list)
+	self.active_comp_list = comp_list
+	-- Cập nhật sub-tab titles và visibility
+	for i = 1, 4 do
+		local tab = self.tab_list[i]
+		if tab then
+			local has_data = comp_list[i] and #comp_list[i] > 0
+			tab:setVisible(has_data)
+			if has_data and tab.title and title_list[i] then
+				tab.title:setString(title_list[i])
+			end
+		end
+	end
+	-- Reset state
+	if self.cur_tab then
+		self.cur_tab.select:setVisible(false)
+		self.cur_tab.title:setTextColor(cc.c4b(0xEE, 0xD1, 0xAF, 0xff))
+		self.cur_tab.title:enableOutline(cc.c4b(0x53, 0x3D, 0x32, 0xff), 2)
+		self.cur_tab.title:setFontSize(24)
+		self.cur_tab = nil
+	end
+	self.cur_index = nil
+	self.touch_comp_base = 1
+	self.composite_number = 0
+	self.is_selected = nil
+	if self.text_Field then
+		self.text_Field:setString("0")
+	end
+	-- Tìm sub-tab đầu tiên có data
+	local first_tab = nil
+	for i = 1, 4 do
+		if comp_list[i] and #comp_list[i] > 0 then
+			first_tab = i
+			break
+		end
+	end
+	if first_tab then
+		self:tabChangeView(first_tab)
+	else
+		if self.last_item then self.last_item:setDefaultTip() end
+		if self.cur_item then self.cur_item:setDefaultTip() end
+	end
+	self:initRedPoint()
+end
+
+-- 切换顶部标签页
+function ForgeHouseWindow:changeSelectedTab( index )
+	if self.tab_object ~= nil and self.tab_object.index == index then return end
+
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(false)
+        if self.tab_object.unselect_bg then self.tab_object.unselect_bg:setVisible(true) end
+        -- Reset về unselected: scale bình thường + màu trắng
+        if self.tab_object.tab_btn then
+            self.tab_object.tab_btn:stopAllActions()
+            self.tab_object.tab_btn:setScale(1.0)
+        end
+        if self.tab_object.lable then
+            self.tab_object.lable:setTextColor(cc.c4b(0xFF, 0xFF, 0xFF, 0xFF))
+            self.tab_object.lable:enableOutline(cc.c4b(0x6D, 0x35, 0x07, 0xFF), 2)
+        end
+        self.tab_object = nil
+    end
+    self.tab_object = self.top_tab_list[index]
+    if self.tab_object then
+        self.tab_object.select_bg:setVisible(true)
+        if self.tab_object.unselect_bg then self.tab_object.unselect_bg:setVisible(false) end
+        -- Selected: bounce animation nhẹ + màu vàng sáng
+        if self.tab_object.tab_btn then
+            self.tab_object.tab_btn:stopAllActions()
+            local bounce = cc.Sequence:create(
+                cc.ScaleTo:create(0.08, 1.08),
+                cc.ScaleTo:create(0.06, 1.03)
+            )
+            self.tab_object.tab_btn:runAction(bounce)
+        end
+        if self.tab_object.lable then
+            self.tab_object.lable:setTextColor(cc.c4b(0xFF, 0xE8, 0x4D, 0xFF))
+            self.tab_object.lable:enableOutline(cc.c4b(0x8B, 0x45, 0x00, 0xFF), 2)
+        end
+    end
+
+    -- Ẩn tất cả container
+    self.equip_container:setVisible(false)
+    self.artifact_container:setVisible(false)
+
+	if index == ForgeHouseConst.Tab_Index.Equip then
+		self.equip_container:setVisible(true)
+		if not self.init_equip then
+			self:initEquipLayout()
+			self.init_equip = true
+		end
+		self:switchEquipDataSource(eqm_comp_list, equip_sub_titles)
+	elseif index == ForgeHouseConst.Tab_Index.SpecialEquip then
+		self.equip_container:setVisible(true)
+		if not self.init_equip then
+			self:initEquipLayout()
+			self.init_equip = true
+		end
+		self:switchEquipDataSource(special_comp_list, special_sub_titles)
+	elseif index == ForgeHouseConst.Tab_Index.DivinEquip then
+		self.equip_container:setVisible(true)
+		if not self.init_equip then
+			self:initEquipLayout()
+			self.init_equip = true
+		end
+		self:switchEquipDataSource(divine_comp_list, divine_sub_titles)
+	elseif index == ForgeHouseConst.Tab_Index.ForgeStone then
+		self.equip_container:setVisible(true)
+		if not self.init_equip then
+			self:initEquipLayout()
+			self.init_equip = true
+		end
+		self:switchEquipDataSource(forge_stone_comp_list, forge_stone_sub_titles)
+	elseif index == ForgeHouseConst.Tab_Index.Artifact then
+		self.artifact_container:setVisible(true)
+		if not self.init_artifact then
+			self.init_artifact = true
+			self.artifact_layout = ForgeArtifactPanel.new()
+			self.artifact_container:addChild(self.artifact_layout)
+		end
+	end
+end
+
+function ForgeHouseWindow:openRootWnd(index)
+	index = index or ForgeHouseConst.Tab_Index.Equip
+	self:changeSelectedTab(index)
+end
+
+--红点
+function ForgeHouseWindow:initRedPoint()
+	if not self.active_comp_list then return end
+	for i=1,4 do
+		local list = self.active_comp_list[i]
+		local tab = self.tab_list[i]
+		if tab and tab.redpoint then
+			if list and #list > 0 then
+				local status = false
+				for k,data in pairs(list) do
+					if data then
+						if self:getComposeMaxNumber(data) > 0 then
+							status = true
+							break
+						end
+					end
+				end
+				tab.redpoint:setVisible(status)
+			else
+				tab.redpoint:setVisible(false)
+			end
+		end
+	end
+end
+
+function ForgeHouseWindow:close_callback()
+	self:releaseCompositeEffect()
+	if self.send_comp_ticket ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.send_comp_ticket)
+        self.send_comp_ticket = nil
+    end
+    
+	if self.item_scrollview then 
+       self.item_scrollview:DeleteMe()
+       self.item_scrollview = nil
+    end
+    if self.artifact_layout then
+    	self.artifact_layout:DeleteMe()
+    	self.artifact_layout = nil
+    end
+    if self.cur_item then 
+       self.cur_item:DeleteMe()
+       self.cur_item = nil
+    end
+    if self.last_item then 
+       self.last_item:DeleteMe()
+       self.last_item = nil
+    end
+    if self.item_load then 
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    if self.role_vo ~= nil then
+        if self.role_assets_event ~= nil then
+            self.role_vo:UnBind(self.role_assets_event)
+            self.role_assets_event = nil
+        end
+    end
+
+    controller:openForgeHouseView(false)
+end

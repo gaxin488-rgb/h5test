@@ -1,0 +1,370 @@
+-- --------------------------------------------------------------------
+-- 竖版排行榜排行界面
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2018-xx-xx
+-- --------------------------------------------------------------------
+RankCrossPeakWindow = RankCrossPeakWindow or BaseClass(BaseView)
+local table_sort = table.sort
+local table_insert = table.insert
+local arenapeak_controller = ArenapeakchampionController:getInstance()
+local arenapeak_model = arenapeak_controller:getModel()
+function RankCrossPeakWindow:__init(index, is_cluster)
+    self.is_cluster = is_cluster or false
+    self.ctrl = RankController:getInstance()
+    self.win_type = WinType.Mini   
+    self.view_tag = ViewMgrTag.TOP_TAG   
+    self.layout_name = "rank/rank_cross_peak_window"
+    self.cur_type = 0
+    self.vSize = cc.size(108,108)
+    self.first_list = {}
+    self.click_index = index or 1
+    self.select_zone_index = 1
+    self.max_zone_index = 1
+end
+
+function RankCrossPeakWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_container")
+    -- self:playEnterAnimatianByObj(self.main_panel , 1)
+    self.close_btn = self.main_panel:getChildByName("close_btn")
+
+    --赛区
+    self.top_panel = self.main_panel:getChildByName("top_panel")
+    self.name = self.top_panel:getChildByName("name")
+    self.left_btn = self.top_panel:getChildByName("left_btn")
+    self.right_btn = self.top_panel:getChildByName("right_btn")
+    self.lay_info_list = {}
+    self.lay_head_list = {}
+    local _getHeroInfo = function(lay_head)
+        if lay_head then
+            local head_data = {}
+            head_data.lay_head = lay_head
+            head_data.head_node = lay_head:getChildByName("head_node")
+            head_data.name = lay_head:getChildByName("name")
+            head_data.name:setString("")
+            head_data.srv_name = lay_head:getChildByName("srv_name")
+            head_data.srv_name:setString("")
+            head_data.num_bg = lay_head:getChildByName("num_bg")
+            head_data.tip = lay_head:getChildByName("tip")
+            head_data.tip:setString(TI18N("语言_c_526"))
+            head_data.title_img = lay_head:getChildByName("title_img")
+            return head_data
+        end
+    end
+    self.info_panel = self.top_panel:getChildByName("info_panel")
+    for i=1,4 do
+        local lay_head = self.info_panel:getChildByName("lay_head_"..i)
+        self.lay_info_list[i] = _getHeroInfo(lay_head)
+        if i == 4 then
+            self.lay_info_list[i].num = CommonNum.new(33, self.lay_info_list[i].num_bg, 99999, - 2, cc.p(0.5, 0.5), 4)
+            self.lay_info_list[i].num:setPosition(26, 40)
+            self.lay_info_list[i].num:setNum(i)
+        end
+    end
+    local _getHeadInfo = function(lay_head)
+        if lay_head then
+            local head_data = {}
+            head_data.lay_head = lay_head
+            head_data.head_node = lay_head:getChildByName("head_node")
+            head_data.name = lay_head:getChildByName("name")
+            head_data.name:setString("")
+            head_data.srv_name = lay_head:getChildByName("srv_name")
+            head_data.srv_name:setString("")
+            head_data.num_bg = lay_head:getChildByName("num_bg")
+            head_data.num = CommonNum.new(33, head_data.num_bg, 99999, - 2, cc.p(0.5, 0.5), 4)
+            head_data.num:setPosition(26, 40) 
+            return head_data
+        end
+    end
+    self.head_panel = self.top_panel:getChildByName("head_panel")
+    for i=5,8 do
+        local lay_head = self.head_panel:getChildByName("lay_head_"..i)
+        self.lay_head_list[i] = _getHeadInfo(lay_head)
+        self.lay_head_list[i].num:setNum(i)
+    end
+
+    self.title_con = self.main_panel:getChildByName("title_con")
+    local Image_17 = self.title_con:getChildByName("Image_17")
+    local title = self.title_con:getChildByName("title_label")
+    local name = RankConstant.TitleName[self.click_index] or ""
+    title:setString(name)
+    autoSizeTitleBg(title, Image_17)
+    self:updateTitle()
+end
+
+function RankCrossPeakWindow:register_event()
+    self.background:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            self.ctrl:openCrossPeakRankMainWindow(false)
+        end
+    end)
+    self.close_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            playCloseSound()
+            self.ctrl:openCrossPeakRankMainWindow(false)
+        end
+    end)
+    --巅峰冠军赛
+    if self.arenapeakchampion_current_rank_event == nil then
+        self.arenapeakchampion_current_rank_event = GlobalEvent:getInstance():Bind(ArenapeakchampionEvent.ARENAPEAKCHAMPION_MAIN_RANK_EVENT, function(data)
+            if not data then return end
+            if self.click_index == RankConstant.RankType.cross_peak_arena then
+                self:setPanelData(data)
+            end
+        end)
+    end
+end
+
+function RankCrossPeakWindow:openRootWnd()
+    if self.click_index == RankConstant.RankType.cross_peak_arena then
+        self.cross_peak_arena_data = arenapeak_model:getMainData()
+        if not self.cross_peak_arena_data then return end
+        self.max_zone_index = self.cross_peak_arena_data.max_zone_id
+        self.select_zone_index =  self.cross_peak_arena_data.zone_id or 1
+    end 
+    self:senProto(self.click_index)
+end
+
+function RankCrossPeakWindow:setPanelData(data)
+    if self.click_index == RankConstant.RankType.cross_peak_arena then
+        if not self.cross_peak_arena_data then
+            return      
+        end
+        self.dic_arena_peak_rank = {}
+        for i,v in pairs(data.rank_list) do
+            self.dic_arena_peak_rank[v.rank] = v
+        end
+        self:updatePeakRankInfo(self.dic_arena_peak_rank)
+
+        if self.cross_peak_arena_data.period == 0 then
+            self.name:setString("")
+        else
+            self.name:setString(string_format(TI18N("语言_c_563"), self.cross_peak_arena_data.period))
+        end
+    end 
+end
+--初始化排名信息
+function RankCrossPeakWindow:updatePeakRankInfo(dic_arena_peak_rank)
+    for i,v in pairs(self.lay_head_list) do
+        local rank_data = dic_arena_peak_rank[i]
+        if rank_data then
+            self:showHeadInfo(true, v, rank_data.face_id, rank_data.face_file, rank_data.face_update_time)
+            v.name:setString(rank_data.name)
+            
+            local srv_name = getServerName(rank_data.srv_id)
+            if srv_name == "" then
+                srv_name = TI18N("语言_c_101")
+            end
+            v.srv_name:setString(string_format("[%s]",srv_name))
+        else
+            self:showHeadInfo(false, v)
+            v.name:setString(TI18N("语言_c_526"))
+            v.srv_name:setString("")
+        end
+    end
+    
+    for i,v in pairs(self.lay_info_list) do
+        local rank_data = dic_arena_peak_rank[i]
+        if rank_data then
+            if rank_data.look_id then
+                if rank_data.look_id == 0 then
+                    rank_data.look_id = 110101
+                end
+                self:showModelInfo(true, v, rank_data.look_id)
+            end
+            if rank_data.honor then
+                local honor_data = Config.HonorData.data_title[rank_data.honor]
+                if honor_data then
+                    if v.spine and not tolua.isnull(v.spine) and v.spine.clearTracks then
+                        v.spine:clearTracks()
+                        v.spine:removeFromParent()
+                        v.spine = nil
+                    end
+                    if honor_data.effect and honor_data.effect ~= "" then
+                        v.title_img:setVisible(false)
+                        if not v.spine then
+                            v.spine = createEffectSpine(honor_data.effect,cc.p(v.title_img:getPositionX(),v.title_img:getPositionY()),cc.p(0.5,0.5),true,PlayerAction.action)
+                            v.lay_head:addChild(v.spine)
+                        end
+                    else
+                        local res = PathTool.getPlistImgForDownLoad("honor","txt_cn_honor_"..honor_data.res_id,false,false)
+                        v.img = loadSpriteTextureFromCDN(v.title_img, res, ResourcesType.single, v.img)
+                        v.title_img:setVisible(true)
+                    end
+                end  
+            end
+            v.name:setString(rank_data.name)
+            
+            local srv_name = getServerName(rank_data.srv_id)
+            if srv_name == "" then
+                srv_name = TI18N("语言_c_101")
+            end
+            v.srv_name:setString(string_format("[%s]",srv_name))
+            v.tip:setVisible(false)
+        else
+            self:showModelInfo(false, v)
+            v.tip:setVisible(true)
+            v.name:setString("")
+            v.srv_name:setString("")
+        end
+    end
+end
+
+function RankCrossPeakWindow:showModelInfo(status, head_data, look_id)
+    if status then
+        local fun = function()
+            if not head_data.spine then
+                head_data.spine = BaseRole.new(BaseRole.type.role, look_id)
+                head_data.spine:setAnimation(0,PlayerAction.show,true) 
+                head_data.spine:setCascade(true)
+                head_data.spine:setPosition(cc.p(0,136))
+                head_data.spine:setAnchorPoint(cc.p(0.5,0.5)) 
+                head_data.spine:setScale(0.8)
+                head_data.head_node:addChild(head_data.spine)
+                head_data.spine:setCascade(true)
+                head_data.spine:setOpacity(0)
+                local action = cc.FadeIn:create(0.2)
+                head_data.spine:runAction(action)
+            end
+        end
+        if head_data.spine then
+            head_data.spine:setVisible(true)
+            head_data.spine:setCascade(true)
+            local action = cc.FadeOut:create(0.2)
+            head_data.spine:runAction(cc.Sequence:create(action, cc.CallFunc:create(function()
+                doStopAllActions(head_data.spine)
+                head_data.spine:removeFromParent()
+                head_data.spine = nil
+                fun()
+            end)))
+        else
+            fun()
+        end
+    else
+        if head_data.spine then
+            head_data.spine:setVisible(false)
+        end
+    end
+end
+
+function RankCrossPeakWindow:showHeadInfo(status, head_data, face_id, face_file, face_update_time)
+    if status then
+        head_data.head_node:setVisible(true)
+        if head_data.clipNode == nil then
+            local mask_res = PathTool.getResFrame("common", "common_1032") 
+            local mask = createSprite(mask_res, self.vSize.width/2, self.vSize.height/2, nil, cc.p(0.5, 0.5))
+            head_data.clipNode = cc.ClippingNode:create(mask)
+            head_data.clipNode:setAnchorPoint(cc.p(0.5,0.5))
+            head_data.clipNode:setContentSize(self.vSize)
+            head_data.clipNode:setCascadeOpacityEnabled(true)
+            head_data.clipNode:setAlphaThreshold(0)
+            head_data.head_node:addChild(head_data.clipNode, 2)
+
+            head_data.icon = ccui.ImageView:create()
+            head_data.icon:setScale(0.8)
+            head_data.icon:setCascadeOpacityEnabled(true)
+            head_data.icon:setAnchorPoint(0.5,0.5)
+            head_data.icon:setPosition(self.vSize.width/2,self.vSize.height/2+2)
+            head_data.clipNode:addChild(head_data.icon,3)
+        end
+        if face_id and (head_data.record_face_id == nil or head_data.record_face_id ~= face_id) then
+            head_data.record_face_id = face_id
+            self:setHeadRes(head_data.icon, face_id, false, LOADTEXT_TYPE, face_file, face_update_time)
+        end
+    else
+        if head_data.head_node then
+            head_data.head_node:setVisible(false)
+        end
+    end
+end
+
+function RankCrossPeakWindow:setHeadRes(icon, res, is_external, load_type, free_res_id, face_update_time, force)
+    if res == nil or res == "" then return end
+    if free_res_id and free_res_id ~= "" and ( force or (face_update_time and face_update_time ~= 0)) then
+        TencentCos:getInstance():downLoadHeadFile(free_res_id, face_update_time, function(local_path)
+            if not tolua.isnull(icon) then
+                self:setHeadRes(icon, local_path, true)
+            end
+        end)
+    else
+        is_external = is_external or false  
+        load_type = load_type or LOADTEXT_TYPE
+        -- 非外部资源,资源路径重组
+        if is_external == false then
+            res = PathTool.getHeadIcon(res)
+        end 
+        if tolua.isnull(icon) then return end
+        icon:loadTexture(res, load_type)
+
+        local icon_size = icon:getContentSize()
+        -- 如果有遮罩的话,头像尺寸要根据遮罩去做缩放处理
+        local off_scale = 1          
+        local mark_size = cc.size(90, 90)
+        off_scale = mark_size.width / icon_size.width > mark_size.height / icon_size.height and mark_size.height / icon_size.height or mark_size.width / icon_size.width    
+        icon:setScale(off_scale)
+    end
+end
+
+--更新标题
+function RankCrossPeakWindow:updateTitle()
+    local title_list = RankConstant.RankTitle[self.click_index] or {}
+    local num = #title_list or 0
+    local pos_list= RankConstant.TitlePos[self.click_index] or {}
+    local line_pos_list = RankConstant.TitleLinePos[self.click_index] or {}
+    for i=1,num do 
+        if i ~= num then
+            local res = PathTool.getResFrame("common","common_1069")   
+            local line_offx = line_pos_list[i] or 0
+            local line = createImage(self.main_panel, res,line_offx,636, cc.p(0,0.5), true, 1, false)
+            line:setScaleY(0.8)
+        end   
+        local offx = pos_list[i] or 0
+        local label = createLabel(19,Config.ColorData.data_color4[175],nil,offx,636,"",self.main_panel,0, cc.p(0.5,0.5))
+        local str = title_list[i] or ""
+        label:setString(str)
+    end
+end
+
+function RankCrossPeakWindow:senProto(index)
+    if index == RankConstant.RankType.cross_peak_arena then
+        if not self.cross_peak_arena_data then
+            return 
+        end
+        local zone_id = self.select_zone_index
+        self:getCrossPeakData(zone_id)
+    end 
+end
+
+function RankCrossPeakWindow:getCrossPeakData(zone_id)
+    arenapeak_controller:sender27732(zone_id, 1, 8)
+end
+
+function RankCrossPeakWindow:onEnterAnim()
+
+end
+
+function RankCrossPeakWindow:close_callback()
+    if self.data and self.data.time and self.data.time ~=0 then
+        SysEnv:getInstance():saveRankFile(self.click_index, self.data.time, self.data, self.is_cluster)
+    end
+    if self.arenapeakchampion_current_rank_event then 
+        GlobalEvent:getInstance():UnBind(self.arenapeakchampion_current_rank_event)
+        self.arenapeakchampion_current_rank_event = nil
+    end
+    for i,v in pairs(self.lay_info_list) do
+        if v.spine and not tolua.isnull(v.spine) and v.spine.clearTracks then
+            v.spine:clearTracks()
+            v.spine:removeFromParent()
+            v.spine = nil
+        end
+    end
+    self.ctrl:openCrossPeakRankMainWindow(false)
+end

@@ -1,0 +1,602 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2020-2-18 15:15:41
+-- @description    : 
+		-- 精灵图鉴
+---------------------------------
+ElfinIllustratedhandbookPanel = class("ElfinIllustratedhandbookPanel", function()
+    return ccui.Widget:create()
+end)
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+local _table_insert = table.insert
+local _table_sort = table.sort
+local _string_format = string.format
+
+function ElfinIllustratedhandbookPanel:ctor(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("elfin/elfin_illustratedhandbook_panel"))
+	self.size = self.root_wnd:getContentSize()
+    self:setContentSize(self.size)
+
+    self.root_wnd:setAnchorPoint(0,0)
+    self.root_wnd:setPosition(self.size.width * 0.5, self.size.height * 0.5)
+    self:addChild(self.root_wnd)
+	self.attr_list = {}
+    -- 资源加载
+	local res_list = {}
+	self.cur_tab_data = {}
+    _table_insert(res_list, {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist})
+    if self.init_res_load then
+        self.init_res_load:DeleteMe()
+        self.init_res_load = nil
+    end
+    self.init_res_load = ResourcesLoad.New()
+    self.init_res_load:addAllList(res_list, function()
+        if not tolua.isnull(self.root_wnd) then
+            self:loadResListCompleted()
+        end
+    end)
+end
+-- 资源加载完成
+function ElfinIllustratedhandbookPanel:loadResListCompleted(  )
+	self:configUI()
+	self._init_flag = true
+end
+
+function ElfinIllustratedhandbookPanel:configUI(  )
+	local main_container = self.root_wnd:getChildByName("main_container")
+
+	self.progress_panel =  main_container:getChildByName("progress_panel")
+	self.progress_panel:getChildByName("title_txt"):setString(TI18N("语言_c_1717"))
+
+	self.bar = self.progress_panel:getChildByName("bar")
+	self.exp = self.progress_panel:getChildByName("exp")
+	self.show_btn = self.progress_panel:getChildByName("show_btn")
+	self.show_btn:getChildByName("level_txt"):setString(TI18N("语言_c_503"))
+	self.level_txt = CommonNum.new(23, self.show_btn, 99999, - 2, cc.p(0.5, 0.5),2)
+    self.level_txt:setPosition(32, 64)
+
+	self.btnRule = self.progress_panel:getChildByName("btnRule")
+	self.btnRule_0 = self.progress_panel:getChildByName("btnRule_0")
+	self.tip = self.progress_panel:getChildByName("tip")
+	self.tip:setString(TI18N("语言_spr_01_6"))
+	self.Image_3 = self.progress_panel:getChildByName("Image_3")
+	local tip_size = self.tip:getContentSize()
+	local tip_bg_width = tip_size.width + 10 + 45
+	self.Image_3:setContentSize(cc.size(math.max(tip_bg_width, 184), 35))
+	-- self.attr_txt = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0, 0.5), cc.p(45, 74), -4, nil, 600)
+	-- self.progress_panel:addChild(self.attr_txt)
+	self.attr_txt2 = createRichLabel(20, cc.c4b(0x00, 0xff, 0x00, 0xff), cc.p(1, 0.5), cc.p(640, 154), -4, nil, 600)
+	self.progress_panel:addChild(self.attr_txt2)
+
+	local item_list = main_container:getChildByName("item_list")
+    local scroll_view_size = item_list:getContentSize()
+    local setting = {
+        start_x = 0,                  -- 第一个单元的X起点
+        space_x = 22,                    -- x方向的间隔
+        start_y = 30,                    -- 第一个单元的Y起点
+        space_y = 10,                   -- y方向的间隔
+        item_width = 205,               -- 单元的尺寸width
+        item_height = 255,              -- 单元的尺寸height
+        row = 0,                        -- 行数，作用于水平滚动类型
+        col = 3,                         -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.item_scrollview = CommonScrollViewSingleLayout.new(item_list, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.item_scrollview:registerScriptHandlerSingle(handler(self,self._createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+	self.item_scrollview:registerScriptHandlerSingle(handler(self,self._numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+	self.item_scrollview:registerScriptHandlerSingle(handler(self,self._updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+
+	self:register_event()
+	_controller:sender26571()
+	_controller:send26575()
+	self:setData()
+end
+function ElfinIllustratedhandbookPanel:setData( data )
+	self:openRootWnd()
+end
+
+function ElfinIllustratedhandbookPanel:_createNewCell()
+	local cell = ElfinIllustratedhandbookItem.new()
+    -- cell:addCallBack(function() self:onCellTouched(cell) end)
+    return cell
+end
+
+function ElfinIllustratedhandbookPanel:_numberOfCells()
+	if not self.cur_tab_data then return 0 end
+	return #self.cur_tab_data
+end
+
+function ElfinIllustratedhandbookPanel:_updateCellByIndex( cell, index )
+	cell.index = index
+	local data = self.cur_tab_data[index]
+    if data then
+		cell:setData(data)
+    end
+end
+function ElfinIllustratedhandbookPanel:onCellTouched( cell )
+	local item_cfg = cell:getData()
+	if item_cfg then
+		_controller:openElfinInfoWindow(true, item_cfg)
+	end
+end
+
+function ElfinIllustratedhandbookPanel:updateCurTabData(  )
+	self.cur_tab_data = {}
+	local cfg = Config.SpriteData.data_sprite_list
+	
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("sprite_data")
+	local _list = {}
+	local _teamFilterInfo = function(elfin_list)
+        local hide = false
+		for key, bid in pairs(elfin_list) do
+			local item_cfg = Config.ItemData.data_get_data(bid)
+			local item_cache = Config.SpriteData.data_elfin_data(bid)
+			-- print(bid,item_cache.isshow)
+			if item_cfg then
+				if item_cache and item_cache.isshow == 0 and not table.indexof(nohideIds,bid) then
+					-- 后台配置屏蔽的
+					hide = true
+					break
+				end
+			end
+		end
+        return hide
+    end
+	-- [1] = {id=1, id_list={{111001,111101,111201,111301,111401}}, sort=23, move={{0,23,0.40}}},
+	for k, v in pairs(cfg) do
+		local elfin_list = v.id_list[1]
+		local hide = _teamFilterInfo(elfin_list)
+		if hide then
+		else
+			_table_insert(_list, v)
+		end
+	end
+
+	self.cur_tab_data = deepCopy(_list)
+	local sort_func = SortTools.tableCommonSorter({{"sort", false}})
+	table.sort(self.cur_tab_data, sort_func)
+	self.item_scrollview:reloadData()
+end
+
+function ElfinIllustratedhandbookPanel:updateIllAttrInfo()
+	local eff_data = _model:getIllustBookData()
+	if not eff_data then return end
+	local lv = eff_data.lv
+	local exp = eff_data.exp
+	local total_attr = eff_data.all_attr
+	--print(vardump(total_attr))
+	self.level_txt:setNum(lv)
+	local str = ""
+	local each_width = 620 / (#total_attr)
+	for k, v in pairs(self.attr_list) do
+		if v then
+			v:setVisible(false)
+		end
+	end
+	local function sortFunc( objA, objB )
+		return objA.attr_id < objB.attr_id
+	end
+	table.sort(total_attr, sortFunc)
+	for i = 1, #total_attr, 1 do
+		local attr_id = total_attr[i].attr_id
+		local attr_txt = total_attr[i].attr_val
+		local res, attr_name, attr_val = commonGetAttrInfoByIDValue(attr_id, attr_txt)
+     	local str = string_format("<img src='%s' scale=1 /><div fontcolor=#fff7d6>  %s</div>", res,  attr_val)--  %s:attr_name,
+		if not self.attr_list[i] then
+			self.attr_list[i] = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0, 0.5), cc.p(45, 115), -4, nil, 620)
+			self.progress_panel:addChild(self.attr_list[i])
+		end
+		self.attr_list[i]:setString(str)
+		self.attr_list[i]:setVisible(true)
+		local width = self.attr_list[i]:getContentSize().width
+		self.attr_list[i]:setPositionX(45 + (i-1)*each_width + (each_width-width)/2)
+	end
+	-- for k, v in pairs(total_attr) do
+	-- 	local attr_id = v.attr_id
+	-- 	local attr_txt = v.attr_val
+	-- 	-- local res, attr_name, attr_val = commonGetAttrInfoByIDValue(attr_id, attr_txt)
+    --     -- str = str .. string_format("<img src='%s' scale=1 /><div fontcolor=#ffffff> %s</div>", res, attr_val).."     "
+	-- 	if not self.attr_list[k] then
+	-- 		self.attr_list[k] = createRichLabel(20, cc.c4b(0xff, 0xff, 0xff, 0xff), cc.p(0, 0.5), cc.p(45, 74), -4, nil, 600)
+	-- 		self.progress_panel:addChild(self.attr_list[k])
+	-- 	end
+	-- end
+	-- self.attr_txt:setString(str)
+
+	local exp_cfg = Config.SpriteData.data_lv_info[lv]
+	if exp_cfg then
+		local min=exp_cfg.min
+		local max=exp_cfg.max
+		-- local _temp = max - min
+		self.exp:setString(exp.."/"..max)
+		self.bar:setPercent(exp/max*100)
+		local pro = exp_cfg.pro
+		self.attr_txt2:setString(string.format("<div fontcolor=#fff7d6>%s</div><div fontcolor=#00ff00>%s</div>",TI18N("语言_spr_01_7"),(pro/1000*100)).."%")
+	end
+end
+
+function ElfinIllustratedhandbookPanel:register_event(  )
+	registerButtonEventListener(self.show_btn, function (  )
+		_controller:openElfinViewWindow(true)
+	end, true, 2)
+
+	registerButtonEventListener(self.btnRule, function(param,sender, event_type)
+        -- local config = Config.DungeonStoneData.data_const.desc_rule
+        TipsManager:getInstance():showCommonTips(TI18N("语言_spr_01_19"), sender:getTouchBeganPosition())
+    end,true, 1,nil,1)
+	registerButtonEventListener(self.btnRule_0, function(param,sender, event_type)
+        self:openPersonAddAttr(sender)
+    end,true, 1,nil,1)
+
+	if not self.update_event then
+        self.update_event = GlobalEvent:getInstance():Bind(ElfinEvent.ElfinBookDataUpdate, function ( bid, status )
+            self:openRootWnd()
+        end)
+    end
+	if not self.elfin_streng_event then
+        self.elfin_streng_event = GlobalEvent:getInstance():Bind(ElfinEvent.ElfinStrengEvent, function ( bid, status )
+            self:openRootWnd()
+        end)
+    end
+	if not self.elfin_streng_red_event then
+        self.elfin_streng_red_event = GlobalEvent:getInstance():Bind(ElfinEvent.ElfinStrengRedEvent, function ( bid, status )
+            self:openRootWnd()
+        end)
+    end
+end
+
+function ElfinIllustratedhandbookPanel:openPersonAddAttr(sender)
+	local eff_data = _model:getIllustBookData()
+	local total_attr = deepCopy(eff_data.red_attr)
+	local str =string.format(TI18N("<div fontcolor=#feeeba>%s\n</div>"),TI18N("语言_c_6948"))  
+	local exp_cfg = Config.SpriteData.data_lv_info[eff_data.lv]
+	if exp_cfg then
+		local pro = exp_cfg.pro
+		str = str..string.format("<div fontcolor=#1bca0d>(%s%s)\n</div>",TI18N("语言_spr_01_7"),((pro/1000*100).."%"))
+	end
+	local function sortFunc( objA, objB )
+		return objA.attr_id < objB.attr_id
+	end
+	table.sort(total_attr, sortFunc)
+	for i = 1, #total_attr, 1 do
+		local attr_id = total_attr[i].attr_id
+		local attr_txt = total_attr[i].attr_val
+		local res, attr_name, attr_val = commonGetAttrInfoByIDValue(attr_id, attr_txt)
+		local _str = string_format("<img src='%s' scale=1 /><div fontcolor=#c1b7ab> %s: </div><div fontcolor=#1bca0d>%s\n</div>", res, attr_name, attr_val)
+     	str = str.._str
+	end
+	TipsManager:getInstance():showCommonTips(str, sender:getTouchBeganPosition(),nil,nil,nil,nil,20,20,true,8)
+end
+
+function ElfinIllustratedhandbookPanel:openRootWnd(  )
+	self:updateIllAttrInfo()
+	self:updateCurTabData()
+end
+
+
+function ElfinIllustratedhandbookPanel:DeleteMe(  )
+	if self.update_event then
+        GlobalEvent:getInstance():UnBind(self.update_event)
+        self.update_event = nil
+    end
+	if self.elfin_streng_event then
+        GlobalEvent:getInstance():UnBind(self.elfin_streng_event)
+        self.elfin_streng_event = nil
+    end
+	if self.elfin_streng_red_event then
+        GlobalEvent:getInstance():UnBind(self.elfin_streng_red_event)
+        self.elfin_streng_red_event = nil
+    end
+	if self.item_scrollview then
+		self.item_scrollview:DeleteMe()
+		self.item_scrollview = nil
+	end
+end
+
+
+
+
+ElfinIllustratedhandbookItem = class("ElfinIllustratedhandbookItem", function()
+    return ccui.Widget:create()
+end)
+local text_color = {
+	
+}
+local outline_color = {
+	[2] = cc.c4b(0x14, 0x26, 0x4e, 0xff),
+	[3] = cc.c4b(0x4f, 0x02, 0x45, 0xff),
+	[4] = cc.c4b(0x5f, 0x29, 0x00, 0xff),
+	[5] = cc.c4b(0x47, 0x0d, 0x00, 0xff),
+	[6] = cc.c4b(0x47, 0x0d, 0x00, 0xff),
+}
+
+function ElfinIllustratedhandbookItem:ctor()
+	self:configUI()
+	self:register_event()
+
+	self.elfin_step_list = {}
+	self.elfin_step_list.star_list = {}
+end
+
+function ElfinIllustratedhandbookItem:configUI(  )
+	self.size = cc.size(200, 230)
+	self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+	local csbPath = PathTool.getTargetCSB("elfin/elfin_illustratedhandbook_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("main_container")
+    self.main_container = container
+	self.main_container:setSwallowTouches(false)
+    self.bg = container:getChildByName("bg")
+    self.bottom_node = container:getChildByName("bottom_node")
+    self.icon = container:getChildByName("icon")
+    self.name_bg = container:getChildByName("name_bg")
+    self.elfin_name = container:getChildByName("elfin_name")
+	setTextMaxWidth(self.elfin_name, 160)
+    self.tip_lab = container:getChildByName("tip_lab")
+    self.star_node = container:getChildByName("star_node")
+    self.mask_img = container:getChildByName("mask_img")
+	self.mask_img:setVisible(false)
+	self.mask_label = self.mask_img:getChildByName("mask_label")
+	self.mask_label:setString(TI18N("语言_c_2030"))
+    self.mask_img2 = container:getChildByName("mask_img2")
+	self.mask_img2:setVisible(false)
+end
+
+function ElfinIllustratedhandbookItem:register_event(  )
+	-- registerButtonEventListener(self.main_container, function (  )
+	-- 	self:onClickItem()
+	-- end, false)
+	self.main_container:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.began then
+            self.touch_began = sender:getTouchBeganPosition()
+        elseif event_type == ccui.TouchEventType.moved then
+        elseif event_type == ccui.TouchEventType.ended then
+			self.touch_end = sender:getTouchEndPosition()
+			local is_click = true
+			if self.touch_began ~= nil then
+				is_click =
+					math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+					math.abs(self.touch_end.y - self.touch_began.y) <= 20
+			end
+			if is_click then
+				self:onClickItem()
+			end
+        end
+    end)
+
+end
+
+function ElfinIllustratedhandbookItem:onClickItem(  )
+	if self.item_cfg then
+		if self.item_cfg.quality <= BackPackConst.quality.orange then
+			_controller:openElfinInfoWindow(true, self.item_cfg, not self.is_act)
+		else
+			_controller:openElfinMainInfoWindow(true, self.data.id_list[1])
+		end
+	end
+end
+
+function ElfinIllustratedhandbookItem:setData( data )
+	if not data then return end
+	self.data = data
+	local id_list = data.id_list[1]
+	local move = data.move[1] or {}
+	local list = {}
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("sprite_data")
+	for i,bid in ipairs(id_list) do
+		local item_cfg = Config.ItemData.data_get_data(bid)
+		local item_cache = Config.SpriteData.data_elfin_data(bid)
+		if item_cfg then
+			-- if item_cache and item_cache.isshow == 0 and not table.indexof(nohideIds,bid) then
+			-- 	-- 后台配置屏蔽的
+			-- else
+				_table_insert(list, bid)
+			-- end
+		end
+	end
+	local function sortFunc( objA, objB )
+		return objA < objB
+	end
+	table.sort(list, sortFunc)
+	local elfin_id = list[#list] --默认展示星级最高的精灵id
+	--判断该宠物是否已经激活 如果激活展示激活的精灵id
+	self.is_act = false
+	for k, v in ipairs(list) do
+		local id = v
+		local status = _model:checkElfinActStatus(id)
+		if status then
+			self.is_act = true
+			elfin_id = id
+			break
+		end
+	end
+	if not elfin_id then return end
+	self:updateResStatus(elfin_id)
+	local cfg = Config.ItemData.data_get_data(elfin_id)
+	self.item_cfg = cfg
+
+	self.elfin_name:setString(cfg.name)
+	local quality = cfg.quality
+	self:createElfinBottomEff(quality)
+	local elfin_data = Config.SpriteData.data_elfin_data(elfin_id)
+	local eff_id = elfin_data.effect_id
+	if self.sprite_eff then
+		self.sprite_eff:clearTracks()
+		self.sprite_eff:removeFromParent()
+		self.sprite_eff = nil
+	end
+	if not self.sprite_eff then
+		self.sprite_eff = createEffectSpine(eff_id, cc.p(23, -23), cc.p(0, 0), true, PlayerAction.stand)
+		local move_x = move[1] or 0
+		local move_y = move[2] or 0
+		local scale = move[3] or 0.3
+		self.sprite_eff:setPosition(23+move_x, -23+move_y)
+		self.sprite_eff:setScale(scale)
+		self.icon:addChild(self.sprite_eff)
+	end
+	local step_num = cfg.eqm_jie or 0
+	for k, v in pairs(self.elfin_step_list.star_list) do
+		v:setVisible(false)
+	end
+	if self.elfin_step_list.moon then
+		self.elfin_step_list.moon:setVisible(false)
+	end
+	if self.elfin_step_list.star10 then
+		self.elfin_step_list.star10:setVisible(false)
+		self.elfin_step_list.star10_bg:setVisible(false)
+	end
+	if self.elfin_step_list.label then 
+		self.elfin_step_list.label:setVisible(false)
+	end
+	self:createElfinStar(step_num,22)
+	local quality = cfg.quality
+	local bg_id = "elfin_collection_"..(quality+4)
+	if quality > 5 then
+		bg_id = "elfin_collection_20"
+	end
+	loadSpriteTexture(self.name_bg, PathTool.getResFrame("elfin_collection", bg_id), LOADTEXT_TYPE_PLIST)
+	self.elfin_name:enableOutline(outline_color[quality], 2)
+	if self.is_act then
+		self.mask_img:setVisible(false)
+		self.mask_img2:setVisible(false)
+		self.mask_label:setVisible(false)
+		setChildUnEnabled(false, self.sprite_eff)
+	else
+		setChildUnEnabled(true, self.sprite_eff)
+		self.mask_img:setVisible(true)
+		self.mask_img2:setVisible(true)
+		self.mask_label:setVisible(false)
+		-- local shadow_res = PathTool.getElfinShadowIcon(eff_id)
+		-- if not self.mark_shadow then
+		-- 	self.mark_shadow = createSprite(shadow_res, 23, -23, self.icon, cc.p(0.5, 0.5), LOADTEXT_TYPE, 9)
+		-- 	self.mark_shadow:setScale(0.31)
+		-- end
+		-- loadSpriteTexture(self.mark_shadow, shadow_res, LOADTEXT_TYPE)
+	end
+end
+
+function ElfinIllustratedhandbookItem:createElfinStar(num,star_width)
+	local width_s = star_width
+    local _cStar = function(star_count, res, star_list,moveW)
+        local width = width_s
+        local x = (120-star_count*width)/2 + width * 0.5 -- - star_count * width * 0.5 + width * 0.5
+        for i=1,star_count do
+            if not star_list[i] then 
+                local star = createImage(self.star_node,res,0,0,cc.p(0.5,0),true,1,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+    if num > 0 and num <= 5 then
+        local res = PathTool.getResFrame("common","common_90032")
+        _cStar(num, res, self.elfin_step_list.star_list,60)
+	elseif num >= 6 then
+		local res = PathTool.getResFrame("common_1","common_1_572")
+		if self.elfin_step_list.moon == nil then 
+            local star = createImage(self.star_node,res,60,17,cc.p(0.5,0.5),true,0,false)
+            self.elfin_step_list.moon = star
+        else
+            self.elfin_step_list.moon:setVisible(true)
+        end
+		if self.elfin_step_list.label == nil then 
+            local label = createLabel(18, 1, cc.c3b(0x00, 0x00, 0x00), 57, 13, "", self.star_node, 2, cc.p(0.5, 0.5))
+			label:setString(num)
+            self.elfin_step_list.label = label
+        else
+            self.elfin_step_list.label:setVisible(true)
+			self.elfin_step_list.label:setString(num)
+        end
+    -- elseif num >= 6 and num <= 9 then
+    --     local res = PathTool.getResFrame("common","common_90032")
+    --     local moonres = PathTool.getResFrame("pet","pet_star_1")
+    --     if self.elfin_step_list.moon == nil then 
+    --         local star = createImage(self.star_node,moonres,0, -2,cc.p(0.5,0),true,0,false)
+    --         self.elfin_step_list.moon = star
+    --         self.elfin_step_list.moon:setScale(1.2)
+    --     else
+    --         self.elfin_step_list.moon:setVisible(true)
+    --     end
+    --     local count = num - 5
+    --     _cStar(count, res, self.elfin_step_list.star_list,width_s*0.5+60)
+
+    --     local startmoon = - count * width_s * 0.5 + width_s * 0.5 -width_s*0.5 + 60
+    --     self.elfin_step_list.moon:setPositionX(startmoon)
+    -- elseif num >= 10 then
+    --     local new_num  = num - 10
+    --     local res = PathTool.getResFrame("pet","pet_star_2")
+    --     if self.elfin_step_list.star10 == nil then 
+	-- 		local star_bg = createImage(self.star_node,PathTool.getResFrame("common","common_90084"),0, 0,cc.p(0.5,0),true,0,false)
+    --         star_bg:setCascadeOpacityEnabled(true)
+    --         local star = createImage(self.star_node,res,0, -2,cc.p(0.5,0),true,0,false)
+    --         star:setScale(1.2)
+    --         star:setCascadeOpacityEnabled(true)
+    --         self.elfin_step_list.star10 = star
+	-- 		self.elfin_step_list.star10_bg = star_bg
+    --     else
+    --         self.elfin_step_list.star10:setVisible(true)
+	-- 		self.elfin_step_list.star10_bg:setVisible(true)
+    --     end
+
+    --     local res = PathTool.getResFrame("common","common_90032")
+    --     _cStar(new_num, res, self.main_container,width_s*0.5+4+60)
+    --     local startsun = - new_num * width_s * 0.5 + width_s * 0.5 -width_s*0.5+60
+    --     self.elfin_step_list.star10:setPositionX(startsun)
+    end
+end
+
+function ElfinIllustratedhandbookItem:createElfinBottomEff(quality)
+	if self.bottom_eff then
+		self.bottom_eff:clearTracks()
+		self.bottom_eff:removeFromParent()
+		self.bottom_eff = nil
+	end
+	if not self.bottom_eff then
+		local eff_id = "E27004"
+		local action = PlayerAction.action_3
+		if quality == 6 then
+			eff_id = "E27008"
+			action = PlayerAction.action_3
+		elseif quality == 5 then
+			eff_id = "E27007"
+			action = PlayerAction.action_3
+		elseif quality == 4 then
+			action = PlayerAction.action_3
+		elseif quality == 3 then
+			action = PlayerAction.action_2
+		elseif quality == 2 then
+			action = PlayerAction.action_1
+		end
+		self.bottom_eff = createEffectSpine(eff_id, cc.p(23, -23), cc.p(0, 0), true, action)
+		self.bottom_eff:setScale(0.45)
+		self.bottom_node:addChild(self.bottom_eff)
+	end
+end
+
+function ElfinIllustratedhandbookItem:updateResStatus(id)
+	local red_status = _model:getRedPetRedStatusById(id) or _model:getElfinStrongRed(id)
+	addRedPointToNodeByStatus(self.main_container, red_status)
+end
+
+function ElfinIllustratedhandbookItem:DeleteMe(  )
+	if self.sprite_eff then
+		self.sprite_eff:clearTracks()
+		self.sprite_eff:removeFromParent()
+		self.sprite_eff = nil
+	end
+	if self.bottom_eff then
+		self.bottom_eff:clearTracks()
+		self.bottom_eff:removeFromParent()
+		self.bottom_eff = nil
+	end
+	self:removeAllChildren()
+	self:removeFromParent()
+end

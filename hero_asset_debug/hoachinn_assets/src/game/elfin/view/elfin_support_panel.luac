@@ -1,0 +1,562 @@
+-------------------------------
+-- 
+-- @Date:   2020年3月17日
+-- @Description:   支援精灵设置
+-------------------------------
+ElfinSupportPanel = ElfinSupportPanel or BaseClass(BaseView)
+
+local _controller = ElfinController:getInstance()
+local _model = _controller:getModel()
+
+function ElfinSupportPanel:__init()
+    self.is_full_screen = false
+    self.layout_name = "elfin/elfin_support_panel"
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("elfin", "elfin"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("elfin", "elfin_starup"), type = ResourcesType.plist},
+        {path = PathTool.getPlistImgForDownLoad("pet", "pet"), type = ResourcesType.plist},
+    }
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.cur_elfin_item_list = {}
+    self.suppor_all_list = {}
+    self.show_pos = 0
+    self.click_index = {[1] = 0,[2] = 0,[3] = 0,[4] = 0}
+    self.click_data = {[1] = {},[2] = {},[3] = {},[4] = {}}
+end
+
+function ElfinSupportPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.main_container_size = self.main_container:getContentSize()
+    self.top_panel = self.main_container:getChildByName("top_panel")
+    self.img_title_bg = self.top_panel:getChildByName("img_title_bg")
+    self.close_btn = self.top_panel:getChildByName("close_btn")
+    self.txt_cur_name = self.top_panel:getChildByName("txt_cur_name")
+    self.txt_cur_name:setString(TI18N("语言_c_6446"))
+    self.wnd_title = self.top_panel:getChildByName("wnd_title")
+    self.wnd_title:setString(TI18N("语言_c_6447"))
+    local _w = math.max(self.wnd_title:getContentSize().width+100,self.img_title_bg:getContentSize().width)
+    self.img_title_bg:setContentSize(cc.size(_w,self.img_title_bg:getContentSize().height))
+    self.click_img = self.top_panel:getChildByName("click_img")
+    self.bottom_panel = self.main_container:getChildByName("bottom_panel")
+    self.plan_list = self.bottom_panel:getChildByName("plan_list")
+    self.no_tip = self.bottom_panel:getChildByName("no_tip")
+    self.no_tip:setString(TI18N("语言_c_6448"))
+    self.no_tip:setVisible(false)
+    self.skill_panel = self.main_container:getChildByName("skill_panel")
+    -- self.skill_panel:setVisible(false)
+    self.skill_no_tip = self.skill_panel:getChildByName("skill_no_tip")
+    self.skill_no_tip:setString(TI18N("语言_c_6449"))
+    self.info_panel = self.skill_panel:getChildByName("info_panel")
+    self.skill_name = self.info_panel:getChildByName("skill_name")
+    self.skill_type = self.info_panel:getChildByName("skill_type")
+    self.skill_type:setString(TI18N("语言_c_6450"))
+    self.skill_scroll = self.info_panel:getChildByName("skill_scroll")
+    self.skill_scroll:setScrollBarEnabled(false)
+    self.save_btn = self.main_container:getChildByName("save_btn")
+    self.save_txt = self.save_btn:getChildByName("label")
+    self.save_txt:setString(TI18N("语言_c_325"))
+    self.remov_btn = self.main_container:getChildByName("remov_btn")
+    self.remov_txt = self.remov_btn:getChildByName("label")
+    self.remov_txt:setString(TI18N("语言_c_2964"))
+
+    local max_width = 580
+    local item_width = max_width / 4
+    local start_x = (self.main_container_size.width - max_width) * 0.5 + item_width * 0.5
+    for i=1,4 do
+        local skill_item = SkillItem.new(true, true, false, 0.8, true)
+        skill_item:addTouchEventListener(function ( sender, event_type )
+            if event_type == ccui.TouchEventType.ended then
+                self:onClikElfinItemIndex(i)
+            end
+        end)
+        skill_item:setPosition(start_x + (i-1)*item_width, 92)
+        skill_item:showLevel(false)
+        self.top_panel:addChild(skill_item)
+        self.cur_elfin_item_list[i] = skill_item
+    end
+end
+
+function ElfinSupportPanel:register_event()
+    registerButtonEventListener(self.background, function() _controller:openElfinSupportPanel(false) end, false, 2)
+    registerButtonEventListener(self.close_btn, function()  _controller:openElfinSupportPanel(false) end, true, 2)
+    registerButtonEventListener(self.save_btn, handler(self, self.onSaveSuitsPlan), true, 1)
+    registerButtonEventListener(self.remov_btn, handler(self, self.onClickBtnRemov), true, 1)
+    if not self.elfin_support_click_event then
+		self.elfin_support_click_event = GlobalEvent:getInstance():Bind(ElfinEvent.Elfin_Support_Click_Event,function ( index,data)
+            if index then
+                self.click_index[self.show_pos] = index
+            end
+			if data then
+                local list = {}
+                list.pos = self.show_pos
+                list.item_bid = data
+                self.click_data[self.show_pos] = list
+                self:setSkillPanel()
+                self:updateSkillPanel()
+            end
+		end)
+	end
+
+    
+    if not self.elfin_support_data_event then
+		self.elfin_support_data_event = GlobalEvent:getInstance():Bind(ElfinEvent.Elfin_Support_Data_Event,function (data)
+            if data.type == self.fun_form_type then
+                for key, value in pairs(data.team_list) do
+                    if self.index and self.index > 1 then
+                        if value.team == self.index-1 then
+                            for k, v in pairs(value.sprites) do
+                                self.click_data[v.pos] = v
+                            end
+                        end
+                    else
+                        if value.team == 1 then
+                            for k, v in pairs(value.sprites) do
+                                self.click_data[v.pos] = v
+                            end
+                        end
+                    end
+                end
+                if self.show_pos == 0 then
+                    local list = {}
+                    local show_pos = 0
+                    if self.index and not self.elfin_data.team then
+                        self.item_index = self.index-1
+                        list = deepCopy(self.elfin_data[self.index].sprites) or {}
+                    else
+                        self.item_index = nil
+                        list = deepCopy(self.elfin_data.sprites) or {}
+                    end
+                    table.sort(list,function(a,b) return a.pos < b.pos end)
+                    for i = 1, tableLen(list) do
+                        if list[i].item_bid and list[i].item_bid ~= 0 then
+                            show_pos = i
+                            break
+                        end
+                    end
+                    self:updateSpriteInfo()
+                    self:onClikElfinItemIndex(show_pos)
+                end
+                self:updateSkillPanel()
+            end
+		end)
+	end
+end
+
+function ElfinSupportPanel:updateSkillPanel()
+    for i = 1, 4 do
+        if self.cur_elfin_item_list[i]:getData() then
+            self.cur_elfin_item_list[i]:setSupportItem(false)
+            for k, v in pairs(self.click_data) do
+                if v.pos and v.pos == i then
+                    self.cur_elfin_item_list[i]:setSupportItem(true,v.item_bid)
+                end
+            end
+        end
+    end
+end
+
+function ElfinSupportPanel:setSkillPanel()
+    local data = {}
+    for key, value in pairs(self.click_data) do
+        if value.pos == self.show_pos then
+            data = value
+        end
+    end
+    if (data and data.item_bid == 0) or not data.item_bid then
+        self.skill_no_tip:setVisible(true)
+        self.info_panel:setVisible(false)
+    else
+        self.skill_no_tip:setVisible(false)
+        self.info_panel:setVisible(true)
+        local sprite_cfg = Config.SpriteData.data_elfin_data(data.item_bid)
+        local skill_cfg = Config.SkillData.data_get_skill(sprite_cfg.support_skill_id)
+        if not self.support_item then
+            self.support_item = SkillItem.new(true, true, false, 0.8, true)
+            self.info_panel:addChild(self.support_item)
+            self.support_item:setPosition(cc.p(100,175))
+        end
+        self.support_item:setData(skill_cfg)
+        self.skill_name:setString(skill_cfg.name)
+        if not self.skill_desc then
+            self.skill_desc = createRichLabel(22,cc.c3b(0xff,0xff,0xff),cc.p(0,1),cc.p(0,0),-4,nil,400)
+            self.skill_scroll:addChild(self.skill_desc)
+        end
+        self.skill_desc:setString(skill_cfg.des)
+        local _h = math.max(self.skill_desc:getContentSize().height,self.skill_scroll:getContentSize().height)
+        self.skill_scroll:setInnerContainerSize(cc.size(self.skill_scroll:getContentSize().width,_h))
+        self.skill_desc:setPositionY(_h)
+    end
+end
+
+function ElfinSupportPanel:onClickBtnRemov()
+    self.click_data[self.show_pos] = {}
+    self:setSkillPanel()
+    self:updateSkillPanel()
+    GlobalEvent:getInstance():Fire(ElfinEvent.Elfin_Support_Click_Event)
+end
+
+function ElfinSupportPanel:onSaveSuitsPlan()
+    for i = 1, tableLen(self.click_data) do
+        if not next(self.click_data[i]) then
+            self.click_data[i].item_bid = 0
+            self.click_data[i].pos = i
+        end
+    end
+    local index = self.item_index 
+    if not index then
+        index = 1
+    end
+    _controller:send26566(self.fun_form_type,index,self.click_data,1)
+end
+
+--单个精灵点击事件
+function ElfinSupportPanel:onClikElfinItemIndex(i)
+    if self.show_pos == i then return end
+    local data = {}
+    if self.item_index then
+        data = self.elfin_data[self.item_index + 1].sprites
+    else
+        data = self.elfin_data.sprites
+    end
+    local status = false
+    for k, v in pairs(data) do
+        if v.pos == i and v.item_bid ~= 0 then
+            status = true
+        end
+    end
+    if not status then message(TI18N("语言_c_6451")) return end
+    self.show_pos = i
+    self.click_index[self.show_pos] = 0
+    self.click_img:setPositionX(self.cur_elfin_item_list[i]:getPositionX())
+    self:setSkillPanel()
+    self:updateSupporInfo(i)
+end
+
+--更新显示4个精灵信息
+function ElfinSupportPanel:updateSpriteInfo()
+    local elfin_data = {}
+    if self.item_index then
+        for key, value in pairs(self.elfin_data) do
+            if value.team == self.item_index then
+                elfin_data = value or {}
+            end
+        end
+    else
+        elfin_data = deepCopy(self.elfin_data) or {}
+    end
+    local function getDan(pos)
+        for key, value in pairs(elfin_data.sprites) do
+            if value.pos == pos then
+                return value.item_dan
+            end
+        end
+        return 0
+    end
+    local dic_item_pos = {}
+    if elfin_data.sprites and next(elfin_data.sprites) then
+        for i,v in pairs(elfin_data.sprites) do
+            dic_item_pos[v.pos] = v.item_bid
+        end
+    end
+    self.dic_item_pos = dic_item_pos
+    for pos,skill_item in ipairs(self.cur_elfin_item_list) do
+        local item_bid = self.dic_item_pos[pos]
+        if self.fun_form_type == PartnerConst.Fun_Form.LostTowerDreamTeam then
+            item_bid = 0
+        end
+        if item_bid then
+            local bid = dic_item_pos[pos] or 0
+            local elfin_cfg = Config.SpriteData.data_elfin_data(bid)
+            if bid == 0 or not elfin_cfg then
+                skill_item:setData()
+                skill_item:showLevel(false)
+                skill_item:showName(false)
+                skill_item:setSkillLevel(0)
+            else
+                local skill_cfg
+                local item_dan = getDan(pos)
+                if item_dan == 0 then
+                    skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.skill)
+                    skill_item:setSkillLevel(0)
+                else
+                    local str = bid.."_"..item_dan
+		            local cfg = Config.SpriteData.data_elfin_dan(str)
+                    skill_cfg = Config.SkillData.data_get_skill(cfg.skill)
+                    skill_item:setSkillLevel(item_dan)
+                end
+                if skill_cfg then
+                    skill_item:showLevel(true)
+                    skill_item:setData(skill_cfg)
+                end
+            end
+        else
+            skill_item:setData()
+            skill_item:showLevel(false)
+            skill_item:showLockIcon(true)
+            skill_item:showName(false)
+        end
+    end
+end
+--设置支援列表
+function ElfinSupportPanel:updateSupporList()
+    self.suppor_all_list = {}
+    local list = {}
+    for i = 1, 4 do
+        list[i] = {}
+    end
+    if self.item_index then --多队
+        for key, value in pairs(self.elfin_data) do
+            for k, v in pairs(value.sprites) do
+                local cfg = Config.SpriteData.data_elfin_data(v.item_bid)
+                if cfg and cfg.support_skill_id ~= 0 then
+                    for a, b in pairs(cfg.support_skill_pos) do
+                        if cfg.support_skill_same_team == 1 then
+                            if b ~= 0 and b[1] == self.item_index then
+                                if list[b[2]] then
+                                    table.insert(list[b[2]],v.item_bid)
+                                end
+                            end
+                        else
+                            if b ~= 0 and b[1] == self.item_index and b[1] ~= value.team then
+                                if list[b[2]] then
+                                    table.insert(list[b[2]],v.item_bid)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    else --单队
+        for k, v in pairs(self.elfin_data.sprites) do
+            local cfg = Config.SpriteData.data_elfin_data(v.item_bid)
+            if cfg and cfg.support_skill_id ~= 0 and cfg.support_skill_same_team == 1 then
+                for a, b in pairs(cfg.support_skill_pos) do
+                    if b ~= 0 and b[1] == 1 then
+                        if list[b[2]] then
+                            table.insert(list[b[2]],v.item_bid)
+                        end
+                    end                        
+                end
+            end
+        end
+    end
+    --去重
+    -- local suppor = {}
+    -- for i = 1, 4 do
+    --     local list2 = {}
+    --     for key, value in pairs(list[i]) do
+    --         list2[value] = true
+    --     end
+    --     local list3 = {}
+    --     for k, v in pairs(list2) do
+    --         table.insert(list3,k)
+    --     end
+    --     suppor[i] = list3
+    -- end
+    for i = 1, 4 do
+        local data = {}
+        if next(list[i]) then
+            for key, value in pairs(list[i]) do
+                local status = true
+                for k, v in pairs(self.click_data) do
+                    if value == v.item_bid then
+                        status = false
+                        if i == v.pos then
+                            table.insert(data, value)
+                        end
+                    end
+                end
+                if status then
+                    table.insert(data, value)
+                end
+            end
+        else
+            data = list[i]
+        end
+        table.sort(data,function(a,b) return a > b end)
+        self.suppor_all_list[i] = data
+    end
+end
+--设置支援宠物列表
+function ElfinSupportPanel:updateSupporInfo(pos)
+    self:updateSupporList()
+    self.suppor_list = self.suppor_all_list[pos]
+    local status = true
+    for i = 1, tableLen(self.suppor_list) do
+        if status and self.click_index[pos] == 0 and self.suppor_list[i] == self.click_data[self.show_pos].item_bid then
+            self.click_index[pos] = i
+            status = false
+        end
+    end
+    if self.plan_scrollview then
+        self.plan_scrollview:DeleteMe()
+    end
+    self.plan_scrollview = nil
+    if self.plan_scrollview == nil then
+        local scroll_view_size = self.plan_list:getContentSize()
+        local setting = {
+            start_x = 20,                  -- 第一个单元的X起点
+            space_x = 20,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 5,                   -- y方向的间隔
+            item_width = 119*0.8,               -- 单元的尺寸width
+            item_height = 119*0.8,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 5,                         -- 列数，作用于垂直滚动类型
+            need_dynamic = true
+        }
+        self.plan_scrollview = CommonScrollViewSingleLayout.new(self.plan_list, cc.p(0, 0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+        self.plan_scrollview:setSwallowTouches(false)
+
+        self.plan_scrollview:registerScriptHandlerSingle(handler(self,self._createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.plan_scrollview:registerScriptHandlerSingle(handler(self,self._numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.plan_scrollview:registerScriptHandlerSingle(handler(self,self._updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    if tableLen(self.suppor_list) ~= 0 then
+        self.no_tip:setVisible(false)
+    else
+        self.no_tip:setVisible(true)
+    end
+    self.plan_scrollview:reloadData(nil, nil, true) --保持当前列表位置
+end
+
+function ElfinSupportPanel:_createNewCell(width, height)
+    local cell = ElfinSupportItem.new(width, height, self)
+    return cell
+end
+
+function ElfinSupportPanel:_numberOfCells()
+    if not self.suppor_list then return 0 end
+    return #self.suppor_list
+end
+
+function ElfinSupportPanel:_updateCellByIndex(cell, index)
+    if not self.suppor_list then return end
+    cell.index = index
+    local cell_data = self.suppor_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data,self.click_data[self.show_pos].item_bid,self.click_index[self.show_pos])
+end
+function ElfinSupportPanel:openRootWnd(data,index,form_type)
+    if index then
+        if data[1] then
+            local list = {}
+            for key, value in pairs(data) do
+                list[key+1] = value
+            end
+            self.elfin_data = list
+        else
+            self.elfin_data = data
+        end
+    else
+        if data[1] then
+            self.elfin_data = data[1]
+        else
+            self.elfin_data = data
+        end
+    end
+    self.index = index
+    self.fun_form_type = form_type or 0
+    _controller:send26565(self.fun_form_type)
+end
+
+function ElfinSupportPanel:close_callback()
+    if self.plan_scrollview then
+        self.plan_scrollview:DeleteMe()
+    end
+    self.plan_scrollview = nil
+    
+	if self.elfin_support_click_event then 
+        GlobalEvent:getInstance():UnBind(self.elfin_support_click_event)
+        self.elfin_support_click_event = nil
+    end
+
+    if self.elfin_support_data_event then 
+        GlobalEvent:getInstance():UnBind(self.elfin_support_data_event)
+        self.elfin_support_data_event = nil
+    end
+    _controller:openElfinSupportPanel(false)
+end
+
+
+-------------------------------
+-- 
+-- @Date:   2020年3月17日
+-- @Description:   精灵方案item
+-------------------------------
+ElfinSupportItem = class("ElfinSupportItem", function()
+    return ccui.Widget:create()
+end)
+
+function ElfinSupportItem:ctor(width, height, parent)
+    self.parent = parent
+    self:config(width, height)
+    self:layoutUI()
+    self:registerEvents()
+end
+
+function ElfinSupportItem:config(width, height)
+    self.size = cc.size(width, height)
+    self:setContentSize(self.size)
+    
+    self.equip_item_list = {} --装备item列表
+end
+
+function ElfinSupportItem:layoutUI()
+    local csbPath = PathTool.getTargetCSB("elfin/elfin_support_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.skill_item = SkillItem.new(true, false, false, 0.8, true)
+    self.main_container:addChild(self.skill_item)
+    self.skill_item:setPosition(cc.p(self.size.width*0.5,self.size.height*0.5))
+    self.click_panel = self.root_wnd:getChildByName("click_panel")
+    self.click_panel:setVisible(false)
+end
+
+function ElfinSupportItem:registerEvents()
+    registerButtonEventListener(self.main_container, handler(self, self.clickSelf), false, 1)
+    --除神秘商城以外的购买成功
+	if not self.elfin_support_click_event then
+		self.elfin_support_click_event = GlobalEvent:getInstance():Bind(ElfinEvent.Elfin_Support_Click_Event,function ( index,data)
+			if index == self.index and self.data == data then
+                self.click_panel:setVisible(true)
+            else
+                self.click_panel:setVisible(false)
+            end
+		end)
+	end
+end
+
+function ElfinSupportItem:clickSelf()
+    GlobalEvent:getInstance():Fire(ElfinEvent.Elfin_Support_Click_Event, self.index,self.data)
+end
+
+function ElfinSupportItem:setData(data,click_id,index)
+    self.data = data
+    local elfin_cfg = Config.SpriteData.data_elfin_data(data)
+    local skill_cfg = Config.SkillData.data_get_skill(elfin_cfg.support_skill_id)
+    self.skill_item:setData(skill_cfg)
+    if data == click_id and index == self.index then
+        self.click_panel:setVisible(true)
+    else
+        self.click_panel:setVisible(false)
+    end
+end
+
+
+
+function ElfinSupportItem:DeleteMe()
+	if self.elfin_support_click_event then 
+        GlobalEvent:getInstance():UnBind(self.elfin_support_click_event)
+        self.elfin_support_click_event = nil
+    end
+end

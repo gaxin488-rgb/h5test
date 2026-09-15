@@ -1,0 +1,263 @@
+--******** 文件说明 ********
+-- 
+-- @description: 五金锻造铺
+-- @DateTime:    2019-04-10 10:29:42
+-- *******************************
+ActionHardwareShopPanel = class("ActionHardwareShopPanel", function()
+	return ccui.Widget:create()
+end)
+
+local color_text = {
+    [1] = cc.c4b(0x80,0xf7,0x31,0xff),
+    [2] = cc.c4b(0x64,0x32,0x23,0xff),
+}
+
+local controll = ActionController:getInstance()
+function ActionHardwareShopPanel:ctor(bid,id,time)
+    self.holiday_bid = bid
+    self.left_time = time
+	self:configUI()
+    self:register_event()
+    self.cell_data_list = {}
+end
+
+function ActionHardwareShopPanel:configUI()
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("action/action_hardwareshop_panel"))
+	self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setPosition(-40, -66)
+	self:setAnchorPoint(0, 0)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self.bannerbg = self.main_container:getChildByName("banner_sp")
+    self.time_bg = self.main_container:getChildByName("time_bg")
+    self.time_label = self.main_container:getChildByName("time_title")
+    self.time_label:setString(TI18N("语言_c_1113"))
+    self.time_val = self.main_container:getChildByName("time_val")
+    local timePos = self.time_label:getPositionX() + self.time_label:getContentSize().width + 8
+    self.time_val:setPositionX(timePos)
+
+    self.btn_rule = self.main_container:getChildByName("btn_tips") --规则说明按钮，，就是问号的图片
+    self.btn_rule:setVisible(false)
+    self.good_cons = self.main_container:getChildByName("item_list")
+    -- self:loadBannerImage()
+    self:updateScrollviewList()
+    self:updateLeftTime()
+    controll:sender16688(self.holiday_bid)
+end
+
+function ActionHardwareShopPanel:updateScrollviewList()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.good_cons:getContentSize()
+        local setting = {
+            start_x = 7,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 0,                     -- y方向的间隔
+            item_width = 688,                -- 单元的尺寸width
+            item_height = 150,               -- 单元的尺寸height
+            row = 1,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.good_cons, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+    -- self.child_scrollview:reloadData()
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function ActionHardwareShopPanel:createNewCell(width, height)
+    local cell = ActionHardItem.new()
+	return cell
+end
+
+--获取数据数量
+function ActionHardwareShopPanel:numberOfCells()
+    if not self.reward_list then return 0 end
+    return #self.reward_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function ActionHardwareShopPanel:updateCellByIndex(cell, index)
+    if not self.reward_list then return end
+    cell.index = index
+    if self.tab ~= nil and cell.setExtendData ~= nil then
+        cell:setExtendData(self.tab)
+    end
+    local cell_data = self.reward_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function ActionHardwareShopPanel:register_event()
+    if not self.update_holiday_common_event then
+        self.update_holiday_common_event = GlobalEvent:getInstance():Bind(ActionEvent.HardwareshopUpdate,function (data)
+            if not data then return end
+            if data.bid == self.holiday_bid then
+                self:setPanelData(data)
+            end
+        end)
+    end
+    registerButtonEventListener(self.btn_rule, function(param,sender, event_type)
+        -- TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition(),nil,nil,500)
+    end ,true, 1)
+end
+
+function ActionHardwareShopPanel:setPanelData(data)
+    if not data then
+        return
+    end
+    local tab = {}
+    tab.is_end = (self.left_time <= 0)
+
+    self.activityInfo = data
+    local temp = controll:getActionSubTabVo(self.holiday_bid)
+    self.camp_id =  temp.camp_id
+    local exchange_cfg = Config.HolidayExchangeData.data_get_config_const[self.camp_id]
+    if not exchange_cfg then
+        return
+    end
+    self.tab = tab
+    self.reward_list = {}
+    for index, value in ipairs(exchange_cfg) do
+        local temp_data = {}
+        temp_data.exchangedata = value
+        self.reward_list[value.id] = temp_data
+    end
+    for i, v in ipairs(self.activityInfo.buy_info) do
+        if self.reward_list[v.id] then
+            self.reward_list[v.id].buy_info = v
+        end
+    end
+    self.child_scrollview:reloadData()
+end
+
+function ActionHardwareShopPanel:updateLeftTime()
+    if self.left_time then 
+        doStopAllActions(self.time_val)
+        controll:getModel():setCountDownTime(self.time_val,self.left_time)
+    end
+end
+
+function ActionHardwareShopPanel:DeleteMe()
+	doStopAllActions(self.time_val)
+    if self.item_load then 
+        self.item_load:DeleteMe()
+        self.item_load = nil
+    end
+    if self.child_scrollview then
+        self.child_scrollview:DeleteMe()
+    end
+    self.child_scrollview = nil
+    if self.update_holiday_common_event then
+        GlobalEvent:getInstance():UnBind(self.update_holiday_common_event)
+        self.update_holiday_common_event = nil
+    end
+end
+
+------------------------------------------
+-- 子项
+ActionHardItem = class("ActionHardItem", function()
+    return ccui.Widget:create()
+end)
+
+function ActionHardItem:ctor()
+    self:configUI()
+    self:register_event()
+    self.good_list_data = {}
+end
+
+function ActionHardItem:configUI()
+    self.root_wnd = cc.CSLoader:createNode(PathTool.getTargetCSB("action/action_hard_item"))
+    self:setContentSize(cc.size(688,150))
+    self:addChild(self.root_wnd)
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container = main_container
+    self.has_get = main_container:getChildByName("has_get")
+    self.has_get:setVisible(false)
+    self.btn_get = main_container:getChildByName("btn_get")
+    self.btn_get_label = self.btn_get:getChildByName("Text_7")
+    self.btn_get_label:setString(TI18N("语言_c_1475"))
+    
+    self.title = main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_hol_ret_04_1"))
+    self.text_tesk = main_container:getChildByName("text_tesk")
+    self.text_tesk:setString("")
+    self.goods_item = main_container:getChildByName("goods_item")
+    self.title_desc = createRichLabel(24, color_text[2], cc.p(0,0.5), cc.p(14,127), nil, nil, 500)
+    main_container:addChild(self.title_desc)
+end
+
+function ActionHardItem:register_event()
+    registerButtonEventListener(self.btn_get, function()
+        if self.holiday_item_bid and self.data then
+            controll:sender16689(self.holiday_item_bid,self.itemid,1)
+        end
+    end ,true, 1)
+end
+
+function ActionHardItem:setExtendData(tab)
+    self.is_activity_end = tab.is_end
+end
+
+function ActionHardItem:setData(data)
+    self.data = data
+    self.holiday_item_bid = data.exchangedata.bid
+    self.itemid = data.exchangedata.id
+
+    local award = data.exchangedata.award
+    if not self.common_goods_item then
+        self.common_goods_item = BackPackItem.new(nil, true, nil, 0.8, nil, true)
+        self.main_container:addChild(self.common_goods_item)
+        self.common_goods_item:setPosition(cc.p(344, 56))
+    end
+    self.common_goods_item:setBaseData(award[1][1], award[1][2])
+    local costInfo = data.exchangedata.expend or {}
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.8
+    setting.is_tip = true
+    self.item_list = commonShowSingleRowItemList(self.goods_item, self.item_list, costInfo, setting)
+
+    local remian_count = 0
+    if data.buy_info then
+        if data.exchangedata.sub_type == ActonExchangeType.Perday then     --每日限兑
+            remian_count = data.exchangedata.r_limit_day - data.buy_info.day_num
+        elseif data.exchangedata.sub_type == ActonExchangeType.AllServer then --全服限兑
+            remian_count = data.exchangedata.s_limit_all - data.buy_info.s_all_num
+        elseif data.exchangedata.sub_type == ActonExchangeType.Activity then --活动限兑
+            remian_count = data.exchangedata.r_limit_all - data.buy_info.all_num
+        end
+    end
+    local str = TI18N("语言_c_1497") .. remian_count
+    self.text_tesk:setString(str)
+    if remian_count <= 0 then
+        self.btn_get:setTouchEnabled(false)
+        setChildUnEnabled(true, self.btn_get)
+        self.btn_get_label:setString(TI18N("语言_c_5009"))
+    else
+        self.btn_get:setTouchEnabled(true)
+        setChildUnEnabled(false, self.btn_get)
+        self.btn_get_label:setString(TI18N("语言_c_1475"))
+    end
+end
+
+function ActionHardItem:DeleteMe()
+    if self.good_scrollview then
+        self.good_scrollview:DeleteMe()
+        self.good_scrollview = nil
+    end
+    self:removeAllChildren()
+    self:removeFromParent()
+end

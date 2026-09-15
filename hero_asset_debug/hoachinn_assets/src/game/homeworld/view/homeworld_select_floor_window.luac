@@ -1,0 +1,361 @@
+--------------------------------------------
+-- @Author  : yuanqi@shiyue.com
+-- @Editor  :
+-- @Date    : 2020/08/10
+-- @description    :
+-- 家园选择楼层界面
+---------------------------------
+HomeWorldSelectFloorWindow = HomeWorldSelectFloorWindow or BaseClass(BaseView)
+
+local _controller = HomeworldController:getInstance()
+local _model = _controller:getModel()
+local _string_format = string.format
+local _table_insert = table.insert
+local _table_sort = table.sort
+
+function HomeWorldSelectFloorWindow:__init(home_type, cur_storey_index, other_rid, other_srv_id)
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.is_full_screen = false
+    self.layout_name = "homeworld/homeworld_select_floor"
+    self.item_data_list = {}
+	self.res_list = {}
+	self.home_type = home_type
+	self.cur_storey_index = cur_storey_index
+    self.other_rid = other_rid
+    self.other_srv_id = other_srv_id
+end
+
+function HomeWorldSelectFloorWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    local main_container = self.root_wnd:getChildByName("main_container")
+    self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container, 2)
+
+    local win_title = main_container:getChildByName("win_title")
+	win_title:setString(TI18N("切换楼层"))
+	self.total_addition_txt = createRichLabel(20, cc.c4b(0x64,0x32,0x23,0xff), cc.p(0.5, 0.5), cc.p(main_container:getContentSize().width / 2, 42), nil, nil, 650)
+	main_container:addChild(self.total_addition_txt)
+
+    self.close_btn = main_container:getChildByName("close_btn")
+
+    self.item_list = main_container:getChildByName("item_list")
+    local bgSize = self.item_list:getContentSize()
+    local scroll_view_size = cc.size(bgSize.width, bgSize.height - 8)
+    local setting = {
+        start_x = 0, -- 第一个单元的X起点
+        space_x = 0, -- x方向的间隔
+        start_y = 0, -- 第一个单元的Y起点
+        space_y = 5, -- y方向的间隔
+        item_width = 600, -- 单元的尺寸width
+        item_height = 135, -- 单元的尺寸height
+        row = 0, -- 行数，作用于水平滚动类型
+        col = 1, -- 列数，作用于垂直滚动类型
+        need_dynamic = true
+    }
+    self.floor_scrollview = CommonScrollViewSingleLayout.new(self.item_list, cc.p(0, 5), ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    self.floor_scrollview:registerScriptHandlerSingle(handler(self, self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+    self.floor_scrollview:registerScriptHandlerSingle(handler(self, self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+    self.floor_scrollview:registerScriptHandlerSingle(handler(self, self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    self.floor_scrollview:setSwallowTouches(false)
+end
+
+function HomeWorldSelectFloorWindow:createNewCell()
+    local cell = HomeWorldSelectFloorItem.new()
+    cell:addCallBack(
+		function(floor)
+			if self.cur_storey_index == floor then return end
+            if self.home_type == HomeworldConst.Type.Myself then
+                _controller:sender26001(floor)
+            else
+                _controller:sender26003(self.other_rid, self.other_srv_id, floor)
+            end
+        end
+    )
+    return cell
+end
+
+function HomeWorldSelectFloorWindow:numberOfCells()
+    if not self.item_data_list then
+        return 0
+    end
+    return #self.item_data_list
+end
+
+function HomeWorldSelectFloorWindow:updateCellByIndex(cell, index)
+    cell.index = index
+    local item_vo = self.item_data_list[index]
+    if item_vo then
+        cell:setData(item_vo)
+    end
+end
+
+function HomeWorldSelectFloorWindow:openRootWnd()
+    if self.home_type == HomeworldConst.Type.Myself then
+        _controller:sender26025()
+    elseif self.home_type == HomeworldConst.Type.Other then
+        _controller:sender26026()
+    end
+end
+
+function HomeWorldSelectFloorWindow:setData(data)
+    if not data and not data.soft_list then return end
+    self.all_soft_data = data.soft_list
+    local soft_additoin_list = _model:getAllSoftAddition(data)
+    local total_attr = _model:getAllTotalAttr()
+	local total_attr_str = TI18N("当前家具总加成: ")
+	if total_attr then
+		for i, v in ipairs(total_attr) do
+            local soft_add_per = 0
+            if soft_additoin_list then
+                for _, attr_per in pairs(soft_additoin_list) do
+                    if v[1] .. "_per" == attr_per[1] then
+                        soft_add_per = attr_per[2]
+                        break
+                    end
+                end
+            end
+			local attr_key = v[1]
+            local attr_val = v[2] + math.floor((v[2] * (soft_add_per / 1000)) + 0.5)
+			local attr_name = Config.AttrData.data_key_to_name[attr_key]
+			local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val*0.1).."%"
+			end
+			total_attr_str = _string_format("%s<div fontcolor=249003>+%s </div>", total_attr_str .. attr_name, attr_val)
+		end
+	end
+	self.total_addition_txt:setString(total_attr_str)
+    self:setStoreyList()
+end
+
+function HomeWorldSelectFloorWindow:setOtherData(data)
+    if not data and not data.soft_list then return end
+    self.other_all_soft_data = data.soft_list
+    local total_attr_str = TI18N("当前家具总加成: ")
+    local total_attr = data.all_attr
+    if total_attr and next(total_attr) then
+		for i, v in ipairs(total_attr) do
+			local attr_key = Config.AttrData.data_id_to_key[v[1]]
+            local attr_val = v[2]
+			local attr_name = Config.AttrData.data_key_to_name[attr_key]
+			local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val*0.1).."%"
+			end
+			total_attr_str = _string_format("%s<div fontcolor=249003>+%s </div>", total_attr_str .. attr_name, attr_val)
+        end
+        self.total_addition_txt:setVisible(true)
+    else
+        self.total_addition_txt:setVisible(false)
+	end
+	self.total_addition_txt:setString(total_attr_str)
+    self:setOtherStoreyList()
+end
+
+function HomeWorldSelectFloorWindow:setStoreyList()
+    local storey_cfg = Config.HomeData.data_home_storey
+    local max_soft_val = _model:getMaxAllSoftValue()
+    if max_soft_val and storey_cfg and (self.item_data_list == nil or next(self.item_data_list) == nil) then
+        self.item_data_list = {}
+        for i, v in pairs(storey_cfg) do
+            local temp_storey = {}
+            temp_storey.limit = v.limit
+            temp_storey.floor = v.id
+            temp_storey.soft = 0
+            temp_storey.soft_is_enough = true
+            for _, lim in ipairs(v.limit) do
+                if lim[1] == "soft" then
+                    temp_storey.soft_is_enough = max_soft_val >= lim[2]
+                end
+            end
+            if self.all_soft_data then
+                for k, v1 in pairs(self.all_soft_data) do
+                    if temp_storey.floor == v1.floor then
+                        temp_storey.soft = v1.soft
+                        break
+                    end
+                end
+            end
+            temp_storey.soft_add_cfg = _model:getSoftAdditionCfg(temp_storey.floor, temp_storey.soft)
+            _table_insert(self.item_data_list, temp_storey)
+		end
+		_table_sort(self.item_data_list, SortTools.KeyLowerSorter("floor"))
+        self.floor_scrollview:reloadData()
+    end
+end
+
+function HomeWorldSelectFloorWindow:setOtherStoreyList()
+    local storey_cfg = Config.HomeData.data_home_storey
+    if storey_cfg and (self.item_data_list == nil or next(self.item_data_list) == nil) then
+        self.item_data_list = {}
+        for i, v in pairs(storey_cfg) do
+            local temp_storey = {}
+            temp_storey.limit = v.limit
+            temp_storey.floor = v.id
+            temp_storey.soft = 0
+            temp_storey.soft_is_enough = false
+            if self.other_all_soft_data then
+                for k, v1 in pairs(self.other_all_soft_data) do
+                    if temp_storey.floor == v1.floor then
+                        temp_storey.soft = v1.soft
+                        temp_storey.soft_is_enough = true
+                        break
+                    end
+                end
+            end
+            temp_storey.soft_add_cfg = _model:getSoftAdditionCfg(temp_storey.floor, temp_storey.soft)
+            _table_insert(self.item_data_list, temp_storey)
+		end
+		_table_sort(self.item_data_list, SortTools.KeyLowerSorter("floor"))
+        self.floor_scrollview:reloadData()
+    end
+end
+
+function HomeWorldSelectFloorWindow:register_event()
+    registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), false, 2)
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+    -- 更新所有楼层舒适度
+    self:addGlobalEvent(HomeworldEvent.Update_All_floor_Soft, function ( data )
+        self:setData(data)
+    end)
+    -- 更新被拜访者舒适度
+    self:addGlobalEvent(HomeworldEvent.Update_Other_floor_Soft, function ( data )
+        self:setOtherData(data)
+    end)
+end
+
+function HomeWorldSelectFloorWindow:_onClickBtnClose()
+    _controller:openHomeWorldSelectFloorWindow(false)
+end
+
+function HomeWorldSelectFloorWindow:close_callback()
+    if self.floor_scrollview then
+        self.floor_scrollview:DeleteMe()
+        self.floor_scrollview = nil
+    end
+    _controller:openHomeWorldSelectFloorWindow(false)
+end
+
+-----------------------------------@ 层数item
+HomeWorldSelectFloorItem =
+    class(
+    "HomeWorldSelectFloorItem",
+    function()
+        return ccui.Widget:create()
+    end
+)
+
+function HomeWorldSelectFloorItem:ctor()
+    self.item_list = {}
+    self:configUI()
+    self:register_event()
+end
+
+function HomeWorldSelectFloorItem:configUI()
+    self.size = cc.size(600, 135)
+    self:setTouchEnabled(false)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("homeworld/homeworld_select_floor_item")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    local container = self.root_wnd:getChildByName("main_container")
+    self.container = container
+
+    self.goto_btn = container:getChildByName("goto_btn")
+    self.goto_btn_lab = self.goto_btn:getChildByName("label")
+	self.goto_btn_lab:setString(TI18N("前往"))
+	self.floor_label = container:getChildByName("floor_label")
+
+	self.title_label = container:getChildByName("title_label")
+	container:getChildByName("soft_label"):setString(TI18N("当前舒适度: "))
+	self.soft_val = container:getChildByName("soft_val")
+	self.soft_addition_label = container:getChildByName("soft_addition_label"):setString(TI18N("舒适度加成: "))
+	self.soft_addition_val = container:getChildByName("soft_addition_val")
+
+    self.floor_label:setPositionX(56)
+    container:getChildByName("sort_icon"):setPositionX(195)
+    container:getChildByName("soft_label"):setPositionX(226)
+    self.soft_val:setPositionX(410)
+    self.soft_addition_label:setPositionX(246)
+    self.soft_addition_val:setPositionX(410)
+end
+
+function HomeWorldSelectFloorItem:register_event()
+    registerButtonEventListener(self.goto_btn, handler(self, self._onClickBtnGo), true, 1)
+end
+
+function HomeWorldSelectFloorItem:_onClickBtnGo()
+    if self.callback and self.data and self.data.floor then
+        self.callback(self.data.floor)
+    end
+    _controller:openHomeWorldSelectFloorWindow(false)
+end
+
+function HomeWorldSelectFloorItem:setData(data)
+    if not data then return end
+	self.data = data
+    self.floor_label:setString(_string_format(TI18N("第%s层"), StringUtil.numToChinese(self.data.floor)))
+    self.soft_val:setString(data.soft)
+    if data.soft_add_cfg then
+        self.soft_addition_val:setString(data.soft_add_cfg.show_per)
+    else
+        self.soft_addition_val:setString("0%")
+    end
+	local show_lock_status = false
+	local lock_tips = ""
+	if self.data.limit then
+		-- 最大舒适度
+		for k,v in pairs(self.data.limit) do
+			if v[1] == "lev" then
+				local role_vo = RoleController:getInstance():getRoleVo()
+				show_lock_status = (role_vo.lev < v[2])
+				lock_tips = _string_format(TI18N("等级达到%s后解锁"), v[2])
+			elseif v[1] == "soft" then
+				show_lock_status = not data.soft_is_enough
+				lock_tips = _string_format(TI18N("各层总舒适度达到%s后解锁"), v[2])
+			end
+			if show_lock_status then
+				break
+			end
+		end
+	end
+	self:setNotOpenStatus(show_lock_status, lock_tips)
+end
+
+-- 设置点击回调
+function HomeWorldSelectFloorItem:addCallBack(callback)
+    self.callback = callback
+end
+
+function HomeWorldSelectFloorItem:setNotOpenStatus(status, tips)
+	if not status and self.no_open_lay == nil then return end
+	if self.no_open_lay == nil then
+		local size = self.container:getContentSize()
+        self.no_open_lay = ccui.Layout:create()
+        self.no_open_lay:setAnchorPoint(cc.p(0.5, 0.5))
+        self.no_open_lay:setContentSize(cc.size(size.width - 3, size.height - 3))
+        self.no_open_lay:setPosition(size.width / 2, size.height / 2 + 1)
+        showLayoutRect(self.no_open_lay, 150)
+        self.no_open_lay:setTouchEnabled(true)
+        self.no_open_lay:setSwallowTouches(true)
+        self.no_open_txt = createLabel(20, cc.c4b(0xd6,0x1d,0x1d,0xff), nil, size.width / 2, 30, "", self.no_open_lay, nil, cc.p(0.5,0.5))
+		self.no_open_txt:enableOutline(cc.c4b(0x00,0x00,0x00,0xff), 2)
+		self.no_open_txt:setString(tips or "")
+		local res = PathTool.getResFrame("common", "common_90009")
+		self.no_open_lock = createImage(self.no_open_lay, res, size.width / 2, size.height / 2, cc.p(0.5, 0.5), true, 0, false)
+        self:addChild(self.no_open_lay, 1)
+	end
+	self.no_open_lay:setVisible(status)
+end
+
+function HomeWorldSelectFloorItem:DeleteMe()
+    self:removeAllChildren()
+    self:removeFromParent()
+end

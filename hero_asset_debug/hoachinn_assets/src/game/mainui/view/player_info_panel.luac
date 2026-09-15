@@ -1,0 +1,657 @@
+-- --------------------------------------------------------------------
+-- 项目的主UI,包含了头像,图标,经验,聊天等
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+PlayerInfoPanel = class("PlayerInfoPanel", function()
+    return ccui.Widget:create()
+end)
+
+local string_format = string.format
+local controler = MainuiController:getInstance()
+local tolua_isnull = tolua.isnull
+local action_controler = ActionController:getInstance()
+local table_insert = table.insert
+local unfold_ani_time = 0.1
+local bg_unfold_time = 0.01
+-- mainui_1 = nil
+-- mainui_2 = nil
+function PlayerInfoPanel:ctor()
+    self.res_list = {
+    }
+    -- PathTool.checkRes("resource/bondskill/bondskill/bondskill_40.png")
+    if self.resources_load == nil then
+        self.resources_load = ResourcesLoad.New(true) 
+    end
+    self.resources_load:addAllList(self.res_list,function()
+        if self then
+            self.img_is_load = true
+            self:updateNoticePage()
+            self:runUpdateNoticePageData()
+        end
+    end)
+    self:initConfig()
+    self:createRootWnd()
+    self:registerEvent()
+    self:updateRoleData()
+end
+
+function PlayerInfoPanel:initConfig()
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.bottom_btn_list = {}					-- 下方的功能按钮
+    self.treasure_btn_list = {}					-- 编年史的功能按钮
+    self.special_btn_list = {}					-- 潜能释放的功能按钮
+    self.pros_btn_list = {}					-- 禁术的功能按钮
+    self.icon_container_list = {}				-- 根据方位保存需要储存的图标的父节点
+    self.wealth_item_key = {"coin", "gold"}     --资产icon显示数据 key 是self.role_vo里面的变量
+    self.record_wealth_icon_res = {}            --记录当前资产的icon
+    self.wealth_icon_list = {}                 -- 资产的数值icon
+    self.wealth_label_list = {}					-- 资产的数值按钮
+    self.is_open = true 						-- 是否是打开状态下
+    self.cur_select_index = 0					-- 当前选中的按钮id
+
+    self.render_list = {}						-- 待添加的实例对象
+    self.render_list_dic = {}					-- 但添加实例字典
+    self.function_list = {}						-- 显示的实例对象
+    self.cur_vip_lev = nil                      -- VIP等级
+    self.top_left_off = 15
+    self.left_off = 20
+    self.right_off = 20
+    self.top_left_max_sum = 4
+    self.left_max_sum = 5
+
+    self.is_in_shrink = false
+    self.is_shrink = false
+
+    self.layout_list = {}
+    for k, v in pairs(FunctionIconVo.type) do
+        self.layout_list[v] = {}
+    end
+    self.btn_cache_tips = {}    --红点缓存
+
+    self.hide_container_status = true
+
+    self.dungeon_item_label = {}
+
+    self.left_icon_unfold = true -- 左侧图标展开状态
+    self.right_icon_unfold = true -- 右侧图标展开状态
+    self.func_show_status = true
+    self.red_bag_2_type = 0 --1：花火红包 2：年兽红包  用于点击事件判断
+    self.training_camp_lev_limit = Config.TrainingCampData.data_const.training_camp_lev_limit
+    self.bool = false
+    self.is_can_click_tip = true
+    self.tab_list = {}
+    self.notice_index = 0
+    self.mainui_list = {}
+    self.bottom_setting = {}
+end
+
+function PlayerInfoPanel:createRootWnd()
+    local csbPath = PathTool.getTargetCSB("mainui/player_info_panel")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+    --读取文件的大小
+    self.size = self.root_wnd:getContentSize()
+    self:setAnchorPoint(cc.p(0, 1))
+    self:setContentSize(self.size)
+
+    self.top_container = self.root_wnd:getChildByName("top_container")
+    local head_container = self.top_container:getChildByName("head_container")
+    self.role_head = PlayerHead.new(PlayerHead.type.circle)
+    self.role_head:setPosition(40, 40)
+    head_container:addChild(self.role_head)
+
+    self.info_container = self.top_container:getChildByName("info_container")
+    self.lev_label = self.info_container:getChildByName("lev_label")
+    self.name_g = self.info_container:getChildByName("name_g")
+    self.name_label = self.name_g:getChildByName("name_label")
+    for i = 1, 2 do
+        self.wealth_label_list[i] = self.info_container:getChildByName("wealth_label_"..i)
+        self.wealth_icon_list[i] = self.info_container:getChildByName("wealth_icon_"..i)
+    end
+    self.fight_label = self.info_container:getChildByName("fight_label")
+
+    self.coin_num_touch = self.top_container:getChildByName("coin_num_touch")
+    self.gold_num_touch = self.top_container:getChildByName("gold_num_touch")
+    self.gold_touch = self.top_container:getChildByName("gold_touch")
+    self.coin_touch = self.top_container:getChildByName("coin_touch")
+    --头顶的
+    self.vip_label = CommonNum.new(19, self.info_container, 1, -2, cc.p(0, 0.5))
+    self.vip_label:setPosition(22, 56)
+    --显示服务器时间
+    self.time_layer = self.top_container:getChildByName("time_layer")
+    self.time_panel = self.top_container:getChildByName("time_panel")
+    self.server_time = self.time_layer:getChildByName("server_time")
+    self:showServerTime()
+    self.fight_panel = self.top_container:getChildByName("fight_panel")
+    self.Panel_2 = self.root_wnd:getChildByName("Panel_2")
+    --显示战斗力
+    self.fight_layer = self.top_container:getChildByName("fight_layer")
+    self.fight_layer:setVisible(false)
+    self.Panel_2:setVisible(false)
+    self.fight_bg = self.fight_layer:getChildByName("bg")
+    self.fight_icon = self.fight_layer:getChildByName("icon")
+    self.fight_txt = self.fight_layer:getChildByName("fight_txt")
+    self.fight_value = self.fight_layer:getChildByName("fight_value")
+    self.fight_value:setString(MoneyTool.moneyFormat(self.role_vo.power))
+    self.fight_value:setPositionX(self.fight_txt:getContentSize().width + self.fight_txt:getPositionX()+10)
+    
+    --显示银币数量
+    self.coin_num_layer = self.top_container:getChildByName("coin_num_layer")
+    self.coin_num_layer:setVisible(false)
+    self.coin_bg = self.coin_num_layer:getChildByName("bg")
+    self.coin_icon = self.coin_num_layer:getChildByName("icon")
+    self.coin_value = self.coin_num_layer:getChildByName("coin_num_value")
+    
+    --显示金币数量
+    self.gold_num_layer = self.top_container:getChildByName("gold_num_layer")
+    self.gold_num_layer:setVisible(false)
+    self.gold_bg = self.gold_num_layer:getChildByName("bg")
+    self.gold_icon = self.gold_num_layer:getChildByName("icon")
+    self.gold_value = self.gold_num_layer:getChildByName("gold_num_value")
+end
+
+function PlayerInfoPanel:updateValuePanel(layer,bg,icon,value)
+    local value_w = value:getContentSize().width
+    local _w = math.max(177,value_w + 63)
+    layer:setContentSize(cc.size(_w,layer:getContentSize().height))
+    bg:setContentSize(cc.size(_w,bg:getContentSize().height))
+    icon:setPositionX(6)
+    value_w = math.max(value_w,114)
+    value:setPositionX(_w-16-value_w*0.5)
+end
+function PlayerInfoPanel:showServerTime()
+    if tolua.isnull(self.server_time) then return end
+    local time_fun = function()
+        local timezone = 0
+        if InviteCodeController:getInstance() and  InviteCodeController:getInstance():getModel() and InviteCodeController:getInstance().getModel then
+            timezone = InviteCodeController:getInstance():getModel():getServerTimeZone()--服务器时区
+        end
+        local nowtime = GameNet:getInstance():getTime()
+        -- self.server_time:setString(TimeTool.getHM(nowtime))
+        self.server_time:setString(TimeTool.xsdate("%H:%M",nowtime,timezone))
+    end
+    time_fun()
+    doStopAllActions(self.server_time)
+    self.server_time:runAction(cc.RepeatForever:create(cc.Sequence:create(cc.DelayTime:create(1), cc.CallFunc:create(function()
+        time_fun()
+    end))))
+end
+
+-- ---------------------- 资产部分 start---------------------- -- 
+function PlayerInfoPanel:updateRoleData()
+    self:updateRoleLev()
+    self:updateRoleFc()
+    self:updateRoleName()
+    self:updateRoleHead()
+    self:updateRoleHeadCircle()
+    self:updateRoleVip()
+    self:updateRoleAssets()
+    self:updataExchangeRedPoint()
+    self:updateCustomerRed()
+end
+
+function PlayerInfoPanel:updateRoleLev()
+    if self.role_vo == nil then return end
+    if self.cur_lev == self.role_vo.lev then return end
+    self.cur_lev = self.role_vo.lev
+    self.lev_label:setString(self.cur_lev)
+    -- 判断等级是否需要显示气泡
+    -- self:createChatBubble()
+end
+
+function PlayerInfoPanel:updateRoleFc()
+    if self.role_vo == nil then return end
+    if self.cur_fc == self.role_vo.power then return end
+    self.cur_fc = self.role_vo.power
+    self.fight_label:setString(MoneyTool.moneyFormat(self.cur_fc))
+end
+
+function PlayerInfoPanel:updateRoleName()
+    if self.role_vo == nil then return end
+    if self.cur_name == self.role_vo.name then return end
+    self.cur_name = self.role_vo.name
+    self.name_label:setString(self.cur_name)
+end
+
+--- 更新角色头像,这里要特殊处理了,有可能是自定义头像,也有可能是系统头像,优先判断系统头像,这里应该需要判断如果还没有初始化cos，就不处理
+function PlayerInfoPanel:updateRoleHead()
+    local check_status_str = TencentCos:getInstance():getSecretid()
+    if check_status_str == nil or check_status_str == "" then return end
+    if self.role_vo == nil then return end
+    local res_id = self.role_vo.face_id
+    local face_update_time = self.role_vo.face_update_time
+    self.role_head:setHeadRes(res_id, false, LOADTEXT_TYPE, self.role_vo.face_file, self.role_vo.face_update_time)
+end
+
+function PlayerInfoPanel:updateRoleHeadCircle()
+    if self.role_vo == nil then return end
+    if self.avatar_base_id == self.role_vo.avatar_base_id then return end
+    self.avatar_base_id = self.role_vo.avatar_base_id
+    local vo = Config.AvatarData.data_avatar[self.role_vo.avatar_base_id]
+    if vo then
+        local res_id = vo.res_id or 1
+        local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+        self.role_head:showBg(res, nil, false, vo.offy)
+    end
+end
+
+function PlayerInfoPanel:updateRoleVip()
+    if self.role_vo == nil then return end
+    
+    self.vip_label:setNum(self.role_vo.vip_lev)
+    -- self.vip_image_label:setNum(self.role_vo.vip_lev)
+end
+
+function PlayerInfoPanel:updateRoleAssets()
+    if self.role_vo == nil then return end
+    for i,key in ipairs(self.wealth_item_key) do
+        local label = self.wealth_label_list[i]
+        local key_value = self.role_vo[key] or 0
+        label:setString(MoneyTool.GetMoneyString(key_value))
+        local item_id = Config.ItemData.data_assets_label2id[key]
+        local config = Config.ItemData.data_get_data(item_id)
+        if config then 
+            local res = PathTool.getItemRes(config.icon, false)
+            if self.record_wealth_icon_res[i] == nil or self.record_wealth_icon_res[i] ~= res then
+                self.record_wealth_icon_res[i] = res
+                if self.wealth_icon_list[i] then
+                    loadSpriteTexture(self.wealth_icon_list[i], res, LOADTEXT_TYPE)
+                end
+            end
+        end
+    end
+end
+-- ---------------------- 资产部分 end---------------------- --
+
+--==============================--
+--desc:ui屏幕的适配
+--time:2018-06-06 05:17:27
+--@return 
+--==============================--
+function PlayerInfoPanel:adaptScreen()
+    self.top_container:setPositionY(display.getTop())
+end
+
+--==============================--
+--desc:注册事件
+--time:2017-09-09 02:23:00
+--@return
+--==============================--
+function PlayerInfoPanel:registerEvent()
+    if self.role_vo then
+        if self.role_update_event == nil then
+            self.role_update_event = self.role_vo:Bind(RoleEvent.UPDATE_ROLE_ATTRIBUTE, function(key, value)
+                if key == "power" or key == "match_rank" then 		--段位分
+                    self:updateRoleFc()
+                elseif key == "lev" then 	--等级
+                    self:updateRoleLev()
+                    self:updataVIPRedPoint()
+                    self.overLev = false
+                    if value >= Config.MergeVotingData.data_const.level_limit.val then
+                        self.overLev = true
+                        MergeserverController:getInstance():sender10991()
+                    end
+                    self:updataExchangeRedPoint()
+                elseif key == "name" then 	-- 改名的时候
+                    self:updateRoleName()
+                elseif key == "face_id" or key == "face_update_time" or key == "custom_face_file" then
+                    self:updateRoleHead()
+                elseif key == "avatar_base_id" then
+                    self:updateRoleHeadCircle()
+                elseif key == "coin" or key == "gold" or key == "red_gold" or key == "silver_coin" or key == "hero_exp" then
+                    self:updateRoleAssets()
+                elseif key == "vip_lev" then
+                    self:updateRoleVip()
+                elseif key == "gid" and value == 0 then
+                    -- self:showRedBagEffect(false)
+                end
+            end)
+        end
+    end
+    --vip图标红点
+    if self.vip_image_redpoint == nil then
+        self.vip_image_redpoint = GlobalEvent:getInstance():Bind(VipEvent.SUPRE_CARD_GET, function(status)
+            self:updataVIPRedPoint()
+        end)
+    end
+
+    if self.role_head then
+        self.role_head:addCallBack(function()
+            RoleController:getInstance():openRolePersonalSpacePanel(true)
+        end, false)
+    end
+
+    if self.gold_touch then
+        self.gold_touch:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+
+                if self.wealth_item_key[2]  then
+                    if self.wealth_item_key[2] == "hero_exp" then --英雄经验 
+                        local config = Config.ItemData.data_get_data(Config.ItemData.data_assets_label2id.hero_exp)
+                        if config then
+                            BackpackController:getInstance():openTipsSource(true, config)
+                        end
+                    else --默认钻石的
+                        --MallController:getInstance():openChargeShopWindow(true, MallConst.Charge_Shop_Type.Diamond)
+                        VipController:getInstance():openVipMainWindow(true, VIPTABCONST.CHARGE)
+                    end
+                else
+                    --MallController:getInstance():openChargeShopWindow(true, MallConst.Charge_Shop_Type.Diamond)
+                    VipController:getInstance():openVipMainWindow(true, VIPTABCONST.CHARGE)    
+                end
+            end
+        end)
+    end
+
+    if self.coin_touch and not MAKELIFEBETTER_NEW then
+        self.coin_touch:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                playButtonSound2()
+                if self.wealth_item_key[1] then
+                    --目前只有默认金币的.还没有其他需求
+                    ExchangeController:getInstance():openExchangeMainView(true)
+                else
+                    ExchangeController:getInstance():openExchangeMainView(true)    
+                end
+                
+            end
+        end)
+    end
+
+    if self.fight_panel then
+        self.fight_panel:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self.fight_value:setString(MoneyTool.moneyFormat(self.role_vo.power))
+                self.fight_layer:setVisible(true)
+                self.Panel_2:setVisible(true)
+            end
+        end)
+    end
+    
+    if self.gold_num_touch then
+        self.gold_num_touch:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self.gold_value:setString(MoneyTool.moneyFormat(self.role_vo[self.wealth_item_key[2]]))
+                local item_id = Config.ItemData.data_assets_label2id[self.wealth_item_key[2]]
+                local config = Config.ItemData.data_get_data(item_id)
+                if config then
+                    local res = PathTool.getItemRes(config.icon, false)
+                    loadSpriteTexture(self.gold_icon, res, LOADTEXT_TYPE)
+                    self:updateValuePanel(self.gold_num_layer,self.gold_bg,self.gold_icon,self.gold_value)
+                    self.gold_num_layer:setVisible(true)
+                    self.Panel_2:setVisible(true)
+                end
+            end
+        end)
+    end
+    
+    if self.coin_num_touch then
+        self.coin_num_touch:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self.coin_value:setString(MoneyTool.moneyFormat(self.role_vo.coin))
+                self:updateValuePanel(self.coin_num_layer,self.coin_bg,self.coin_icon,self.coin_value)
+                self.coin_num_layer:setVisible(true)
+                self.Panel_2:setVisible(true)
+            end
+        end)
+    end
+    if self.Panel_2 then
+        self.Panel_2:addTouchEventListener(function()
+            self.fight_layer:setVisible(false)
+            self.gold_num_layer:setVisible(false)
+            self.coin_num_layer:setVisible(false)
+            self.Panel_2:setVisible(false)
+        end)
+    end
+    if self.time_panel then
+        self.time_panel:addTouchEventListener(function()
+            controler:openTimeView(true)
+        end)
+    end
+
+    --点金红点
+    if self.coin_touch_redpoint == nil then
+        self.coin_touch_redpoint = GlobalEvent:getInstance():Bind(ExchangeEvent.Extra_Reward, function(data)
+            -- self.exchange_data = data
+            self:updataExchangeRedPoint()
+        end)
+    end
+
+    --头部资产更新事件
+    if self.update_wealth_event == nil then
+        self.update_wealth_event = GlobalEvent:getInstance():Bind(MainuiEvent.HEAD_UPDATE_WEALTH_EVENT, function(index, id)
+            if index and id  then
+                if self.wealth_item_key then
+                    self.wealth_item_key[index] = Config.ItemData.data_assets_id2label[id]
+                    self:updateRoleAssets()
+                end
+            end
+        end)
+    end
+    
+    if self.customer_new_msg_event == nil then
+        self.customer_new_msg_event = GlobalEvent:getInstance():Bind(NoticeEvent.Get_Customer_Close_Info_Event_Data, function()  --
+            self:updateCustomerRed()
+        end)
+    end
+    if self.info_red_event == nil then
+        self.info_red_event = GlobalEvent:getInstance():Bind(RoleEvent.UPDATE_RED_EVENT, function()  --
+            self:updateCustomerRed()
+        end)
+    end
+end
+
+function PlayerInfoPanel:updateCustomerRed()
+    local red_status = NoticeController:getInstance():getModel():checkRedStatus() or false
+    addRedPointToNodeByStatus( self.role_head, red_status or RoleController:getInstance():getModel():getRedForInfo(), 6, -5, nil)
+    MainuiController:getInstance():setFunctionTipsStatus(MainuiConst.icon.customer, red_status)
+end
+
+--更新VIP红点
+function PlayerInfoPanel:updataVIPRedPoint()
+    if not self.role_vo then return end
+    if MAKELIFEBETTER ~= true then
+        if self.role_vo.lev < 6 then return end
+    end
+end
+
+--更新点金红点
+function PlayerInfoPanel:updataExchangeRedPoint() 
+    self.exchange_data = ExchangeController:getInstance():getModel():get23606Data()
+    if not self.exchange_data then
+        return
+    end
+    local red_lev_min =  Config.ConvertData.data_trade_cost.red_lev_min
+    for i,v in ipairs(self.exchange_data.list) do
+        if v.id == 1 and self.coin_touch then
+            local status = false
+            if (v.max - v.num) > 0 and self.role_vo and red_lev_min and red_lev_min.val <= self.role_vo.lev then
+                status = true
+            end
+            addRedPointToNodeByStatus(self.coin_touch,status,11,7,nil,nil,PathTool.getResFrame("mainui","mainui_1009"))
+        end
+    end
+end
+
+function PlayerInfoPanel:DeleteMe()
+    doStopAllActions(self.server_time) --停止计时器
+    if self.resources_load ~= nil then
+		self.resources_load:DeleteMe()
+		self.resources_load = nil
+	end
+    if self.function_time_ticket then
+        GlobalTimeTicket:getInstance():remove(self.function_time_ticket)
+        self.function_time_ticket = nil
+    end
+    for k, layer in pairs(self.icon_container_list) do
+        if layer ~= nil and not tolua_isnull(layer) then
+            layer:stopAllActions()
+        end
+    end
+    if self.vip_label then
+        self.vip_label:DeleteMe()
+        self.vip_label = nil
+    end
+    if self.add_function_timer ~= nil then
+        GlobalTimeTicket:getInstance():remove(self.add_function_timer)
+        self.add_function_timer = nil
+    end
+    if self.role_vo then
+        if self.role_update_event ~= nil then
+            self.role_vo:UnBind(self.role_update_event)
+            self.role_update_event = nil
+        end
+        self.role_vo = nil
+    end
+    if self.update_acc then
+        GlobalEvent:getInstance():UnBind(self.update_acc)
+        self.update_acc = nil
+    end
+
+    if self.red_bag_event then 
+        GlobalEvent:getInstance():UnBind(self.red_bag_event)
+        self.red_bag_event = nil
+    end
+    if self.petard_red_bag_event then
+        GlobalEvent:getInstance():UnBind(self.petard_red_bag_event)
+        self.petard_red_bag_event = nil
+    end
+
+    if self.year_red_bag_event then
+        GlobalEvent:getInstance():UnBind(self.year_red_bag_event)
+        self.year_red_bag_event = nil
+    end
+
+    if self.main_ui_banner_next_event then
+        GlobalEvent:getInstance():UnBind(self.main_ui_banner_next_event)
+        self.main_ui_banner_next_event = nil
+    end
+    
+    if self.return_red_bag_event then
+        GlobalEvent:getInstance():UnBind(self.return_red_bag_event)
+        self.return_red_bag_event = nil
+    end
+
+    if self.time_collect_event then
+        GlobalEvent:getInstance():UnBind(self.time_collect_event)
+        self.time_collect_event = nil
+    end
+    
+    
+    if self.new_msg_add_event then
+        GlobalEvent:getInstance():UnBind(self.new_msg_add_event)
+        self.new_msg_add_event = nil
+    end
+    if self.update_recharge_red then
+        GlobalEvent:getInstance():UnBind(self.update_recharge_red)
+        self.update_recharge_red = nil
+    end
+    if self.vote_mergeServer_event then
+        GlobalEvent:getInstance():UnBind(self.vote_mergeServer_event)
+        self.vote_mergeServer_event = nil
+    end
+    if self.vote_mergeSuccess_event then
+        GlobalEvent:getInstance():UnBind(self.vote_mergeSuccess_event)
+        self.vote_mergeSuccess_event = nil
+    end
+        if self.vote_mergeAction_event then
+        GlobalEvent:getInstance():UnBind(self.vote_mergeAction_event)
+        self.vote_mergeAction_event = nil
+    end
+    if self.update_drama_max_event then
+        GlobalEvent:getInstance():UnBind(self.update_drama_max_event)
+        self.update_drama_max_event = nil
+    end
+    if self.update_wealth_event then
+        GlobalEvent:getInstance():UnBind(self.update_wealth_event)
+        self.update_wealth_event = nil
+    end
+    if self.update_prompt_tips then
+        GlobalEvent:getInstance():UnBind(self.update_prompt_tips)
+        self.update_prompt_tips = nil
+    end
+    if self.remove_prompt_tips then
+        GlobalEvent:getInstance():UnBind(self.remove_prompt_tips)
+        self.remove_prompt_tips = nil
+    end
+    if self.coin_touch_redpoint then
+        GlobalEvent:getInstance():UnBind(self.coin_touch_redpoint)
+        self.coin_touch_redpoint = nil
+    end
+    if self.customer_new_msg_event then
+        GlobalEvent:getInstance():UnBind(self.customer_new_msg_event)
+        self.customer_new_msg_event = nil
+    end
+    if self.info_red_event then
+        GlobalEvent:getInstance():UnBind(self.info_red_event)
+        self.info_red_event = nil
+    end
+    if self.vip_image_redpoint then
+        GlobalEvent:getInstance():UnBind(self.vip_image_redpoint)
+        self.vip_image_redpoint = nil
+    end
+    if self.update_hero_red then
+        GlobalEvent:getInstance():UnBind(self.update_hero_red)
+        self.update_hero_red = nil
+    end
+    if self.fly_item_event then
+        GlobalEvent:getInstance():UnBind(self.fly_item_event)
+        self.fly_item_event = nil
+    end
+    if self.fly_item_shake_event then
+        GlobalEvent:getInstance():UnBind(self.fly_item_shake_event)
+        self.fly_item_shake_event = nil
+    end
+    if self.treasure_red_event then
+        GlobalEvent:getInstance():UnBind(self.treasure_red_event)
+        self.treasure_red_event = nil
+    end
+    if self.update_action_data_event then
+        GlobalEvent:getInstance():UnBind(self.update_action_data_event)
+        self.update_action_data_event = nil
+    end
+    if self.update_holiday_tab_status then
+        GlobalEvent:getInstance():UnBind(self.update_holiday_tab_status)
+        self.update_holiday_tab_status = nil
+    end
+    if self.hero_pros_switch_back_event then
+        GlobalEvent:getInstance():UnBind(self.hero_pros_switch_back_event)
+        self.hero_pros_switch_back_event = nil
+    end
+    if self.update_trainingcamp_data then
+        GlobalEvent:getInstance():UnBind(self.update_trainingcamp_data)
+        self.update_trainingcamp_data = nil
+    end
+    if self.updateEvent then
+        GlobalEvent:getInstance():UnBind(self.updateEvent)
+        self.updateEvent = nil
+    end
+    if self.vip_image_effect then
+        self.vip_image_effect:clearTracks()
+        self.vip_image_effect:removeFromParent()
+        self.vip_image_effect = nil
+    end
+
+    for k, v in pairs(self.function_list) do
+        if v.DeleteMe then
+            v:DeleteMe()
+        end
+    end
+
+    if not tolua_isnull(self.item_container) then
+        self.item_container:removeAllChildren()
+    end
+
+    self.function_list = {}
+    self.render_list = {}
+    self.render_list_dic = {}
+    
+    self:removeAllChildren()
+    self:removeFromParent()
+end

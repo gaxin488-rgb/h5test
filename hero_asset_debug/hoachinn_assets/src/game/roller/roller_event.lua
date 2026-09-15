@@ -1,0 +1,18 @@
+RollerEvent = RollerEvent or {}
+
+RollerEvent.Update_Roller_Event = "RollerEvent.Update_Roller_Event"
+RollerEvent.Update_SINGLE_ROLLER_Data = "RollerEvent.Update_SINGLE_ROLLER_Data"
+RollerEvent.UpdateRedStatus = "RollerEvent.UpdateRedStatus"
+RollerEvent.Update_Roller_Fengyin_Eff = "RollerEvent.Update_Roller_Fengyin_Eff"
+RollerEvent.Roller_Strength_Effect = "RollerEvent.Roller_Strength_Effect"
+RollerEvent.Roller_Upstar_Result = "RollerEvent.Roller_Upstar_Result"
+RollerEvent.Roller_GetTujianPoint_Event = "RollerEvent.Roller_GetTujianPoint_Event"
+RollerEvent.Roller_Talent_Active_Event = "RollerEvent.Roller_Talent_Active_Event"
+RollerEvent.Roller_Equip_Event = "RollerEvent.Roller_Equip_Event"
+RollerEvent.Roller_Talent_Update_Event = "RollerEvent.Roller_Talent_Update_Event"
+RollerEvent.RollerFenjieSelectNumEvent = "RollerEvent.RollerFenjieSelectNumEvent"
+RollerEvent.RollerFenjieSuccessEvent = "RollerEvent.RollerFenjieSuccessEvent"
+RollerEvent.UpdateRollerLibraryRedStatus = "RollerEvent.UpdateRollerLibraryRedStatus"
+RollerEvent.UpdatePrivilegeVipData = "RollerEvent.UpdatePrivilegeVipData"
+RollerEvent.UpdateSummonData = "RollerEvent.UpdateSummonData"
+RollerEvent.StopFenYinTimerEvent = "RollerEvent.StopFenYinTimerEvent"

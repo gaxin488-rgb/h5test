@@ -1,0 +1,421 @@
+--------------------------------------------
+-- @Author  : yuanqi
+-- @Editor  : yuanqi
+-- @Date    : 2020_06_22
+-- @description    :
+-- 灵器激活界面
+---------------------------------
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+
+HorcruxActivateWindow = HorcruxActivateWindow or BaseClass(BaseView)
+
+function HorcruxActivateWindow:__init()
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.is_full_screen = false
+    self.layout_name = "hero/horcrux_activate_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist}, 
+    }
+    self.no_activate_lev = 1
+    self.horcrux_attr_config = nil
+    self.partner_horcrux_config = nil
+    self.attr_data_list = {}
+    --消耗物品列表
+    self.cost_item_list = {}
+    -- 强化效果item列表
+    self.strengthen_item_list = {}
+end
+
+function HorcruxActivateWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    local container = self.root_wnd:getChildByName("container")
+    self.container = container
+    self:playEnterAnimatianByObj(self.container, 2)
+    self.title_bg = self.container:getChildByName("image_1")
+    self.win_title = self.container:getChildByName("win_title")
+    self.win_title:setString(TI18N("魂器觉醒"))
+    self.close_btn = self.container:getChildByName("close_btn")
+
+    -- 顶部基础部分
+    self.base_panel = self.container:getChildByName("base_panel")
+    self.exclusive_hero = self.base_panel:getChildByName("exclusive_hero")
+    self.score_title = self.base_panel:getChildByName("score_title")
+    self.score_title:setString(TI18N("评分: "))
+    self.power_label = CommonNum.new(1, self.base_panel, 1, - 2, cc.p(0, 0))
+    self.power_label:setPosition(cc.p(350, 30))
+    self.power_label:setNum(0)
+    -- self.power_label:setScale(0.8)
+    self.name = self.base_panel:getChildByName("name")
+    self.look_btn = self.base_panel:getChildByName("look_btn")
+    self.horcrux_node = self.base_panel:getChildByName("horcrux_node")
+    -- 魂器图标
+    self.horcrux_item = HorcruxItem.new(false, 0.95, false, false)
+    self.horcrux_node:addChild(self.horcrux_item)
+
+    -- 属性部分
+    self.attr_panel = self.container:getChildByName("attr_panel")
+    self.base_attr_title =  self.attr_panel:getChildByName("label")
+    self.base_attr_title:setString(TI18N("基础属性(未激活)"))
+    self.attr_scroll = self.attr_panel:getChildByName("attr_scroll")
+
+    -- 强化效果
+    self.strengthen_effect_panel = self.container:getChildByName("strengthen_effect_panel")
+    self.strengthen_effect_title = self.strengthen_effect_panel:getChildByName("label")
+    self.strengthen_effect_title:setString(TI18N("强化属性(未激活)"))
+    self.strengthen_effect_scroll = self.strengthen_effect_panel:getChildByName("strengthen_effect_scroll")
+    self.strengthen_effect_scroll:setScrollBarEnabled(false)
+    self.scroll_size = self.strengthen_effect_scroll:getContentSize()
+
+    -- 下方激活按钮部分
+    self.activate_panel = self.container:getChildByName("activate_panel")
+    self.consume_txt = self.activate_panel:getChildByName("consume_txt")
+    self.consume_txt:setString(TI18N("消耗"))
+    self.consume_txt:setRotation(90)
+    self.activate_condition = self.activate_panel:getChildByName("activate_condition")
+    self.activate_condition:setVisible(false)
+    self.activate_btn = self.activate_panel:getChildByName("activate_btn")
+    self.activate_btn_label = self.activate_btn:getChildByName("label")
+    self.activate_btn_label:setString(TI18N("觉醒"))
+    self.activate_btn:setEnabled(false)
+    self.cost_node = self.activate_panel:getChildByName("cost_node")
+    self:updateScrollviewList()
+end
+
+function HorcruxActivateWindow:updateScrollviewList()
+    if self.child_scrollview == nil then
+        local scroll_view_size = self.attr_scroll:getContentSize()
+        local setting = {
+            start_x = 5,                     -- 第一个单元的X起点
+            space_x = 0,                     -- x方向的间隔
+            start_y = 0,                     -- 第一个单元的Y起点
+            space_y = 15,                     -- y方向的间隔
+            item_width = 590,                -- 单元的尺寸width
+            item_height = 35,               -- 单元的尺寸height
+            row = 0,                         -- 行数，作用于水平滚动类型
+            col = 1,                         -- 列数，作用于垂直滚动类型
+            delay = 4,                       -- 创建延迟时间
+            once_num = 1,                    -- 每次创建的数量
+        }
+        self.child_scrollview = CommonScrollViewSingleLayout.new(self.attr_scroll, cc.p(0, 0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting, cc.p(0, 0))
+
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.createNewCell), ScrollViewFuncType.CreateNewCell) --创建cell
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.numberOfCells), ScrollViewFuncType.NumberOfCells) --获取数量
+        self.child_scrollview:registerScriptHandlerSingle(handler(self,self.updateCellByIndex), ScrollViewFuncType.UpdateCellByIndex) --更新cell
+    end
+    self.child_scrollview:setSwallowTouches(false)
+end
+
+--创建cell 
+--@width 是setting.item_width
+--@height 是setting.item_height
+function HorcruxActivateWindow:createNewCell(width, height)
+    local cell = HorcruxAttrItem1.new()
+	return cell
+end
+
+--获取数据数量
+function HorcruxActivateWindow:numberOfCells()
+    if not self.attr_data_list then return 0 end
+    return #self.attr_data_list
+end
+
+--更新cell(拖动的时候.刷新数据时候会执行次方法)
+--cell :createNewCell的返回的对象
+--inde :数据的索引
+function HorcruxActivateWindow:updateCellByIndex(cell, index)
+    if not self.attr_data_list then return end
+    cell.index = index
+    local cell_data = self.attr_data_list[index]
+    if not cell_data then return end
+    cell:setData(cell_data)
+end
+
+function HorcruxActivateWindow:register_event()
+    registerButtonEventListener(self.close_btn,
+        function()
+            controller:openHorcruxActivatePanel(false)
+        end, false, 2)
+
+    registerButtonEventListener(self.background,
+        function()
+            controller:openHorcruxActivatePanel(false)
+        end, false, 2)
+
+    registerButtonEventListener(self.activate_btn,
+        function()
+            if self.horcrux_data and self.horcrux_data.partner_id then
+                controller:sender11402(self.horcrux_data.partner_id)
+            end
+        end, true, 1)
+    
+    registerButtonEventListener(self.look_btn, function(param,sender, event_type)
+        local config = Config.HorcruxData.data_constant.horcrux_rule
+        if config then
+            TipsManager:getInstance():showCommonTips(config.desc, sender:getTouchBeganPosition())
+        end
+    end ,true, 2)
+
+    -- 英雄数据更新
+    self:addGlobalEvent(HeroEvent.Hero_Data_Update, function(hero_vo)
+        if not hero_vo or not self.horcrux_data then return end
+        if hero_vo.partner_id == self.horcrux_data.partner_id then
+            self.horcrux_data = {bid = hero_vo.bid,
+            horcrux_status = hero_vo.horcrux_status,
+            horcrux_lev = hero_vo.horcrux_lev,
+            partner_id = hero_vo.partner_id,
+            star = hero_vo.star}
+            if hero_vo.horcrux_status >= 1 then
+                controller:openHorcruxActivatePanel(false)
+            end
+        end
+    end)
+    -- 物品熟练变化更新
+    self:addGlobalEvent(BackpackEvent.ADD_GOODS, function(bag_code,temp_list)
+        self:updateItemList(temp_list)
+    end)
+    self:addGlobalEvent(BackpackEvent.DELETE_GOODS, function(bag_code,temp_list)
+        self:updateItemList(temp_list)
+    end)
+    self:addGlobalEvent(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+        self:updateItemList(temp_list)
+    end)
+    -- 英雄魂器是否可激活强化
+    self:addGlobalEvent(HeroEvent.HORCRUX_CAN_ACTIVATE, function(data) self:setData(data) end)
+end
+
+function HorcruxActivateWindow:openRootWnd(horcrux_data)
+    if horcrux_data == nil then return end
+    self.horcrux_data = horcrux_data
+    self.horcrux_attr_config = model:getHorcruxAttrConfig(self.no_activate_lev)
+    self.partner_horcrux_config = model:getPartnerHorcruxConfig(self.horcrux_data.bid)
+    controller:sender11404(self.horcrux_data.partner_id)
+end
+
+function HorcruxActivateWindow:setData(data)
+    self.can_activate = false
+    if data and data.result == 1 then
+        self.can_activate = true
+    end
+    if self.horcrux_data == nil or self.horcrux_attr_config == nil or self.partner_horcrux_config == nil then return end
+    self:setBaseInfo()
+    self:setAttrInfo()
+    self:setStrengthenEffectInfo()
+    self:setActivateInfo()
+end
+
+-- 设置装备基础数据
+function HorcruxActivateWindow:setBaseInfo()
+    -- 魂器图标
+    self.horcrux_item:setData(self.horcrux_data)
+    -- 魂器名字
+    self.name:setString(self.partner_horcrux_config.horcrux_name)
+    -- 专属英雄
+    local partner_data = Config.PartnerData.data_partner_base[self.horcrux_data.bid]
+    local name_str = ""
+    if partner_data and partner_data.name then
+        name_str = string_format(TI18N("%s专属"), partner_data.name)
+    end
+    self.exclusive_hero:setString(name_str)
+    local score = self.horcrux_attr_config.score or 0
+    self.power_label:setNum(score)
+end
+
+-- 设置基础属性
+function HorcruxActivateWindow:setAttrInfo()
+    self.attr_data_list = model:getHorcruxAttrList(self.horcrux_data.bid, self.no_activate_lev)
+    self.child_scrollview:setClickEnabled(#self.attr_data_list > 3)
+    self.child_scrollview:reloadData()
+end
+
+-- 设置强化效果数据
+function HorcruxActivateWindow:setStrengthenEffectInfo()
+    self.strengthen_item_list = {}
+    local strengthen_effect_data = model:getStrengthenDesc(self.horcrux_data.bid,self.no_activate_lev)
+    if strengthen_effect_data then
+        local container_size = 0
+        for i, v in ipairs(strengthen_effect_data) do
+            local effect_item, item_height = self:createStrengthenItem(v)
+            self.strengthen_item_list[i] = {effect_item, item_height}
+            container_size = container_size + item_height
+        end
+        local max_height = math.max(container_size, self.scroll_size.height)
+        self.strengthen_effect_scroll:setInnerContainerSize(cc.size(self.scroll_size.width, max_height))
+        self.strengthen_effect_scroll:setTouchEnabled(max_height > self.scroll_size.height)
+        local total_height = 0
+        for i, v in ipairs(self.strengthen_item_list) do
+            self.strengthen_effect_scroll:addChild(v[1])
+            v[1]:setPosition(20, max_height - (total_height + v[2] / 2))
+            total_height = total_height + v[2]
+        end
+    end
+end
+
+-- 设置激活内容
+function HorcruxActivateWindow:setActivateInfo()
+    local consume_config = Config.HorcruxData.data_constant.partner_awaken_loss
+
+    -- 额外材料
+    for k, item in pairs(self.cost_item_list) do
+        item:setVisible(false)
+    end
+    local start_index = 0
+    if consume_config and consume_config.val then
+        for i, v in ipairs(consume_config.val) do
+            local bid = v[1]
+            local need_num = v[2]
+            local item = self.cost_item_list[i]
+            if not item then
+                item = BackPackItem.new(false, true, false, 0.9)
+                self.cost_node:addChild(item)
+                self.cost_item_list[i] = item
+            end
+            item:setPosition((i - 1) * (BackPackItem.Width * 0.9 + 10) , 0)
+            local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+            item:setBaseData(bid)
+            item:setNeedNum(need_num, have_num, 1, true, 2)
+            if need_num > have_num then
+                item:setDefaultTip(true, true)
+            else
+                item:setDefaultTip()
+            end
+            item:setVisible(true)
+        end
+        start_index = #consume_config.val
+    end
+
+    local config = Config.HorcruxData.data_constant.partner_awaken_limit
+    local limit_str = ""
+    if config and config.desc then
+        limit_str = config.desc
+    end
+    self.activate_condition:setString(limit_str)
+    if self.can_activate then
+        self.activate_btn:setEnabled(true)
+        setChildUnEnabled(false, self.activate_btn)
+        self.activate_btn_label:enableOutline(Config.ColorData.data_color3[277],2)
+        self.activate_condition:setVisible(false)
+    else
+        if self.horcrux_data.partner_id then
+            local hero_vo = model:getHeroById(self.horcrux_data.partner_id)
+            if hero_vo:isResonateHero() then
+                self.activate_condition:setString(TI18N("赋能英雄不能觉醒"))
+            elseif hero_vo:isLInkHero() then
+                self.activate_condition:setString(TI18N("灵魂英雄不能觉醒"))
+            end
+        end
+        self.activate_btn:setEnabled(false)
+        setChildUnEnabled(true, self.activate_btn)
+        self.activate_btn_label:disableEffect(cc.LabelEffect.OUTLINE)
+        self.activate_condition:setVisible(true)
+    end
+end
+
+function HorcruxActivateWindow:updateItemList(temp_list)
+    local update_list = {}
+    for k, vo in pairs(temp_list) do
+        if vo.base_id then
+            update_list[vo.base_id] = true
+        end
+    end
+    for i, v in ipairs(self.cost_item_list) do
+        if v.id and update_list[v.id] then
+            local have_num = BackpackController:getInstance():getModel():getItemNumByBid(v.id)
+            self.cost_item_list[i].item:setNeedNum(v.need_num, have_num)
+        end
+    end
+end
+
+function HorcruxActivateWindow:createStrengthenItem(data)
+    if data == nil then return end
+    local item_size = cc.size(550, 50)
+    local layout = ccui.Widget:create()
+    layout:setAnchorPoint(0, 0.5)
+    local icon_path = PathTool.getResFrame("hero", "hero_info_65")
+    local text_color = cc.c4b(0x7c,0x4f,0x3d,0xff)
+    if data.is_achieve then
+        icon_path = PathTool.getResFrame("hero", "hero_info_64")
+        text_color = cc.c4b(0x65,0xdf,0x74,0xff)
+    end
+    local desc_label = createRichLabel(22, text_color, cc.p(0, 0.5), cc.p(50, 0), 8, nil, 500) 
+    desc_label:setString(data.desc_str)
+    item_size.height = math.max(item_size.height, desc_label:getContentSize().height + 10)
+    layout:setContentSize(cc.size(item_size.width, item_size.height))
+    layout:addChild(desc_label)
+    desc_label:setPositionY(item_size.height / 2)
+    
+    local icon = createImage(layout, icon_path, 15, item_size.height / 2 + desc_label:getContentSize().height / 2 + 3, cc.p(0.5, 1), true)
+    return layout, item_size.height
+end
+
+function HorcruxActivateWindow:close_callback()
+    if self.child_scrollview then
+        self.child_scrollview:DeleteMe()
+        self.child_scrollview = nil
+    end
+    if self.cost_item_list and next(self.cost_item_list) ~= nil then
+        for i, v in pairs(self.cost_item_list) do
+            if v.item then
+                v.item:DeleteMe()
+            end
+        end
+        self.cost_item_list = {}
+    end
+    if self.horcrux_item then
+        self.horcrux_item:DeleteMe()
+        self.horcrux_item = nil
+    end
+    self.strengthen_item_list = nil
+    controller:openHorcruxActivatePanel(false)
+end
+
+--子项
+HorcruxAttrItem1 = class("HorcruxAttrItem1", function()
+    return ccui.Widget:create()
+end)
+
+function HorcruxAttrItem1:ctor()
+    self:configUI()
+end
+
+function HorcruxAttrItem1:configUI( )
+    self.size = cc.size(599,35)
+    self:setTouchEnabled(true)
+    self:setContentSize(self.size)
+
+    local csbPath = PathTool.getTargetCSB("hero/horcrux_attr_item1")
+    self.root_wnd = cc.CSLoader:createNode(csbPath)
+    self:addChild(self.root_wnd)
+
+    self.container = self.root_wnd:getChildByName("container")
+    self.attr_icon = self.container:getChildByName("attr_icon")
+    self.attr_name = self.container:getChildByName("attr_name")
+    self.attr_val = self.container:getChildByName("attr_val")
+    
+end
+
+function HorcruxAttrItem1:setData( data )
+    self.data = data
+    local attr_key = data[1][1]
+    local attr_val = data[1][2]
+    local attr_name = Config.AttrData.data_key_to_name[attr_key]
+    local icon = PathTool.getAttrIconByStr(attr_key)
+    local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+    if is_per == true then
+        attr_val = (attr_val*0.1).."%"
+    end
+    loadSpriteTexture(self.attr_icon, PathTool.getResFrame("common", icon), LOADTEXT_TYPE_PLIST)
+    self.attr_name:setString(attr_name)
+    self.attr_val:setString("+" .. attr_val)
+end
+
+function HorcruxAttrItem1:DeleteMe()
+    self:removeAllChildren()
+end 

@@ -1,0 +1,243 @@
+--------------------------------------------
+-- 
+-- 
+-- @Date    : 2018-11-01 14:19:50
+-- @description    : 
+		-- 争霸赛单人赛程界面
+---------------------------------
+OverlordRaceScheduleWindow = OverlordRaceScheduleWindow or BaseClass(BaseView)
+
+local controller = ArenaworldbullyController:getInstance()
+local model = controller:getModel()
+local role_vo = RoleController:getInstance():getRoleVo()
+
+function OverlordRaceScheduleWindow:__init()
+	self.is_full_screen = true
+	self.win_type = WinType.Big
+	self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.layout_name = "arenaworldbully/overlord_race_schedule_window"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("space_arena", "space_arena"), type = ResourcesType.plist},
+	}
+	
+end
+
+function OverlordRaceScheduleWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	self.main_container = self.root_wnd:getChildByName("container")
+    self:playEnterAnimatianByObj(self.main_container , 1)
+	self.imgTitleBg = self.main_container:getChildByName("image_2")
+	self.win_title = self.main_container:getChildByName("win_title")
+	self.close_btn = self.main_container:getChildByName("close_btn")
+	self.scroll_panel = self.main_container:getChildByName("scroll_panel")
+	self.no_label = self.main_container:getChildByName("no_label")
+	self.no_label:setString(TI18N("语言_c_5410"))
+	self.no_image = self.main_container:getChildByName("no_image")
+	self.tips = self.main_container:getChildByName("tips")
+	self.tips:setString(TI18N("语言_c_606"))
+end
+
+function OverlordRaceScheduleWindow:openRootWnd(data)
+	controller:sender14526(data.rid,data.srv_id)
+	if role_vo.rid == data.rid and role_vo.srv_id == data.srv_id then
+		self.win_title:setString(TI18N("语言_c_549"))
+	else
+		self.win_title:setString(TI18N("语言_c_6652"))
+	end
+	autoSizeTitleBg(self.win_title,self.imgTitleBg)
+end
+function OverlordRaceScheduleWindow:setData(data)
+	self.data = data
+	if self.group_view == nil then
+        local scroll_view_size = self.scroll_panel:getContentSize()
+        local setting = {
+            item_class = OverlordRaceScheduleItem,      -- 单元类
+            start_x = 0,                  -- 第一个单元的X起点
+            space_x = 0,                    -- x方向的间隔
+            start_y = 0,                    -- 第一个单元的Y起点
+            space_y = 2,                   -- y方向的间隔
+            item_width = 628,               -- 单元的尺寸width
+            item_height = 244,              -- 单元的尺寸height
+            row = 0,                        -- 行数，作用于水平滚动类型
+            col = 1            
+        }
+        self.group_view = CommonScrollViewLayout.new(self.scroll_panel, cc.p(0,0) , ScrollViewDir.vertical, ScrollViewStartPos.top, scroll_view_size, setting)
+    end
+	self.group_view:setData(data.pk_list)
+	if next(data.pk_list) then
+		self.no_image:setVisible(false)
+		self.no_label:setVisible(false)
+	else
+		self.no_image:setVisible(true)
+		self.no_label:setVisible(true)
+	end
+end
+function OverlordRaceScheduleWindow:_onClickBtnClose()
+	controller:openOverlordRaceScheduleWindow(false)
+end
+function OverlordRaceScheduleWindow:register_event(  )
+	registerButtonEventListener(self.background, handler(self, self._onClickBtnClose), false, 2)
+	registerButtonEventListener(self.close_btn, handler(self, self._onClickBtnClose), false, 2)
+	if self.update_over_alone_rank_list == nil then
+        self.update_over_alone_rank_list = GlobalEvent:getInstance():Bind(ArenaworldbullyEvent.UpdateOverAloneRankList, function(data)
+			if not data then return end
+			table.sort(data.pk_list,function(a,b) return a.step > b.step end)
+            self:setData(data)
+        end)
+    end
+end
+
+function OverlordRaceScheduleWindow:close_callback(  )
+	if self.update_over_alone_rank_list ~= nil then
+        GlobalEvent:getInstance():UnBind(self.update_over_alone_rank_list)
+        self.update_over_alone_rank_list = nil
+    end
+	self:_onClickBtnClose()
+end
+
+--子项
+OverlordRaceScheduleItem = class("OverlordRaceScheduleItem", function()
+    return ccui.Widget:create()
+end)
+
+function OverlordRaceScheduleItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function OverlordRaceScheduleItem:configUI( )
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("arenaworldbully/overlord_race_schedule_item"))
+    self:setAnchorPoint(cc.p(0, 1))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(628,244))
+	self:setTouchEnabled(true)
+	self.container = self.root_wnd:getChildByName("container")
+	self.panel = self.container:getChildByName("panel")
+	self.right_panel = self.container:getChildByName("right_panel")
+	self.left_panel = self.container:getChildByName("left_panel")
+	self.panel_left = self.container:getChildByName("panel_left")
+	self.panel_right = self.container:getChildByName("panel_right")
+	self.left_head_node = self.left_panel:getChildByName("left_head_node")
+	if not self.left_head then
+		self.left_head = PlayerHead.new(PlayerHead.type.circle)
+		self.left_head:setHeadLayerScale(0.8)
+		self.left_head_node:addChild(self.left_head)
+	end
+	self.right_head_node = self.right_panel:getChildByName("right_head_node")
+	if not self.right_head then
+		self.right_head = PlayerHead.new(PlayerHead.type.circle)
+		self.right_head:setHeadLayerScale(0.8)
+		self.right_head_node:addChild(self.right_head)
+	end
+	
+	self.result_win = self.container:getChildByName("result_win")
+	self.result_loss = self.container:getChildByName("result_loss")
+	self.left_area_name = self.left_panel:getChildByName("left_area_name")
+	self.left_name = self.left_panel:getChildByName("left_name")
+	self.left_power_key = self.left_panel:getChildByName("left_power_key")
+	self.left_power_key:setString(TI18N("语言_c_1187"))
+	self.left_power_value = self.left_panel:getChildByName("left_power_value")
+	self.left_cups_key = self.left_panel:getChildByName("left_cups_key")
+	self.right_area_name = self.right_panel:getChildByName("right_area_name")
+	self.right_name = self.right_panel:getChildByName("right_name")
+	self.right_power_key = self.right_panel:getChildByName("right_power_key")
+	self.right_power_key:setString(TI18N("语言_c_1187"))
+	self.right_power_value = self.right_panel:getChildByName("right_power_value")
+	self.right_cups_key = self.right_panel:getChildByName("right_cups_key")
+	self.centre_scroe = self.container:getChildByName("centre_scroe")
+	self.centre_war_name = self.container:getChildByName("centre_war_name")
+	self.centre_war_name:setString(TI18N("语言_c_6587"))
+	self.centre_time = self.container:getChildByName("centre_time")
+	self.centre_time:setVisible(false)
+	self.centre_round = self.container:getChildByName("centre_round") 
+	self.play_btn = self.container:getChildByName("play_btn") 
+	self.right_tip = self.container:getChildByName("right_tip")
+	self.right_tip:setString(TI18N("语言_c_6653"))
+	self.right_tip:setVisible(false)
+	self.left_tip = self.container:getChildByName("left_tip")
+	self.left_tip:setString(TI18N("语言_c_6653"))
+	self.left_tip:setVisible(false)
+end
+
+function OverlordRaceScheduleItem:register_event( )
+	registerButtonEventListener(self.play_btn, handler(self, self._onClickBtnPlay), false, 2)
+end
+function OverlordRaceScheduleItem:_onClickBtnPlay()
+	controller:openOverlordFightVedioPanel(true,self.data)
+end
+
+function OverlordRaceScheduleItem:setData(data)
+	-- print("data",vardump(data))
+	self.data = data
+	self.centre_round:setString(string.format(TI18N("语言_c_1558"),data.step))
+	self.left_area_name:setString(string.format("[%s]",data.a_srv_id))
+	self.left_name:setString(data.a_name)
+	self.left_power_value:setString(data.a_power)
+	self.right_area_name:setString(string.format("[%s]",data.b_srv_id))
+	self.right_name:setString(data.b_name)
+	self.right_power_value:setString(data.b_power)
+	self.left_head:setHeadRes(data.a_face, false, LOADTEXT_TYPE, data.a_face_file, data.a_face_update_time)
+    self.left_head:showWarldBullyRegion(data.a_nation,0.8,cc.p(54,7))
+	local avatar_bid = data.a_avatar_id
+    local vo = Config.AvatarData.data_avatar[avatar_bid]
+    if vo then
+        local res_id = vo.res_id or 1
+        local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+        self.left_head:showBg(res, nil, false, vo.offy)
+    end
+	self.left_head:setLev(data.a_lev)
+	self.right_head:setHeadRes(data.b_face, false, LOADTEXT_TYPE, data.b_face_file, data.b_face_update_time)
+    self.right_head:showWarldBullyRegion(data.b_nation,0.8,cc.p(54,7))
+	local avatar_bid = data.b_avatar_id
+    local vo = Config.AvatarData.data_avatar[avatar_bid]
+    if vo then
+        local res_id = vo.res_id or 1
+        local res = PathTool.getTargetRes("headcircle", "txt_cn_headcircle_" .. res_id, false, false)
+        self.right_head:showBg(res, nil, false, vo.offy)
+    end
+	self.right_head:setLev(data.b_lev)
+	self.result_win:setVisible(true)
+	self.result_loss:setVisible(true)
+	if data.ret == 1 then
+		self.result_win:setPositionX(93)
+		self.result_loss:setPositionX(599)
+	elseif data.ret == 2 then
+		self.result_win:setPositionX(599)
+		self.result_loss:setPositionX(93)
+	else
+		self.result_win:setVisible(false)
+		self.result_loss:setVisible(false)
+	end
+	if data.b_srv_id == "" and data.b_name == "" and data.b_rid == 0 then
+		self.right_panel:setVisible(false)
+		self.right_tip:setVisible(true)
+	else
+		self.right_panel:setVisible(true)
+		self.right_tip:setVisible(false)
+	end
+	
+	if data.a_srv_id == "" and data.a_name == "" and data.a_rid == 0 then
+		self.left_panel:setVisible(false)
+		self.left_tip:setVisible(true)
+	else
+		self.left_panel:setVisible(true)
+		self.left_tip:setVisible(false)
+	end
+end
+
+function OverlordRaceScheduleItem:DeleteMe()
+	if self.left_head then
+        self.left_head:DeleteMe()
+        self.left_head = nil
+    end
+	if self.right_head then
+        self.right_head:DeleteMe()
+        self.right_head = nil
+    end
+end

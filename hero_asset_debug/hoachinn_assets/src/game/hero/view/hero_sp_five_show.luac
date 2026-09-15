@@ -1,0 +1,167 @@
+-- --------------------------------------------------------------------
+-- sp忍者介绍子项
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: {DATE}
+-- --------------------------------------------------------------------
+HeroSpFiveShow = class("HeroSpFiveShow", function()
+    return ccui.Widget:create()
+end)
+
+function HeroSpFiveShow:ctor(bid)
+	self.bid = bid
+	self.ctrl = HeroController:getInstance()
+	self.model = self.ctrl:getModel()
+	self.role_vo = RoleController:getInstance():getRoleVo()
+	self.skill_item_list = {}
+	self.camp_list = {}
+	self.click_camp = 1
+	self.hero_list = {}
+
+	self:configUI()
+	self:register_event()
+	self:updateData()
+	self:setData()
+end
+
+function HeroSpFiveShow:configUI(  )
+	self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/hero_sp_five_show"))
+	
+    self:setAnchorPoint(cc.p(0, 0))
+    self:addChild(self.root_wnd)
+	self:setCascadeOpacityEnabled(true)
+	self:setContentSize(cc.size(620,220))
+	self:setTouchEnabled(false)
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container:setTouchEnabled(true)
+	self.main_container:setSwallowTouches(false)
+
+	self.skill_bg = self.main_container:getChildByName("skill_bg")
+	self.skill_scroll = self.skill_bg:getChildByName("skill_scroll")
+	self.skill_scroll:setTouchEnabled(false)
+	self.skill_scroll:setScrollBarEnabled(false)
+	self.vedio_btn = self.skill_bg:getChildByName("vedio_btn")
+	self.vedio_txt = self.vedio_btn:getChildByName("vedio_txt")
+	self.vedio_txt:setString(TI18N("语言_c_823"))
+
+	self.camp_node = self.main_container:getChildByName("camp_node")
+	for i=1,5 do
+		self.camp_list[i] = self.camp_node:getChildByName("camp_btn"..i)
+		self.camp_list[i].index = i
+	end
+	self.img_select = self.camp_node:getChildByName("img_select")
+end
+function HeroSpFiveShow:updateData()
+	local id = self.model:getNewConvertStaBid(self.bid)
+	local hero_cfg = Config.PartnerData.data_partner_base[id]
+	self.hero_list[hero_cfg.camp_type] = id
+	self.cfg = Config.PartnerData.data_partner_transform[id]
+	for i,v in ipairs(self.cfg.transform_bid_list) do
+		local hero_cfg = Config.PartnerData.data_partner_base[v]
+		self.hero_list[hero_cfg.camp_type] = v
+	end
+end
+function HeroSpFiveShow:setData()
+	self.img_select:setPositionX(self.camp_list[self.click_camp]:getPositionX())
+	if self.cfg["replay"..self.click_camp] and next(self.cfg["replay"..self.click_camp]) then
+		self.vedio_btn:setVisible(true)
+	else
+		self.vedio_btn:setVisible(false)
+	end
+	self.old_bid = self.hero_list[self.click_camp]
+	local hero_cfg = Config.PartnerData.data_partner_base[self.old_bid]
+	local star = Config.PartnerData.data_partner_max_star[self.old_bid]
+    local key = getNorKey(self.old_bid, star)
+    local star_config = Config.PartnerData.data_partner_star(key)
+	if star_config == nil then return end
+    local skill_list = {}
+    for i,v in ipairs(star_config.skills) do
+        -- 不是普通攻击 1表示普通攻击
+        if v[1] ~= 1 then
+			if v[1] == 2 and hero_cfg.score >= 9 then
+				v.sort = 999
+			else
+				v.sort = v[1]
+			end
+            table.insert(skill_list, v)
+        end
+    end
+	table.sort(skill_list, function(a,b) return a.sort < b.sort end)
+    for i,skill in ipairs(skill_list) do
+        local config = Config.SkillData.data_get_skill(skill[2])
+        if config then
+            if self.skill_item_list[i] == nil then
+                self.skill_item_list[i] = {}
+                self.skill_item_list[i] = SkillItem.new(true,true,true,0.7, true)
+                self.skill_item_list[i]:setCascadeOpacityEnabled(true)
+                self.skill_scroll:addChild(self.skill_item_list[i])
+            end
+            self.skill_item_list[i]:setData(config)
+            self.skill_item_list[i]:setSkillSubscript(Config.PartnerData.data_partner_base[self.old_bid].hurt_type)
+			if self.skill_item_list[i] and self.skill_item_list[i].setSpSkillSubscript then
+                if hero_cfg and hero_cfg.score == 9 and i == tableLen(skill_list) then
+                    self.skill_item_list[i]:setSpSkillSubscript(true,Config.PartnerData.data_partner_base[self.old_bid].hurt_type)
+                else
+                    self.skill_item_list[i]:setSpSkillSubscript(false)
+                end
+            end
+            self.skill_item_list[i]:setVisible(true)
+            self.skill_item_list[i]:setPosition((i-0.5)*(SkillItem.Width*0.7+6), self.skill_scroll:getContentSize().height/2)
+        else 
+            print(string_format("@技能表id: %s 没发现", tostring(skill.skill_bid)))
+        end
+    end
+end
+
+function HeroSpFiveShow:register_event(  )
+	for k,v in pairs(self.camp_list) do
+		v:addTouchEventListener(function(sender, event_type) 
+			if event_type == ccui.TouchEventType.ended then
+				playButtonSound2()
+				if self.click_camp ~= v.index then
+					self.click_camp = v.index
+					self:setData()
+				end
+			end
+    	end)	
+	end
+
+	self.vedio_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+        	playButtonSound2()
+			if self.cfg then
+				RoleController:getInstance():sender16825(self.cfg["replay"..self.click_camp][1][1],self.cfg["replay"..self.click_camp][1][2])
+			end
+        end
+    end)
+
+	-- self:addTouchEventListener(function(sender, event_type) 
+	-- 	if event_type == ccui.TouchEventType.ended then
+	-- 			self.touch_end = sender:getTouchEndPosition()
+	-- 			local is_click = true
+	-- 			if self.touch_began ~= nil then
+	-- 				is_click =
+	-- 					math.abs(self.touch_end.x - self.touch_began.x) <= 20 and
+	-- 					math.abs(self.touch_end.y - self.touch_began.y) <= 20
+	-- 			end
+	-- 			if is_click == true then
+	-- 				playButtonSound2()
+	-- 				if self.callback then
+	-- 					self:callback()
+	-- 				end
+	-- 			end
+	-- 		elseif event_type == ccui.TouchEventType.moved then
+	-- 		elseif event_type == ccui.TouchEventType.began then
+	-- 			self.touch_began = sender:getTouchBeganPosition()
+	-- 		elseif event_type == ccui.TouchEventType.canceled then
+	-- 		end
+	-- end)
+end
+
+function HeroSpFiveShow:DeleteMe(  )
+	
+end

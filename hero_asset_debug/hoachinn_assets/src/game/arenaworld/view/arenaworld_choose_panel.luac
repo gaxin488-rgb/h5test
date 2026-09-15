@@ -1,0 +1,191 @@
+-- --------------------------------------------------------------------
+-- 批量使用物品界面
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-xx-xx
+-- --------------------------------------------------------------------
+ArenaWorldChoosePanel = ArenaWorldChoosePanel or BaseClass(BaseView)
+
+function ArenaWorldChoosePanel:__init(ctrl)
+    self.ctrl = ctrl
+    self.layout_name = "ladder/ladder_choose_panel"
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.MSG_TAG
+    self.role_vo = RoleController:getInstance():getRoleVo()
+    self.cur_selected_sum = 0                       -- 当前选中消耗的数量
+end
+
+function ArenaWorldChoosePanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 2)
+    self.close_btn = self.main_container:getChildByName("close_btn")
+
+    self.ok_btn = self.main_container:getChildByName("ok_btn")    
+	self.ok_btn:setTitleText(TI18N("语言_c_63"))
+    self.ok_btn.label = self.ok_btn:getTitleRenderer()
+    if self.ok_btn.label ~= nil then
+        self.ok_btn.label:enableOutline(Config.ColorData.data_color4[264], 2)
+    end
+
+    self.cancel_btn = self.main_container:getChildByName("cancel_btn")    
+	self.cancel_btn:setTitleText(TI18N("语言_c_62"))
+    self.cancel_btn.label = self.cancel_btn:getTitleRenderer()
+    if self.cancel_btn.label ~= nil then
+        self.cancel_btn.label:enableOutline(Config.ColorData.data_color4[264], 2)
+    end
+
+    self.handle_container = self.main_container:getChildByName("handle_container")
+    self.handle_container_cy = self.handle_container:getContentSize().height * 0.5
+
+    -- 如果不是产出资源类的,这个东西要居中父节点
+    self.container = self.handle_container:getChildByName("container")
+    self.container_y = self.container:getPositionY()
+
+    self.sub_btn = self.container:getChildByName("sub_btn")                                 -- 减号
+    self.add_btn = self.container:getChildByName("add_btn")                                 -- 加号
+    self.max_btn = self.container:getChildByName("max_btn")                                 -- 最大值
+    self.slider = self.container:getChildByName("slider")                                   -- 滑块
+    self.slider:setBarPercent(20, 80)
+
+    self.count_txt = createRichLabel(26, cc.c4b(105,55,5,0xff), cc.p(0.5, 0.5), cc.p(312,305),nil,nil,520)
+    self.main_container:addChild(self.count_txt)
+
+    self.extend_container = self.handle_container:getChildByName("extend_container")
+
+    self.title_label = self.main_container:getChildByName("title_label")
+    self.title_label:setString(TI18N("语言_c_4107"))
+    self.item_name = self.main_container:getChildByName("item_name")
+end
+
+function ArenaWorldChoosePanel:register_event()
+    if self.slider ~= nil then
+    	self.slider:addEventListener(function ( sender,event_type )
+    		if event_type == ccui.SliderEventType.percentChanged then
+                self:setCurUseItemInfoByPercent(self.slider:getPercent())
+    		end
+    	end)
+    end
+    self.close_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            self.ctrl:openArenaChoosePanel(false)
+        end
+    end)
+    self.cancel_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            self.ctrl:openArenaChoosePanel(false)
+        end
+    end)
+    self.ok_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            self.cur_selected_sum = math.min(self.cur_selected_sum,self.max_count)
+            if self.cur_selected_sum == 0 then
+                message(TI18N("语言_c_3427"))
+                return
+            end
+            local role_vo = RoleController:getInstance():getRoleVo()
+            local have_gold = role_vo.gold
+            if have_gold < self.costnum then
+                message(TI18N("语言_c_4415"))
+                return
+            end
+            self.ctrl:requestQuickChallenge(self.cur_selected_sum)
+            self.ctrl:openArenaChoosePanel(false)
+        end
+    end)
+    self.background:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            
+        end
+    end)
+    self.sub_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            local percent = self.slider:getPercent()
+            if percent == 0 then return end --已经是最小的了
+            if self.cur_selected_sum == 0 then return end
+            self.cur_selected_sum = self.cur_selected_sum - 1
+            self:setCurUseItemInfoByNum(self.cur_selected_sum)
+        end
+    end)
+    self.add_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            if self.cur_selected_sum >= self.max_count then return end
+            self.cur_selected_sum = self.cur_selected_sum + 1
+            self:setCurUseItemInfoByNum(self.cur_selected_sum)
+        end
+    end)
+    self.max_btn:addTouchEventListener(function(sender, event_type) 
+        if event_type == ccui.TouchEventType.ended then
+            local percent = self.slider:getPercent()
+            if percent == 100 then return end --已经是最大的了
+            if self.cur_selected_sum >= self.max_count then return end
+            self.cur_selected_sum = self.max_count
+            self:setCurUseItemInfoByNum(self.cur_selected_sum)
+        end
+    end)
+end
+
+function ArenaWorldChoosePanel:openRootWnd()
+    local model = self.ctrl:getModel()
+    self.myBaseInfo = model:getArenaMyBaseInfo()
+    self.can_combat_num = self.myBaseInfo.can_combat_num or 0
+    self.left_count = model:getTodayLeftBuyCount() or 0
+    self.max_count = self.can_combat_num + self.left_count
+    self.cur_selected_sum = self.can_combat_num
+    self.buy_combat_num = self.myBaseInfo.buy_combat_num or 0
+    self:setCurUseItemInfoByNum(self.cur_selected_sum)
+end
+
+--==============================--
+--desc:设置当前进度的相关数据
+--time:2017-07-05 05:01:59
+--@percent:
+--@return 
+--==============================--
+function ArenaWorldChoosePanel:setCurUseItemInfoByPercent(percent)
+    self.cur_selected_sum = math.max(1, math.floor( percent * self.max_count * 0.01 ))
+    self:setUseInfo(self.cur_selected_sum)
+end
+
+function ArenaWorldChoosePanel:setCurUseItemInfoByNum(num)
+    self.cur_selected_sum = math.max(1, num)
+    local all_num =math.max(1,self.max_count-1)
+    local percent = (self.cur_selected_sum-1) / all_num  * 100
+    self.slider:setPercent(percent) 
+    self:setUseInfo(self.cur_selected_sum)
+end
+
+function ArenaWorldChoosePanel:setUseInfo(sum)
+    sum = math.min(self.max_count,sum)
+    local buynum = 0
+
+    local costnum = 0
+    if sum > self.can_combat_num then
+        local data_buy = Config.ArenaWorldData.data_buy_num
+        buynum = sum - self.can_combat_num
+        local c_count
+        local buy_len = #data_buy
+        for j=1,buynum,1 do
+            c_count = j
+            if c_count >= buy_len then
+                c_count = buy_len
+            end
+            costnum = costnum + data_buy[c_count+self.buy_combat_num].cost
+        end
+    end
+    self.costnum = costnum
+    local str1 = string.format("<img src=%s visible=true scale=0.3 fontcolor=#578e2c /><div>%s</div>",PathTool.getItemRes(Config.ItemData.data_assets_label2id.gold), costnum)
+    local str2 = string.format(TI18N("语言_c_4134"),sum,str1)
+    self.count_txt:setString(str2)
+end
+
+function ArenaWorldChoosePanel:close_callback()
+    self.ctrl:openArenaChoosePanel(false)
+end

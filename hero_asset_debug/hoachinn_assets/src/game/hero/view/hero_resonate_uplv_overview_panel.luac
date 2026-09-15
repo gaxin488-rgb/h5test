@@ -1,0 +1,314 @@
+HeroResonateUplvOverviewPanel = HeroResonateUplvOverviewPanel or BaseClass(BaseView)
+
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+
+
+function HeroResonateUplvOverviewPanel:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.win_type = WinType.Big   
+    self.is_full_screen = false
+    self.layout_name = "hero/hero_resonate_uplv_overview_panel"
+
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist },
+        { path = PathTool.getPlistImgForDownLoad("common","common_1"), type = ResourcesType.plist },
+    }
+    
+end
+
+function HeroResonateUplvOverviewPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container , 2)  
+    self.panel_bg = self.main_container:getChildByName("panel_bg")
+    self.title = self.main_container:getChildByName("title")
+    self.title:setString(TI18N("语言_c_6871"))
+    self.item_scroll = self.main_container:getChildByName("item_scroll")
+    self.item_scroll:setScrollBarEnabled(false)
+    self.tips = self.main_container:getChildByName("tips")
+    setTextMaxWidth(self.tips,540)
+    self.tips:setString(TI18N("语言_c_6874"))
+    self.item_scroll:setContentSize(cc.size(self.item_scroll:getContentSize().width,720-self.tips:getContentSize().height-10))
+end
+
+function HeroResonateUplvOverviewPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickBtnClose) ,false, 2)
+end
+
+--关闭
+function HeroResonateUplvOverviewPanel:onClickBtnClose()
+    controller:openHeroResonateUplvOverviewPanel(false)
+end
+
+function HeroResonateUplvOverviewPanel:getResonateItem(data)
+    local resonate_item = ccui.Layout:create()
+    local _w = 560
+    local _h = 130
+    --设置属性
+    local function setAttrList(data)
+        local item_list = {}
+        for i = 1, tableLen(data.attr) do
+            local item = ccui.Layout:create()
+            item:setAnchorPoint(cc.p(0, 0))
+            item:setContentSize(cc.size(560, 30))
+            item.icon = createSprite(PathTool.getResFrame("common", "common_90021"),200,15,item,cc.p(0.5,0.5))
+            item.icon:setScale(0.8)
+            if item.txt then
+                item.txt:removeAllChildren()
+                item.txt:removeFromParent()
+                item.txt = nil
+            end
+            if not item.txt then
+                if model:checkEnoughResUpStar(data.level) then
+                    item.txt = createLabel(20,cc.c3b(0x49,0xd8,0x09),nil,230,15,"",item,nil,cc.p(0,0.5))
+                else
+                    item.txt = createLabel(20,cc.c3b(0x89,0x78,0x65),nil,230,15,"",item,nil,cc.p(0,0.5))
+                end
+            end
+            local attr_key = data.attr[i][1]
+            local attr_val = data.attr[i][2]
+            local res_id = PathTool.getAttrIconByStr(attr_key)
+            local res = PathTool.getResFrame("common",res_id)
+            loadSpriteTexture(item.icon, res, LOADTEXT_TYPE_PLIST)
+            local attr_name = Config.AttrData.data_key_to_name[attr_key]
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+            item.txt:setString(attr_name.."+"..attr_val)
+            item.index = i
+            item_list[i] = item
+        end
+        return item_list
+    end
+    --设置消耗
+    --道具
+    local function setItemCostList(data)
+        local item = ccui.Layout:create()
+        item:setAnchorPoint(cc.p(0, 1))
+        item:setContentSize(cc.size(560, 30))
+        local txt = nil
+        if model:checkEnoughResUpStar(data.level+1) then
+            txt = createRichLabel(20,cc.c3b(0x49,0xd8,0x09),cc.p(0,0.5),cc.p(185,15),nil,nil,600)
+        else
+            txt = createRichLabel(20,cc.c3b(0x89,0x78,0x65),cc.p(0,0.5),cc.p(185,15),nil,nil,600)
+        end
+        item:addChild(txt)
+        local str = ""
+        for i = 1, tableLen(data.cost_item) do
+            local item_id = data.cost_item[i][1]
+            local item_num = data.cost_item[i][2]
+            local item_cfg = Config.ItemData.data_get_data(item_id)
+            if str == "" then
+                str = str..string.format("<img src=%s visible=true scale=0.3 />*%s",PathTool.getItemRes(item_cfg.icon),item_num)
+            else
+                str = str..string.format("    <img src=%s visible=true scale=0.3 />*%s",PathTool.getItemRes(item_cfg.icon),item_num)
+            end
+        end
+        txt:setString(str)
+        return item
+    end
+    --忍者
+    local function setCostList(data)
+        local cost_list = {}
+        if data.cost_p and next(data.cost_p) ~= nil then
+            for i = 1, tableLen(data.cost_p) do
+                local item = ccui.Layout:create()
+                item:setAnchorPoint(cc.p(0, 0))
+                item:setContentSize(cc.size(560, 40))
+                if not item.hero_item then
+                    local hero_item = HeroExhibitionItem.new(0.25, false, 0, false,true)
+                    hero_item:setPosition(cc.p(200,18))
+                    item:addChild(hero_item)
+                    item.hero_item = hero_item
+                end
+                local list = self:getHeroData(nil,data.cost_p[i][2], data.cost_p[i][1], data.cost_p[i][3])
+                item.hero_item:setData(list)
+                item.hero_item:setLev(nil)
+                if item.txt then
+                    item.txt:removeAllChildren()
+                    item.txt:removeFromParent()
+                    item.txt = nil
+                end
+                if not item.txt then
+                    if model:checkEnoughResUpStar(data.level+1) then
+                        item.txt = createLabel(20,cc.c3b(0x49,0xd8,0x09),nil,230,15,"",item,nil,cc.p(0,0.5))
+                    else
+                        item.txt = createLabel(20,cc.c3b(0x89,0x78,0x65),nil,230,15,"",item,nil,cc.p(0,0.5))
+                    end
+                end
+                local default_head_id = model:getRandomHeroHeadByQuality(item.hero_item.star)
+                item.hero_item:setDefaultHead(default_head_id)
+                item.txt:setString(string.format(TI18N("语言_c_3022"), data.cost_p[i][2]).."*"..data.cost_p[i][3])
+                cost_list[i] = item
+            end
+        end
+        return cost_list
+    end
+    --星级
+    local function createStar(parent_panel,num)
+        local spine = parent_panel
+        parent_panel.star_node = cc.Node:create()
+        parent_panel.star_node:setCascadeOpacityEnabled(true)
+        parent_panel.star_node:setName("createStar")
+        parent_panel.star_node:setPosition(90, 15)
+        parent_panel:addChild(parent_panel.star_node)
+        local num = num or 0
+        local width = 26
+        parent_panel.star_setting = model:createStar(num, parent_panel.star_node, parent_panel.star_setting, width)
+    end
+    local title_bg = createImage(resonate_item,PathTool.getResFrame("common", "common_1_307",false,"common_1"),280,0,cc.p(0.5,1),true,false,true)
+    title_bg:setContentSize(cc.size(_w,37))
+    local title_txt = createLabel(20,cc.c3b(0xff,0xc7,0x70),cc.c3b(0x00,0x00,0x00),11,0,TI18N("语言_c_6870"),resonate_item,2,cc.p(0,0.5))
+    local star_group = ccui.Layout:create()
+    star_group:setContentSize(cc.size(180,28))
+    star_group:setAnchorPoint(cc.p(0, 0.5))
+    star_group:setPositionX(title_txt:getPositionX() + title_txt:getContentSize().width)
+    resonate_item:addChild(star_group)
+    local star_step = createLabel(20,cc.c3b(0xf9,0xee,0xd0),cc.c3b(0x00,0x00,0x00),11,0,"",resonate_item,2,cc.p(0,0.5))
+    star_step:setPositionX(star_group:getPositionX() + star_group:getContentSize().width)
+    local share_lev_up_cost = Config.ResonateData.data_share_lev_up_cost[data.level]
+    local star = share_lev_up_cost.star[1][1]
+    local cur_star_step = share_lev_up_cost.star[1][2]
+    createStar(star_group,star)
+    if cur_star_step > 0 then
+        star_step:setString(string.format(TI18N("语言_c_6282"), cur_star_step))
+    else
+        star_step:setString("")
+    end
+    local attr_panel = ccui.Layout:create()
+    attr_panel:setAnchorPoint(cc.p(0, 1))
+    resonate_item:addChild(attr_panel)
+    local cost_panel = ccui.Layout:create()
+    cost_panel:setAnchorPoint(cc.p(0, 1))
+    resonate_item:addChild(cost_panel)
+    local item_cost_panel = ccui.Layout:create()
+    item_cost_panel:setAnchorPoint(cc.p(0, 1))
+    resonate_item:addChild(item_cost_panel)
+    local attr_txt = createLabel(20,cc.c3b(0xf9,0xee,0xd0),cc.c3b(0x00,0x00,0x00),11,0,TI18N("语言_c_6494"),resonate_item,2,cc.p(0,1))
+    attr_txt:setWidth(150)
+    attr_txt:setLineSpacing(-10)
+    local cost_txt = createLabel(20,cc.c3b(0xf9,0xee,0xd0),cc.c3b(0x00,0x00,0x00),11,0,TI18N("语言_c_6872"),resonate_item,2,cc.p(0,1))
+    cost_txt:setWidth(150)
+    cost_txt:setLineSpacing(-10)
+    local no_attr = createLabel(20,cc.c3b(0xf9,0xee,0xd0),cc.c3b(0x00,0x00,0x00),200,15,TI18N("语言_c_2103"),attr_panel,nil,cc.p(0,0.5))
+    no_attr:setWidth(150)
+    no_attr:setLineSpacing(-10)
+    local no_cost = createLabel(20,cc.c3b(0xf9,0xee,0xd0),cc.c3b(0x00,0x00,0x00),200,15,TI18N("语言_c_2103"),cost_panel,nil,cc.p(0,0.5))
+    no_cost:setWidth(150)
+    no_cost:setLineSpacing(-10)
+    if model:checkEnoughResUpStar(data.level) then
+        no_attr:setTextColor(cc.c3b(0x49,0xd8,0x09))
+        no_cost:setTextColor(cc.c3b(0x49,0xd8,0x09))
+    else
+        no_attr:setTextColor(cc.c3b(0x89,0x78,0x65))
+        no_cost:setTextColor(cc.c3b(0x89,0x78,0x65))
+    end
+    local attr_list = {}
+    local cost_list = {}
+    if data.attr and next(data.attr) ~= nil then
+        attr_list = setAttrList(data)
+        local attr_h = 30*tableLen(attr_list)
+        attr_panel:setContentSize(cc.size(560,attr_h))
+        for i = 1, tableLen(attr_list) do
+            attr_panel:addChild(attr_list[i])
+            attr_list[i]:setPosition(cc.p(0,attr_h - i*30))
+        end
+        no_attr:setVisible(false)
+    else
+        no_attr:setVisible(true)
+        attr_panel:setContentSize(cc.size(560,30))
+    end
+    local cfg = Config.ResonateData.data_share_lev_up_cost[data.level-1]
+    if (cfg.cost_p and next(cfg.cost_p) ~= nil) or (cfg.cost_item and next(cfg.cost_item) ~= nil) then
+        if cfg.cost_p and next(cfg.cost_p) ~= nil then
+            cost_list = setCostList(cfg)
+            local attr_h = 40*tableLen(cost_list)
+            cost_panel:setContentSize(cc.size(560,attr_h))
+            for i = 1, tableLen(cost_list) do
+                cost_panel:addChild(cost_list[i])
+                cost_list[i]:setPosition(cc.p(0,attr_h - i*40))
+            end
+        end
+        if cfg.cost_item and next(cfg.cost_item) ~= nil then
+            local item_txt = setItemCostList(cfg)
+            item_cost_panel:addChild(item_txt)
+            item_cost_panel:setContentSize(cc.size(560,30))
+            item_txt:setPosition(cc.p(0,30))
+        end
+        no_cost:setVisible(false)
+    else
+        no_cost:setVisible(true)
+        cost_panel:setContentSize(cc.size(560,30))
+    end
+    _h = 67 + attr_panel:getContentSize().height + cost_panel:getContentSize().height + item_cost_panel:getContentSize().height
+    title_bg:setPositionY(_h)
+    title_txt:setPositionY(_h-18)
+    star_group:setPositionY(_h-18)
+    star_step:setPositionY(_h-18)
+    attr_panel:setPositionY(_h-47)
+    item_cost_panel:setPositionY(_h-57-attr_panel:getContentSize().height)
+    cost_panel:setPositionY(_h-57-attr_panel:getContentSize().height-item_cost_panel:getContentSize().height)
+    attr_txt:setPositionY(_h - 45)
+    cost_txt:setPositionY(_h - 55-attr_panel:getContentSize().height)
+    resonate_item:setContentSize(cc.size(_w,_h))
+    resonate_item:setAnchorPoint(cc.p(0, 0))
+    return resonate_item
+end
+--@ bid 英雄bid 特殊判断 如果 == nil 说明是随机卡
+--@ star 星级
+--@ count 数量
+--@ camp_type 阵营  如果是随机卡.此一定需要有值
+function HeroResonateUplvOverviewPanel:getHeroData(bid, star, count, camp_type)
+    --模拟 hero_vo 需要的数据
+    local data = {}
+    data.star = star or 0
+    data.count = count or 0
+    data.lev = string_format("%s/%s", 0, count)
+    
+    if bid == nil then
+        data.bid = 0 --表示随机卡
+        data.camp_type = 0
+    else
+        local base_config = Config.PartnerData.data_partner_base[bid]
+        if base_config then
+            data.bid = bid
+            data.camp_type = base_config.camp_type
+            data.name = base_config.name
+        else
+            return nil
+        end
+    end
+    --当前选中的英雄列表 [id] == hero_vo 模式
+    data.dic_select_list = {}
+    return data
+end
+function HeroResonateUplvOverviewPanel:openRootWnd()
+    local config = Config.ResonateData.data_share_lev_up_cost
+    self.item_list = {}
+    local _h = 0
+    for i, v in ipairs(config) do
+        if v.level == 0 then
+        else
+            local item = self:getResonateItem(v)
+            self.item_scroll:addChild(item)
+            self.item_list[i] = item
+            _h = _h + item:getContentSize().height
+        end
+    end
+    _h = math.max(_h,self.item_scroll:getContentSize().height)
+    self.item_scroll:setInnerContainerSize(cc.size(self.item_scroll:getContentSize().width,_h))
+    for i=1,tableLen(self.item_list) do
+        self.item_list[i]:setPosition(cc.p(0,_h - self.item_list[i]:getContentSize().height))
+        _h = _h - self.item_list[i]:getContentSize().height
+    end
+end
+
+function HeroResonateUplvOverviewPanel:close_callback()
+    self:onClickBtnClose()
+end

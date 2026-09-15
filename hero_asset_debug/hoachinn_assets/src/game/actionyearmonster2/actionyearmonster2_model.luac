@@ -1,0 +1,517 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      年兽活动 后端 国辉  策划 中建
+-- <br/>Create: 2020-01-03
+-- --------------------------------------------------------------------
+Actionyearmonster2Model = Actionyearmonster2Model or BaseClass()
+
+function Actionyearmonster2Model:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function Actionyearmonster2Model:config()
+    --格子数据 
+    self.cell_data = nil
+    --地图事件(有才记录) self.evt_vo_list[index] = ActionyearmonsterEvtVo
+    self.evt_vo_list = nil
+
+    self.base_data = nil
+
+    --主年兽对象 结构是 28201的一个格子数据
+    -- self.year_monster_list[1] = v --限时年兽数据
+    -- self.year_monster_list[2] = v --黄金年兽数据 写死的
+    self.year_monster_list = {}
+
+    self.is_holiday_open = false
+
+    self.is_yearMonster2_open = false
+
+    self.is_first = true
+
+    self.isshowBubble=nil
+
+    self.isopenQuick=false
+
+    self.isshowMain=true
+
+    self.MonsterTeamNum=0
+
+    self.HeroPool={}
+end
+
+-- 设置形象id
+function Actionyearmonster2Model:setPlanesRoleLookId( look_id )
+    self.planes_look_id = look_id
+end
+
+function Actionyearmonster2Model:getPlanesRoleLookId(  )
+    return self.planes_look_id
+end
+
+function Actionyearmonster2Model:isyearMonster2Open()
+    return self.is_yearMonster2_open
+end
+
+--设置活动开启中
+function Actionyearmonster2Model:setyearMonster2Open(status)
+    self.is_yearMonster2_open = status
+end
+
+--是否活动开启中
+function Actionyearmonster2Model:isHolidayOpen()
+    return self.is_holiday_open
+end
+
+--设置活动开启中
+function Actionyearmonster2Model:setHolidayOpen(is_holiday)
+    if is_holiday then
+        self.is_holiday_open = (is_holiday == 1)
+    end
+end
+
+--是否首次进战斗
+function Actionyearmonster2Model:isFirst()
+    return self.is_first
+end
+
+--设置活动开启中
+function Actionyearmonster2Model:setFirst(status)
+    self.is_first=status
+end
+
+--判断是否开启
+function Actionyearmonster2Model:checkActionOpen()
+    local data=self:getYearTimeData()
+    local cur_time = GameNet:getInstance():getTime()
+    if not data then return false end
+    if cur_time<data.start_time or cur_time>data.end_time then 
+        return  false
+    end
+    return true
+end
+
+function Actionyearmonster2Model:getYearMonsterList()
+    return self.year_monster_list
+end
+
+function Actionyearmonster2Model:setBaseData(data)
+    self.base_data = data
+end
+function Actionyearmonster2Model:getBaseData(data)
+    return self.base_data
+end
+
+function Actionyearmonster2Model:setCurindex(index)
+    self.curbossindex = index
+end
+function Actionyearmonster2Model:getCurindex()
+    return self.curbossindex
+end
+
+function Actionyearmonster2Model:setCellData(data)
+    self.cell_data = data
+end
+
+function Actionyearmonster2Model:getCellData()
+    return self.cell_data
+end
+
+function Actionyearmonster2Model:setSdStatus(open)
+    self.isopenQuick=open==1
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.YEAR_QUICK_Data_Event)
+end
+
+function Actionyearmonster2Model:getSdStatus()
+    return self.isopenQuick
+end
+
+--获取需要挑战券数量
+function Actionyearmonster2Model:getNeedTicketNum()
+    local comp_id=MonopolyController:getInstance():getModel():getCamp_id1()
+    local num=0
+    local cfg=Config.HolidayNianCrossData.data_const[comp_id]["fight_little_monster"].val
+    for i,v in pairs(cfg) do
+        for x,y in pairs(self.evt_vo_list) do
+            if y.evtid>0 and y.index==v then
+               num=num+1
+               break
+            end
+        end
+    end
+    return num
+end
+
+function Actionyearmonster2Model:getYearEvtVoList( )
+    return self.evt_vo_list
+end
+
+function Actionyearmonster2Model:getBubbleStatus()
+    return self.isshowBubble
+end
+
+function Actionyearmonster2Model:setBubbleStatus(status)
+    self.isshowBubble = status
+end
+
+function Actionyearmonster2Model:getYearEvtVoByGridIndex( index )
+    return self.evt_vo_list[index]
+end
+
+-- 是否需要走到事件格子前停下来 
+-- 有事件、且事件未完成，则需要走到事件前一格停下来（出生点除外，出生点一直是未完成） 空事件 不算事件
+function Actionyearmonster2Model:checkIsNeedStopPreGrid( index )
+    local evt_vo = self.evt_vo_list[index]
+    if evt_vo and evt_vo.config and evt_vo.config.type ~= Actionyearmonster2Constants.Evt_Type.Start and evt_vo.config.id ~= 0 then
+        return true
+    end
+    return false
+end
+
+-- 设置所有格子事件的数据
+function Actionyearmonster2Model:setYearEvtVoList( data_list )
+    self.evt_vo_list = {}
+    for _,v in pairs(data_list) do
+        if v.evtid > 0 then -- 只记录有事件的数据
+            local evt_vo = Actionyearmonster2EvtVo.New()
+            evt_vo:updateData(v)
+            self.evt_vo_list[v.index] = evt_vo
+
+            
+            if evt_vo.config  then
+                if evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_hit or 
+                   evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_not_hit then
+                   --限时年兽
+                    self.year_monster_list[1] = v
+                elseif evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_hit or 
+                    evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_not_hit then 
+                       --黄金年兽
+                    self.year_monster_list[2] = v
+                end
+            end
+        end
+    end
+end
+
+-- -- 更新事件数据
+function Actionyearmonster2Model:updateYearEvtVoList( data_list )
+    --没有说明还没有初始化就不处理事件更新了
+    if not self.evt_vo_list then return end
+
+    local add_evt_vo_list = {}
+    for _,v in pairs(data_list) do
+        local evt_vo = self.evt_vo_list[v.index]
+        if not evt_vo then -- 可能是之前事件为0的格子变为了非0的格子
+            evt_vo = Actionyearmonster2EvtVo.New()
+            evt_vo:updateData(v)
+            self.evt_vo_list[v.index] = evt_vo
+            table.insert( add_evt_vo_list, evt_vo )
+        else
+            evt_vo:updateData(v)
+        end
+    end
+    -- 通知场景新增地图事件显示
+    if next(add_evt_vo_list) ~= nil then
+        GlobalEvent:getInstance():Fire(Actionyearmonster2Event.YEAR_Add_Evt_Data_Event, add_evt_vo_list)
+    end
+end
+
+-- 根据格子坐标判断该坐标是否有事件
+function Actionyearmonster2Model:checkIsHaveEvtByGridIndex( index )
+    if self.evt_vo_list[index] then
+        return true
+    end
+    return false
+end
+
+-- 根据格子坐标判断对应的事件是否可行走 
+-- is_check_status 为 true，则事件状态不为已完成，则都可以走(用于点击事件格子时)
+-- 升降台特殊处理:仅根据升降台状态判断是否可行走
+function Actionyearmonster2Model:checkEvtCanWalkByGridIndex( index, is_check_status )
+    local is_can_walk = true
+    local evt_vo = self.evt_vo_list[index]
+    if evt_vo then
+        -- 事件类型不是不可破坏的障碍物、且状态没有完成，则可以走
+        if is_check_status and evt_vo.config and evt_vo.config.type ~= Actionyearmonster2Constants.Evt_Type.Barrier then
+            is_can_walk = true
+        elseif evt_vo.config and evt_vo.config.is_walk == 0 then
+            is_can_walk = false
+        end
+    end
+    return is_can_walk
+end
+
+--根据格子判断是不是主年兽格子
+function Actionyearmonster2Model:checkYearmonsterCentreGrid(index)
+    local evt_vo = self.evt_vo_list[index]
+    if evt_vo and evt_vo.config and 
+        (evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_not_hit or
+        evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_hit or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_not_hit or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_hit) then
+        return true
+    end
+    return false
+end
+--根据格子判断是不是年兽格子
+function Actionyearmonster2Model:checkYearmonsterGrid( index )
+    local evt_vo = self.evt_vo_list[index]
+    if evt_vo and evt_vo.config and 
+        (evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_not_hit or
+        evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_hit or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_not_hit or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_hit or
+        evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_not_hit_2 or
+        evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_hit_2 or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_not_hit_2 or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_hit_2) then
+        return true
+    end
+    return false
+end
+
+--是否限时年兽格子
+function Actionyearmonster2Model:checkLimitYearmonsterGrid(index)
+    local evt_vo = self.evt_vo_list[index]
+    if evt_vo and evt_vo.config and 
+        (evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_not_hit or
+        evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_hit or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_not_hit_2 or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_limit_monster_hit_2) then
+        return true
+    end
+    return false
+end
+
+--是否黄金年兽格子
+function Actionyearmonster2Model:checkGoldYearmonsterGrid(index)
+    local evt_vo = self.evt_vo_list[index]
+    if evt_vo and evt_vo.config and 
+        (evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_not_hit or
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_hit or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_not_hit_2 or 
+        evt_vo.config.id == Actionyearmonster2Constants.evt_gold_monster_hit_2) then
+        return true
+    end
+    return false
+end
+
+-- 设置年兽时间数据
+function Actionyearmonster2Model:setYearTimeData( data )
+    self.yearTimeData=data
+end
+
+function Actionyearmonster2Model:getYearTimeData()
+    return self.yearTimeData or nil
+end
+
+
+-- 设置年兽背包数据
+function Actionyearmonster2Model:setYearBagData( secret_item )
+    secret_item = secret_item or {}
+    self.year_bag_data = {}
+    for i,v in ipairs(secret_item) do
+        self.year_bag_data[v.id] = v
+    end
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Iint_Bag_Data_Event)
+end
+
+-- 获取全部位面背包数据
+function Actionyearmonster2Model:getYearBagData(  )
+    return self.year_bag_data
+end
+
+-- 更新、新增背包数据
+function Actionyearmonster2Model:updateYearBagData( data_list )
+    if not self.year_bag_data then return end
+    local is_add = false
+    for _,n_data in pairs(data_list) do
+        if self.year_bag_data[n_data.id] then
+            -- for k,v in pairs(n_data) do
+            --    self.year_bag_data[n_data.id][k] = v
+            -- end
+            self.year_bag_data[n_data.id].num = n_data.num --目前更新就只有数量
+        else
+            self.year_bag_data[n_data.id] = n_data
+            is_add = true
+        end
+    end
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Update_Bag_Data_Event, data_list, is_add)
+end
+function Actionyearmonster2Model:getYearBagDataByBaseID(base_id)
+    if not self.year_bag_data then return end
+    for i,v in pairs(self.year_bag_data) do
+        if v.base_id == base_id then
+            return v
+        end
+    end
+end
+
+-- 删除背包数据
+function Actionyearmonster2Model:deleteYearBagData( data_list )
+    if not self.year_bag_data then return end
+    for _,v in pairs(data_list) do
+        self.year_bag_data[v.id] = nil
+    end
+    GlobalEvent:getInstance():Fire(Actionyearmonster2Event.Year_Delete_Bag_Data_Event, data_list)
+end
+
+-- 设置集字兑换数据
+function Actionyearmonster2Model:setExchangeData( data )
+    if self.exchange_data == nil then
+        self.exchange_data = {}
+    end
+    if data and data.collection then
+        for _,v in pairs(data.collection) do
+            self.exchange_data[v.id] = v
+        end
+    end
+end
+
+function Actionyearmonster2Model:setMonsterTeamNum( num )
+    self.MonsterTeamNum=num
+end
+
+function Actionyearmonster2Model:getMonsterTeamNum(  )
+    return self.MonsterTeamNum
+end
+
+-- 设置对象池
+function Actionyearmonster2Model:setTeamData(team)
+     self.HeroPool[team.team_id]=team
+end
+--更新对象池
+function Actionyearmonster2Model:undateTeamData(partner_id,pos)
+    if self.HeroPool then
+        for i,v in ipairs(self.HeroPool) do
+            local team=v.pos_info
+            if v.team_id==1 then
+                for _,k in pairs(team) do
+                    if k.pos==pos then
+                        k.id=partner_id
+                    end
+                end
+            else
+                for j,k in pairs(team) do
+                    if k.id==partner_id then
+                        table.remove(team,j)
+                    end
+                end
+            end
+        end
+    end
+end
+
+--是否在队伍中
+function Actionyearmonster2Model:isInTeam(partner_id)
+    if self.HeroPool then
+        for i,v in ipairs(self.HeroPool) do
+            for _,k in ipairs(v.pos_info) do
+                if k.id==partner_id and v.team_id~=1 then
+                   return v.team_id
+                end
+            end
+         end
+    end
+    return nil
+end
+
+--神器是否在队伍中
+function Actionyearmonster2Model:getHallowTeam()
+    local temp={}
+    if self.HeroPool then
+        for i,v in ipairs(self.HeroPool) do
+            if v.hallows_id~=0 then
+                temp[v.hallows_id]=v.team_id
+            end
+         end
+    end
+    return temp
+end
+
+--更新神器数据
+function Actionyearmonster2Model:updateHallowdata(hallows_id,team_index)
+    if self.HeroPool then
+        for i,v in ipairs(self.HeroPool) do
+            if v.hallows_id==hallows_id then
+                v.hallows_id=0
+            end
+            if v.team_id==team_index then
+                v.hallows_id=hallows_id
+            end
+         end
+    end
+end
+
+
+--是否在队伍中
+function Actionyearmonster2Model:getTeamData()
+    return  self.HeroPool or nil
+end
+-- 设置集字兑换数据
+function Actionyearmonster2Model:getExchangeDataById( id )
+    if self.exchange_data then
+        return self.exchange_data[id]
+    end
+    return nil
+end
+--获取伤害值对应的奖励数据
+--返回 最大伤害值  和 box个数
+function Actionyearmonster2Model:getHarmRewardInfo(harm_count, evt_type)
+    harm_count = harm_count or 0
+    -- Actionyearmonster2Constants.Evt_Type.YearMonster
+    local comp_id=MonopolyController:getInstance():getModel():getCamp_id1()
+    if comp_id then
+        local key=comp_id.."_"..evt_type
+        local config_list = Config.HolidayNianCrossData.data_harm_reward[key]
+        if config_list and next(config_list) ~= nil then
+            table.sort(config_list, function(a, b) return a.dps_low < b.dps_low end)
+            local len = #config_list
+            local max_high = config_list[len].dps_high
+            for i,config in ipairs(config_list) do
+                if i == 1 and harm_count <= config.dps_high then
+                    return i, config, max_high
+                elseif i == len and harm_count > config.dps_low then
+                    return i, config,max_high
+                elseif harm_count > config.dps_low and harm_count <= config.dps_high then
+                    return i, config, max_high
+                end
+            end
+        end
+    end
+    return 0
+end
+
+function Actionyearmonster2Model:getMonsterHeadId(type)
+    local comp_id=MonopolyController:getInstance():getModel():getCamp_id1()
+    if comp_id and Config.HolidayNianCrossData.data_const[comp_id] then
+        if type==12 then
+            return Config.HolidayNianCrossData.data_const[comp_id].holiday_nian_boss2_head.val
+        else
+            return Config.HolidayNianCrossData.data_const[comp_id].holiday_nian_boss1_head.val
+        end
+    end
+    return nil
+end
+
+function Actionyearmonster2Model:saveLocalSelfData(data)
+    self.myLocalInfo = nil
+    if not data and not data.dps_list then return end 
+    local role_vo = RoleController:getInstance():getRoleVo()
+    local list = deepCopy(data.dps_list)
+    for i,v in pairs(list) do
+        if role_vo and role_vo.rid == v.rid and role_vo.srv_id == v.srv_id then
+            self.myLocalInfo = v
+        end
+    end
+end
+function Actionyearmonster2Model:getLocalSelfData()
+    return self.myLocalInfo
+end
+
+function Actionyearmonster2Model:__delete()
+end

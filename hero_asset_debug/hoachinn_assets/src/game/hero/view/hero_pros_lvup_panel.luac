@@ -1,0 +1,288 @@
+-- --------------------------------------------------------------------
+-- 禁术升级成功
+-- 
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      升级成功
+-- <br/>Create: 2021-xx-xx
+-- --------------------------------------------------------------------
+HeroProsLvupPanel = HeroProsLvupPanel or BaseClass(BaseView)
+
+local table_insert = table.insert
+local string_format = string.format
+
+function HeroProsLvupPanel:__init(ctrl, title)
+    self.ctrl = ctrl
+    self.win_type = WinType.Mini
+    self.layout_name = "hero/hero_upgrade_star_exhibition_panel"
+    self.view_tag = ViewMgrTag.MSG_TAG
+    self.is_csb_action = true
+    self.res_list = {
+        -- { path = PathTool.getPlistImgForDownLoad("hero","hero"), type = ResourcesType.plist },
+    }
+
+    self.attr_list ={}
+end
+
+function HeroProsLvupPanel:open_callback()
+    local backpanel = self.root_wnd:getChildByName("backpanel")
+    backpanel:setScale(display.getMaxScale())
+    self.background = backpanel:getChildByName("background")
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    local size = self.main_container:getContentSize()
+    self.back_panel = self.main_container:getChildByName("back_panel")
+    -- self.back_panel:setScale(display.getMaxScale())
+    -- self.back_panel:setContentSize(cc.size(720, 550))
+
+    local titlepanel = self.root_wnd:getChildByName("titlepanel")
+    -- titlepanel:setPositionY(853)
+
+    self.title_container = titlepanel:getChildByName("title_container")
+    self.title_width = self.title_container:getContentSize().width
+    self.title_height = self.title_container:getContentSize().height
+
+    --属性
+    local attr_panel = self.main_container:getChildByName("attr_panel")
+    self.attr_labe_left_list = {}
+    self.attr_labe_right_list = {}
+    self.arrow_icon_list = {}
+    for i=1,5 do
+        self.attr_labe_left_list[i] = attr_panel:getChildByName("attr_label_left"..i)
+        self.attr_labe_left_list[i]:setVisible(false)
+        self.arrow_icon_list[i] = attr_panel:getChildByName("arrow_icon"..i)
+        self.arrow_icon_list[i]:setVisible(false)
+        self.attr_labe_right_list[i] = attr_panel:getChildByName("attr_label_right"..i)
+        self.attr_labe_right_list[i]:setVisible(false)
+    end
+    attr_panel:getChildByName("attr_icon1"):setVisible(false)
+    attr_panel:getChildByName("arrow_icon1"):setVisible(false)
+    attr_panel:getChildByName("arrow_icon5"):setVisible(false)
+    attr_panel:getChildByName("attr_label_left1"):setVisible(false)
+    attr_panel:getChildByName("attr_label_right1"):setVisible(false)
+    attr_panel:getChildByName("attr_label_left5"):setVisible(false)
+    attr_panel:getChildByName("attr_label_right5"):setVisible(false)
+    self.hero_node = self.main_container:getChildByName("hero_node")
+    self.left_node = self.hero_node:getChildByName("left_node")
+    self.right_node = self.hero_node:getChildByName("right_node")
+
+    -- self.left_item = ExclusiveItem.new()
+    -- self.right_item = ExclusiveItem.new()
+
+    -- self.left_item:setPosition(0,0)
+    -- self.left_item:setAnchorPoint(cc.p(0.5, 0.5))
+    -- self.right_item:setPosition(0,0)
+    -- self.right_item:setAnchorPoint(cc.p(0.5, 0.5))
+
+    -- left_node:addChild(self.left_item)
+    -- right_node:addChild(self.right_item)
+
+    self.skill_node = self.main_container:getChildByName("skill_node")
+    self.arrow = self.skill_node:getChildByName("arrow_1086")
+    self.arrow:setVisible(false)
+
+    self.main_container:getChildByName("common_90044"):getChildByName("attr_label"):setString(TI18N("语言_c_4560"))
+    self.main_container:getChildByName("common_90044_0"):getChildByName("skill_label"):setString(TI18N("语言_c_4561"))
+    self.exit_tips_label = self.main_container:getChildByName("exit_tips_label")
+    self.exit_tips_label:setString(TI18N("语言_c_1260"))
+end
+
+function HeroProsLvupPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self._onClickBtnClose) ,false, 1)
+end
+
+--关闭
+function HeroProsLvupPanel:_onClickBtnClose()
+    self.ctrl:openHeroProsLvupPanel(false)
+    -- ActionController:getInstance():checkOpenActionLimitGiftMainWindow()
+    if self.new_data and self.new_data.star == 13 then
+        --13星的因为有特效出现.所以不检查下一个显示  在天赋技能栏播放后才显示 准确点是在 skill_unlock_window关闭后
+    else
+        GlobalEvent:getInstance():Fire(BattleEvent.NEXT_SHOW_RESULT_VIEW)
+    end
+end
+
+function HeroProsLvupPanel:openRootWnd(id,old_data,new_data)
+    if not old_data or not new_data then return end
+
+    BattleResultMgr:getInstance():setWaitShowPanel(true)
+    playOtherSound("c_get")
+    self.proscription_id = id
+    self.old_data = old_data
+    self.new_data = new_data
+    self:handleEffect(true)
+
+    self:updateHead()
+    self:updateAttrList()
+end
+
+function HeroProsLvupPanel:updateHead()
+    if not self.left_item then
+        self.left_item = ProsItem.new()
+        self.left_node:addChild(self.left_item)
+        self.left_item:setPosition(0,0)
+        self.left_item:setAnchorPoint(cc.p(0.5, 0.5))
+    end
+    self.left_item:setData(self.proscription_id,self.old_data)
+    if self.old_data.p_type == 4 then
+        self.left_item:setScale(0.8)
+        self.hero_node:setPositionY(440)
+    else
+        self.left_item:setScale(1)
+        self.hero_node:setPositionY(418)
+    end
+    if not self.right_item then
+        self.right_item = ProsItem.new()
+        self.right_node:addChild(self.right_item)
+        self.right_item:setPosition(0,0)
+        self.right_item:setAnchorPoint(cc.p(0.5, 0.5))
+    end
+    self.right_item:setData(self.proscription_id,self.new_data)
+    if self.new_data.p_type == 4 then
+        self.right_item:setScale(0.8)
+    else
+        self.right_item:setScale(1)
+    end
+    -- local config = Config.PartnerProscriptionData.data_base_info[self.proscription_id][self.old_data.p_type]
+    -- if not self.left_item then
+    --     local res = PathTool.getPlistImgForDownLoad("proscription/proscription_skill",config.show)
+    --     self.left_item = createSprite(res,0,0,self.left_node,cc.p(0.5,0.5),LOADTEXT_TYPE)
+    -- end
+    -- if not self.left_lev_bg then
+    --     local res = PathTool.getResFrame("common","common_2033")
+    --     self.left_lev_bg = createSprite(res,0,-50,self.left_node,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+    -- end
+    -- if not self.left_lev then
+    --     self.left_lev = createLabel(18,cc.c3b(0xff,0xff,0xff),nil,0,-50,self.old_data.p_lev,self.left_node,0,cc.p(0.5,0.5))
+    -- end
+
+    -- local config = Config.PartnerProscriptionData.data_base_info[self.proscription_id][self.new_data.p_type]
+    -- if not self.right_item then
+    --     local res = PathTool.getPlistImgForDownLoad("proscription/proscription_skill",config.show)
+    --     self.right_item = createSprite(res,0,0,self.right_node,cc.p(0.5,0.5),LOADTEXT_TYPE)
+    -- end
+    -- if not self.right_lev_bg then
+    --     local res = PathTool.getResFrame("common","common_2033")
+    --     self.right_lev_bg = createSprite(res,0,-50,self.right_node,cc.p(0.5,0.5),LOADTEXT_TYPE_PLIST)
+    -- end
+    -- if not self.right_lev then
+    --     self.right_lev = createLabel(18,cc.c3b(0xff,0xff,0xff),nil,0,-50,self.new_data.p_lev,self.right_node,0,cc.p(0.5,0.5))
+    -- end
+
+end
+--更新属性
+function HeroProsLvupPanel:updateAttrList()
+    local show_list = {} 
+
+    --属性
+    local config = Config.PartnerProscriptionData.data_lv_info[self.proscription_id][self.old_data.p_type][self.old_data.p_lev]
+    local config_next = Config.PartnerProscriptionData.data_lv_info[self.proscription_id][self.new_data.p_type][self.new_data.p_lev]
+    local new_list = {}
+    for i, v in ipairs(config_next.attr) do
+        local _list = {}
+        _list.attr_id = v[1]
+        _list.new_value = v[2]
+        _list.old_value = 0
+        new_list[v[1]] = _list
+    end
+    if config then
+        for i, v in ipairs(config.attr) do
+            if new_list[v[1]] then
+                new_list[v[1]].old_value = v[2]
+            else
+                local _list = {}
+                _list.attr_id = v[1]
+                _list.new_value = 0
+                _list.old_value = v[2]
+                new_list[v[1]] = _list
+            end
+        end
+    else
+        for i, v in ipairs(config_next.attr) do
+            if new_list[v[1]] then
+                new_list[v[1]].old_value = 0
+            else
+                local _list = {}
+                _list.attr_id = v[1]
+                _list.new_value = v[2]
+                _list.old_value = 0
+                new_list[v[1]] = _list
+            end
+        end
+    end
+    local list = {}
+    for i, v in pairs(new_list) do
+        local attr_name = Config.AttrData.data_key_to_name[v.attr_id]
+        local old_value = v.old_value or 0
+        local new_value = v.new_value or 0
+        local is_per = PartnerCalculate.isShowPerByStr(v.attr_id)
+        if is_per == true then
+            old_value = (old_value/10).."%"
+            new_value = (new_value/10).."%"
+        end
+        local str2 = string_format("%s: %s", attr_name, old_value)
+        table_insert(show_list, {left_value = str2, right_value = new_value})
+    end
+    for i,v in ipairs(show_list) do
+        self.attr_labe_left_list[i+1]:setString(v.left_value)
+        self.attr_labe_right_list[i+1]:setString(v.right_value)
+        self.attr_labe_left_list[i+1]:setVisible(true)
+        self.attr_labe_right_list[i+1]:setVisible(true)
+        self.arrow_icon_list[i+1]:setVisible(true)
+    end
+    --技能
+    if not self.desc_scroll then
+        self.desc_scroll = createScrollView(670,147,25,-133,self.main_container,ccui.ScrollViewDir.vertical)
+    end
+    local des = nil
+    if config_next.desc and config_next.desc ~= "" then
+        des = createLabel(24,Config.ColorData.data_color4[1],nil,335,0, config_next.desc,self.desc_scroll,2, cc.p(0.5,1))
+        des:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+        des:setDimensions(660, 0)
+    else
+        des = createLabel(24,Config.ColorData.data_color4[1],nil,335,0,TI18N("语言_c_2937"),self.desc_scroll,2, cc.p(0.5,1)) 
+        des:setAlignment(cc.TEXT_ALIGNMENT_CENTER)
+        des:setDimensions(660, 0)
+    end
+    if des then
+        local txt_size = des:getContentSize()
+        local scroll_size = self.desc_scroll:getContentSize()
+        if txt_size.height > scroll_size.height then
+            self.desc_scroll:setInnerContainerSize(cc.size(scroll_size.width,txt_size.height))
+        end
+        des:setPositionY(self.desc_scroll:getInnerContainerSize().height)
+    end
+end
+
+
+
+function HeroProsLvupPanel:handleEffect(status, open_type)
+    if status == false then
+        if self.play_effect then
+            self.play_effect:clearTracks()
+            self.play_effect:removeFromParent()
+            self.play_effect = nil
+        end
+    else
+        local action = PlayerAction.action_6
+        if not tolua.isnull(self.title_container) and self.play_effect == nil then
+            local res = PathTool.getEffectRes(103)
+            self.play_effect = createEffectSpine(res, cc.p(self.title_width * 0.5, self.title_height * 0.5), cc.p(0.5, 0.5), false, action)
+            self.title_container:addChild(self.play_effect)
+        end
+    end
+end 
+
+function HeroProsLvupPanel:close_callback()
+    if self.left_item then
+        self.left_item:DeleteMe()
+        self.left_item = nil
+    end 
+    if self.right_item then
+        self.right_item:DeleteMe()
+        self.right_item = nil
+    end 
+    self:handleEffect(false)
+    self.ctrl:openHeroProsLvupPanel(false)
+end

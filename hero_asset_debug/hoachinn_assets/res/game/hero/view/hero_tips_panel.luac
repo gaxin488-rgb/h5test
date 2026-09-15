@@ -1,0 +1,1084 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+-- 英雄信息tips
+-- <br/>Create: 2018-xx-xx
+-- ✅ UPDATE: Thêm spine cho equip và artifact
+-- --------------------------------------------------------------------
+HeroTipsPanel = HeroTipsPanel or BaseClass(BaseView)
+local controller = HeroController:getInstance()
+local model = controller:getModel()
+local string_format = string.format
+local table_insert = table.insert
+local table_sort = table.sort
+local SPEC1_TYPE = (BackPackConst and BackPackConst.item_type and BackPackConst.item_type.SPEC1) or 110
+local SPEC2_TYPE = (BackPackConst and BackPackConst.item_type and BackPackConst.item_type.SPEC2) or 111
+
+local function normalizeHeroEquipVo(vo)
+    if not vo then return nil end
+    local cfg = vo.config
+    if cfg == nil then
+        local bid = vo.base_id or vo.bid or vo.id
+        if bid and Config and Config.ItemData and Config.ItemData.data_get_data then
+            cfg = Config.ItemData.data_get_data(bid)
+            if cfg then vo.config = cfg end
+        end
+    end
+    return cfg
+end
+
+local function getEquipTypeByKey(key, vo)
+    key = tonumber(key) or key
+    local cfg = normalizeHeroEquipVo(vo)
+    local equip_type = vo and (vo.type or (cfg and cfg.type)) or nil
+    equip_type = tonumber(equip_type) or equip_type
+    if equip_type == nil then
+        if key == 5 then
+            equip_type = SPEC1_TYPE
+        elseif key == 6 then
+            equip_type = SPEC2_TYPE
+        else
+            equip_type = key
+        end
+    end
+    return equip_type
+end
+
+local function createGemGoodsVo(gem_info)
+    if not gem_info or not gem_info.item_bid or gem_info.item_bid == 0 then return nil end
+    local item_cfg = Config.ItemData.data_get_data(gem_info.item_bid)
+    if not item_cfg then return nil end
+    local vo = GoodsVo.New(gem_info.item_bid)
+    if vo and vo.initAttrData then
+        vo:initAttrData({base_id = gem_info.item_bid, id = gem_info.id or 0})
+    end
+    if vo then
+        vo.config = item_cfg
+        vo.main_attr = gem_info.item_attr
+        vo.item_attr = gem_info.item_attr
+        vo.item_skill = gem_info.item_skill
+        vo.extra_attr = gem_info.item_skill
+        vo.extra = gem_info.extra
+        vo.enchant = gem_info.lv or 0
+    end
+    return vo
+end
+
+local function normalizePowerValue(value)
+    if value == nil then return 0 end
+    if type(value) == "number" then return value end
+    local num = tonumber(value)
+    return num or tostring(value)
+end
+
+local function powerToString(value)
+    if value == nil then return "0" end
+    if type(value) == "number" then
+        return string_format("%.0f", value)
+    end
+    return tostring(value)
+end
+
+function HeroTipsPanel:__init()
+    self.is_full_screen = false
+    self.title_str= ""
+    self.layout_name = "hero/hero_tips_panel"
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("hero", "hero"), type = ResourcesType.plist},
+        { path = PathTool.getPlistImgForDownLoad("tips","tips"), type = ResourcesType.plist},
+    }
+    self.attr_list = {[1]="atk",[2]="hp",[3]="def",[4]="speed"}
+    self.break_icon_list = {}
+    self.break_icon_bg_list = {}
+    --===== สกิล (ย่อและชิดขึ้น + ออโต้สกรอล) =====
+    -- ความกว้างฐานของไอคอน (ก่อน scale)
+    self.skill_width = 88
+    -- ระยะห่างระหว่างไอคอน (เดิม 16 -> ลดให้ชิด)
+    self.skill_gap = 20
+    -- สเกลแสดงผลของ SkillItem (เดิม 0.7 -> ย่อให้เล็กลง)
+    self.skill_scale = 0.6
+    -- เปิดใช้เลื่อนอัตโนมัติเมื่อไอคอนล้น
+    self.skill_autoscroll = false
+    self.skill_scroll_speed = 40
+    self._skillScrollTicket = nil
+    self._skillScrollDir = 1
+    self.skill_item_list = {}
+    --===============================================
+    self.equip_type_list = {
+        BackPackConst.item_type.WEAPON,
+        BackPackConst.item_type.SHOE,
+        BackPackConst.item_type.CLOTHES,
+        BackPackConst.item_type.HAT,
+        SPEC1_TYPE,
+        SPEC2_TYPE,
+    }
+    self.equip_icon_name_list = {
+        [BackPackConst.item_type.WEAPON] = "hero_info_7",
+        [BackPackConst.item_type.SHOE] = "hero_info_10",
+        [BackPackConst.item_type.CLOTHES] = "hero_info_9",
+        [BackPackConst.item_type.HAT] = "hero_info_8",
+        [5] = "hero_info_11",  -- New equip 1 icon (adjust if needed)
+        [6] = "hero_info_11",  -- New equip 2 icon (adjust if needed)
+    }
+    self.equip_icon_name_list[SPEC1_TYPE] = "hero_info_11"
+    self.equip_icon_name_list[SPEC2_TYPE] = "hero_info_11"
+    self.holy_equip_type_list = HeroConst.HolyequipmentPosList
+    self.holy_equip_icon_name_list = {
+        [BackPackConst.item_type.GOD_EARRING] = "hero_info_25",
+        [BackPackConst.item_type.GOD_RING] = "hero_info_27",
+        [BackPackConst.item_type.GOD_NECKLACE] = "hero_info_26",
+        [BackPackConst.item_type.GOD_BANGLE] = "hero_info_28",
+    }
+    
+    -- ═══════════════════════════════════════════════════════════════════════════
+    -- ✅ SPINE CONFIG - EQUIP & ARTIFACT
+    -- ═══════════════════════════════════════════════════════════════════════════
+    self.equip_spine_config = {
+        [1] = "E313151",  -- Weapon
+        [2] = "E313151",  -- Shoe
+        [3] = "E313151",  -- Clothes
+        [4] = "E313151",  -- Hat
+        [5] = "E313152",  -- Spec1
+        [6] = "E313152",  -- Spec2
+    }
+    
+    self.equip_spine_scale_config = {
+        [1] = 0.7, [2] = 0.7, [3] = 0.7,
+        [4] = 0.7, [5] = 0.7, [6] = 0.7,
+    }
+    
+    self.artifact_spine_config = {
+        [1] = "E313153", [2] = "E313153", [3] = "E313154",
+        [4] = "E313154", [5] = "E313155", [6] = "E313155",
+    }
+    
+    self.artifact_spine_scale_config = {
+        [1] = 0.7, [2] = 0.7, [3] = 0.7,
+        [4] = 0.7, [5] = 0.7, [6] = 0.7,
+    }
+    
+    self.gem_spine_config = {
+        [1] = "E313153", [2] = "E313153", [3] = "E313154",
+        [4] = "E313154", [5] = "E313155",
+    }
+    
+    self.gem_spine_scale_config = {
+        [1] = 0.7, [2] = 0.7, [3] = 0.7,
+        [4] = 0.7, [5] = 0.7,
+    }
+    
+    self.enable_spine = true
+    self.spine_z_order = 100
+    self.equip_spine_list = {}
+    self.artifact_spine_list = {}
+    self.gem_spine_list = {}
+end
+
+function HeroTipsPanel:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+    self.main_panel = self.root_wnd:getChildByName("main_panel")
+    self.box_bg = self.main_panel:getChildByName("box_bg")
+    self.box_bg_1 = self.main_panel:getChildByName("box_bg_1")
+    self.title_icon = self.main_panel:getChildByName("title_icon")
+    if self.box_bg_1 then self.box_bg_1:setVisible(false) end
+    if self.title_icon then self.title_icon:setVisible(false) end
+    self.top_panel = self.main_panel:getChildByName("top_panel")
+    self.hero_node = self.top_panel:getChildByName("hero_node")
+    self.hero_item = HeroExhibitionItem.new(0.8, false)
+    self.hero_node:addChild(self.hero_item)
+    self.hero_name = self.top_panel:getChildByName("hero_name")
+    self.advanced_node = self.top_panel:getChildByName("advanced_node")
+    self.score_image = self.top_panel:getChildByName("score_image")
+    self.power_click = self.top_panel:getChildByName("power_click")
+    local arrow_bg = self.power_click:getChildByName("arrow_bg")
+    self.fight_label = CommonNum.new(20, self.power_click, 99999, - 2, cc.p(0, 0.5))
+    self.fight_label:setPosition(arrow_bg:getPositionX() + arrow_bg:getContentSize().width/2, 28)
+    self.fight_text_label = createLabel(20, cc.c3b(255, 238, 188), cc.c3b(80, 40, 20), arrow_bg:getPositionX() + arrow_bg:getContentSize().width/2, 28, "", self.power_click, 2, cc.p(0, 0.5))
+    self.fight_text_label:setVisible(false)
+    self.comment_btn = self.top_panel:getChildByName("comment_btn")
+    self.look_btn = self.top_panel:getChildByName("look_btn")
+    local attr_panel = self.top_panel:getChildByName("attr_panel")
+    self.attr_icon_list = {}
+    self.attr_icon_list[1] = attr_panel:getChildByName("attr_icon1")
+    self.attr_icon_list[2] = attr_panel:getChildByName("attr_icon2")
+    self.attr_icon_list[3] = attr_panel:getChildByName("attr_icon3")
+    self.attr_icon_list[4] = attr_panel:getChildByName("attr_icon4")
+    self.attr_label_list = {}
+    self.attr_label_list[1] = attr_panel:getChildByName("attr_label1")
+    self.attr_label_list[2] = attr_panel:getChildByName("attr_label2")
+    self.attr_label_list[3] = attr_panel:getChildByName("attr_label3")
+    self.attr_label_list[4] = attr_panel:getChildByName("attr_label4")
+    self.top_panel:getChildByName("advancedKey"):setString(TI18N("语言_c_855"))
+    -- ====== แถบสกิล: เปิดสกรอลด้วยนิ้ว + ซ่อนสกรอลบาร์ ======
+    self.skill_container = self.top_panel:getChildByName("scroll_view")
+    self.skill_container:setScrollBarEnabled(false)
+    self.skill_container:setBounceEnabled(true)
+    self.skill_container:setTouchEnabled(true)
+    self.skill_container:setInertiaScrollEnabled(true)
+    self.skill_container:setDirection(ccui.ScrollViewDir.horizontal) -- ← เลื่อนซ้ายขวา
+    self.skill_container_size = self.skill_container:getContentSize()
+    self.skill_key = self.top_panel:getChildByName("skill_key")
+    self.skill_key:setString(TI18N("语言_c_3204"))
+    self.box_bg = self.main_panel:getChildByName("box_bg")
+    self.equip_panel = self.main_panel:getChildByName("equip_panel")
+    -- Real top-row order in hero_tips_panel.csb: x 52,137,222,307,392,477
+    local equip_node_indices = {1,3,7,5,9,11}
+    self.equip_node_list = {}
+    for i, idx in ipairs(equip_node_indices) do
+        self.equip_node_list[i] = self.equip_panel:getChildByName("equip_node"..idx)
+    end
+    local artifact_node_indices = {2,4,8,6,10,12}
+    self.artifact_node_list = {}
+    for i, idx in ipairs(artifact_node_indices) do
+        self.artifact_node_list[i] = self.equip_panel:getChildByName("equip_node"..idx)
+    end
+    self.holy_equip_node_list = {}
+    for i=1,4 do
+        self.holy_equip_node_list[i] = self.equip_panel:getChildByName("holy_equip_node_"..i)
+    end
+    -- Gem nodes: gem_node_1..5 for 5 gem slots (type 51..55)
+    self.gem_node_list = {}
+    for i=1,5 do
+        self.gem_node_list[i] = self.equip_panel:getChildByName("gem_node_"..i)
+    end
+    self.btn_goto = self.main_panel:getChildByName("btn_goto")
+    if self.btn_goto then
+        self.btn_goto:getChildByName("label"):setString(TI18N("语言_c_3205"))
+    end
+end
+
+function HeroTipsPanel:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn) ,false, 1)
+    registerButtonEventListener(self.comment_btn, function() self:onClickCommentBtn() end ,true, 2, nil , 0.8)
+    registerButtonEventListener(self.look_btn, function() self:onClickLookBtn() end ,true, 2, nil, 0.8)
+    registerButtonEventListener(self.btn_goto, function() self:onClickGotoBtn() end ,true, 2)
+    self:addGlobalEvent(GemstoneEvent.Show_Gem_Info_Event, function(data)
+        if not self.hero_vo or self.is_self_hero then return end
+        if not data or data.partner_id ~= self.hero_vo.partner_id then return end
+        self.remote_gem_info = data.list_info or {}
+        self:updateGem(self.hero_vo)
+    end)
+    self:addGlobalEvent(HeroEvent.Del_Hero_Event, function(list)
+        if self.hero_vo then
+            for i,v in ipairs(list) do
+                if self.hero_vo.partner_id == v.partner_id then
+                    self:onClickCloseBtn()
+                end
+            end
+        end
+    end)
+    self:addGlobalEvent(HeroEvent.Hero_Get_Talent_Event, function()
+        if self.hero_vo then
+            self:updateTalent(self.hero_vo)
+        end
+    end)
+end
+
+--评论
+function HeroTipsPanel:onClickCommentBtn()
+    if not self.hero_vo then return end
+    PokedexController:getInstance():openCommentWindow(true, self.hero_vo)
+end
+
+--关闭
+function HeroTipsPanel:onClickCloseBtn()
+    controller:openHeroTipsPanel(false)
+end
+
+function HeroTipsPanel:onClickLookBtn()
+    if not self.hero_vo then return end
+    controller:openHeroTipsAttrPanel(true, self.hero_vo)
+end
+
+--前往更换英雄
+function HeroTipsPanel:onClickGotoBtn()
+    if not self.hero_vo then return end
+    RoleController:getInstance():openRoleHeroShowFormPanel(true)
+    self:onClickCloseBtn()
+end
+
+function HeroTipsPanel:setPowerValue(power)
+    local power_num = tonumber(power)
+    if power_num and power_num <= 2147483647 then
+        if self.fight_text_label then
+            self.fight_text_label:setVisible(false)
+        end
+        if self.fight_label then
+            self.fight_label:setVisible(true)
+            self.fight_label:setNum(power_num)
+        end
+    else
+        if self.fight_label then
+            self.fight_label:setVisible(false)
+        end
+        if self.fight_text_label then
+            self.fight_text_label:setVisible(true)
+            self.fight_text_label:setString(powerToString(power))
+        end
+    end
+end
+
+function HeroTipsPanel:openRootWnd(hero_vo, setting)
+    if not hero_vo then return end
+    self.hero_vo = hero_vo
+    local config = Config.PartnerData.data_partner_base[hero_vo.bid]
+    if not config then return end
+    local score = controller:getModel():heroBidScore(hero_vo.bid)
+    local path = string.format("partner_rarity_%s", score)
+    local src = PathTool.getResFrame('partnersummon', path,false)
+    self.score_image:loadTexture(src,LOADTEXT_TYPE_PLIST)
+    local setting = setting or {}
+    local is_hide_equip = setting.is_hide_equip or false
+    local is_show_form_btn = setting.is_show_form_btn or false
+    self.remote_gem_info = nil
+    local role_vo = RoleController:getInstance():getRoleVo()
+    self.is_self_hero = role_vo and hero_vo.rid and hero_vo.srv_id and role_vo.rid == hero_vo.rid and role_vo.srv_id == hero_vo.srv_id
+    if not is_hide_equip and not self.is_self_hero and hero_vo.rid and hero_vo.srv_id and hero_vo.partner_id then
+        GemstoneController:getInstance():sender22813(hero_vo.rid, hero_vo.srv_id, hero_vo.partner_id)
+    end
+    self.hero_item:setData(hero_vo)
+    self.hero_name:setString(config.name)
+    local power = normalizePowerValue(hero_vo.power or 0)
+    self:setPowerValue(power)
+    self:updateAdvanceInfo(hero_vo)
+    for i,attr_str in ipairs(self.attr_list) do
+        if self.attr_icon_list[i] then
+            local res_id = PathTool.getAttrIconByStr(attr_str)
+            local res = PathTool.getResFrame("common",res_id)
+            loadSpriteTexture(self.attr_icon_list[i], res, LOADTEXT_TYPE_PLIST)
+        end
+        if self.attr_label_list[i] then
+            local value = hero_vo[attr_str] or 0
+            self.attr_label_list[i]:setString(value)
+        end
+    end
+    local key = getNorKey(config.type, config.break_id, hero_vo.break_lev)
+    local break_config = Config.PartnerData.data_partner_brach[key]
+    self:initSkill(hero_vo, break_config)
+    if is_hide_equip then
+        self.equip_panel:setVisible(false)
+        local size = self.box_bg:getContentSize()
+        self.box_bg:setContentSize(cc.size(size.width, 370))
+        self.main_panel:setPositionY(670)
+    else
+        self:updateEquip(hero_vo)
+        self:updateArtifact(hero_vo)  -- New: update 6 artifacts
+        local skill_key = self.equip_panel:getChildByName("skill_key")
+        skill_key:setString(TI18N("语言_c_47"))
+        self:updateTalent(hero_vo)
+        local holy_key = self.equip_panel:getChildByName("holy_key")
+        holy_key:setString(TI18N("语言_c_3206"))
+        self:updateHolyEquip(hero_vo)
+        -- Gem section
+        local key_gem = self.equip_panel:getChildByName("key_gem")
+        if key_gem then key_gem:setString("Khảm") end
+        self:updateGem(hero_vo)
+        if is_show_form_btn then
+            self.btn_goto:setVisible(true)
+            local size = self.box_bg:getContentSize()
+            self.box_bg:setContentSize(cc.size(size.width, 872))  -- Adjust for more content
+        end
+    end
+end
+
+--更新进阶显示
+function HeroTipsPanel:updateAdvanceInfo(hero_vo)
+    local max_count = model:getHeroMaxBreakCountByInitStar(hero_vo.star)
+    local star_width = 27 + 8
+    local break_count = hero_vo.break_lev or 0
+    if model:isResonateCystalHero(hero_vo) then
+        break_count = hero_vo.resonate_break_lev or 0
+    end
+    local x = 0
+    for i,v in ipairs(self.break_icon_list) do
+        v:setVisible(false)
+    end
+    for i=1,max_count do
+        if i <= break_count then
+            if not self.break_icon_list[i] then
+                local res = PathTool.getResFrame("tips","tips_12")
+                local star = createSprite(res, x + (i-1)*star_width, 0, self.advanced_node, cc.p(0,0.5), LOADTEXT_TYPE_PLIST, 1)
+                self.break_icon_list[i] = star
+            else
+                self.break_icon_list[i]:setVisible(true)
+            end
+            if self.break_icon_bg_list[i] then
+                self.break_icon_bg_list[i]:setVisible(false)
+            end
+        else
+            if self.break_icon_list[i] then
+                self.break_icon_list[i]:setVisible(false)
+            end
+            if not self.break_icon_bg_list[i] then
+                local res = PathTool.getResFrame("tips","tips_13")
+                local star = createSprite(res, x + (i-1)*star_width, 0, self.advanced_node, cc.p(0,0.5), LOADTEXT_TYPE_PLIST, 0)
+                self.break_icon_bg_list[i] = star
+            else
+                self.break_icon_bg_list[i]:setVisible(true)
+            end
+        end
+    end
+end
+
+--===== ย่อไอคอน + ชิดขึ้น + สกรอล (นิ้ว & ออโต้) =====
+function HeroTipsPanel:initSkill(hero_vo, break_config)
+    if not break_config then return end
+    local key = getNorKey(hero_vo.bid, hero_vo.star)
+    local star_config = Config.PartnerData.data_partner_star(key)
+    if star_config == nil then return end
+    local skill_list = {}
+    for i,v in ipairs(star_config.skills) do
+        if v[1] ~= 1 then
+            table_insert(skill_list, v)
+        end
+    end
+    -- คำนวณขนาดและพื้นที่
+    local item_width = (self.skill_width * self.skill_scale) + self.skill_gap
+    local total_width = item_width * #skill_list
+    local max_width = math.max(self.skill_container_size.width, total_width)
+    self.skill_container:setInnerContainerSize(cc.size(max_width, self.skill_container_size.height))
+    -- ล้างของเก่า
+    for i,v in ipairs(self.skill_item_list) do
+        v:setVisible(false)
+    end
+   
+    local x = 0
+    for i,skill in ipairs(skill_list) do
+        local config = Config.SkillData.data_get_skill(skill[2])
+        if config then
+            local is_lock = (skill[1] > break_config.skill_num)
+            if self.skill_item_list[i] == nil then
+                self.skill_item_list[i] = SkillItem.new(true,true,true,self.skill_scale, true)
+                self.skill_container:addChild(self.skill_item_list[i])
+            end
+            self.skill_item_list[i]:setData(config)
+            self.skill_item_list[i]:showUnEnabled(is_lock)
+            self.skill_item_list[i]:setVisible(true)
+            self.skill_item_list[i]:setPosition(
+                item_width * (i - 0.5),
+                (self.skill_width * self.skill_scale)/2 + 6
+            )
+        else
+            print(string_format("@技能表id: %s 没发现", tostring(skill.skill_bid)))
+        end
+    end
+    -- ออโต้สกรอลเมื่อไอคอนล้น
+    self:stopSkillAutoScroll()
+    if self.skill_autoscroll and total_width > self.skill_container_size.width then
+        self:startSkillAutoScroll(total_width)
+    end
+end
+
+-- สกรอลอัตโนมัติไป-กลับแบบนุ่ม ๆ
+function HeroTipsPanel:startSkillAutoScroll(total_width)
+    local container = self.skill_container
+    if not container then return end
+    local inner = container:getInnerContainer()
+    if not inner then return end
+    local view_w = self.skill_container_size.width
+    local inner_w = math.max(view_w, total_width)
+    local min_x = view_w - inner_w -- ค่าติดลบ
+    local max_x = 0
+    self._skillScrollDir = 1
+    local speed = self.skill_scroll_speed
+    if self._skillScrollTicket then
+        GlobalTimeTicket:getInstance():remove(self._skillScrollTicket)
+        self._skillScrollTicket = nil
+    end
+    self._skillScrollTicket = GlobalTimeTicket:getInstance():add(function()
+        if tolua.isnull(inner) then
+            self:stopSkillAutoScroll()
+            return
+        end
+        local pos = inner:getPosition()
+        local nx = pos.x + (speed * self._skillScrollDir) * cc.Director:getInstance():getDeltaTime()
+        if nx < min_x then
+            nx = min_x
+            self._skillScrollDir = 1
+        elseif nx > max_x then
+            nx = max_x
+            self._skillScrollDir = -1
+        end
+        inner:setPosition(cc.p(nx, pos.y))
+    end, 0)
+end
+
+function HeroTipsPanel:stopSkillAutoScroll()
+    if self._skillScrollTicket then
+        GlobalTimeTicket:getInstance():remove(self._skillScrollTicket)
+        self._skillScrollTicket = nil
+    end
+end
+
+--====================================================
+-- ✅ UPDATE EQUIP WITH SPINE
+--====================================================
+function HeroTipsPanel:updateEquip(hero_vo)
+    self.equip_item_list = {}
+    self.equip_spine_list = {}
+    local equip_vo_list = {}
+
+    local function isSlotEquipType(equip_type)
+        for _,slot_type in ipairs(self.equip_type_list) do
+            if slot_type == equip_type then return true end
+        end
+        return false
+    end
+
+    local function setEquipVo(key, data, is_raw)
+        if not data then return end
+        local equip_type = getEquipTypeByKey(key, data)
+        if not isSlotEquipType(equip_type) then return end
+        if equip_vo_list[equip_type] ~= nil then return end
+        if is_raw then
+            local vo = GoodsVo.New(data.base_id)
+            if vo and vo["initAttrData"] then
+                vo:initAttrData(data)
+            end
+            equip_vo_list[equip_type] = vo
+        else
+            normalizeHeroEquipVo(data)
+            equip_vo_list[equip_type] = data
+        end
+    end
+
+    if hero_vo.eqms ~= nil then
+        for i,v in ipairs(hero_vo.eqms) do
+            setEquipVo(i, v, true)
+        end
+    end
+
+    if hero_vo.eqm_list ~= nil then
+        for k,v in pairs(hero_vo.eqm_list) do
+            setEquipVo(k, v, false)
+        end
+        if equip_vo_list[SPEC1_TYPE] == nil then
+            setEquipVo(SPEC1_TYPE, hero_vo.eqm_list[SPEC1_TYPE] or hero_vo.eqm_list[tostring(SPEC1_TYPE)] or hero_vo.eqm_list[5] or hero_vo.eqm_list["5"], false)
+        end
+        if equip_vo_list[SPEC2_TYPE] == nil then
+            setEquipVo(SPEC2_TYPE, hero_vo.eqm_list[SPEC2_TYPE] or hero_vo.eqm_list[tostring(SPEC2_TYPE)] or hero_vo.eqm_list[6] or hero_vo.eqm_list["6"], false)
+        end
+    end
+
+    if hero_vo.partner_id and model and model.getHeroEquipList then
+        local source_equip_list = model:getHeroEquipList(hero_vo.partner_id)
+        if source_equip_list and next(source_equip_list) ~= nil then
+            for _,equip_type in ipairs(self.equip_type_list) do
+                if equip_vo_list[equip_type] == nil then
+                    setEquipVo(equip_type, source_equip_list[equip_type] or source_equip_list[tostring(equip_type)], false)
+                end
+            end
+            if equip_vo_list[SPEC1_TYPE] == nil then
+                setEquipVo(SPEC1_TYPE, source_equip_list[SPEC1_TYPE] or source_equip_list[tostring(SPEC1_TYPE)] or source_equip_list[5] or source_equip_list["5"], false)
+            end
+            if equip_vo_list[SPEC2_TYPE] == nil then
+                setEquipVo(SPEC2_TYPE, source_equip_list[SPEC2_TYPE] or source_equip_list[tostring(SPEC2_TYPE)] or source_equip_list[6] or source_equip_list["6"], false)
+            end
+        end
+    end
+    
+    for k,item in pairs(self.equip_item_list) do
+        item:setData()
+        if item.empty_icon then
+            item.empty_icon:setVisible(true)
+        end
+        item.equip_vo = nil
+    end
+    
+    for i=1,6 do
+        local equip_type = self.equip_type_list[i] or i
+        local equip_vo = equip_vo_list[equip_type]
+        local equip_node = self.equip_node_list[i]
+        
+        if self.equip_item_list[equip_type] == nil and equip_node then
+            -- ✅ CREATE ITEM FIRST
+            local item = BackPackItem.new(false,true,nil,1,false, true)
+            equip_node:addChild(item,1)
+            item:setPosition(cc.p(0,0))
+            item:setScale(0.75)
+            item:addBtnCallBack(function()
+                self:selectEquipVo(item:getData(), i)
+            end)
+            local res= PathTool.getResFrame("hero",self.equip_icon_name_list[equip_type])
+            local empty_icon = createImage(item:getRoot(), res,60,60, cc.p(0.5,0.5), true, 10, false)
+            item.empty_icon = empty_icon
+            self.equip_item_list[equip_type] = item
+            
+            -- ✅ CREATE SPINE AFTER ITEM
+            if self.enable_spine then
+                local spine_name = self.equip_spine_config[i]
+                if spine_name and spine_name ~= "" then
+                    local spine = createEffectSpine(
+                        spine_name,
+                        cc.p(0, 0),
+                        cc.p(0.5, 0.5),
+                        true,
+                        PlayerAction.action_2
+                    )
+                    
+                    if spine then
+                        local scale = self.equip_spine_scale_config[i] or 1.2
+                        spine:setScale(scale)
+                        equip_node:addChild(spine, self.spine_z_order)
+                        spine:setVisible(true)
+                        self.equip_spine_list[equip_type] = spine
+                    end
+                end
+            end
+        end
+        
+        if equip_vo then
+            self.equip_item_list[equip_type]:setData(equip_vo)
+            self.equip_item_list[equip_type].equip_vo = equip_vo
+            -- ✅ Show enchant level
+            local enchant = equip_vo.enchant or 0
+            if hero_vo.slot_enchant then
+                enchant = math.max(enchant, hero_vo.slot_enchant[equip_type] or 0)
+            end
+            if enchant > 0 then
+                self.equip_item_list[equip_type]:setEnchantLev(enchant)
+            end
+            if self.equip_item_list[equip_type].empty_icon then
+                self.equip_item_list[equip_type].empty_icon:setVisible(false)
+            end
+        else
+            -- No equip, keep spine visible
+        end
+    end
+end
+
+--====================================================
+-- ✅ UPDATE ARTIFACT WITH SPINE
+--====================================================
+function HeroTipsPanel:updateArtifact(hero_vo)
+    self.artifact_item_list = {}
+    self.artifact_spine_list = {}
+    local artifact_vo_list = {}
+    local function addArtifactVo(pos, vo)
+        if not vo then return end
+        if pos and pos >= 1 and pos <= 6 and artifact_vo_list[pos] == nil then
+            artifact_vo_list[pos] = vo
+            return
+        end
+        for i=1,6 do
+            if artifact_vo_list[i] == nil then
+                artifact_vo_list[i] = vo
+                return
+            end
+        end
+    end
+    if hero_vo.artifacts ~= nil then
+        for i,artifact_data in ipairs(hero_vo.artifacts) do
+            local artifact_vo = GoodsVo.New(artifact_data.base_id)
+            if artifact_vo and artifact_vo["initAttrData"] then
+                artifact_vo:initAttrData(artifact_data)
+            end
+            addArtifactVo(artifact_data.artifact_pos, artifact_vo)
+        end
+    elseif hero_vo.artifact_list ~= nil then
+        for k,v in pairs(hero_vo.artifact_list) do
+            addArtifactVo(k, v)
+        end
+    end
+    
+    for k,item in pairs(self.artifact_item_list) do
+        item:setData()
+        if item.empty_icon then
+            item.empty_icon:setVisible(true)
+        end
+        item.equip_vo = nil
+    end
+    
+    for i=1,6 do
+        local artifact_vo = artifact_vo_list[i]
+        local artifact_node = self.artifact_node_list[i]
+        
+        if self.artifact_item_list[i] == nil and artifact_node then
+            -- ✅ CREATE ITEM FIRST
+            local item = BackPackItem.new(false,true,nil,1,false, true)
+            artifact_node:addChild(item,1)
+            item:setPosition(cc.p(0,0))
+            item:setScale(0.65)
+            item:addBtnCallBack(function()
+                self:selectArtifactVo(item:getData(), i)
+            end)
+            local res= PathTool.getResFrame("hero","hero_info_11")
+            local empty_icon = createImage(item:getRoot(), res,60,60, cc.p(0.5,0.5), true, 10, false)
+            item.empty_icon = empty_icon
+            self.artifact_item_list[i] = item
+            
+            -- ✅ CREATE SPINE AFTER ITEM
+            if self.enable_spine then
+                local spine_name = self.artifact_spine_config[i]
+                if spine_name and spine_name ~= "" then
+                    local spine = createEffectSpine(
+                        spine_name,
+                        cc.p(0, 0),
+                        cc.p(0.5, 0.5),
+                        true,
+                        PlayerAction.action_2
+                    )
+                    
+                    if spine then
+                        local scale = self.artifact_spine_scale_config[i] or 0.9
+                        spine:setScale(scale)
+                        artifact_node:addChild(spine, self.spine_z_order)
+                        spine:setVisible(true)
+                        self.artifact_spine_list[i] = spine
+                    end
+                end
+            end
+        end
+        
+        if artifact_vo then
+            self.artifact_item_list[i]:setData(artifact_vo)
+            self.artifact_item_list[i].equip_vo = artifact_vo
+            if self.artifact_item_list[i].empty_icon then
+                self.artifact_item_list[i].empty_icon:setVisible(false)
+            end
+        else
+            -- No artifact, keep spine visible
+        end
+    end
+end
+
+--====================================================
+-- ✅ UPDATE GEM (5 slots, type 51..55)
+--====================================================
+function HeroTipsPanel:updateGem(hero_vo)
+    if self.gem_item_list then
+        for k, v in pairs(self.gem_item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.gem_item_list = {}
+    if self.gem_spine_list then
+        for k, v in pairs(self.gem_spine_list) do
+            if v then v:removeFromParent() end
+        end
+    end
+    local gem_vo_list = {}
+    local GEM_TYPES = {51, 52, 53, 54, 55}
+    local gemstone_list_info = nil
+
+    if self.is_self_hero then
+        local gemstone_model = GemstoneController:getInstance():getModel()
+        local gemstone_data = gemstone_model and gemstone_model:getGemstoneInfo(hero_vo.partner_id)
+        if gemstone_data and gemstone_data.list_info then
+            gemstone_list_info = gemstone_data.list_info
+        end
+    elseif self.remote_gem_info and next(self.remote_gem_info) then
+        gemstone_list_info = self.remote_gem_info
+    end
+
+    if gemstone_list_info and next(gemstone_list_info) then
+        for pos = 1, 5 do
+            local gem_vo = createGemGoodsVo(gemstone_list_info[pos])
+            if gem_vo then
+                gem_vo_list[50 + pos] = gem_vo
+            end
+        end
+    -- Build gem_vo_list from eqm_list or eqms
+    elseif hero_vo.eqm_list ~= nil then
+        for _, gem_type in ipairs(GEM_TYPES) do
+            if hero_vo.eqm_list[gem_type] then
+                gem_vo_list[gem_type] = hero_vo.eqm_list[gem_type]
+            end
+        end
+    elseif hero_vo.eqms ~= nil then
+        for _, v in ipairs(hero_vo.eqms) do
+            local item_config = Config.ItemData.data_get_data(v.base_id)
+            if item_config then
+                local t = item_config.type
+                for _, gem_type in ipairs(GEM_TYPES) do
+                    if t == gem_type then
+                        local vo = GoodsVo.New(v.base_id)
+                        if vo["initAttrData"] then vo:initAttrData(v) end
+                        gem_vo_list[gem_type] = vo
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    local res_gem_empty = PathTool.getResFrame("hero", "hero_info_34")
+    self.gem_spine_list = {}
+
+    for i = 1, 5 do
+        local gem_type = GEM_TYPES[i]
+        local gem_vo = gem_vo_list[gem_type]
+        local gem_node = self.gem_node_list[i]
+
+        if gem_node then
+            local item = BackPackItem.new(false, true, nil, 1, false, true)
+            gem_node:addChild(item, 1)
+            item:setPosition(cc.p(0, 0))
+            item:setScale(0.65)
+            item:addBtnCallBack(function()
+                if item:getData() then
+                    controller:openEquipTips(true, item:getData(), PartnerConst.EqmTips.normal, self.hero_vo)
+                end
+            end)
+            local empty_icon = createImage(item:getRoot(), res_gem_empty, 60, 60, cc.p(0.5, 0.5), true, 10, false)
+            item.empty_icon = empty_icon
+            self.gem_item_list[i] = item
+
+            -- ✅ CREATE SPINE (always visible)
+            if self.enable_spine then
+                local spine_name = self.gem_spine_config[i]
+                if spine_name and spine_name ~= "" then
+                    local spine = createEffectSpine(
+                        spine_name,
+                        cc.p(0, 0),
+                        cc.p(0.5, 0.5),
+                        true,
+                        PlayerAction.action_2
+                    )
+                    if spine then
+                        local scale = self.gem_spine_scale_config[i] or 0.6
+                        spine:setScale(scale)
+                        gem_node:addChild(spine, self.spine_z_order)
+                        spine:setVisible(true)
+                        self.gem_spine_list[i] = spine
+                    end
+                end
+            end
+
+            if gem_vo and gem_vo.config then
+                item:setData(gem_vo)
+                -- ✅ Show enchant level on gem
+                local enchant = gem_vo.enchant or 0
+                if hero_vo.slot_enchant then
+                    enchant = math.max(enchant, hero_vo.slot_enchant[gem_type] or 0)
+                end
+                if enchant > 0 then
+                    item:setEnchantLev(enchant)
+                end
+                if item.empty_icon then item.empty_icon:setVisible(false) end
+            else
+                item:setData()
+                if item.empty_icon then item.empty_icon:setVisible(true) end
+            end
+        end
+    end
+end
+
+function HeroTipsPanel:selectEquipVo(equip_vo, index)
+    if not self.hero_vo then return end
+    if not equip_vo then return end
+    controller:openEquipTips(true, equip_vo, PartnerConst.EqmTips.normal, self.hero_vo)
+end
+
+function HeroTipsPanel:selectArtifactVo(artifact_vo, index)
+    if not self.hero_vo then return end
+    if not artifact_vo then return end
+    controller:openArtifactTipsWindow(true, artifact_vo, PartnerConst.ArtifactTips.normal, self.hero_vo.partner_id, index)
+end
+
+function HeroTipsPanel:updateTalent(hero_vo)
+    local skill_tips = self.equip_panel:getChildByName("skill_tips")
+    local skill_node = self.equip_panel:getChildByName("skill_node")
+    if not skill_tips then return end
+    if not skill_node then return end
+    if self.talent_skill_item_list then return end
+    local role_vo = RoleController:getInstance():getRoleVo()
+    if not role_vo then return end
+    local skill_list = {}
+    if role_vo and hero_vo.rid and hero_vo.srv_id and role_vo.rid == hero_vo.rid and role_vo.srv_id == hero_vo.srv_id then
+        if model:isOpenTanlentByHerovo(hero_vo) and hero_vo.ishaveTalentData and not hero_vo:ishaveTalentData() then
+            controller:sender11099({{partner_id = hero_vo.partner_id}})
+            return
+        end
+    end
+    if hero_vo.talent_skill_list then
+        for k,v in pairs(hero_vo.talent_skill_list) do
+            local data = {}
+            data.pos = k
+            data.skill_id = v
+            table_insert(skill_list, data)
+        end
+    elseif hero_vo.dower_skill then
+        skill_list = hero_vo.dower_skill
+    end
+    table_sort(skill_list, function(a, b) return a.pos < b.pos end)
+    if #skill_list > 0 then
+        skill_tips:setVisible(false)
+        local item_width = 104
+        local x = 0
+        self.talent_skill_item_list = {}
+        for i,v in ipairs(skill_list) do
+            local config = Config.SkillData.data_get_skill(v.skill_id)
+            if config then
+                self.talent_skill_item_list[i] = SkillItem.new(true,true,true,0.7,nil,false)
+                self.talent_skill_item_list[i]:setPosition((x + (i - 1)*item_width), 0)
+                self.talent_skill_item_list[i]:setData(config)
+                skill_node:addChild(self.talent_skill_item_list[i])
+            end
+        end
+    else
+        skill_tips:setString(TI18N("语言_c_3207"))
+    end
+end
+
+function HeroTipsPanel:updateHolyEquip(hero_vo)
+    self.holy_equip_item_list = {}
+    local equip_vo_list = {}
+    if hero_vo.holy_eqm ~= nil then
+        for i,v in ipairs(hero_vo.holy_eqm) do
+            local item_config = Config.ItemData.data_get_data(v.base_id)
+            if item_config then
+                v.type = item_config.type
+                equip_vo_list[v.type] = GoodsVo.New(v.base_id)
+                if equip_vo_list[v.type]["initAttrData"] then
+                    equip_vo_list[v.type]:initAttrData(v)
+                end
+                equip_vo_list[v.type]:setEnchantScore(0)
+            end
+        end
+    elseif hero_vo.holy_eqm_list ~= nil then
+        for k,v in pairs(hero_vo.holy_eqm_list) do
+            equip_vo_list[k] = v
+        end
+    end
+    for k,item in pairs(self.holy_equip_item_list) do
+        item:setData()
+        if item.empty_icon then
+            item.empty_icon:setVisible(true)
+        end
+        item.equip_vo = nil
+    end
+    for i,equip_node in ipairs(self.holy_equip_node_list) do
+        local equip_type = self.holy_equip_type_list[i] or i
+        local equip_vo = equip_vo_list[equip_type]
+        if self.holy_equip_item_list[equip_type] == nil then
+            local item = BackPackItem.new(false,true,nil,1,false, true)
+            equip_node:addChild(item,1)
+            item:setPosition(cc.p(0,0))
+            item:setScale(0.65)
+            item:addBtnCallBack(function()
+                self:selectEquipVo(item:getData(), i)
+            end)
+            local res= PathTool.getResFrame("hero",self.holy_equip_icon_name_list[equip_type])
+            local empty_icon = createImage(item:getRoot(), res,60,60, cc.p(0.5,0.5), true, 10, false)
+            item.empty_icon = empty_icon
+            self.holy_equip_item_list[equip_type] = item
+        end
+        if equip_vo then
+            self.holy_equip_item_list[equip_type]:setData(equip_vo)
+            self.holy_equip_item_list[equip_type].equip_vo = equip_vo
+            if self.holy_equip_item_list[equip_type].empty_icon then
+                self.holy_equip_item_list[equip_type].empty_icon:setVisible(false)
+            end
+        end
+    end
+    if self.holy_tips_label == nil then
+        self.holy_tips_label = createRichLabel(20, cc.c4b(0xe0,0xbf,0x98,0xff), cc.p(0.5, 0.5), cc.p(298.12, -284), nil, nil, 720)
+        self.equip_panel:addChild(self.holy_tips_label)
+    end
+   
+    local list = model:getHolyEquipSuitDes(equip_vo_list)
+    if next(list) ~= nil then
+        local str = TI18N("语言_c_4308")
+        for k,v in ipairs(list) do
+            local suit_str = string_format("<img src='%s' scale=0.7 /> %s ", v.icon_res, v.name)
+            str = str..suit_str
+        end
+        self.holy_tips_label:setString(str)
+    else
+        self.holy_tips_label:setString(TI18N("语言_c_3208"))
+    end
+end
+
+function HeroTipsPanel:close_callback()
+    self:stopSkillAutoScroll()
+    if self.hero_item then
+        self.hero_item:DeleteMe()
+        self.hero_item = nil
+    end
+    if self.fight_label then
+        self.fight_label:DeleteMe()
+        self.fight_label = nil
+    end
+    if self.fight_text_label then
+        self.fight_text_label:removeFromParent()
+        self.fight_text_label = nil
+    end
+    if self.equip_item_list then
+        for k,v in pairs(self.equip_item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.equip_item_list = nil
+    
+    if self.equip_spine_list then
+        for k,v in pairs(self.equip_spine_list) do
+            if v then v:removeFromParent() end
+        end
+    end
+    self.equip_spine_list = nil
+    
+    if self.artifact_item_list then
+        for k,v in pairs(self.artifact_item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.artifact_item_list = nil
+    
+    if self.artifact_spine_list then
+        for k,v in pairs(self.artifact_spine_list) do
+            if v then v:removeFromParent() end
+        end
+    end
+    self.artifact_spine_list = nil
+    
+    if self.skill_item_list then
+        for k,v in pairs(self.skill_item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.skill_item_list = nil
+    if self.talent_skill_item_list then
+        for k,v in pairs(self.talent_skill_item_list) do
+            v:DeleteMe()
+        end
+        self.talent_skill_item_list = nil
+    end
+    if self.holy_equip_item_list then
+        for k,v in pairs(self.holy_equip_item_list) do
+            v:DeleteMe()
+        end
+        self.holy_equip_item_list = nil
+    end
+    if self.gem_item_list then
+        for k,v in pairs(self.gem_item_list) do
+            v:DeleteMe()
+        end
+        self.gem_item_list = nil
+    end
+    if self.gem_spine_list then
+        for k,v in pairs(self.gem_spine_list) do
+            if v then v:removeFromParent() end
+        end
+    end
+    self.gem_spine_list = nil
+    if self.holy_tips_label then
+        self.holy_tips_label:DeleteMe()
+        self.holy_tips_label = nil
+    end
+    for i,v in ipairs(self.break_icon_list) do
+        v:removeFromParent()
+    end
+    self.break_icon_list = nil
+    for i,v in ipairs(self.break_icon_bg_list) do
+        v:removeFromParent()
+    end
+    self.break_icon_bg_list = nil
+    controller:openHeroTipsPanel(false)
+end

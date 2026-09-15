@@ -1,0 +1,814 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      这里填写详细说明,主要填写该模块的功能简要
+-- <br/>Create: 2017-02-28
+-- --------------------------------------------------------------------
+GemstoneModel = GemstoneModel or BaseClass()
+
+local table_insert = table.insert
+local math_max = math.max
+
+local function getGemBreakNumByLevel(pos, lv)
+    local break_num = 0
+    local break_cfg = Config.PartnerGemData.data_break[pos]
+    local index = 0
+
+    while break_cfg and break_cfg[index] do
+        if lv > (break_cfg[index].enchant_max_lev or 0) then
+            break_num = index + 1
+            index = index + 1
+        else
+            break
+        end
+    end
+
+    if break_cfg and not break_cfg[break_num] then
+        break_num = math_max(0, index - 1)
+    end
+    return break_num
+end
+
+function GemstoneModel:__init(ctrl)
+    self.ctrl = ctrl
+    self.hero_ctrl = HeroController:getInstance()
+    self.hero_model = self.hero_ctrl:getModel()
+    self.gem_list = {}
+    self:config()
+end
+
+function GemstoneModel:config()
+
+end
+
+function GemstoneModel:getGemBreakNumByLevel(pos, lv)
+    return getGemBreakNumByLevel(pos, lv)
+end
+
+local function getLegacyGemAttrList(gem_vo)
+    if not gem_vo then
+        return {}
+    end
+    if gem_vo.item_attr and next(gem_vo.item_attr) then
+        return deepCopy(gem_vo.item_attr)
+    end
+    if gem_vo.main_attr and next(gem_vo.main_attr) then
+        return deepCopy(gem_vo.main_attr)
+    end
+
+    local item_config = gem_vo.config or Config.ItemData.data_get_data(gem_vo.base_id or 0)
+    if item_config and item_config.ext then
+        for _, ext in ipairs(item_config.ext) do
+            if ext[1] == "main_attr" and ext[2] then
+                return deepCopy(ext[2])
+            end
+        end
+    end
+    return {}
+end
+
+local function addLegacyAttrValue(attr_map, attr_key, attr_val)
+    if not attr_key or not attr_val or attr_val == 0 then
+        return
+    end
+
+    local attr_id = Config.AttrData.data_key_to_id[attr_key]
+    if not attr_id and Config.AttrExtraData and Config.AttrExtraData.data_key_to_id then
+        attr_id = Config.AttrExtraData.data_key_to_id[attr_key]
+    end
+    if attr_id then
+        attr_map[attr_id] = (attr_map[attr_id] or 0) + attr_val
+    end
+end
+
+local function collectLegacyAttrList(attr_map, attr_list)
+    for _, attr_info in ipairs(attr_list or {}) do
+        addLegacyAttrValue(attr_map, attr_info[1], attr_info[2] or 0)
+    end
+end
+
+local function buildLegacyGemstoneSlotInfo(hero_vo, pos, gem_vo)
+    if not hero_vo or not gem_vo then
+        return nil
+    end
+
+    local item_bid = gem_vo.base_id or (gem_vo.config and gem_vo.config.id) or 0
+    if item_bid == 0 then
+        return nil
+    end
+
+    local lv = math_max(gem_vo.enchant or 0, 1)
+    local item_attr = getLegacyGemAttrList(gem_vo)
+    local item_skill = deepCopy(gem_vo.extra_attr or gem_vo.item_skill or {})
+    return {
+        pid = hero_vo.partner_id,
+        id = gem_vo.id or 0,
+        pos = pos,
+        item_bid = item_bid,
+        lv = lv,
+        exp = 0,
+        break_num = getGemBreakNumByLevel(pos, lv),
+        item_attr = item_attr,
+        main_attr = deepCopy(item_attr),
+        item_skill = item_skill,
+        extra_attr = deepCopy(item_skill),
+        extra = deepCopy(gem_vo.extra or {})
+    }
+end
+
+local function buildLegacyGemstoneInfo(hero_vo)
+    if not hero_vo or not hero_vo.gem_list or next(hero_vo.gem_list) == nil then
+        return nil
+    end
+
+    local list_info = {}
+    local attr_map = {}
+    for pos, gem_vo in pairs(hero_vo.gem_list) do
+        local slot_info = buildLegacyGemstoneSlotInfo(hero_vo, pos, gem_vo)
+        if slot_info then
+            table_insert(list_info, slot_info)
+            collectLegacyAttrList(attr_map, slot_info.item_attr)
+
+            local lv_cfg = Config.PartnerGemData.data_lv_info[pos]
+            local slot_cfg = lv_cfg and lv_cfg[slot_info.lv]
+            if slot_cfg and slot_cfg.attr then
+                collectLegacyAttrList(attr_map, slot_cfg.attr)
+            end
+
+            local break_cfg = Config.PartnerGemData.data_break[pos]
+            local break_info = break_cfg and break_cfg[slot_info.break_num]
+            if break_info and break_info.attr then
+                collectLegacyAttrList(attr_map, break_info.attr)
+            end
+        end
+    end
+
+    if next(list_info) == nil then
+        return nil
+    end
+
+    local all_attr = {}
+    for attr_id, attr_val in pairs(attr_map) do
+        table_insert(all_attr, {attr_id = attr_id, attr_val = attr_val})
+    end
+    return {pid = hero_vo.partner_id, list_info = list_info, all_attr = all_attr}
+end
+--功能屏蔽
+function GemstoneModel:GemstoneIsHide()
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+    local featuresId = MainuiConst.FeaturesShield.gemstone
+    if table.indexof(nohideIds,featuresId) then
+        return true
+    end
+	return false
+end
+--功能单忍者屏蔽
+function GemstoneModel:GemstoneIsHideForHero(bid)
+    local hero_cfg = Config.PartnerData.data_partner_base[bid]
+    if not hero_cfg then return false end
+    if hero_cfg.gem_show then
+        if hero_cfg.gem_show == 1 then
+        else
+            local hero_nohideIds = RoleController:getInstance():getModel():getSeverShowIds("gem_show")
+            if not table.indexof(hero_nohideIds,hero_cfg.bid) then
+                return false
+            end
+        end
+    else
+        return false
+    end
+    return true
+end
+--功能显示条件
+function GemstoneModel:GemstoneIsOpen()
+    if not self:GemstoneIsHide() then return false end
+    local cfg = Config.PartnerGemData.data_constant.open_lv
+    local open_day = Config.PartnerGemData.data_constant.open_day.val
+	local role_vo = RoleController:getInstance():getRoleVo()
+	if role_vo.lev < cfg.val or role_vo.open_day < open_day then
+		return false
+	else
+        return true
+	end
+	return false
+end
+--功能开启条件
+function GemstoneModel:GemstoneIsOpenForHero(hero_vo)
+    if not self:GemstoneIsOpen() then return false end
+    local cfg = Config.PartnerGemData.data_constant.open_ninja
+	if hero_vo.star < cfg.val then
+        return false
+    else
+        return true
+    end
+    return false
+end
+--功能是否开启
+function GemstoneModel:GemstoneOpenstatus(hero_vo)
+    if not self:GemstoneIsHide() then
+        return false,TI18N("语言_c_1891"),1
+    elseif not self:GemstoneIsHideForHero(hero_vo.bid) then
+        return false,TI18N("语言_c_1891"),2
+    elseif hero_vo.isResonateHero and hero_vo:isResonateHero() then
+        return false,TI18N("语言_c_3288"),5
+    elseif not self:GemstoneIsOpen() then
+        local txt = LangStringFormat(TI18N("语言_c_7187"),Config.PartnerGemData.data_constant.open_day.val,Config.PartnerGemData.data_constant.open_lv.val)
+        return false,txt,3
+    elseif not self:GemstoneIsOpenForHero(hero_vo) then
+        return false,string.format(TI18N("语言_c_6982"),Config.PartnerGemData.data_constant.open_ninja.val),4
+    end
+    return true,"",0
+end
+--发送获取所有英雄的宝石数据
+function GemstoneModel:sendAllHeroGemstoneInfo()
+    local hero_list = self.hero_model:getHeroList()
+    if hero_list then
+        local list = {}
+        for k,v in pairs(hero_list) do
+            table.insert(list, {pid = v.id})
+        end
+        if #list > 0 then
+            --请求英雄详细信息
+            self.ctrl:sender22800(list)
+        end
+    end
+end
+--获取共鸣技能是否满足生效
+
+function GemstoneModel:getResonanceIsOpen(partner_id,skill_id)
+    local hero_vo = self.hero_model:getHeroById(partner_id)
+    if hero_vo then
+        local config = Config.PartnerGemData.data_skill2[self.hero_model:getSelfConvertStaBid(hero_vo.bid)]
+        if config and config[skill_id] then
+            local data = self:getGemstoneInfo(partner_id)
+            if data and data.list_info and next(data.list_info) then
+                -- cfg.quality cfg.num
+                local cfg = config[skill_id]
+                local quality_list = {}
+                local max_quality = 0
+                for k,v in pairs(data.list_info) do
+                    local back_cfg = Config.ItemData.data_get_data(v.item_bid)
+                    if back_cfg then
+                        max_quality = math.max(max_quality,back_cfg.quality)
+                        if quality_list[back_cfg.quality] then
+                            quality_list[back_cfg.quality] = quality_list[back_cfg.quality] + 1
+                        else
+                            quality_list[back_cfg.quality] = 1
+                        end
+                    end
+                end
+                local num = 0
+                if max_quality >= cfg.quality then
+                    for i=cfg.quality,max_quality do
+                        if quality_list[i] then
+                            num = num + quality_list[i]
+                        end
+                    end
+                end 
+                if num >= cfg.num then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+function GemstoneModel:getScore(data)
+    local attr_list = {}
+    attr_list = data.item_attr or data.main_attr or {}
+    if not attr_list or not next(attr_list) then return 0 end
+    local base_attr = {}
+    for k, v in pairs(attr_list) do
+        local attr_txt = Config.AttrData.data_id_to_key[v.attr_id]
+        if not attr_txt then
+            attr_txt = Config.AttrExtraData.data_id_to_key[v.attr_id]
+        end
+        local attr_num = v.attr_val
+        table.insert(base_attr, {attr_txt, attr_num})
+    end
+    --宝石基础属性评分
+    local num = self:calculatePower(base_attr)
+    local item_id = data.item_bid or data.config.id
+    local cfg = Config.PartnerGemData.data_base_info[item_id]
+    --基础评分
+    local base_num = cfg.score
+    --槽位评分
+    local pos_num = 0
+    local pos_lv_cfg = Config.PartnerGemData.data_lv_info[data.pos]
+    if pos_lv_cfg and pos_lv_cfg[data.lv] and pos_lv_cfg[data.lv].attr then
+        pos_num = pos_num + self:calculatePower(deepCopy(pos_lv_cfg[data.lv].attr))
+    end
+    local break_cfg = Config.PartnerGemData.data_break[data.pos]
+    if break_cfg and break_cfg[data.break_num] and break_cfg[data.break_num].attr then
+        pos_num = pos_num + self:calculatePower(deepCopy(break_cfg[data.break_num].attr))
+    end
+    --技能评分
+    local skill_num = 0
+    local skill_list = {}
+    skill_list = data.item_skill or data.extra_attr or {}
+    for k, v in pairs(skill_list) do
+        local lib = v.lib
+        local skill_id = v.skill_id
+        local cfg = Config.PartnerGemData.data_skill[lib]
+        if cfg and cfg[skill_id] then
+            skill_num = cfg[skill_id].score
+        end
+    end
+    return base_num + num + pos_num + skill_num
+end
+--获取羁绊技能是否满足生效  评分
+function GemstoneModel:getTrammelsIsOpenForScore(career,score)
+    local cfg = Config.PartnerGemData.data_fetter[career]
+    local status = false
+    local list = {}
+    local num = 0
+    if cfg then
+        for k,v in pairs(self.gem_list) do
+            if v and v.list_info and next(v.list_info) then
+                local hero_vo = self.hero_model:getHeroById(v.pid)
+                if hero_vo and hero_vo.type == career then
+                    local add_status = false
+                    for key,value in pairs(v.list_info) do
+                        local _score = self:getScore(value)
+                        if _score > 0 then
+                            add_status = true
+                        end
+                        num = num + _score
+                        if num >= score then
+                            status = true
+                            break
+                        end
+                    end
+                    if add_status then
+                        table.insert(list,hero_vo)
+                    end
+                end
+            end
+        end
+    end
+    return status,list,num
+end
+--获取羁绊技能是否满足生效  职业 忍者数量 宝石数量 宝石品质
+function GemstoneModel:getTrammelsIsOpen(career,gem_num,quality)
+    local cfg = Config.PartnerGemData.data_fetter[career]
+    local status = false
+    local list = {}
+    local num = 0
+    if cfg then
+        for k,v in pairs(self.gem_list) do
+            if v and v.list_info and next(v.list_info) then
+                local hero_vo = self.hero_model:getHeroById(v.pid)
+                if hero_vo and hero_vo.type == career then
+                    table.insert(list,hero_vo)
+                    if num < gem_num then
+                        for key,value in pairs(v.list_info) do
+                            local back_cfg = Config.ItemData.data_get_data(value.item_bid)
+                            if back_cfg and back_cfg.quality >= quality then
+                                num = num + 1
+                            end
+                            if num >= gem_num then
+                                status = true
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return status,list,num
+end
+-- 刷新宝石列表
+function GemstoneModel:updateGemstoneList(list)
+    for k, v in pairs(list.list_info) do
+        self.gem_list[v.pid] = v
+        GlobalEvent:getInstance():Fire(GemstoneEvent.Update_Hero_Info, v.pid)
+        local hero_vo = HeroController:getInstance():getModel():getHeroById(v.pid)
+        if HeroCalculate.isCheckHeroRedPointByHeroVo(hero_vo) then
+            HeroCalculate.checkAllHeroRedPoint()
+        end
+    end
+end
+--获取单个忍者的宝石数据
+function GemstoneModel:getGemstoneInfo(pid)
+    if self.gem_list and self.gem_list[pid] then
+        return self.gem_list[pid]
+    end
+
+    local hero_vo = self.hero_model and self.hero_model:getHeroById(pid)
+    return buildLegacyGemstoneInfo(hero_vo)
+end
+--获取单个忍者的单个宝石数据
+function GemstoneModel:getOneGemstoneInfo(pid,pos)
+    local gem_info = self:getGemstoneInfo(pid)
+    if gem_info and gem_info.list_info then
+        for k, v in pairs(gem_info.list_info) do
+            if v.pos == pos then
+                return v
+            end
+        end
+    end
+    return nil
+end
+
+function GemstoneModel:createStar(num, star_con, star_setting)
+	local num = num or 0
+    local star_setting = star_setting or {}
+	if star_setting.star_list == nil then
+        star_setting.star_list = {}
+    end
+	for i,v in pairs(star_setting.star_list) do
+        v:setVisible(false)
+    end
+	local _cStar = function(star_count, star_list,moveW)
+        local width = 20
+        local x = - star_count * width * 0.5 + width * 0.5
+        if moveW then 
+            x = x + moveW
+        end
+        for i=1,star_count do
+            if not star_list[i] then 
+				local res = PathTool.getResFrame("common","common_90074")
+                local star = createImage(star_con,res,0,0,cc.p(0.5,0.5),true,star_count-i,false)
+                star:setScale(1)
+                star_list[i] = star
+            end
+            star_list[i]:setVisible(true)
+            star_list[i]:setPositionX(x + (i-1) * width)
+        end
+    end
+	_cStar(num, star_setting.star_list)
+	return star_setting
+end
+--设置
+function GemstoneModel:setHeroSacrificelist(_index)
+    local cfg = Config.PartnerGemData.data_constant.gem_select.val
+    if cfg[_index] then
+        ActionController:getInstance():sender16809(ActionStorageBool.gemAutoRemove,_index)
+    else
+        ActionController:getInstance():sender16809(ActionStorageBool.gemAutoRemove,_index)
+    end
+end
+--获取自动分解设置
+function GemstoneModel:setHeroSacrificeNum(num)
+    self.one_key_sacrifice = num
+    GlobalEvent:getInstance():Fire(GemstoneEvent.Gem_Sacrifice_Event)
+end
+function GemstoneModel:getHeroSacrificeNum()
+    return self.one_key_sacrifice or 0
+end
+function GemstoneModel:setGemIsSacrifice(status)
+    self.is_auto_sacrifice = status
+    GlobalEvent:getInstance():Fire(GemstoneEvent.Gem_Sacrifice_Event)
+end
+function GemstoneModel:getGemIsSacrifice()
+    return self.is_auto_sacrifice or false
+end
+--自动分解
+function GemstoneModel:autoSacrifice()
+    if not self:getGemIsSacrifice() then return end
+    local auto_click = self:getHeroSacrificeNum()
+    local const_cfg = Config.PartnerGemData.data_constant["gem_select"].val
+    local max_quality = 0
+    for k, v in pairs(const_cfg) do
+        max_quality = math.max(max_quality,v[1])
+    end
+    local gem_data = {}
+    local data = deepCopy(BackpackController:getInstance():getModel():getBagItemList(BackPackConst.item_tab_type.GEMSTONE))
+	for i, v in pairs(data) do
+        local config = Config.ItemData.data_get_data(v.base_id)
+        if config.quality <= max_quality then
+            local cfg = Config.PartnerGemData.data_base_info[v.base_id]
+            if cfg then
+                if not gem_data[cfg.pos] then
+                    gem_data[cfg.pos] = {}
+                end
+                if not gem_data[cfg.pos][config.quality] then
+                    gem_data[cfg.pos][config.quality] = {}
+                end
+                if v.main_attr and next(v.main_attr) and v.extra_attr and next(v.extra_attr) then
+                    v.gem_sort = 3
+                elseif (v.main_attr and next(v.main_attr)) or (v.extra_attr and next(v.extra_attr)) then
+                    v.gem_sort = 2
+                else
+                    v.gem_sort = 1
+                end
+                table.insert(gem_data[cfg.pos][config.quality], v)
+            end
+        end
+	end
+    for key, value in pairs(gem_data) do
+        for k, v in pairs(value) do
+            table.sort(v, function(a, b) return a.gem_sort > b.gem_sort end)
+        end
+    end
+    local auto_list = const_cfg[auto_click]
+    local remove_list = {}
+    if auto_list and auto_list[1] and auto_list[2] then
+        local quality = auto_list[1]
+        local num = auto_list[2]
+        local have_num = 0
+        for i=1, 6 do
+            if gem_data[i] then
+                for j=max_quality, 1,-1 do
+                    if j <= quality then
+                        if gem_data[i][j] and next(gem_data[i][j]) then
+                            for index, value in ipairs(gem_data[i][j]) do
+                                if have_num < num then
+                                    have_num = have_num + 1
+                                else
+                                    table.insert(remove_list, {id=value.id, bid=value.config.id, num=1})
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        if #remove_list > 0 then
+            BackpackController:getInstance():sender10522(BackPackConst.Bag_Code.GEMSTONE, remove_list)
+        end
+    end
+end
+--熔炼
+function GemstoneModel:setGemArtifactNum(val)
+    self.gem_artifact_num = val
+    if Config.PartnerGemData and Config.PartnerGemData.data_constant and Config.PartnerGemData.data_constant.change_condition and Config.PartnerGemData.data_constant.change_condition.val then
+        self.gem_artifact_red = self.gem_artifact_num >= Config.PartnerGemData.data_constant.change_condition.val
+    else
+        self.gem_artifact_red = false
+    end
+end
+function GemstoneModel:getGemArtifactNum()
+    return self.gem_artifact_num or 0
+end
+--查看该忍者身上的宝石是否可以返回至背包
+--type 1通过数量直接比较是否满足 2通过忍者id查看宝石数量是否满足
+--pid type2使用
+--num type1使用
+function GemstoneModel:checkGemBack(type,pid,num)
+    local need_num = 0
+    if type == 1 then
+        need_num = num
+    elseif type == 2 then
+        local gem_list = self:getGemstoneInfo(pid)
+        if gem_list and gem_list.list_info and next(gem_list.list_info) then
+            local hero_vo = HeroController:getInstance():getModel():getHeroById(pid)
+            if hero_vo and next(hero_vo) then
+                if hero_vo.resonate_star ~= 0 then
+                    if hero_vo.resonate_star < Config.PartnerGemData.data_constant.open_ninja.val then
+                        for k,v in pairs(gem_list.list_info) do
+                            if v.item_bid ~= 0 then
+                                need_num = need_num + 1
+                            end
+                        end
+                    else
+                        for k,v in pairs(gem_list.list_info) do
+                            if v.item_bid ~= 0 then
+                                if hero_vo.resonate_star < Config.PartnerGemData.data_lv_info[v.pos][1].need_star then
+                                    need_num = need_num + 1
+                                end
+                            end
+                        end
+                    end 
+                else
+                    for k,v in pairs(gem_list.list_info) do
+                        if v.item_bid ~= 0 then
+                            need_num = need_num + 1
+                        end
+                    end
+                end
+            end
+        end
+    end
+    local back_model = BackpackController:getInstance():getModel()
+    local have_num = 0
+    local data = back_model:getBagItemList(BackPackConst.item_tab_type.GEMSTONE)
+    if data and next(data) then
+        have_num = tableLen(data)
+    end
+    local max_num = back_model:getGemSize()
+    if max_num - have_num >= need_num then
+        return true
+    end
+    return false
+end
+--合成跳过动画
+function GemstoneModel:setSkipSmelt(num)
+	if self.isshowVideo ~= num then
+		self.isshowVideo = num
+		ActionController:getInstance():sender16809(ActionStorageBool.gemIsSkipSmelt, num ,"")
+	end
+end
+function GemstoneModel:getSkipSmelt()
+	if MAKELIFEBETTER_NEW then return 1 end
+	if GuideController:getInstance():isInGuide() then
+		self:setSkipSmelt(0)
+		return
+	end
+    if StoryController:getInstance():getModel():isStoryState() then
+		self:setSkipSmelt(0)
+		return 
+	end 
+	if self.isshowVideo then
+		return self.isshowVideo
+	end
+	return 0
+end
+--------------------------------红点---------------------
+--忍者红点
+function GemstoneModel:checkRedPoint(pid)
+    --熔炼值奖励红点
+    if self:getGemArtifactRed() then return true end
+    --宝石装备红点
+    if self:getGemEquipRed(pid) then return true end
+    --宝石强化红点
+    if self:getGemStrengRed(pid) then return true end
+end
+--宝石装备红点
+function GemstoneModel:getGemEquipRed(pid)
+    local hero_vo = HeroController:getInstance():getModel():getHeroById(pid)
+    if not hero_vo then return false end
+    local cfg = Config.PartnerGemData.data_lv_info
+    local status = false
+    for i=1,6 do
+        if cfg[i] and cfg[i][1] and type(hero_vo.star) == "number" and type(cfg[i][1].need_star) == "number" and hero_vo.star >= cfg[i][1].need_star then
+            status = self:getGemEquipOneRed(pid,i)
+            if status then return true end
+        end
+    end
+    return status
+end
+--宝石装备红点单槽位
+function GemstoneModel:getGemEquipOneRed(pid,pos)
+    local list = self:getOneGemstoneInfo(pid,pos)
+    if list and next(list) then
+        if list.item_bid ~= 0 then
+            return self:getIsEquipUpGem(list.item_bid,pos)
+        else
+            return self:getIsEquipGem(pos)
+        end
+    else
+        return self:getIsEquipGem(pos)
+    end
+    return false
+end
+--是否有可装备的宝石
+function GemstoneModel:getIsEquipGem(pos)
+    local data = deepCopy(BackpackController:getInstance():getModel():getBagItemList(BackPackConst.item_tab_type.GEMSTONE))
+    for k, v in pairs(data) do
+        local cfg = Config.PartnerGemData.data_base_info[v.base_id]
+        if cfg and cfg.pos and cfg.pos == pos then
+            return true
+        end
+    end
+    return false
+end
+--是否有比装备品质更高的宝石
+function GemstoneModel:getIsEquipUpGem(item_bid,pos)
+    local data = deepCopy(BackpackController:getInstance():getModel():getBagItemList(BackPackConst.item_tab_type.GEMSTONE))
+    for k, v in pairs(data) do
+        local cfg = Config.PartnerGemData.data_base_info[v.base_id]
+        if cfg and cfg.pos and cfg.pos == pos then
+            local item_cfg = Config.ItemData.data_get_data(item_bid)
+            local item_cfg2 = Config.ItemData.data_get_data(v.base_id)
+            if item_cfg and item_cfg2 then
+                if item_cfg2.quality > item_cfg.quality then
+                    return true
+                elseif item_cfg2.quality == item_cfg.quality then
+                    if v.base_id > item_bid then
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    return false
+end
+--宝石强化红点
+function GemstoneModel:getGemStrengRed(pid)
+    local status = false
+    for i=1,6 do
+        local list = self:getOneGemstoneInfo(pid,i)
+        if list and next(list) and list.item_bid and list.item_bid ~= 0 then
+            local cfg = Config.PartnerGemData.data_lv_info[i]
+            if cfg and list.lv < tableLen(cfg) then
+                status = self:getGemStrengOneRed(pid,i)
+                if status then return true end
+            end
+        end
+    end
+    return status
+end
+--宝石强化红点单槽位
+function GemstoneModel:getGemStrengOneRed(pid,pos)
+    local list = self:getOneGemstoneInfo(pid,pos)
+    if not list or not next(list) then return false end
+    local lv = list.lv
+    local break_num = list.break_num or getGemBreakNumByLevel(pos, lv)
+    local break_cfg = Config.PartnerGemData.data_break[pos]
+    local max_lv = 0
+    if break_cfg and break_cfg[break_num] then
+        max_lv = break_cfg[break_num].enchant_max_lev
+    end
+    if lv >= max_lv then --突破
+        local cost_list = break_cfg[break_num].cost
+        if break_cfg[break_num+1] then
+            for k, v in pairs(cost_list) do
+                local item_cfg = Config.ItemData.data_get_data(v[1])
+                local have_num = 0
+                if item_cfg and item_cfg.sub_type == BackPackConst.Bag_Code.GEMSTONE then
+                    have_num = BackpackController:getInstance():getModel():getItemNumByBid(v[1],BackPackConst.Bag_Code.GEMSTONE)
+                else
+                    have_num = BackpackController:getInstance():getModel():getItemNumByBid(v[1])
+                end
+                if have_num < v[2] then
+                    return false
+                end
+            end
+            return true
+        else
+            return false
+        end
+    else--强化
+        local cfg = Config.PartnerGemData.data_exp_info
+        for k, v in pairs(cfg) do
+            local have_num = BackpackController:getInstance():getModel():getItemNumByBid(v.id)
+            if have_num > 0 then
+                return true
+            end
+        end
+    end
+    return false
+end
+--熔炼值红点
+function GemstoneModel:getGemArtifactRed()
+    return self.gem_artifact_red or false
+end
+--宝石背包首次点击红点
+function GemstoneModel:setGemStoneBackRed(gemStoneBackRed)
+    self.gemStoneBackRed = gemStoneBackRed and self:GemstoneIsOpen()
+    MainuiController:getInstance():setBtnRedPoint(MainuiConst.btn_index.backpack, {bid=BackPackConst.item_tab_type.SPECIAL,status=self.gemStoneBackRed})
+    GlobalEvent:getInstance():Fire(GemstoneEvent.Gem_Back_Red_Event)
+end
+function GemstoneModel:getGemStoneBackRed()
+    if self:GemstoneIsOpen() then
+        return self.gemStoneBackRed or false
+    else
+        return false
+    end
+end
+--宝石功能首次点击红点
+function GemstoneModel:setGemStoneRed(gemStoneRed)
+    self.gemStoneRed = gemStoneRed
+    HeroCalculate.checkAllHeroRedPoint()
+    GlobalEvent:getInstance():Fire(GemstoneEvent.Gem_First_Red_Event)
+end
+function GemstoneModel:getGemStoneRed()
+    if self:GemstoneIsOpen() then
+        return self.gemStoneRed or false
+    else
+        return false
+    end
+end
+--==============================--
+--desc:计算战力的接口
+--time:2018-06-21 01:56:53
+--@attr_list:
+--@return 
+--==============================--
+function GemstoneModel:calculatePower(attr_list)
+    local total_power = 0
+    if attr_list == nil or tableLen(attr_list) == 0 then 
+        return total_power
+    end
+    local key, value = nil, nil
+    for k,v in pairs(attr_list) do
+        if type(v) == "table" and #v >= 2 then
+            key = v[1]
+            value = v[2]
+        else
+            key = k
+            value = v
+        end
+        local power_cinfig  = Config.AttrData.data_power[key]
+        if power_cinfig then
+            local radio = power_cinfig.power
+            total_power = total_power + value*radio*0.001
+        end
+    end
+    return math.floor(total_power)
+end
+function GemstoneModel:getAutoHide()
+    local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	local featuresId = MainuiConst.FeaturesShield.GemAuto
+    if table.indexof(nohideIds,featuresId) then
+		return true
+	end
+    return false
+end
+function GemstoneModel:__delete()
+end

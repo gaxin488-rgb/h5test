@@ -1,0 +1,1059 @@
+--[[
+    * 类注释写在这里-----------------
+    * @author {AUTHOR}
+    * <br/>Create: 2016-12-09
+]]
+TreasureController = TreasureController or BaseClass(BaseController)
+
+-- DO_NOT_REALNAME_STATUS              是不是没有实名认证
+-- OPEN_SDK_VISITIOR_WINDOW            是否打开了可取消的实名认证窗体
+-- NEED_OPEN_OPEN_SDK_VISITIOR_WINDOW  是否需要打开无取消的实名认证窗体
+
+function TreasureController:config()
+    self.model = TreasureModel.New(self)
+    self.dispather = GlobalEvent:getInstance()
+    -- self.treasure_awards = {}
+	self.click_type = 0 --0升级 1升星 2激活 3觉醒
+end
+
+function TreasureController:getModel()
+    return self.model
+end
+
+function TreasureController:registerEvents()
+	
+    --物品道具增加 判断红点
+    if not self.add_goods_event then
+        self.add_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.ADD_GOODS, function(bag_code,temp_add)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then 
+                for i,item in pairs(temp_add) do
+                    if item.config and item.config.id and item.config.sub_type == BackPackConst.item_tab_type.TREASURE then
+                        self.model:updateTreasureRedForOne(item.config.id)
+                    end
+                end
+            end
+        end)
+    end
+    --物品道具删除 判断红点
+    if not self.del_goods_event then
+        self.del_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.DELETE_GOODS, function(bag_code,temp_del)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then 
+                for i,item in pairs(temp_del) do
+                    if item.config and item.config.id and item.config.sub_type == BackPackConst.item_tab_type.TREASURE then
+                        self.model:updateTreasureRedForOne(item.config.id)
+                    end
+                end
+            end
+        end)
+    end
+
+    --物品道具改变 判断红点
+    if not self.modify_goods_event then
+        self.modify_goods_event = GlobalEvent:getInstance():Bind(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+            if bag_code == BackPackConst.Bag_Code.BACKPACK then 
+                for i,item in pairs(temp_list) do
+                    if item.config and item.config.id and item.config.sub_type == BackPackConst.item_tab_type.TREASURE then
+                        self.model:updateTreasureRedForOne(item.config.id)
+                    end
+                end
+            end
+        end)
+    end
+end
+
+function TreasureController:registerProtocals()
+    self:RegisterProtocal(22300, "handle22300")     -- 精灵孵化信息
+	self:RegisterProtocal(22301, "handle22301")     -- 精灵孵化信息更新
+	self:RegisterProtocal(22303, "handle22303")     -- 开始孵化(成功推送22301)
+	self:RegisterProtocal(22306, "handle22306")     -- 领取孵化产物
+	self:RegisterProtocal(22307, "handle22307")     -- 购买精灵道具
+	self:RegisterProtocal(22308, "handle22308")     -- 合成
+	self:RegisterProtocal(22309, "handle22309")     -- 升级
+	self:RegisterProtocal(22310, "handle22310")     -- 升星
+	self:RegisterProtocal(22311, "handle22311")     -- 觉醒
+	self:RegisterProtocal(22312, "handle22312")     -- 编年史基本信息(信息变动推送)
+	self:RegisterProtocal(22313, "handle22313")     -- 已有编年史列表  初始化用
+	self:RegisterProtocal(22314, "handle22314")     -- 寻访道具合成
+	self:RegisterProtocal(22315, "handle22315")     -- 速度属性开关
+	self:RegisterProtocal(22316, "handle22316")     -- 效果加成情况
+	self:RegisterProtocal(22317, "handle22317")     -- 请求召唤信息
+	self:RegisterProtocal(22318, "handle22318")     -- 请求召唤
+	self:RegisterProtocal(22319, "handle22319")     -- 弹出礼包
+	self:RegisterProtocal(22320, "handle22320")     -- 许愿（成功推送22321）
+	self:RegisterProtocal(22321, "handle22321")     -- 请求召唤信息(单个卡池)
+	self:RegisterProtocal(22322, "handle22322")     -- 召唤结果
+	self:RegisterProtocal(22323, "handle22323")     -- 礼包信息列表
+	self:RegisterProtocal(22324, "handle22324")     -- 战令基本信息
+	self:RegisterProtocal(22325, "handle22325")     -- 战令一键领取
+	self:RegisterProtocal(22326, "handle22326")     -- 战令金币购买
+	self:RegisterProtocal(22335, "handle22335")     -- 精灵孵化器激活
+
+	self:RegisterProtocal(22336, "handle22336")     -- 魔导器构成全部信息
+	self:RegisterProtocal(22337, "handle22337")     -- 魔导器构成某一期信息
+	self:RegisterProtocal(22338, "handle22338")     -- 魔导器构成某一期某一个信息
+	self:RegisterProtocal(22339, "handle22339")     -- 选择魔导器
+	self:RegisterProtocal(22340, "handle22340")     -- 提交构成任务
+	self:RegisterProtocal(22341, "handle22341")     -- 完成构成
+	self:RegisterProtocal(22342, "handle22342")     -- 构成任务红点消失
+	self:RegisterProtocal(22343, "handle22343")     -- 构成任务提交道具
+	self:RegisterProtocal(22344, "handle22344")     -- 研发任务列表
+	self:RegisterProtocal(22345, "handle22345")     -- 某个位置的研发任务列表
+	self:RegisterProtocal(22346, "handle22346")     -- 提交研发任务
+	self:RegisterProtocal(22347, "handle22347")     -- 编年研究室构成领取奖励
+
+	self:RegisterProtocal(22327, "handle22327")     
+	self:RegisterProtocal(22328, "handle22328")     --获取忍者专属战力加成
+
+	self:RegisterProtocal(16821, "handle16821")     --获取忍者专属战力加成
+end
+
+-- 请求精灵孵化信息
+function TreasureController:sender22300(  )
+    self:SendProtocal(22300, {})
+end
+
+function TreasureController:handle22300( data )
+	if data.annals_hatchs then
+		self.model:setTreasureHatchList(data.annals_hatchs)
+		
+		GlobalEvent:getInstance():Fire(TreasureEvent.Get_Treasure_Hatch_Data_Event)
+	end
+	if data.info then
+		self.model:setTreasureBuyInfo(data.info)
+	end
+end
+
+-- 更新灵窝数据（也可能是新增）
+function TreasureController:handle22301( data )
+	if data.annals_hatch then
+		self.model:updateTreasureHatchData(data.annals_hatch)
+		GlobalEvent:getInstance():Fire(TreasureEvent.Get_Treasure_Hatch_Data_Event)
+	end
+end
+
+-- 请求开始孵化
+function TreasureController:sender22303( id, item_bid )
+	local protocal = {}
+    protocal.id = id
+    protocal.item_bid = item_bid
+    self:SendProtocal(22303, protocal)
+end
+
+function TreasureController:handle22303( data )
+	if data.msg then
+		message(data.msg)
+	end
+end
+
+-- 请求领取孵化产物
+function TreasureController:sender22306( id )
+	local protocal = {}
+    protocal.id = id
+    self:SendProtocal(22306, protocal)
+end
+
+function TreasureController:handle22306( data )
+	if data.msg then
+		message(data.msg)
+	end
+	local reward_list = {}
+	for key, value in pairs(data.awards) do
+		local list = {}
+		list.id = value.item_bid
+		list.num = value.item_num
+		table.insert(reward_list,list)
+	end
+	MainuiController:getInstance():openGetItemView(true,reward_list,0,nil, MainuiConst.item_open_type.treasure,TreasureItem)
+end
+
+-- 购买精灵道具
+function TreasureController:sender22307(_type,item_id,num,hatch_id)
+	-- 标识是否购买成功后直接孵化
+	if hatch_id then
+		self.hatch_egg_bid_flag = item_id
+		self.hatch_id_flag = hatch_id
+	end
+
+	local protocal = {}
+    protocal.type = _type
+	protocal.item_id = item_id
+	protocal.num = num
+    self:SendProtocal(22307, protocal)
+end
+
+function TreasureController:handle22307( data )
+	if data.msg then
+		message(data.msg)
+	end
+	if data.result == 1 and data.count and data.item_id then
+		self.model:updateTreasureBuyInfoByBid(data.item_id, data.count)
+		GlobalEvent:getInstance():Fire(TreasureEvent.Buy_Treasure_Item_Success_Event, data.item_id)
+
+		-- 购买成功后直接开始孵化
+		if self.hatch_id_flag and self.hatch_egg_bid_flag and self.hatch_egg_bid_flag == data.item_id then
+			self:sender22303(self.hatch_id_flag, data.item_id)
+			self.hatch_egg_bid_flag = nil
+			self.hatch_id_flag = nil
+			self:openTreasureSelectItemWindow(false)
+		end
+	end
+end
+
+-- 合成
+function TreasureController:sender22308(item_bid)
+	local protocal = {}
+	protocal.item_bid = item_bid
+    self:SendProtocal(22308, protocal)
+	self.click_type = 2
+end
+
+function TreasureController:handle22308( data )
+	if data.result == 0 then
+		message(data.msg)
+	end
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Act_Event)
+end
+
+-- 升级
+function TreasureController:sender22309(item_bid)
+	local protocal = {}
+	protocal.item_bid = item_bid
+    self:SendProtocal(22309, protocal)
+	self.click_type = 0
+end
+
+function TreasureController:handle22309( data )
+	if data.result == 0 then
+		message(data.msg)
+	end
+end
+
+-- 升星
+function TreasureController:sender22310(item_bid,list,item_expend,expend1)
+	local protocal = {}
+	protocal.item_bid = item_bid
+	protocal.list = list
+	protocal.item_expend = item_expend
+	protocal.expend1 = expend1
+    self:SendProtocal(22310, protocal)
+	self.click_type = 1
+end
+
+function TreasureController:handle22310( data )
+	if data.result == 0 then
+		message(data.msg)
+	end
+end
+
+-- 觉醒
+function TreasureController:sender22311(item_bid,list,expend1)
+	local protocal = {}
+	protocal.item_bid = item_bid
+	protocal.list = list
+	protocal.expend1 = expend1
+    self:SendProtocal(22311, protocal)
+	self.click_type = 3
+end
+
+function TreasureController:handle22311( data )
+	if data.result == 0 then
+		message(data.msg)
+	end
+end
+
+-- 编年史基本信息(单个信息变动推送)
+function TreasureController:sender22312(item_bid)
+	local protocal = {}
+	protocal.item_bid = item_bid
+    self:SendProtocal(22312, protocal)
+end
+
+function TreasureController:handle22312( data )
+	self.model:setTreasurePower(data.all_power)
+	local list = {}
+	table.insert(list,data)
+	GlobalEvent:getInstance():Fire(TreasureEvent.One_Treasure_data_Event,data)
+	if self.click_type ~= 0 then
+		local vo = TreasureVo.New()
+    	vo:setUpData(data)
+		self:openTreasurGainWindow(true,vo)
+		self.model:setTreasureList(list)
+		if next(self.model.treasure_change_list) then
+			self.model.treasure_change_list = list
+		end
+	else
+		self.model.treasure_change_list = list
+	end
+end
+
+-- 已有编年史列表  初始化用
+function TreasureController:sender22313()
+	local protocal = {}
+    self:SendProtocal(22313, protocal)
+end
+
+function TreasureController:handle22313( data )
+	self.model:setTreasurePower(data.all_power)
+	self.model:setTreasureList(data.annals_list)
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Atr_Event,data)
+end
+
+-- 寻访道具合成
+function TreasureController:sender22314(item_bid,num,pos)
+	local protocal = {}
+	protocal.item_bid = item_bid
+	protocal.num = num
+	protocal.pos = pos
+    self:SendProtocal(22314, protocal)
+end
+
+function TreasureController:handle22314( data )
+	if data.result == 0 then
+		message(data.msg)
+	end
+end
+
+--速度属性开关  0开启1关闭
+function TreasureController:sender22315(id,close_speed)
+	local protocal = {}
+	protocal.id = id
+	protocal.close_speed = close_speed
+	self.close_speed = close_speed
+    self:SendProtocal(22315, protocal)
+end
+
+function TreasureController:handle22315( data )
+	if data.result == 0 then
+		message(data.msg)
+	else
+		if self.close_speed == 0 then
+			message(TI18N("语言_c_6268"))
+		elseif self.close_speed == 1 then
+			message(TI18N("语言_c_6269"))
+		end
+	end
+end
+
+--效果加成情况
+function TreasureController:sender22316(id)
+	local protocal = {}
+	protocal.id = id
+    self:SendProtocal(22316, protocal)
+end
+
+function TreasureController:handle22316( data )
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Attr_Event,data)
+end
+
+--请求召唤信息
+function TreasureController:sender22317()
+	local protocal = {}
+    self:SendProtocal(22317, protocal)
+end
+function TreasureController:handle22317( data )
+	self.model:setLotteryInfo(data)
+end
+
+
+--请求召唤
+function TreasureController:sender22318(group_id,times,recruit_type)
+	local protocal = {}
+	protocal.group_id = group_id
+	protocal.times = times
+	protocal.recruit_type = recruit_type
+    self:SendProtocal(22318, protocal)
+end
+function TreasureController:handle22318( data )
+end
+
+--弹出礼包
+function TreasureController:sender22319()
+	local protocal = {}
+    self:SendProtocal(22319, protocal)
+end
+function TreasureController:handle22319( data )
+	self:openTreasureGiftWindow(true,data.gift_id)
+end
+
+--许愿（成功推送22321）
+function TreasureController:sender22320(group_id,bid)
+	local protocal = {}
+	protocal.group_id = group_id
+	protocal.bid = bid
+    self:SendProtocal(22320, protocal)
+end
+function TreasureController:handle22320( data )
+	message(data.msg)
+	if data.flag == 1 then
+		self:openTreasureClickWindow(false)
+	end
+end
+
+--请求召唤信息(单个卡池)
+function TreasureController:sender22321(group_id)
+	local protocal = {}
+	protocal.group_id = group_id
+    self:SendProtocal(22321, protocal)
+end
+function TreasureController:handle22321( data )
+	self.model:setLotteryOneInfo(data)
+end
+
+--召唤结果返回
+function TreasureController:sender22322(group_id,times,recruit_type)
+	local protocal = {}
+	protocal.group_id = group_id
+	protocal.times = times
+	protocal.recruit_type = recruit_type
+    self:SendProtocal(22322, protocal)
+end
+function TreasureController:handle22322( data )
+	self:openTreasureLotteryGainWindow(false)
+	self:openTreasureLotteryGainWindow(true,data)
+end
+
+--请求礼包信息
+function TreasureController:sender22323()
+	local protocal = {}
+    self:SendProtocal(22323, protocal)
+end
+function TreasureController:handle22323( data )
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Gift_Event,data)
+end
+
+--战令基本信息
+function TreasureController:sender22324()
+	local protocal = {}
+    self:SendProtocal(22324, protocal)
+end
+function TreasureController:handle22324( data )
+	self.model:setOrderList(data)
+end
+
+--战令一键领取
+function TreasureController:sender22325()
+	local protocal = {}
+    self:SendProtocal(22325, protocal)
+end
+function TreasureController:handle22325( data )
+	message(data.msg)
+end
+
+--战令金币购买
+function TreasureController:sender22326()
+	local protocal = {}
+    self:SendProtocal(22326, protocal)
+end
+function TreasureController:handle22326( data )
+	if data.flag == 1 then
+		message(TI18N("语言_s_134"))
+	else
+		message(data.msg)
+	end
+end
+
+-- 精灵孵化器激活s
+function TreasureController:sender22335( id )
+	local protocal = {}
+	protocal.id = id
+    self:SendProtocal(22335, protocal)
+end
+
+function TreasureController:handle22335( data )
+	if data.flag == 1 then
+		self:openTreasureHatchUnlockPanel(false)
+		self:openTreasureLvUpWindow(true, data.id)
+	end
+	
+	if data.msg then
+		message(data.msg)
+	end
+end
+function TreasureController:printTable(id,data)
+	--print("-------------------魔导器构成协议返回-----------------------")
+	--print(id,vardump(data))
+	--print("--------------------------end-----------------------")
+end
+-- 魔导器构成全部信息
+function TreasureController:sender22336()
+	local protocal = {}
+    self:SendProtocal(22336, protocal)
+end
+
+function TreasureController:handle22336( data )
+	self:printTable(22336,data)
+	self.model:setResearchData(data)
+	if self:getTreasureMainWindowIsOpen() then
+		message(data.msg)
+	end
+end
+
+-- 魔导器构成某一期信息
+function TreasureController:sender22337( round )
+	local protocal = {}
+	protocal.round = round
+    self:SendProtocal(22337, protocal)
+end
+
+function TreasureController:handle22337( data )
+	self:printTable(22337,data)
+	self.model:setResearchDataForProject(data)
+	message(data.msg)
+end
+
+-- 魔导器构成某一期某一个信息
+function TreasureController:sender22338( round,pos )
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+    self:SendProtocal(22338, protocal)
+end
+
+function TreasureController:handle22338( data )
+	self:printTable(22338,data)
+	self.model:setResearchDataForItem(data)
+	message(data.msg)
+end
+
+-- 选择魔导器
+function TreasureController:sender22339( round,pos )
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+    self:SendProtocal(22339, protocal)
+end
+
+function TreasureController:handle22339( data )
+	self:printTable(22339,data)
+	message(data.msg)
+end
+
+-- 提交构成任务
+function TreasureController:sender22340( round, pos, id )
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+	protocal.id = id
+    self:SendProtocal(22340, protocal)
+end
+
+function TreasureController:handle22340( data )
+	self:printTable(22340,data)
+	if data.flag == 1 then
+		message(TI18N("语言_c_6398"))
+	else
+		message(data.msg)
+	end
+	message(data.msg)
+end
+
+-- 完成构成
+function TreasureController:sender22341( round, pos)
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+    self:SendProtocal(22341, protocal)
+end
+
+function TreasureController:handle22341( data )
+	self:printTable(22341,data)
+	message(data.msg)
+end
+
+--构成任务红点消失
+function TreasureController:sender22342( round, pos, task_id)
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+	protocal.task_id = task_id
+    self:SendProtocal(22342, protocal)
+end
+
+function TreasureController:handle22342( data )
+	self:printTable(22342,data)
+	message(data.msg)
+end
+
+--构成任务提交道具
+function TreasureController:sender22343( round, pos, task_id, list)
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+	protocal.task_id = task_id
+	protocal.list = list
+    self:SendProtocal(22343, protocal)
+end
+
+function TreasureController:handle22343( data )
+	self:printTable(22343,data)
+	message(data.msg)
+end
+
+--研发任务列表
+function TreasureController:sender22344()
+	local protocal = {}
+    self:SendProtocal(22344, protocal)
+end
+
+function TreasureController:handle22344( data )
+	self:printTable(22344,data)
+	self.model:setResearchRankList(data)
+	message(data.msg)
+end
+
+--某个位置的研发任务列表
+function TreasureController:sender22345( round, pos )
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+    self:SendProtocal(22345, protocal)
+end
+
+function TreasureController:handle22345( data )
+	self:printTable(22345,data)
+	self.model:setResearchRankListForItem(data)
+	message(data.msg)
+end
+
+--提交研发任务
+function TreasureController:sender22346( round, pos, id)
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+	protocal.id = id
+    self:SendProtocal(22346, protocal)
+end
+
+function TreasureController:handle22346( data )
+	self:printTable(22346,data)
+	message(data.msg)
+end
+
+--提交研发任务
+function TreasureController:sender22347( round, pos, id)
+	local protocal = {}
+	protocal.round = round
+	protocal.pos = pos
+	protocal.id = id
+    self:SendProtocal(22347, protocal)
+end
+
+function TreasureController:handle22347( data )
+	self:printTable(22347,data)
+	message(data.msg)
+end
+
+function TreasureController:sender22327(id)
+	local protocal = {}
+	protocal.item_bid = id
+    self:SendProtocal(22327, protocal)
+end
+function TreasureController:handle22327(data)
+	-- debug_Print("handle22327",data)
+end
+
+--获取忍者专属战力加成
+function TreasureController:sender22328(item_bid)
+	local protocal = {}
+	protocal.item_bid = item_bid
+    self:SendProtocal(22328, protocal)
+end
+function TreasureController:handle22328(data)
+	-- GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Only_Power_Event,data)
+end
+
+--获取忍者专属战力加成
+function TreasureController:sender16821(rid,srv_id,item_id)
+	local protocal = {}
+	protocal.rid = rid
+	protocal.srv_id = srv_id
+	protocal.item_id = tonumber(item_id)
+    self:SendProtocal(16821, protocal)
+end
+function TreasureController:handle16821(data)
+	GlobalEvent:getInstance():Fire(TreasureEvent.Treasure_Only_Power_Event,data)
+end
+
+-- function TreasureController:checkTreasureGain()
+-- 	if self.treasure_gain_wnd and self.treasure_gain_wnd:isOpen() == true then
+-- 		return
+-- 	end
+-- 	if self.treasure_awards and next(self.treasure_awards or {}) ~= nil then
+-- 		local awards = table.remove(self.treasure_awards, 1)
+-- 		if awards then
+-- 			self:openTreasurGainWindow(true, awards)
+-- 		end
+-- 	end
+-- end
+
+-- 打开魔导器获得界面
+function TreasureController:openTreasurGainWindow( status, data)
+	if status == true then
+		if not self.treasure_gain_wnd then
+			self.treasure_gain_wnd = TreasureGainWindow.New()
+		end
+		if self.treasure_gain_wnd:isOpen() == false then
+			self.treasure_gain_wnd:open(data,self.click_type)
+		end
+	else
+		if self.treasure_gain_wnd then
+			self.treasure_gain_wnd:close()
+			self.treasure_gain_wnd = nil
+			-- delayOnce(function()
+			-- 	self:checkTreasureGain()
+			-- end, 0.2)
+		end
+	end
+end
+
+-- 是否打开秘宝主界面
+function TreasureController:getTreasureMainWindowIsOpen()
+	if self.treasure_main_window then
+		return self.treasure_main_window:isOpen()
+	end
+end
+--- 打开秘宝主界面
+function TreasureController:openTreasureMainWindow(status,index)
+    if status == false then
+        if self.treasure_main_window ~= nil then
+            self.treasure_main_window:close()
+            self.treasure_main_window = nil
+        end
+        MainuiController:getInstance():getMainUi():changeBottomShowStatus(1)
+    else
+        if self.treasure_main_window == nil then
+            self.treasure_main_window = TreasureMainWindow.New(index)
+        end
+        self.treasure_main_window:open()
+    end
+end
+--- 打开秘宝寻访
+function TreasureController:openTreasureSearchWindow(status)
+    if status == false then
+        if self.treasure_search_window ~= nil then
+            self.treasure_search_window:close()
+            self.treasure_search_window = nil
+        end
+    else
+        if self.treasure_search_window == nil then
+            self.treasure_search_window = TreasureSearchWindow.New()
+        end
+        self.treasure_search_window:open()
+    end
+end
+--- 打开秘宝主界面
+function TreasureController:openTreasureLvUpWindow(status,id)
+    if status == false then
+        if self.treasure_lvup_window ~= nil then
+            self.treasure_lvup_window:close()
+            self.treasure_lvup_window = nil
+        end
+    else
+        if self.treasure_lvup_window == nil then
+            self.treasure_lvup_window = TreasureLvUpWindow.New()
+        end
+        self.treasure_lvup_window:open(id)
+    end
+end
+--- 打开秘宝图鉴
+function TreasureController:openTreasureBooksWindow(status)
+    if status == false then
+        if self.treasure_books_window ~= nil then
+            self.treasure_books_window:close()
+            self.treasure_books_window = nil
+        end
+    else
+        if self.treasure_books_window == nil then
+            self.treasure_books_window = TreasureBooksWindow.New()
+        end
+        self.treasure_books_window:open()
+    end
+end
+--- 打开精灵蛋合成
+function TreasureController:openTreasureEggSyntheticWindow(status,id)
+    if status == false then
+        if self.treasure_eggsynthetic_window ~= nil then
+            self.treasure_eggsynthetic_window:close()
+            self.treasure_eggsynthetic_window = nil
+        end
+    else
+        if self.treasure_eggsynthetic_window == nil then
+            self.treasure_eggsynthetic_window = TreasureEggSyntheticPanel.New()
+        end
+        self.treasure_eggsynthetic_window:open(id)
+    end
+end
+--- 打开秘宝背包
+function TreasureController:openTreasureBagWindow(status)
+    if status == false then
+        if self.treasure_bag_window ~= nil then
+            self.treasure_bag_window:close()
+            self.treasure_bag_window = nil
+        end
+    else
+        if self.treasure_bag_window == nil then
+            self.treasure_bag_window = TreasureBagWindow.New()
+        end
+        self.treasure_bag_window:open()
+    end
+end
+--- 打开秘宝提示
+function TreasureController:openTreasureTips(status,data,list)
+    if status == false then
+        if self.treasure_tips ~= nil then
+            self.treasure_tips:close()
+            self.treasure_tips = nil
+        end
+    else
+        if self.treasure_tips == nil then
+            self.treasure_tips = TreasureTips.New()
+        end
+        self.treasure_tips:open(data,list)
+    end
+end
+--- 打开专属秘宝提示
+function TreasureController:openTreasureOnlyTips(status,data,list)
+    if status == false then
+        if self.treasure_only_tips ~= nil then
+            self.treasure_only_tips:close()
+            self.treasure_only_tips = nil
+        end
+    else
+        if self.treasure_only_tips == nil then
+            self.treasure_only_tips = TreasureOnlyTips.New()
+        end
+        self.treasure_only_tips:open(data,list)
+    end
+end
+--- 打开秘宝提示
+function TreasureController:openTreasureFragmentsTips(status,data,list)
+    if status == false then
+        if self.treasure_fragments_tips ~= nil then
+            self.treasure_fragments_tips:close()
+            self.treasure_fragments_tips = nil
+        end
+    else
+        if self.treasure_fragments_tips == nil then
+            self.treasure_fragments_tips = TreasureFragmentsTips.New()
+        end
+        self.treasure_fragments_tips:open(data,list)
+    end
+end
+
+-- 特权提示弹窗
+function TreasureController:openTreasurePrivilegeWindow( status )
+	if status == true then
+		if not self.treasure_privilege_wnd then
+			self.treasure_privilege_wnd = TreasurePrivilegeWindow.New()
+		end
+		if self.treasure_privilege_wnd:isOpen() == false then
+			self.treasure_privilege_wnd:open()
+		end
+	else
+		if self.treasure_privilege_wnd then
+			self.treasure_privilege_wnd:close()
+			self.treasure_privilege_wnd = nil
+		end
+	end
+end
+
+-- 打开魔导器选择界面
+function TreasureController:openTreasureSelectItemWindow( status, setting )
+	if status == true then
+		if not self.treasure_select_item_wnd then
+			self.treasure_select_item_wnd = TreasureSelectItemWindow.New()
+		end
+		if self.treasure_select_item_wnd:isOpen() == false then
+			self.treasure_select_item_wnd:open(setting)
+		end
+	else
+		if self.treasure_select_item_wnd then
+			self.treasure_select_item_wnd:close()
+			self.treasure_select_item_wnd = nil
+		end
+		self.hatch_egg_bid_flag = nil
+		self.hatch_id_flag = nil
+	end
+end
+
+-- 打开魔导器解锁界面
+function TreasureController:openTreasureHatchUnlockPanel( status ,data)
+	if status == true then
+		if not self.treasure_hatch_unlock_wnd then
+			self.treasure_hatch_unlock_wnd = TreasureHatchUnlockPanel.New()
+		end
+		if self.treasure_hatch_unlock_wnd:isOpen() == false then
+			self.treasure_hatch_unlock_wnd:open(data)
+		end
+	else
+		if self.treasure_hatch_unlock_wnd then
+			self.treasure_hatch_unlock_wnd:close()
+			self.treasure_hatch_unlock_wnd = nil
+		end
+	end
+end
+
+-- 魔导器升级升星觉醒界面 index 1升级2升星3觉醒
+function TreasureController:openTreasureUpWindow( status, data, index)
+	if status == true then
+		if not self.treasure_up_window then
+			self.treasure_up_window = TreasureUpWindow.New()
+		end
+		if self.treasure_up_window:isOpen() == false then
+			self.treasure_up_window:open(data,index)
+		end
+	else
+		if self.treasure_up_window then
+			self.treasure_up_window:close()
+			if self.model.treasure_change_list and next(self.model.treasure_change_list) then
+				self.model:setTreasureList(self.model.treasure_change_list)
+			end
+			self.treasure_up_window = nil
+		end
+	end
+end
+
+--- 打开秘宝背包
+function TreasureController:openTreasureWekeChoWindow(status,data,click_data,type)
+    if status == false then
+        if self.treasure_weke_cho_window ~= nil then
+            self.treasure_weke_cho_window:close()
+            self.treasure_weke_cho_window = nil
+        end
+    else
+        if self.treasure_weke_cho_window == nil then
+            self.treasure_weke_cho_window = TreasureWekeChoWindow.New()
+        end
+        self.treasure_weke_cho_window:open(data,click_data,type)
+    end
+end
+
+--- 打开秘宝选择心愿秘宝
+function TreasureController:openTreasureClickWindow(status,group_id,id)
+    if status == false then
+        if self.treasure_click_window ~= nil then
+            self.treasure_click_window:close()
+            self.treasure_click_window = nil
+        end
+    else
+        if self.treasure_click_window == nil then
+            self.treasure_click_window = TreasureClickWindow.New()
+        end
+        self.treasure_click_window:open(group_id,id)
+    end
+end
+--- 打开秘宝概率展示
+function TreasureController:openTreasurePreviewWindow(status,group_id)
+    if status == false then
+        if self.treasure_preview_window ~= nil then
+            self.treasure_preview_window:close()
+            self.treasure_preview_window = nil
+        end
+    else
+        if self.treasure_preview_window == nil then
+            self.treasure_preview_window = TreasurePreviewWindow.New()
+        end
+        self.treasure_preview_window:open(group_id)
+    end
+end
+--召唤获得界面
+function TreasureController:openTreasureLotteryGainWindow(status,data)
+    if status == false then
+        if self.treasure_lottery_gain_window ~= nil then
+            self.treasure_lottery_gain_window:close()
+            self.treasure_lottery_gain_window = nil
+        end
+    else
+        if self.treasure_lottery_gain_window == nil then
+            self.treasure_lottery_gain_window = TreasureLotteryGainWindow.New()
+        end
+        if self.treasure_lottery_gain_window:isOpen() == false then
+            self.treasure_lottery_gain_window:open(data)
+        end
+    end
+end
+
+--商城
+function TreasureController:openTreasureShopWindow(status)
+    if status == false then
+        if self.treasure_shop_window ~= nil then
+            self.treasure_shop_window:close()
+            self.treasure_shop_window = nil
+        end
+    else
+        if self.treasure_shop_window == nil then
+            self.treasure_shop_window = TreasureShopWindow.New()
+        end
+        if self.treasure_shop_window:isOpen() == false then
+            self.treasure_shop_window:open()
+        end
+    end
+end
+
+--礼包
+function TreasureController:openTreasureGiftWindow(status,gift_id)
+    if status == false then
+        if self.treasure_gift_window ~= nil then
+            self.treasure_gift_window:close()
+            self.treasure_gift_window = nil
+        end
+    else
+        if self.treasure_gift_window == nil then
+            self.treasure_gift_window = TreasureGiftWindow.New()
+        end
+        if self.treasure_gift_window:isOpen() == false then
+            self.treasure_gift_window:open(gift_id)
+        end
+    end
+end
+
+--战令
+function TreasureController:openTreasureOrderWindow(status,setting)
+    if status == false then
+        if self.treasure_gift_window ~= nil then
+            self.treasure_gift_window:close()
+            self.treasure_gift_window = nil
+        end
+    else
+        if self.treasure_gift_window == nil then
+            self.treasure_gift_window = TreasureOrderWindow.New()
+        end
+        if self.treasure_gift_window:isOpen() == false then
+            self.treasure_gift_window:open(setting)
+        end
+    end
+end
+
+--研发任务
+function TreasureController:openTreasureRankWindow(status,project_num,click_num)
+    if status == false then
+        if self.treasure_rank_window ~= nil then
+            self.treasure_rank_window:close()
+            self.treasure_rank_window = nil
+        end
+    else
+        if self.treasure_rank_window == nil then
+            self.treasure_rank_window = TreasureRankWindow.New()
+        end
+        if self.treasure_rank_window:isOpen() == false then
+            self.treasure_rank_window:open(project_num,click_num)
+        end
+    end
+end
+--领取研发构成奖励
+function TreasureController:openTreasureRewardWindow(status,setting)
+    if status == false then
+        if self.treasure_reward_window ~= nil then
+            self.treasure_reward_window:close()
+            self.treasure_reward_window = nil
+        end
+    else
+        if self.treasure_reward_window == nil then
+            self.treasure_reward_window = TreasureRewardWindow.New()
+        end
+        if self.treasure_reward_window:isOpen() == false then
+            self.treasure_reward_window:open(setting)
+        end
+    end
+end
+

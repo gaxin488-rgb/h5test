@@ -1,0 +1,257 @@
+-- --------------------------------------------------------------------
+-- ******** 文件说明 ********
+--
+-- @description: 游戏内部评分
+-- @DateTime:    2020-12-9
+-- *******************************
+ActionScoreWindow = ActionScoreWindow or BaseClass(BaseView)
+
+local controller = ActionController:getInstance()
+local notice_controller = NoticeController:getInstance()
+local string_format = string.format
+local _table_insert = table.insert
+function ActionScoreWindow:__init()
+    self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "action/action_score_window"
+    self.res_list = {{
+        path = PathTool.getPlistImgForDownLoad("evaluate", "evaluate_2"),
+        type = ResourcesType.single
+    }, {
+        path = PathTool.getPlistImgForDownLoad("evaluate", "evaluate_1"),
+        type = ResourcesType.single
+    }}
+    self.score = 5
+end
+
+function ActionScoreWindow:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    self.background:setScale(display.getMaxScale())
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    local container = self.main_container:getChildByName("container")
+    container:getChildByName("coin_label"):setString(TI18N("语言_c_5051"))
+    self.container = container
+    self.container:setPositionY(-480)
+    self.score_layer = container:getChildByName("score_layer")
+    self.score_layer:getChildByName("desc_txt"):setString(TI18N("语言_c_5052"))
+    self.reard_item = self.score_layer:getChildByName("goods_item")
+    self.reard_item:setSwallowTouches(false)
+    self.cancel_btn_1 = self.score_layer:getChildByName("cancel_btn")
+    self.cancel_btn_1:getChildByName("label"):setString(TI18N("语言_c_4791"))
+    self.confirm_btn_1 = self.score_layer:getChildByName("confirm_btn")
+    self.confirm_btn_1:getChildByName("label"):setString(TI18N("语言_c_3"))
+    self.reward_bg = self.score_layer:getChildByName("reward_bg")
+    self.reward_title = self.reward_bg:getChildByName("desc_txt")
+    self.reward_title:setString(TI18N("语言_c_5053"))
+    local title_width = self.reward_title:getContentSize().width
+    self.reward_bg:setContentSize(cc.size(title_width + 60,28))
+    for i = 1, 5 do
+        local item = self.score_layer:getChildByName("star_layer"):getChildByName("star_" .. i)
+        item:getChildByName("star_select"):setVisible(false)
+        item:addTouchEventListener(function(sender, event_type)
+            if event_type == ccui.TouchEventType.ended then
+                self:onClickHeroItemEnd(i)
+            end
+        end)
+        if i <= self.score then
+            item:getChildByName("star_select"):setVisible(true)
+        end
+    end
+
+    self.opinion_layer = container:getChildByName("opinion_layer")
+    self.opinion_layer:setVisible(false)
+    self.opinion_layer:getChildByName("desc_txt"):setString(TI18N("语言_c_5054"))
+    self.cancel_btn_2 = self.opinion_layer:getChildByName("cancel_btn")
+    self.cancel_btn_2:getChildByName("label"):setString(TI18N("语言_c_4791"))
+    self.confirm_btn_2 = self.opinion_layer:getChildByName("confirm_btn")
+    self.confirm_btn_2:getChildByName("label"):setString(TI18N("语言_c_3"))
+    self.Image_21 = self.opinion_layer:getChildByName("Image_21")
+    self.quest_scroll = self.Image_21:getChildByName("quest_scroll")
+    self.quest_scroll:setScrollBarEnabled(false)
+    self.quest_scroll:setTouchEnabled(false)
+    self.quest_scroll_label = self.quest_scroll:getChildByName("quest_label")
+    self.quest_scroll_label:setString("")
+    self.quest_scroll_label_holder = self.quest_scroll:getChildByName("quest_label_holder")
+    self.quest_scroll_label_holder:setString(TI18N("语言_c_5134"))
+
+    self:setData()
+    self:createProblemContentBox()
+    controller:sender16803()
+end
+
+function ActionScoreWindow:onClickHeroItemEnd(index)
+    self.score = index
+    for i = 1, 5 do
+        local item = self.score_layer:getChildByName("star_layer"):getChildByName("star_" .. i)
+        item:getChildByName("star_select"):setVisible(false)
+        if i <= index then
+            item:getChildByName("star_select"):setVisible(true)
+        end
+    end
+end
+
+function ActionScoreWindow:setData()
+    local actInfo =controller:getPlayerScoreInfo()
+    if not actInfo then return end
+    self.open_status = actInfo.open
+    self.reward_status = actInfo.reward_st
+    self.confirm_btn_1:setPositionX(576)
+    self.cancel_btn_1:setVisible(true)
+    if self.reward_status == 0 then
+        self.confirm_btn_1:getChildByName("label"):setString(TI18N("语言_c_3"))
+        self.confirm_btn_2:getChildByName("label"):setString(TI18N("语言_c_3"))
+    elseif self.reward_status == 1 then
+        self.confirm_btn_1:getChildByName("label"):setString(TI18N("语言_c_8"))
+        self.confirm_btn_2:getChildByName("label"):setString(TI18N("语言_c_8"))
+        self.opinion_layer:setVisible(false)
+        self.score_layer:setVisible(true)
+        self.confirm_btn_1:setPositionX(360)
+        self.cancel_btn_1:setVisible(false)
+        for i = 1, 5 do
+            local item = self.score_layer:getChildByName("star_layer"):getChildByName("star_" .. i)
+            item:setTouchEnabled(false)
+        end
+    end
+    self.reward_list = actInfo.rewards
+    local list_info ={}
+    for index, value in ipairs(self.reward_list) do
+        local temp = {}
+        local item_id = value.bid
+        _table_insert(temp,item_id)
+        local item_num = value.num
+        _table_insert(temp,item_num)
+        _table_insert(list_info,temp)
+    end
+    local setting = {}
+    setting.start_x = 10
+    setting.scale = 0.8
+    setting.max_count = 3
+    setting.is_tip = true
+    self.item_list = commonShowSingleRowItemList(self.reard_item, self.item_list, list_info, setting)
+    doStopAllActions(self.container)
+    local action2 = cc.Sequence:create(cc.EaseOut:create(cc.MoveTo:create(0.5, cc.p(360, 0)), 0.5))
+    self.container:runAction(action2)
+end
+
+function ActionScoreWindow:createProblemContentBox() -- 问题描述
+    local res = PathTool.getResFrame("common", "common_99998")
+    if not self.problem_inputBox then
+        local size = self.quest_scroll:getContentSize()
+        self.problem_inputBox = createEditBox(self.quest_scroll, res, cc.size(size.width, size.height), Config.ColorData.data_color3[274],24, cc.c3b(0x8c, 0x8c, 0x8b), 24,
+                                    TI18N("语言_c_5054"), cc.p(0, 210), 200, LOADTEXT_TYPE_PLIST)
+        self.problem_inputBox:setAnchorPoint(cc.p(0, 0))
+        self.problem_inputBox:setLocalZOrder(-1)
+    end
+    -- self.problem_inputBox:setPlaceHolder(TI18N(""))
+    self.problem_inputBox:setOpacity(0)
+    self.problem_inputBox:setAnchorPoint(cc.p(0, 1))
+    local function editTitleBoxTextEventHandle(strEventName, pSender)
+        if not tolua.isnull(self.quest_scroll_label) then
+            if strEventName == "return" or strEventName == "ended" then
+                if self.begin_change_title then
+                    self.begin_change_title = false
+                    local str = pSender:getText()
+                    pSender:setText("")
+                    if str ~= "" and str ~= self.quest_content_str then
+                        self.quest_scroll:setTouchEnabled(false)
+                        self.quest_content_str = str
+                        self.problem_inputBox:setText("")
+                        self.quest_scroll_label:setString(self.quest_content_str)
+                        self.quest_scroll_label:setVisible(true)
+                        self.quest_scroll_label_holder:setVisible(false)
+                    else
+                        self.quest_content_str = str
+                        self.problem_inputBox:setText(str)
+                        self.quest_scroll_label:setVisible(str ~= "")
+                        self.quest_scroll_label_holder:setVisible(str == "")
+                        self.quest_scroll_label:setString(str)
+                    end
+                    local size = self.quest_scroll:getContentSize()
+                    local label_size = self.quest_scroll_label:getContentSize()
+                    if label_size.height > size.height then
+                        size.height = label_size.height
+                    end
+                    self.quest_scroll:setInnerContainerSize(size)
+                    self.problem_inputBox:setPositionY(size.height)
+                    self.quest_scroll_label:setPositionY(size.height)
+                    self.quest_scroll_label_holder:setPositionY(size.height)
+                end
+            elseif strEventName == "began" then
+                if not self.begin_change_title then
+                    self.begin_change_title = true
+                end
+                -- self.problem_inputBox:setText(" ")
+                pSender:setText(self.quest_scroll_label:getString())
+                self.quest_scroll_label:setVisible(true)
+                self.quest_scroll_label_holder:setVisible(false)
+            elseif strEventName == "changed" then
+                -- self.problem_inputBox:setText(" ")
+                local str = pSender:getText()
+                self.quest_scroll_label:setString(str)
+            end
+        end
+    end
+    self.problem_inputBox:registerScriptEditBoxHandler(editTitleBoxTextEventHandle)
+end
+
+function ActionScoreWindow:showEvaluateLayer()
+    self.score_layer:setVisible(false)
+    self.opinion_layer:setVisible(true)
+    local action2 = cc.Sequence:create(cc.EaseOut:create(cc.MoveTo:create(0.5, cc.p(0, 0)), 0.5))
+    self.opinion_layer:runAction(action2)
+end
+
+function ActionScoreWindow:register_event()
+    registerButtonEventListener(self.cancel_btn_1, function()-- 取消
+        controller:sender16805()
+        controller:openPlayerSscoreWindow(false)
+    end, false, 2)
+
+    registerButtonEventListener(self.cancel_btn_2, function()-- 取消
+        controller:sender16805()
+        controller:openPlayerSscoreWindow(false)
+    end, false, 2)
+
+    registerButtonEventListener(self.confirm_btn_1, function()
+        if self.score and self.score <= 3 then
+            if self.reward_status == 1 then
+                controller:sender16804()-- 领奖
+            else
+                self:showEvaluateLayer()
+            end
+        elseif self.score and self.score > 3 then
+            if self.reward_status == 0 then
+                sdkCallFunc("reviewApp")
+                controller:sender16806()--更改领奖状态
+            elseif self.reward_status == 1 then
+                controller:sender16804()-- 领奖
+            end
+        end
+    end, false, 2)
+
+    registerButtonEventListener(self.confirm_btn_2, function()--发送反馈
+        if self.reward_status == 0 then
+            if self.quest_content_str ~= "" and  self.quest_content_str ~= nil then
+                notice_controller:reportPlayerScorePost(self.quest_content_str, self.score or 1)
+            else
+                message(TI18N("语言_c_2708"))
+            end
+        elseif self.reward_status == 1 then
+            controller:sender16804()-- 领奖
+        end
+    end, false, 2)
+
+    self:addGlobalEvent(ActionEvent.PlayerScoreInfoUpdate, function(data)
+        self:setData()
+    end)
+end
+
+function ActionScoreWindow:close_callback()
+    if self.item_list then
+        for i,v in ipairs(self.item_list) do
+            v:DeleteMe()
+        end
+    end
+    self.item_list = nil
+    controller:openPlayerSscoreWindow(false)
+end

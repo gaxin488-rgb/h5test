@@ -1,0 +1,158 @@
+-- ******** 文件说明 ********
+-- 
+-- @description: 传奇忍者
+-- @DateTime:    2019-05-10 09:49:04
+-- *******************************
+BattleDramaBonusInfo = BattleDramaBonusInfo or BaseClass(BaseView)
+
+local controller = BattleDramaController:getInstance()
+local model = controller:getModel()
+
+function BattleDramaBonusInfo:__init()
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.is_full_screen = false
+    self.win_type = WinType.Mini
+    self.layout_name = "battledrama/battle_darma_bonus_info"
+    self.res_list = {
+        {path = PathTool.getPlistImgForDownLoad("planes", "planes_map"), type = ResourcesType.plist},
+    }
+end
+
+function BattleDramaBonusInfo:open_callback()
+    self.background = self.root_wnd:getChildByName("background")
+    if self.background ~= nil then
+        self.background:setScale(display.getMaxScale())
+    end
+
+    self.main_container = self.root_wnd:getChildByName("main_container")
+    self:playEnterAnimatianByObj(self.main_container, 1)
+    self.info_panel = self.main_container:getChildByName("info_panel")
+    self.title_bg = self.info_panel:getChildByName("title_bg")
+    self.title = self.info_panel:getChildByName("title")
+    self.title:setString(TI18N("语言_c_6421"))
+    self.title_bg:setContentSize(cc.size(self.title:getContentSize().width+100, self.title_bg:getContentSize().height))
+    self.hangUp_panel = self.info_panel:getChildByName("hangUp_panel")
+    self.daily_panel = self.info_panel:getChildByName("daily_panel")
+    self.daily_tip = self.daily_panel:getChildByName("daily_tip")
+    self.daily_tip:setVisible(false)
+end
+function BattleDramaBonusInfo:register_event()
+    registerButtonEventListener(self.background, handler(self, self.onClickCloseBtn), false, 2)
+end
+
+function BattleDramaBonusInfo:onClickCloseBtn()
+    controller:openBattleDramaBonusInfo(false)
+end
+
+function BattleDramaBonusInfo:openRootWnd(id)
+    self.id = id
+    self:setHangUpData()
+    self:setDailyData()
+end
+
+function BattleDramaBonusInfo:setHangUpData()
+    --挂机奖励  当前层 - 上一层 没有上一层显示当前层
+    local data = {}
+    local cfg = Config.DungeonNinjaWarData.data_drama_dungeon_info(self.id)
+    if not cfg then return end
+    local last_cfg = Config.DungeonNinjaWarData.data_drama_dungeon_info(cfg.last_id)
+    if last_cfg then
+        for key, value in pairs(cfg.hook_items) do
+            for k, v in pairs(last_cfg.hook_items) do
+                if v[1] == value[1] then
+                    local list = {}
+                    list[1] = v[1]
+                    list[2] = value[2] - v[2]
+                    table.insert(data,list)
+                end
+            end
+        end
+    else
+        for k, v in pairs(cfg.hook_items) do
+            local list = {}
+            list[1] = v[1]
+            list[2] = v[2]
+            table.insert(data,list)
+        end
+    end
+    -- 挂机收益信息
+    self.drama_item_labels = self.drama_item_labels or {}
+    for i,v in ipairs(self.drama_item_labels) do
+        v:setVisible(false)
+    end
+    for i, v in ipairs(data) do
+        local label = self.drama_item_labels[i]
+        if label == nil then
+            label = createRichLabel(20, cc.c3b(0xff,0xf6,0xc7), cc.p(0,0.5), cc.p(0, 22), nil, nil, 180)
+            self.drama_item_labels[i] = label
+            self.hangUp_panel:addChild(label)
+        end
+        local config = Config.ItemData.data_get_data(v[1])
+        local str=""
+        str = string.format(TI18N("<img src=%s visible=true scale=0.3 /><div outline=1,#000000 fontcolor=#00ff00>+%s/m</div>"), PathTool.getItemRes(config.icon), v[2])
+        label:setString(str)
+        label:setVisible(true)
+        local _x=i%3 == 0 and 3*100 + 200 or (i%3-1)*150 + 200
+        local _y=i<=3 and 78 or 25
+        label:setPosition(cc.p(_x, _y))
+    end
+end
+
+function BattleDramaBonusInfo:setDailyData()
+    --每日奖励  下一层-当前层 没有下一层显示0
+    local data = {}
+    local cfg = Config.DungeonNinjaWarData.data_drama_dungeon_info(self.id)
+    if not cfg or not next(cfg.daily_items) then 
+        local level_condition = Config.DungeonNinjaWarData.data_drama_const["level_condition"].val
+        local cfg2 = Config.DungeonNinjaWarData.data_drama_dungeon_info(level_condition)
+        self.daily_tip:setString(transformTextToShort(string.format(TI18N("语言_c_6316"),cfg2.name),40))
+        addEvt2showAllTextTips(self.daily_tip,string.format(TI18N("语言_c_6316"),cfg2.name),40)
+        self.daily_tip:setVisible(true)
+        return
+    end
+    local next_cfg = Config.DungeonNinjaWarData.data_drama_dungeon_info(cfg.next_id)
+    if next_cfg then
+        for key, value in pairs(cfg.daily_items) do
+            for k, v in pairs(next_cfg.daily_items) do
+                if v[1] == value[1] then
+                    local list = {}
+                    list[1] = v[1]
+                    list[2] = v[2] - value[2]
+                    table.insert(data,list)
+                end
+            end
+        end 
+    else
+        for k, v in pairs(cfg.daily_items) do
+            local list = {}
+            list[1] = v[1]
+            list[2] = 0
+            table.insert(data,list)
+        end
+    end
+    -- 挂机收益信息
+    self.drama_item_labels2 = self.drama_item_labels2 or {}
+    for i,v in ipairs(self.drama_item_labels2) do
+        v:setVisible(false)
+    end
+    for i, v in ipairs(data) do
+        local label = self.drama_item_labels2[i]
+        if label == nil then
+            label = createRichLabel(20, cc.c3b(0xff,0xf6,0xc7), cc.p(0,0.5), cc.p(0, 22), nil, nil, 180)
+            self.drama_item_labels2[i] = label
+            self.daily_panel:addChild(label)
+        end
+        local config = Config.ItemData.data_get_data(v[1])
+        local str=""
+        str = string.format(TI18N("<img src=%s visible=true scale=0.3 /><div outline=1,#000000 fontcolor=#00ff00>+%s/d</div>"), PathTool.getItemRes(config.icon), v[2])
+        label:setString(str)
+        label:setVisible(true)
+        local _x=i%3 == 0 and 3*100 + 200 or (i%3-1)*150 + 200
+        local _y=26
+        label:setPosition(cc.p(_x, _y))
+    end
+end
+
+function BattleDramaBonusInfo:close_callback()
+    controller:openBattleDramaBonusInfo(false)
+end

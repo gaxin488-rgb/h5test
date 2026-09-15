@@ -1,0 +1,652 @@
+--------------------------------------------
+-- @Author  : xhj
+-- @Editor  : xhj
+-- @Date    : 2020-06-19 21:22:19
+-- @description    : 
+		-- 符文淬炼
+---------------------------------
+ArtifactUpdateWindow = ArtifactUpdateWindow or BaseClass(BaseView)
+
+local string_format = string.format
+local table_insert = table.insert
+
+function ArtifactUpdateWindow:__init()
+	self.win_type = WinType.Big
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+	self.is_full_screen = false
+	self.layout_name = "hero/artifact_update_panel"
+
+	self.res_list = {
+		{path = PathTool.getPlistImgForDownLoad("artifact", "artifact"), type = ResourcesType.plist},
+	}
+
+	self.ctrl = HeroController:getInstance()
+    self.model = self.ctrl:getModel()
+    
+    self.base_list_left = {}
+    self.base_list_right = {}
+    self.skill_list_left = {}
+    self.skill_list_right = {}
+end
+
+function ArtifactUpdateWindow:open_callback(  )
+	self.background = self.root_wnd:getChildByName("background")
+	if self.background then
+		self.background:setScale(display.getMaxScale())
+	end
+
+	local main_container = self.root_wnd:getChildByName("main_container")
+	self.main_container = main_container
+    self:playEnterAnimatianByObj(self.main_container , 1) 
+
+	main_container:getChildByName("win_title"):setString(TI18N("符文淬炼"))
+
+	local container = main_container:getChildByName("container")
+    local cost_panel = container:getChildByName("cost_panel")
+    self.cost_panel = cost_panel
+
+    local title_1 = container:getChildByName("title_1")
+    title_1:setString(TI18N("淬炼前"))
+    local title_2 = container:getChildByName("title_2")
+    title_2:setString(TI18N("淬炼后"))
+    local base_title_1 = container:getChildByName("base_title_1")
+    base_title_1:setString(TI18N("基础属性"))
+    local base_title_2 = container:getChildByName("base_title_2")
+    base_title_2:setString(TI18N("基础属性"))
+    local base_title_3 = container:getChildByName("base_title_3")
+    base_title_3:setString(TI18N("符文技能"))
+    local base_title_4 = container:getChildByName("base_title_4")
+    base_title_4:setString(TI18N("符文技能"))
+
+    self.left_bg = container:getChildByName("Image_7")
+    self.right_bg = container:getChildByName("Image_9")
+    self.new_img = self.right_bg:getChildByName("new_img")
+    self.new_img:setVisible(false)
+    self.name_txt = container:getChildByName("name_txt")
+    self.name_txt_2 = container:getChildByName("name_txt_2")
+    self.pos_item = container:getChildByName("pos_item")
+    self.pos_item_2 = container:getChildByName("pos_item_2")
+
+    self.tips_lab = createRichLabel(20, cc.c4b(95,53,22,255), cc.p(0.5, 0.5), cc.p(340, 174.45), nil, nil, 660)
+    container:addChild(self.tips_lab)
+    local function clickLinkCallBack( _type, value )
+        if _type == "href" then
+            self.ctrl:openArtifactUpdateTips(true,self.data)
+        end
+    end
+    self.tips_lab:addTouchLinkListener(clickLinkCallBack,{"href"})
+
+    local cost_bg_1 = cost_panel:getChildByName("cost_bg_1")
+    cost_bg_1:setPositionX(207)
+    local cost_bg_2 = cost_panel:getChildByName("cost_bg_2")
+    cost_bg_2:setPositionX(467)
+    self.cost_bg = {cost_bg_1, cost_bg_2}
+
+    local cost_icon_1 = cost_bg_1:getChildByName("cost_icon_1")
+    local cost_icon_2 = cost_bg_2:getChildByName("cost_icon_2")
+    self.cost_icon = {cost_icon_1, cost_icon_2}
+
+    local cost_txt_1 = cost_bg_1:getChildByName("cost_txt_1")
+    local cost_txt_2 = cost_bg_2:getChildByName("cost_txt_2")
+    cost_txt_1:setString("")
+    cost_txt_2:setString("")
+    self.cost_txt = {cost_txt_1, cost_txt_2}
+
+    self.explain_btn = main_container:getChildByName("explain_btn")
+    self.close_btn = main_container:getChildByName("close_btn")
+    self.save_btn = main_container:getChildByName("save_btn")
+    self.save_btn:getChildByName("label"):setString(TI18N("淬 炼"))
+    
+    self.item_node = BackPackItem.new(false, false, false)
+    -- self.item_node:setPositionY(15)
+    self.pos_item:addChild(self.item_node)
+
+    self.item_node_2 = BackPackItem.new(false, false, false)
+    -- self.item_node_2:setPositionY(15)
+    self.pos_item_2:addChild(self.item_node_2)
+    
+end
+
+
+-- 淬炼特效
+function ArtifactUpdateWindow:handleEffect( status )
+    if status == true then
+        if not tolua.isnull(self.main_container) and self.re_effect == nil then
+            self.re_effect = createEffectSpine(PathTool.getEffectRes(269), cc.p(350,792), cc.p(0.5, 0.5), false, PlayerAction.action, function()
+                --特效完成一次调用函数
+                self:senderOffer()
+            end)
+            self.main_container:addChild(self.re_effect)
+            self.re_effect:setScaleX(1.25)
+        end
+    else
+        if self.re_effect then
+            self.re_effect:clearTracks()
+            self.re_effect:removeFromParent()
+            self.re_effect = nil
+        end
+    end
+end
+
+function ArtifactUpdateWindow:setData(data, partner_id)
+    self.data = data or {}
+    self.item_config = data.config
+    self.partner_id = partner_id or 0
+
+    self.item_node:setData(nil)
+    self.item_node_2:setData(nil)
+
+    self.item_node:setData(data)
+    self.name_txt:setString(self.item_config.name)
+    
+    self.update_cfg = nil
+    if self.item_config then
+        self.update_cfg = Config.PartnerArtifactData.data_artifact_update[self.item_config.id][self.data.step]
+    end
+
+    if self.data.step == 0 then
+        self.tips_lab:setString(TI18N("<div fontcolor=955322>淬炼后获得一条新的属性 </div><div href=xxx fontcolor=249003>淬炼总览</div>"))
+    elseif self.data.step == 1 then
+        self.tips_lab:setString(TI18N("<div fontcolor=955322>淬炼后第一个技能等级+1，暂时不可重铸 </div><div href=xxx fontcolor=249003>淬炼总览</div>"))
+    elseif self.data.step == 2 then
+        self.tips_lab:setString(TI18N("<div fontcolor=955322>淬炼后第二个技能等级+1，炼就星曜符文 </div><div href=xxx fontcolor=249003>淬炼总览</div>"))
+    end
+    
+    local is_set = false
+    if self.update_cfg then
+        for k,v in pairs(self.update_cfg.promote) do
+            if v[1] and v[1] == "exchange_id" then
+                self.item_node_2:setBaseData(v[2], 1)
+                local t_config = Config.ItemData.data_get_data(v[2])
+                if t_config then
+                    self.name_txt_2:setString(t_config.name)
+                end
+                is_set = true
+                break
+            end
+        end
+    end
+    if is_set == false then
+        local new_data = deepCopy(self.data)
+        new_data.step = new_data.step+1
+        self.item_node_2:setData(new_data)
+        self.name_txt_2:setString(self.item_config.name)
+    end
+    
+    self:setBaseAttrInfo()
+    self:setSkillInfo()
+    self:updateCostInfo()
+end
+
+-- 基础属性
+function ArtifactUpdateWindow:setBaseAttrInfo(  )
+    if not self.data or not self.data.attr or not self.item_config then return end
+    local attr_num = 3
+    local right_attr_num = 3
+    local artifact_config = Config.PartnerArtifactData.data_artifact_data[self.item_config.id]
+    if artifact_config then
+        attr_num = artifact_config.attr_num
+        right_attr_num = attr_num
+    end
+
+    local right_attr = deepCopy(self.data.attr) or {}
+    if self.update_cfg then
+        for k,v in pairs(self.update_cfg.promote) do
+            if v[1] and v[1] == "add_attr" then
+                if tonumber(v[2]) > #right_attr then
+                    right_attr_num = tonumber(v[2])
+                    local temp_num = tonumber(v[2]) - #right_attr
+                    for i=1,temp_num do
+                        table_insert(right_attr,{is_new = true})
+                    end
+                end
+                break
+            end
+        end
+    end
+    
+    for i,v in ipairs(self.data.attr) do
+        if i > attr_num then break end        -- 超过3条属性不显示了,ui暂时不支持
+        local attr_id = v.attr_id
+        local attr_key = Config.AttrData.data_id_to_key[attr_id]
+        local attr_val = v.attr_val/1000
+        local attr_name = Config.AttrData.data_key_to_name[attr_key]
+        if attr_name then
+            if not self.base_list_left[i] then 
+                self.base_list_left[i] = createRichLabel(24, cc.c4b(104,69,42,255), cc.p(0, 0.5), cc.p(20, 28), nil, nil, 380)
+                self.left_bg:addChild(self.base_list_left[i])
+            end
+            local label = self.base_list_left[i]
+            local _x = 30
+            local _y = 402 - (i-1)*35
+            label:setPosition(cc.p(_x, _y))
+
+            local icon = PathTool.getAttrIconByStr(attr_key)
+            local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+            if is_per == true then
+                attr_val = (attr_val/10).."%"
+            end
+            local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#68452a> %s: </div><div fontcolor=#68452a>%s</div>", PathTool.getResFrame("common", icon), attr_name, attr_val)
+            label:setString(attr_str)
+        end
+    end
+
+    for i,v in ipairs(right_attr) do
+        if i > right_attr_num then break end 
+        if v.is_new and v.is_new == true then
+            if not self.base_list_right[i] then 
+                self.base_list_right[i] = createRichLabel(24, cc.c4b(104,69,42,255), cc.p(0, 0.5), cc.p(20, 28), nil, nil, 380)
+                self.right_bg:addChild(self.base_list_right[i])
+            end
+            local label = self.base_list_right[i]
+            local _x = 59
+            local _y = 402 - (i-1)*35
+            label:setPosition(cc.p(_x, _y))
+            label:setString(TI18N("随机属性"))
+            self.new_img:setVisible(true)
+            self.new_img:setPosition(cc.p(190,_y))
+            doStopAllActions(self.new_img)
+            breatheShineAction2(self.new_img,0,1,0.7,0.4)
+        else
+            local attr_id = v.attr_id
+            local attr_key = Config.AttrData.data_id_to_key[attr_id]
+            local attr_val = v.attr_val/1000
+            local attr_name = Config.AttrData.data_key_to_name[attr_key]
+            if attr_name then
+                if not self.base_list_right[i] then 
+                    self.base_list_right[i] = createRichLabel(24, cc.c4b(104,69,42,255), cc.p(0, 0.5), cc.p(20, 28), nil, nil, 380)
+                    self.right_bg:addChild(self.base_list_right[i])
+                end
+                local label = self.base_list_right[i]
+                local _x = 30
+                local _y = 402 - (i-1)*35
+                label:setPosition(cc.p(_x, _y))
+
+                local icon = PathTool.getAttrIconByStr(attr_key)
+                local is_per = PartnerCalculate.isShowPerByStr(attr_key)
+                if is_per == true then
+                    attr_val = (attr_val/10).."%"
+                end
+                local attr_str = string_format("<img src='%s' scale=1 /> <div fontcolor=#68452a> %s: </div><div fontcolor=#68452a>%s</div>", PathTool.getResFrame("common", icon), attr_name, attr_val)
+                label:setString(attr_str)
+            end
+        end
+    end
+end
+
+-- 神器技能
+function ArtifactUpdateWindow:setSkillInfo(  )
+    if self.data == nil or self.data.extra == nil then return end
+    local skill_num = 0 -- 技能数量
+    local artifact_config = Config.PartnerArtifactData.data_artifact_data[self.item_config.id]
+    if artifact_config then
+        skill_num = artifact_config.skill_num
+    end
+    local index = 1
+    local cur_skills = {}
+    local sort_func = SortTools.KeyLowerSorter("extra_k")
+    table.sort(self.data.extra, sort_func)
+    for k,v in pairs(self.skill_list_left) do
+        self:setSkillItemVisible(false, v)
+    end
+    
+    local recast_skills = {}
+    for i,value in ipairs(self.data.extra) do
+        if value and value.extra_k and (value.extra_k == 1 or value.extra_k == 2 or value.extra_k == 8) then
+            table_insert(recast_skills, value.extra_v)
+            if #cur_skills <= skill_num then
+                table_insert(cur_skills, value.extra_v)
+                local config = Config.SkillData.data_get_skill(value.extra_v)
+                if config then
+                    if not self.skill_list_left[index] then
+                        local item = self:createSkillItem(self.left_bg, index)
+                        self.skill_list_left[index] = item
+                    end
+
+                    local skill_item = self.skill_list_left[index]
+                    self:setSkillItemVisible(true, skill_item)
+                    skill_item.skill:setData(config)
+                    local temp_lev = config.level
+                    if config.client_lev and config.client_lev>0 then
+                        temp_lev = config.client_lev
+                    end
+                    local name_color = PartnerConst.SkillColor2[temp_lev]
+                    name_color = name_color or "#68452a"
+                    skill_item.name:setString(string_format("<div fontcolor=%s> %s</div>",name_color,config.name))
+                    
+                    skill_item.desc:setString(transformTextToShort(config.des, 35))
+                    skill_item.random_icon:setVisible(false)
+                    skill_item.random_des:setVisible(false)
+
+                    
+
+                    index = index + 1
+                end
+            end
+        end
+    end
+    self.cur_skills = cur_skills
+    
+    local new_id = 0
+    -- 右侧
+    if self.update_cfg then
+        for k,v in pairs(self.update_cfg.promote) do
+            if v[1] and v[1] == "add_skill_lev" then
+                for i,j in pairs(recast_skills) do
+                    if i == tonumber(v[2]) then
+                        local temp_config = Config.PartnerSkillData.data_partner_skill_level_fun(j)
+                        if temp_config then
+                            recast_skills[i] = temp_config.next_id
+                            new_id = temp_config.next_id
+                        end
+                        break
+                    end
+                end
+                break
+            end
+        end
+    end
+
+    self.recast_skills = recast_skills
+    local right_skill_num = skill_num
+    -- 当没有重置技能则显示为最大数量的问号，有则显示为技能数量
+    if next(recast_skills) ~= nil then
+        right_skill_num = #recast_skills
+    end
+    if right_skill_num > skill_num then
+        right_skill_num = skill_num
+    end
+    for k,v in pairs(self.skill_list_right) do
+        self:setSkillItemVisible(false, v)
+    end
+    for i=1,right_skill_num do
+        if not self.skill_list_right[i] then
+            local item = self:createSkillItem(self.right_bg, i)
+            self.skill_list_right[i] = item
+        end
+
+        local skill_id = recast_skills[i]
+        local skill_item = self.skill_list_right[i]
+        self:setSkillItemVisible(true, skill_item)
+        skill_item.name:setVisible(true)
+        skill_item.desc:setVisible(true)
+        skill_item.random_icon:setVisible(false)
+        skill_item.random_des:setVisible(false)
+        local config = Config.SkillData.data_get_skill(skill_id)
+        if config then
+            skill_item.skill:setTouchEnabled(true)
+            skill_item.skill:setData(config)
+
+            local temp_lev = config.level
+            if config.client_lev and config.client_lev>0 then
+                temp_lev = config.client_lev
+            end
+            local name_color = PartnerConst.SkillColor2[temp_lev]
+            name_color = name_color or "#68452a"
+            skill_item.name:setString(string_format("<div fontcolor=%s>%s</div>",name_color,config.name))
+            if new_id == skill_id then
+                local temp_pos_x,temp_pos_y = skill_item.name:getPosition()
+                if temp_pos_x and temp_pos_y then
+                    self.new_img:setVisible(true)
+                    self.new_img:setPosition(cc.p(230,temp_pos_y+12))
+                    doStopAllActions(self.new_img)
+                    breatheShineAction(self.new_img)
+                end
+            end
+            
+            skill_item.desc:setString(transformTextToShort(config.des, 35))
+        else
+        	skill_item.skill:setData()
+            skill_item.skill:setTouchEnabled(false)
+            skill_item.name:setVisible(false)
+            skill_item.desc:setVisible(false)
+            skill_item.random_icon:setVisible(true)
+            skill_item.random_des:setVisible(true)
+        end
+    end
+end
+
+-- 创建一个技能item
+function ArtifactUpdateWindow:createSkillItem(parent, index)
+    local item = {}
+    local skill = SkillItem.new(true,true,true,0.8)
+    parent:addChild(skill)
+    local pos_y = 207 - (index-1)*125
+    skill:setPosition(60, pos_y)
+    local name = createRichLabel(22,cc.c4b(104,69,42,255),cc.p(0,0),cc.p(110, pos_y+25),0,nil,180)
+    parent:addChild(name)
+    local desc = createRichLabel(20,cc.c4b(104,69,42,255),cc.p(0,1),cc.p(110, pos_y+20),0,nil,180)
+    parent:addChild(desc)
+    local icon_res = PathTool.getResFrame("artifact","artifact_1003")
+    local random_icon = createSprite(icon_res, 60, pos_y, parent, cc.p(0.5, 0.5), LOADTEXT_TYPE_PLIST)
+    local random_des = createLabel(24,cc.c4b(104,69,42,255),nil,110, pos_y,TI18N("随机技能"),parent,1,cc.p(0,0.5))
+    item.skill = skill
+    item.name = name
+    item.desc = desc
+    item.random_icon = random_icon
+    item.random_des = random_des
+    return item
+end
+
+function ArtifactUpdateWindow:setSkillItemVisible( status, item )
+    item = item or {}
+    for k,v in pairs(item) do
+        v:setVisible(status)
+    end
+end
+
+
+function ArtifactUpdateWindow:senderOffer()
+    if self.data and self.data.id then
+        self.ctrl:sender11400(self.partner_id, self.data.id)
+        self.is_play_efffect = false 
+    end
+end
+
+function ArtifactUpdateWindow:register_event(  )
+    -- 淬炼
+    registerButtonEventListener(self.save_btn, handler(self, self.checkSaveBtn))
+    
+	registerButtonEventListener(self.explain_btn, function ( param, sender )
+		self.ctrl:openArtifactUpdateTips(true,self.data)
+	end)
+
+	registerButtonEventListener(self.close_btn, function ( )
+		self.ctrl:openArtifactUpdateWindow(false)
+    end)
+    
+	registerButtonEventListener(self.background, function ( )
+		self.ctrl:openArtifactUpdateWindow(false)
+	end)
+
+    self:addGlobalEvent(HeroEvent.Del_Hero_Event, function(list)
+        if self.partner_id then
+            for i,v in ipairs(list) do
+                if self.partner_id == v.partner_id then
+                    self.ctrl:openArtifactUpdateWindow(false)
+                end
+            end
+        end
+    end)
+
+    self:addGlobalEvent(HeroEvent.Artifact_Update_Info_Event, function()
+        self:setData(self.data, self.partner_id)
+    end)
+    
+    self:addGlobalEvent(BackpackEvent.ADD_GOODS, function(bag_code,temp_list)
+        if bag_code == BackPackConst.Bag_Code.BACKPACK and self.update_cfg and self.update_cfg.expend then 
+            for i,item in pairs(temp_list) do
+                for k,v in pairs(self.update_cfg.expend) do
+                    if item.base_id == v[1] then
+                        self:updateCostInfo()
+                        return
+                    end
+                end
+            end
+         end
+     end)
+ 
+     self:addGlobalEvent(BackpackEvent.DELETE_GOODS, function(bag_code,temp_list)
+        if bag_code == BackPackConst.Bag_Code.BACKPACK and self.update_cfg and self.update_cfg.expend then 
+            for i,item in pairs(temp_list) do
+                for k,v in pairs(self.update_cfg.expend) do
+                    if item.base_id == v[1] then
+                        self:updateCostInfo()
+                        return
+                    end
+                end
+            end
+         end
+     end)
+ 
+     self:addGlobalEvent(BackpackEvent.MODIFY_GOODS_NUM, function(bag_code,temp_list)
+         if bag_code == BackPackConst.Bag_Code.BACKPACK and self.update_cfg and self.update_cfg.expend then 
+            for i,item in pairs(temp_list) do
+                for k,v in pairs(self.update_cfg.expend) do
+                    if item.base_id == v[1] then
+                        self:updateCostInfo()
+                        return
+                    end
+                end
+            end
+         end
+     end)
+end
+
+
+function ArtifactUpdateWindow:checkSaveBtn(  )
+    if self.is_play_efffect == true then
+        return
+    end
+    
+    if self.update_cfg then
+        for i,v in ipairs(self.update_cfg.expend) do
+            local item_bid = v[1]
+            local item_num = v[2]
+            local count = BackpackController:getInstance():getModel():getItemNumByBid(item_bid)
+            if count< item_num then
+                local item_cfg = Config.ItemData.data_get_data(item_bid)
+                if item_cfg then
+                    if item_bid == Config.ItemData.data_assets_label2id.gold then
+                        if FILTER_CHARGE then
+                            message(TI18N("钻石不足"))
+                        else
+                            local function fun()
+                                VipController:getInstance():openVipMainWindow(true, VIPTABCONST.CHARGE)
+                            end
+                            local str = string.format(TI18N('%s不足，是否前往充值？'), item_cfg.name)
+                            CommonAlert.show(str, TI18N('确定'), fun, TI18N('取消'), nil, CommonAlert.type.rich, nil, nil, nil, true)
+                        end
+                    else
+                        BackpackController:getInstance():openTipsSource(true, item_cfg)
+                    end
+                end
+                return
+            end
+        end
+    end
+    
+    
+    if self.data and self.data.step <= 1 then
+        local function call_back()
+            self:handleEffect(false)
+            self.is_play_efffect = true 
+            self:handleEffect(true)
+        end
+        local str = TI18N("淬炼成为<div fontcolor=#ff0000>星曜符文前</div>,暂时<div fontcolor=#ff0000>不可重铸</div>,是否继续淬炼？")
+        if self.data.step == 0 then
+            str = TI18N("淬炼后,重铸未保存的属性和技能<div fontcolor=#ff0000>将被重置</div>,\n                             是否继续淬炼?")
+        end
+        CommonAlert.show(str,TI18N("确定"),call_back,TI18N("取消"),nil,CommonAlert.type.rich,nil,nil,24)
+        return
+    end
+    
+
+    self:handleEffect(false)
+    self.is_play_efffect = true 
+    self:handleEffect(true)
+end
+
+function ArtifactUpdateWindow:updateCostInfo(  )
+    if not self.data or not self.data.attr or not self.item_config then return end
+
+
+    for k,v in pairs(self.cost_bg) do
+        if v then
+            v:setVisible(false)
+        end
+    end
+    
+    
+    if self.update_cfg and self.update_cfg.expend then
+        local exp_num = #self.update_cfg.expend or 2
+        local pos_list_1 = {207,467}
+        if exp_num<=1 then
+            pos_list_1 = {337}
+        end
+
+    	for i=1,exp_num do
+    		local cost_icon = self.cost_icon[i]
+    		local cost_txt = self.cost_txt[i]
+    		local cost_data = self.update_cfg.expend[i]
+    		if cost_data then
+    			local bid = cost_data[1]
+    			local num = cost_data[2]
+    			local item_config = Config.ItemData.data_get_data(bid)
+    			if item_config then
+    				cost_icon:loadTexture(PathTool.getItemRes(bid), LOADTEXT_TYPE)
+    				local have_num = BackpackController:getInstance():getModel():getItemNumByBid(bid)
+    				cost_txt:setString(MoneyTool.GetMoneyString(have_num) .. "/" .. MoneyTool.GetMoneyString(num))
+                    if have_num >= num then
+                        cost_txt:setTextColor(cc.c3b(255, 246, 228))
+                    else
+                        cost_txt:setTextColor(cc.c3b(253, 71, 71))
+                    end
+                end
+    		else
+    			cost_txt:setString("")
+            end
+            local cost_bg = self.cost_bg[i]
+            cost_bg:setPositionX(pos_list_1[i])
+            cost_bg:setVisible(true)
+    	end
+   	end
+end
+
+function ArtifactUpdateWindow:openRootWnd( data, partner_id )
+	self:setData(data, partner_id)
+end
+
+function ArtifactUpdateWindow:close_callback(  )
+    doStopAllActions(self.new_img)
+	if self.item_node then
+		self.item_node:DeleteMe()
+		self.item_node = nil
+    end
+    
+    if self.item_node_2 then
+		self.item_node_2:DeleteMe()
+		self.item_node_2 = nil
+    end
+
+    if self.skill_list_left then
+        for k,v in pairs(self.skill_list_left) do
+            if v.skill and v.skill.DeleteMe then
+                v.skill:DeleteMe()
+                v.skill = nil
+            end
+        end
+    end
+
+    if self.skill_list_right then
+        for k,v in pairs(self.skill_list_right) do
+            if v.skill and v.skill.DeleteMe then
+                v.skill:DeleteMe()
+                v.skill = nil
+            end
+        end
+    end
+    
+    self:handleEffect(false)
+	self.ctrl:openArtifactUpdateWindow(false)
+end

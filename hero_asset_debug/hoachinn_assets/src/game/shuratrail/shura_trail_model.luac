@@ -1,0 +1,357 @@
+-- --------------------------------------------------------------------
+-- 这里填写简要说明(必填),
+--
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      无尽试炼数据控制
+-- <br/>Create: 2018-08-15
+-- --------------------------------------------------------------------
+Shura_trailModel = Shura_trailModel or BaseClass()
+
+function Shura_trailModel:__init(ctrl)
+    self.ctrl = ctrl
+    self:config()
+end
+
+function Shura_trailModel:config()
+    self.role_rank_list = {}
+    -- self.first_item_list = {}
+    -- self.five_item_list = {}
+    -- self.rank_item_list = {}
+    self.shura_data = {}
+    self.first_data = {}
+    self.send_partner = {}
+    self.hire_partner_list = {}
+    self.has_hire_partner_list = {} --已雇佣的
+    self.is_first_get = false
+    self.is_award_get = false
+    self.is_award_get_new = false
+    
+    self.is_send_partner = false
+    self.shura_battle_data = nil
+    -- self:getFirstKindList()
+    -- self:getFiveKindList()
+    -- self:getRankKindList()
+	self.shura_login_red = false --试炼之地登录红点状态
+end
+
+--[[
+    @desc: 设置无尽试炼基础信息
+    author:{author}
+    time:2018-08-20 11:56:42
+    --@data: 
+    @return:
+]]
+function Shura_trailModel:setShuraData(data)
+    if data then
+        if data.type == 0 then
+            data.day_pass_round = 0
+            data.new_day_pass_round = 0
+            data.is_reward = 0
+        end
+        self.shura_data = data
+        self:checkRedPoint()
+        GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_BASE_DATA)
+    end
+end
+-- 是否屏蔽功能
+function Shura_trailModel:isHideShura()
+	local nohideIds = RoleController:getInstance():getModel():getSeverShowIds("features_shield")
+	local featuresId = MainuiConst.FeaturesShield.Shura
+    if not table.indexof(nohideIds,featuresId) then
+		return true
+	end
+end
+--[[
+    @desc: 获取无尽试炼基础信息
+    author:{author}
+    time:2018-08-20 11:56:42
+    --@data: 
+    @return:
+]]
+function Shura_trailModel:getShuraIsOpen()
+    if self.shura_data then
+        return self.shura_data.open
+    end
+end
+function Shura_trailModel:getShuraMaxRound()
+    if self.shura_data then
+        return self.shura_data.max_round
+    end
+end
+function Shura_trailModel:getShuraData()
+    if  self.shura_data then
+        return  self.shura_data 
+    end
+end
+function Shura_trailModel:setShuraBUFFData(data)
+    if  self.shura_data then
+        self.shura_data.click = data.click
+        self.shura_data.pos = data.pos
+        GlobalEvent:getInstance():Fire(Shura_trailEvent.CHOOSE_BUFF_END,self.shura_data)
+    end
+end
+
+--刷新排行榜信息
+function Shura_trailModel:updateRankInfo(data)
+    if data and self.shura_data and next(self.shura_data or {}) ~= nil then
+        self.shura_data.my_idx = data.my_idx
+        self.shura_data.rank_list = data.rank_list
+        GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_RANK_DATA)
+    end
+end
+
+--[[
+    @desc: 设置首通奖励展示
+    author:{author}
+    time:2018-08-20 11:58:06
+    --@data: 
+    @return:
+]]
+function Shura_trailModel:setFirstData(data)
+    if data then
+        self.first_data = data
+        self:checkRedPoint()
+        GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_FIRST_DATA)
+    end
+end
+
+function Shura_trailModel:setFirstStatus(data)
+    if data then
+        self.first_status = data.flag == 1
+        self:checkRedPoint()
+    end
+end
+
+--[[
+    @desc: 获取首通奖励
+    author:{author}
+    time:2018-08-20 11:58:20
+    --@data: 
+    @return:
+]]
+function Shura_trailModel:getFirstData()
+    return self.first_data
+end
+
+--[[
+    @desc: 已派遣的伙伴信息
+    author:{author}
+    time:2018-08-20 14:42:39
+    --@data: 
+    @return:
+]]
+function Shura_trailModel:setSendPartnerData(data)
+   self.send_partner = data
+   GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_SENDPARTNER_DATA, data)
+   self:checkRedPoint()
+end
+
+function Shura_trailModel:getSendPartnerData()
+    if self.send_partner and next(self.send_partner or {}) ~= nil then
+        return self.send_partner
+    end
+end
+
+--[[
+    @desc: 可雇佣伙伴的信息
+    author:{author}
+    time:2018-08-20 15:27:20
+    --@data: 
+    @return:
+]]
+function Shura_trailModel:setHirePartnerData(data)
+    self.hire_partner_list = data
+    GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_HIREPARNER_DATA, data)
+end
+
+function Shura_trailModel:getHirePartnerData()
+    if self.hire_partner_list and next(self.hire_partner_list or {}) ~= nil then
+        return self.hire_partner_list
+    end
+end
+
+--[[
+    @desc: 已雇佣的伙伴列表
+    author:{author}
+    time:2018-08-20 17:57:28
+    @return:
+]]
+function Shura_trailModel:setHasHirePartnerData(data)
+    self.has_hire_partner_list = data
+    GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_HASHIREPARNER_DATA, data)
+end
+
+function Shura_trailModel:getHasHirePartnerData()
+    if self.has_hire_partner_list and next(self.has_hire_partner_list or {}) ~= nil then
+        return self.has_hire_partner_list
+    end
+end
+
+
+function Shura_trailModel:setShuraBattleData(data)
+    self.shura_battle_data = data
+    GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_ENDLESSBATTLE_DATA, data)
+end
+
+function Shura_trailModel:getShuraBattleData()
+    if self.shura_battle_data then
+        return self.shura_battle_data
+    end
+end
+
+--获取前三个
+function Shura_trailModel:getRaknRoleTopThreeList()
+    local list = {{rank = 1, name = TI18N("语言_c_526")}, {rank = 2, name = TI18N("语言_c_526")}, {rank = 3, name = TI18N("语言_c_526")}}
+    local rank_list = self.shura_data.new_rank_list
+    rank_list = self.shura_data.rank_list
+    
+    if rank_list and next(rank_list or {}) ~= nil then
+        for i, v in ipairs(rank_list) do
+            for i2, v1 in ipairs(list) do
+                if v.idx == v1.rank then
+                    list[i2] = v
+                end
+            end
+        end
+    end
+    return list
+end
+
+--红点判断
+function Shura_trailModel:checkRedPoint()
+    local is_open = MainuiController:getInstance():checkMainFunctionOpenStatus(MainuiConst.btn_index.esecsice, MainuiConst.function_type.main, true)
+    if is_open == false then return false end
+    
+    --先判断首通奖励是否领取
+    if self.first_data.status == 1 then
+        self.is_first_get = true
+    else
+        self.is_first_get = false
+    end
+       
+    GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_REDPOINT_FIRST_DATA)
+    --再判断是否已获所有日常奖励结算(开始挑战按钮的红点，，改成只要进去挑战过，就不会有红点提示)
+    if self.shura_data and self.shura_data.day_pass_round then
+        if tonumber(self.shura_data.day_pass_round) > 0 then
+            self.is_award_get = false
+        else
+            self.is_award_get = true
+        end
+        GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_REDPOINT_REWARD_DATA)
+    end
+
+    if self.shura_data and self.shura_data.new_day_pass_round and self.ctrl:checkNewEndLessIsOpen() == true then
+        if tonumber(self.shura_data.new_day_pass_round) > 0 or (self.shura_data.type ~= 0 and self.shura_data.type ~= self.shura_data.select_type) then
+            self.is_award_get_new = false
+        else
+            self.is_award_get_new = true
+        end
+        GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_REDPOINT_REWARD_DATA)
+    end
+
+    --再判断是否已上阵
+    if self.shura_data then
+        if self.shura_data.is_appoint == 0 and self.send_partner and next(self.send_partner.list or {}) == nil then--没派出
+            self.is_send_partner = true
+        else
+            self.is_send_partner = false
+        end
+    end
+    self:enterRedPoint()
+    local is_show_red = self:checkRedStatus()
+    --设置入口红点
+    GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_REDPOINT_SENDPARTNER_DATA)
+    GlobalEvent:getInstance():Fire(Shura_trailEvent.UPDATA_ESECSICE_ENDLESS_REDPOINT)
+
+    MainuiController:getInstance():setBtnRedPoint(MainuiConst.btn_index.esecsice, {bid=RedPointType.shura, status=is_show_red}) 
+end
+
+--入口等级未到的时候不显示红点
+function Shura_trailModel:enterRedPoint()
+    local open_data = StrongerController:getInstance():getExerciseactivityDataForID(EsecsiceConst.exercise_index.shuratrail)
+    if open_data then
+        local bool = MainuiController:getInstance():checkIsOpenByActivate(open_data.activate)
+        if bool == false then
+            self.is_first_get = false
+            self.is_send_partner = false
+            self.is_award_get = false
+            self.is_award_get_new = false
+            self.first_status = false
+        end
+    end
+end
+
+--获取首通红点状态
+function Shura_trailModel:getFirstGet()
+    return self.is_first_get
+end
+
+--获取是否已经派遣伙伴
+function Shura_trailModel:getIsSendPartner()
+    return self.is_send_partner
+end
+
+--获取是否已获所有日常奖励结算
+function Shura_trailModel:getIsGetAllReward(  )
+    return self.is_award_get
+end
+
+--获取是否已获所有日常奖励结算 新版
+function Shura_trailModel:getIsGetAllRewardNew(  )
+    return self.is_award_get_new
+end
+
+function Shura_trailModel:checkRedStatus()
+    local status = false
+    if not self:getShuraIsOpen() or self:getShuraIsOpen() ~= 1 then
+        return status
+    end
+    if self.first_status and self.first_status == true then
+        status = true
+    else
+        if self.is_first_get then
+            status = true
+        end
+    end
+    
+    return status or self.is_send_partner or self.is_award_get or self.is_award_get_new or self.shura_login_red
+end
+
+-- --根据当前通关获取临近的可以领取奖励
+-- function Shura_trailModel:getNearFirstRewardByID(id)
+--     if Config.ShuraData.data_first_data then
+--         for i, v in ipairs(Config.ShuraData.data_first_data) do
+--             if id == v.id then
+--                 return v
+--             end 
+--         end
+--     end
+-- end
+
+
+-- function Shura_trailModel:getRankList(...)
+--     if self.rank_item_list then
+--         return self.rank_item_list
+--     end
+-- end
+
+
+function Shura_trailModel:is_include(value, list)
+    for k, v in ipairs(list) do
+        if v.bid == value then
+            return true
+        end
+    end
+    return false
+end
+
+-------------------登录红点--------------
+function Shura_trailModel:setShuraLoginRed(bl)
+    self.shura_login_red = bl
+    self:checkRedPoint()
+end
+
+function Shura_trailModel:__delete()
+end

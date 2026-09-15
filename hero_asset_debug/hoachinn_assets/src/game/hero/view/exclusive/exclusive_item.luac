@@ -1,0 +1,131 @@
+-- --------------------------------------------------------------------
+-- (必填, 创建模块的人员)
+-- (必填, 后续维护以及修改的人员)
+-- @description:
+--      魂器item
+-- <br/> 2021年5月13日
+-- --------------------------------------------------------------------
+ExclusiveItem = class("ExclusiveItem", function()
+    return ccui.Widget:create()
+end)
+
+function ExclusiveItem:ctor()
+    self:configUI()
+    self:register_event()
+end
+
+function ExclusiveItem:configUI()
+    self.root_wnd = createCSBNote(PathTool.getTargetCSB("hero/exclusive_item"))
+    self:setCascadeOpacityEnabled(true)
+    self:addChild(self.root_wnd)
+
+    local main_panel = self.root_wnd:getChildByName("main_panel")
+    self.box_bg = main_panel:getChildByName("box_bg")
+    self.sprite_bg = main_panel:getChildByName("sprite_bg")
+    self.pros_bg = main_panel:getChildByName("pros_bg")
+    self.pros_bg:setVisible(false)
+    self.sprite_icon = main_panel:getChildByName("sprite_icon")
+    self.exclusive_tip = main_panel:getChildByName("exclusive_tip")
+    self.pros_panel = main_panel:getChildByName("pros_panel")
+    self.pros_panel:setVisible(false)
+    self.pros_icon_list = {}
+    for i=1,3 do
+        self.pros_icon_list[i] = self.pros_panel:getChildByName("pros_icon_"..i)
+        setChildUnEnabled(true,self.pros_icon_list[i])
+    end
+    self.img_lv_bg = main_panel:getChildByName("common_2042_1")
+    self.label_lev = main_panel:getChildByName("label_lev")
+    self.img_lock = main_panel:getChildByName("img_lock")
+    self.lab_lock = main_panel:getChildByName("lab_lock")
+    self.img_lock:setVisible(false)
+    self.lab_lock:setVisible(false)
+end
+
+function ExclusiveItem:register_event()
+    self.box_bg:addTouchEventListener(function(sender, event_type)
+        if event_type == ccui.TouchEventType.ended then
+            playButtonSound2()
+            if self.callback then
+                self.callback()
+            end
+        end
+    end)
+end
+
+function ExclusiveItem:setTouchEnabledStatus(status)
+    self.box_bg:setTouchEnabled(status or false)
+end
+
+function ExclusiveItem:setData(data)
+    if not data then return end
+    local data = data
+    self.callback = data.callback
+    data.lev = data.lev or 0
+    loadSpriteTexture(self.sprite_bg, data.bg, LOADTEXT_TYPE_PLIST) 
+    loadSpriteTexture(self.sprite_icon, data.icon, LOADTEXT_TYPE) 
+    self.label_lev:setString(data.lev or 0)
+    self.label_lev:setVisible(not data.is_lock and data.lev > 0)
+    self.img_lv_bg:setVisible(not data.is_lock and data.lev > 0)
+    self.img_lock:setVisible(false)
+    self.lab_lock:setVisible(data.is_lock or data.lev == 0)
+    self.lab_lock:setString(data.lock_des or "")
+    self:showEffect(true)
+    setChildUnEnabled(data.is_lock or data.lev == 0 and (not data.is_nolockm), self)
+    if data.hero_vo and next(data.hero_vo) then
+        self:setPros(data.hero_vo)
+    end
+end
+--禁术相关
+function ExclusiveItem:setPros(data)
+    -- if HeroController:getInstance():getModel():getProsIsOpen(data) and data.proscription and next(data.proscription) then
+    if HeroController:getInstance():getModel():getProsIsOpen(data) then
+        table.sort(data.proscription,function(a,b) return a.p_lev > b.p_lev end)
+        local hero_cfg = Config.PartnerData.data_partner_base[data.bid]
+        for i=1,3 do
+            local status = false
+            local base_cfg = Config.PartnerProscriptionData.data_base_info[hero_cfg.proscription_id]
+            loadSpriteTexture(self.pros_icon_list[i], PathTool.getPlistImgForDownLoad("proscription/proscription_skill",base_cfg[i].befor), LOADTEXT_TYPE)
+            for k, v in ipairs(data.proscription) do
+                -- if k == i then
+                if v.p_type == i then
+                    -- if hero_cfg then
+                    --     local cfg = Config.PartnerProscriptionData.data_lv_info[hero_cfg.proscription_id]
+                    --     if cfg then
+                            -- if v.p_lev >= tableLen(cfg[i]) then
+                            if v.p_lev >= 1 then
+                                status = true
+                            end
+                    --     end
+                    -- end
+                end
+            end
+            setChildUnEnabled(not status,self.pros_icon_list[i])
+        end
+        self.pros_bg:setVisible(true)
+        self.pros_panel:setVisible(true)
+        self.exclusive_tip:setVisible(false)
+        -- loadSpriteTexture(self.sprite_bg, PathTool.getResFrame("proscription","proscription_16"), LOADTEXT_TYPE_PLIST) 
+    else
+        self.pros_panel:setVisible(false)
+        self.pros_bg:setVisible(false)
+        self.exclusive_tip:setVisible(true)
+        -- loadSpriteTexture(self.sprite_bg, data.bg, LOADTEXT_TYPE_PLIST) 
+    end
+end
+--显示灵魂同调标志
+function ExclusiveItem:showEffect(bool)
+    if bool == false and not self.special_effect then return end
+    if not self.special_effect then 
+        local effect = createSpineByName("E50104")
+        effect:setAnimation(0, PlayerAction.action_1, true)
+        -- effect:setPosition(cc.p(self.size.width/2, self.size.height/2 + 10))
+        self:addChild(effect, 100)
+        self.special_effect = effect
+    end
+    self.special_effect:setVisible(bool)
+end
+
+function ExclusiveItem:DeleteMe()
+
+end
+

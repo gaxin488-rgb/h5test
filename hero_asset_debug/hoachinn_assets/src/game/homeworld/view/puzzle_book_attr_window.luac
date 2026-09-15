@@ -1,0 +1,179 @@
+--******** 文件说明 ********
+-- 
+-- @description: 拼图图鉴属性详情
+-- @DateTime:    2020-02-20
+-- *******************************
+PuzzleBookAttrWindow = PuzzleBookAttrWindow or BaseClass(BaseView)
+
+local controller = HomeworldController:getInstance()
+local model = controller:getModel()
+function PuzzleBookAttrWindow:__init()
+    self.is_full_screen = true
+    self.title_btn_list = {}
+    self.reward_btn_list = {}
+    self.item_list = {}
+    self.click_index = 0
+    self.win_type = WinType.Mini
+    self.view_tag = ViewMgrTag.DIALOGUE_TAG
+    self.layout_name = "homeworld/puzzle_book_attr_window"
+    self.res_list = {
+        { path = PathTool.getPlistImgForDownLoad("partnersummon", "partnersummon"), type = ResourcesType.plist },
+    }
+end
+
+function PuzzleBookAttrWindow:open_callback()
+    self._ui = self:getExportUI()
+    local _ui = self._ui
+    _ui._background:setScale(display.getMaxScale())
+    _ui._win_title:setString(TI18N("语言_c_7625"))
+    autoSizeTitleBg(_ui._win_title,_ui._image_title,120,350)
+    _ui._attr_txt:setString(TI18N("语言_c_7626"))
+    _ui._sp_txt:setString(TI18N("语言_c_7627"))
+    _ui._other_txt:setString(TI18N("语言_c_7628"))
+    if _ui._attr_txt:getContentSize().width > 400 then
+        setTextMaxWidth(_ui._attr_txt,400,-8)
+    end
+    if _ui._sp_txt:getContentSize().width > 400 then
+        setTextMaxWidth(_ui._sp_txt,400,-8)
+    end
+    if _ui._other_txt:getContentSize().width > 400 then
+        setTextMaxWidth(_ui._other_txt,400,-8)
+    end
+    setLeftRightImg(_ui._attr_line_1,_ui._attr_txt,_ui._attr_line_2,20)
+    setLeftRightImg(_ui._sp_line_1,_ui._sp_txt,_ui._sp_line_2,20)
+    setLeftRightImg(_ui._other_line_1,_ui._other_txt,_ui._other_line_2,20)
+    _ui._attr_item_panel:setScrollBarEnabled(false)
+    _ui._sp_item_panel:setScrollBarEnabled(false)
+    _ui._other_item_panel:setScrollBarEnabled(false)
+
+	nativeBindClass(_ui._sp_no_attr_item, PuzzleBookNoAttrItem)
+	nativeBindClass(_ui._other_no_attr_item, PuzzleBookNoAttrItem)
+end
+
+function PuzzleBookAttrWindow:register_event()
+    registerButtonEventListener(self._ui._background,function()
+        controller:openPuzzleBookAttrWindow(false)
+    end,false,2)
+    registerButtonEventListener(self._ui._close_btn,function()
+        controller:openPuzzleBookAttrWindow(false)
+    end,false,2)
+end
+function PuzzleBookAttrWindow:openRootWnd()
+    local list_1 = {}
+    local list_2 = {}
+    local list_3 = {}
+    self.lev_cfg = deepCopy(Config.PuzzleBookData.data_level[model:getPuzzleBookLev()])
+    self.puzzle_cfg = Config.PuzzleBookData.data_puzzle_attr
+    if self.lev_cfg and next(self.lev_cfg) then
+        list_1 = deepCopy(self.lev_cfg.attr1)
+        list_2 = deepCopy(self.lev_cfg.attr2)
+    end
+    for key, value in pairs(self.puzzle_cfg) do
+        local data = model:getOnePuzzleData(key)
+        if data and next(data) then
+            for k, v in pairs(value) do
+                if v.num == tableLen(data) then
+                    if v and next(v) then
+                        if v.attr1 and next(v.attr1) then
+                            for _k, _v in pairs(v.attr1) do
+                                table.insert(list_1,_v)
+                            end
+                        end
+                        if v.attr2 and next(v.attr2) then
+                            for _k, _v in pairs(v.attr2) do
+                                table.insert(list_2,_v)
+                            end
+                        end
+                        if v.special_buff and next(v.special_buff) then
+                            local list = deepCopy(v.special_buff)
+                            for _k, _v in pairs(list) do
+                                table.insert(_v,v.attr_str)
+                                table.insert(list_3,_v)
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    self.attr_list = model:getPuzzleAttrList(list_1)
+    self.sp_attr_list = model:getPuzzleAttrList(list_2)
+    self.other_attr_list = model:getPuzzleAttrList2(list_3)
+
+    self:updateAttrPanel()
+    self:updateSPAttrPanel()
+    self:updateOtherAttrPanel()
+end
+function PuzzleBookAttrWindow:setAttrPanel(panel,attr_list,_type,col)
+    local list = {}
+    local _h = 0
+    if _type == HomeworldConst.Attr_Type.lev_sp_lang then
+        _h = math.max(panel:getContentSize().height,tableLen(attr_list)*45)
+    else
+        _h = math.max(panel:getContentSize().height,math.ceil(tableLen(attr_list)*0.5)*45)
+    end
+    panel:setInnerContainerSize(cc.size(panel:getContentSize().width,_h))
+    panel:setTouchEnabled(_h > panel:getContentSize().height)
+    for k,v in pairs(attr_list) do
+        local item = PuzzleBookAttrItem.new(_type)
+        item:setData(v)
+        local _x = (k-1)%col*(item:getContentSize().width + 12)
+        local _y = _h - math.floor((k-1)/col)*(item:getContentSize().height+5)
+        item:setPosition(cc.p(_x,_y))
+        table.insert(list,item)
+        panel:addChild(item)
+    end
+
+    return list
+end
+function PuzzleBookAttrWindow:updateAttrPanel()
+    if self.attr_list and next(self.attr_list) then
+    else
+        local cfg = Config.PuzzleBookData.data_level[1]
+        self.attr_list = deepCopy(cfg.attr1)
+        for k,v in pairs(self.attr_list) do
+            v[2] = 0
+        end
+    end
+    self.now_attr_list = self:setAttrPanel(self._ui._attr_item_panel,self.attr_list,HomeworldConst.Attr_Type.lev_sp_short,2)
+end
+function PuzzleBookAttrWindow:updateSPAttrPanel()
+    if self.sp_attr_list and next(self.sp_attr_list) then
+        self.now_sp_attr_list = self:setAttrPanel(self._ui._sp_item_panel,self.sp_attr_list,HomeworldConst.Attr_Type.lev_sp_short,2)
+        self._ui._sp_no_attr_item:setVisible(false)
+    else
+        self._ui._sp_no_attr_item:setVisible(true)
+        self._ui._sp_no_attr_item:setData(TI18N("语言_c_7629"))
+    end
+end
+function PuzzleBookAttrWindow:updateOtherAttrPanel()
+    if self.other_attr_list and next(self.other_attr_list) then
+        self.now_other_attr_list = self:setAttrPanel(self._ui._other_item_panel,self.other_attr_list,HomeworldConst.Attr_Type.lev_sp_lang,2)
+        self._ui._other_no_attr_item:setVisible(false)
+    else
+        self._ui._other_no_attr_item:setVisible(true)
+        self._ui._other_no_attr_item:setData(TI18N("语言_c_7630"))
+    end
+
+end
+function PuzzleBookAttrWindow:close_callback()
+    if self.now_attr_list and next(self.now_attr_list) then
+        for k,v in pairs(self.now_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    if self.now_sp_attr_list and next(self.now_sp_attr_list) then
+        for k,v in pairs(self.now_sp_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    if self.now_other_attr_list and next(self.now_other_attr_list) then
+        for k,v in pairs(self.now_other_attr_list) do
+            v:removeFromParent()
+            v=nil
+        end
+    end
+    controller:openPuzzleBookAttrWindow(false)
+end
