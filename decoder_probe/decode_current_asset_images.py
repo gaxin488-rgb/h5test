@@ -33,7 +33,7 @@ def decrypt_container(raw: bytes) -> bytes:
 
     count = len(payload) // 4
     if count < 2:
-        return payload
+        raise ValueError("encrypted payload has too few words")
 
     words = list(struct.unpack(f"<{count}I", payload))
     key_words = list(struct.unpack("<4I", KEY))
@@ -57,7 +57,24 @@ def decrypt_container(raw: bytes) -> bytes:
         y = words[0]
         total = (total - DELTA) & MASK
 
-    return struct.pack(f"<{count}I", *words).rstrip(b"\x00")
+    max_plain_len = (count - 1) * 4
+    original_len = words[-1]
+
+    if (
+        original_len < max_plain_len - 3
+        or original_len > max_plain_len
+    ):
+        raise ValueError(
+            "invalid embedded plaintext length: "
+            f"{original_len} for max {max_plain_len}"
+        )
+
+    plain = struct.pack(
+        f"<{count - 1}I",
+        *words[:-1],
+    )
+
+    return plain[:original_len]
 
 
 def main() -> int:
