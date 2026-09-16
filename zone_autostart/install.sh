@@ -22,8 +22,10 @@ fail() {
 [[ -f "$UNIT_SRC" ]] || fail "missing source file: $UNIT_SRC"
 command -v systemctl >/dev/null 2>&1 || fail 'systemctl is not available'
 
-log 'running runtime preflight before changing systemd'
+log 'running static preflight before changing systemd'
 bash "$LAUNCHER_SRC" preflight
+log 'running Erlang/BEAM and epmd runtime self-test before changing systemd'
+bash "$LAUNCHER_SRC" runtime-check
 
 # Abort instead of layering a second boot mechanism on top of a legacy hook.
 legacy_hits=''
@@ -66,10 +68,11 @@ fi
 
 if ! "$LAUNCHER_DST" status; then
   systemctl status "$SERVICE" --no-pager -l || true
+  journalctl -u "$SERVICE" -n 100 --no-pager || true
   systemctl disable "$SERVICE" || true
   fail 'post-install runtime verification failed; service was disabled'
 fi
 
 systemctl is-enabled "$SERVICE" >/dev/null
 systemctl is-active "$SERVICE" >/dev/null
-log 'installation verified: service is enabled and all configured instances are running'
+log 'installation verified: service is enabled and all configured instances have screen + BEAM'
