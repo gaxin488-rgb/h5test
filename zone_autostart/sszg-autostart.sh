@@ -3,6 +3,8 @@ set -euo pipefail
 
 PATH=/usr/lib/erlang/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export PATH
+HOME=${HOME:-/root}
+export HOME
 
 ERL_BIN=/usr/lib/erlang/bin/erl
 EPMD_BIN=/usr/lib/erlang/bin/epmd
@@ -66,6 +68,7 @@ static_preflight() {
   local i dir resolved_erl
 
   [[ ${#INSTANCES[@]} -eq ${#NODES[@]} ]] || fail 'instance/node mapping length mismatch'
+  [[ -n "$HOME" && -d "$HOME" ]] || fail "HOME is invalid or missing: '$HOME'"
   [[ -x "$ERL_BIN" ]] || fail "required Erlang binary is missing or not executable: $ERL_BIN"
   resolve_epmd || fail 'epmd is not available from /usr/lib/erlang/bin or PATH'
   command -v screen >/dev/null 2>&1 || fail 'screen is not available in PATH'
@@ -85,7 +88,7 @@ static_preflight() {
 
 check_beam_runtime() {
   local output
-  log "verifying Erlang VM through $ERL_BIN"
+  log "verifying Erlang VM through $ERL_BIN (HOME=$HOME)"
   if ! output=$("$ERL_BIN" -noshell -eval 'io:format("~s", [erlang:system_info(system_version)]), halt(0).' 2>&1); then
     printf '%s\n' "$output" >&2
     fail 'Erlang executable exists but the BEAM VM could not start'
@@ -293,7 +296,7 @@ rollback_started() {
 }
 
 start_all() {
-  local i rc
+  local i rc started_count=0
   local -a started_indices=()
 
   runtime_check
@@ -307,12 +310,17 @@ start_all() {
 
     case "$rc" in
       0)
-        started_indices+=("$i")
+        started_indices[$started_count]=$i
+        started_count=$((started_count + 1))
         ;;
       2)
         ;;
       *)
-        rollback_started "${started_indices[@]}"
+        if (( started_count > 0 )); then
+          rollback_started "${started_indices[@]}"
+        else
+          log 'startup failed before any new instance was started; nothing to roll back'
+        fi
         return 1
         ;;
     esac
