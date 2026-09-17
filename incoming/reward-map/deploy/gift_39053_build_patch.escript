@@ -1,5 +1,6 @@
 #!/usr/bin/env escript
 %%! -noshell
+-mode(compile).
 
 main([Prod, Out]) ->
     try
