@@ -1,10 +1,12 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """Validate SSZG incremental hot-update manifests before publishing.
 
 The client appends `.g` to each manifest `file` value. Therefore manifest
 `file` values must be extensionless. This validator also checks that each
 referenced blob exists in the same logical asset directory and that its byte
 size matches the manifest metadata.
+
+Compatible with Python 2.7 and Python 3.
 
 Usage:
   python scripts/validate_incver_manifest.py /path/to/inc_ver.lua
@@ -14,25 +16,23 @@ Exit code 0 means the manifest is safe to publish. Exit code 2 means one or
 more validation errors were found.
 """
 
-from __future__ import annotations
+from __future__ import print_function
 
 import argparse
 import os
 import re
 import sys
-from pathlib import Path
 
 ENTRY_RE = re.compile(
     r"\['([^']+)'\]\s*=\s*\{\s*file='([^']+)'\s*,\s*size=(\d+)\s*,\s*ver=(\d+)\s*\}"
 )
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("manifest", type=Path, help="Path to inc_ver.lua")
+    parser.add_argument("manifest", help="Path to inc_ver.lua")
     parser.add_argument(
         "--blob-root",
-        type=Path,
         default=None,
         help="Root containing the hashed .g blobs; defaults to the manifest directory",
     )
@@ -49,25 +49,34 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    args = parse_args()
-    manifest = args.manifest.resolve()
-    blob_root = (args.blob_root or manifest.parent).resolve()
+def inside_root(path, root):
+    path = os.path.realpath(path)
+    root = os.path.realpath(root)
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
-    if not manifest.is_file():
-        print(f"ERROR manifest does not exist: {manifest}", file=sys.stderr)
+
+def main():
+    args = parse_args()
+    manifest = os.path.realpath(args.manifest)
+    blob_root = os.path.realpath(args.blob_root or os.path.dirname(manifest))
+
+    if not os.path.isfile(manifest):
+        print("ERROR manifest does not exist: %s" % manifest, file=sys.stderr)
         return 2
 
-    raw = manifest.read_bytes()
-    text = raw.decode("utf-8", "replace")
+    raw = open(manifest, "rb").read()
+    try:
+        text = raw.decode("utf-8", "replace")
+    except AttributeError:
+        text = raw
     rows = ENTRY_RE.findall(text)
     if not rows:
         print("ERROR manifest contains no parsable entries", file=sys.stderr)
         return 2
 
-    errors: list[str] = []
-    seen_assets: set[str] = set()
-    expected_blobs: set[Path] = set()
+    errors = []
+    seen_assets = set()
+    expected_blobs = set()
     total_declared = 0
     exact_size_refs = 0
 
@@ -76,58 +85,56 @@ def main() -> int:
         total_declared += declared_size
 
         if asset in seen_assets:
-            errors.append(f"DUPLICATE_ASSET asset={asset}")
+            errors.append("DUPLICATE_ASSET asset=%s" % asset)
         seen_assets.add(asset)
 
         if file_value.endswith(".g"):
             errors.append(
-                f"FILE_FIELD_HAS_G asset={asset} file={file_value} "
-                "(client appends .g; this would request .g.g)"
+                "FILE_FIELD_HAS_G asset=%s file=%s "
+                "(client appends .g; this would request .g.g)" % (asset, file_value)
             )
 
         if "/" in file_value or "\\" in file_value:
-            errors.append(f"FILE_FIELD_HAS_PATH_SEPARATOR asset={asset} file={file_value}")
+            errors.append("FILE_FIELD_HAS_PATH_SEPARATOR asset=%s file=%s" % (asset, file_value))
 
         logical_dir = os.path.dirname(asset)
         blob_name = file_value + ".g"
-        blob_path = (blob_root / logical_dir / blob_name).resolve()
+        blob_path = os.path.realpath(os.path.join(blob_root, logical_dir, blob_name))
         expected_blobs.add(blob_path)
 
-        try:
-            blob_path.relative_to(blob_root)
-        except ValueError:
-            errors.append(f"BLOB_PATH_ESCAPES_ROOT asset={asset} path={blob_path}")
+        if not inside_root(blob_path, blob_root):
+            errors.append("BLOB_PATH_ESCAPES_ROOT asset=%s path=%s" % (asset, blob_path))
             continue
 
-        if not blob_path.is_file():
+        if not os.path.isfile(blob_path):
             if not args.allow_missing_blobs:
-                errors.append(f"MISSING_BLOB asset={asset} path={blob_path}")
+                errors.append("MISSING_BLOB asset=%s path=%s" % (asset, blob_path))
             continue
 
         if not args.skip_size_check:
-            actual_size = blob_path.stat().st_size
+            actual_size = os.path.getsize(blob_path)
             if actual_size != declared_size:
                 errors.append(
-                    f"SIZE_MISMATCH asset={asset} declared={declared_size} "
-                    f"actual={actual_size} path={blob_path}"
+                    "SIZE_MISMATCH asset=%s declared=%d actual=%d path=%s"
+                    % (asset, declared_size, actual_size, blob_path)
                 )
             else:
                 exact_size_refs += 1
 
-    print(f"MANIFEST={manifest}")
-    print(f"BLOB_ROOT={blob_root}")
-    print(f"ENTRIES={len(rows)}")
-    print(f"UNIQUE_ASSETS={len(seen_assets)}")
-    print(f"UNIQUE_EXPECTED_BLOBS={len(expected_blobs)}")
-    print(f"DECLARED_BYTES={total_declared}")
-    print(f"EXACT_SIZE_REFS={exact_size_refs}")
-    print(f"ERRORS={len(errors)}")
+    print("MANIFEST=%s" % manifest)
+    print("BLOB_ROOT=%s" % blob_root)
+    print("ENTRIES=%d" % len(rows))
+    print("UNIQUE_ASSETS=%d" % len(seen_assets))
+    print("UNIQUE_EXPECTED_BLOBS=%d" % len(expected_blobs))
+    print("DECLARED_BYTES=%d" % total_declared)
+    print("EXACT_SIZE_REFS=%d" % exact_size_refs)
+    print("ERRORS=%d" % len(errors))
 
     if errors:
         for item in errors[:500]:
-            print(f"ERROR {item}", file=sys.stderr)
+            print("ERROR %s" % item, file=sys.stderr)
         if len(errors) > 500:
-            print(f"ERROR ... {len(errors) - 500} additional errors omitted", file=sys.stderr)
+            print("ERROR ... %d additional errors omitted" % (len(errors) - 500), file=sys.stderr)
         return 2
 
     print("INCVER_MANIFEST_VALIDATION_OK")
@@ -135,4 +142,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    sys.exit(main())
