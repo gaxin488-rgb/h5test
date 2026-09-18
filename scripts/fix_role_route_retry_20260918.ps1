@@ -177,4 +177,3 @@ Remove-Item $gitTmp -Recurse -Force
 Remove-Item $work -Recurse -Force
 Remove-Item 'C:\Users\Admin\AppData\Local\Temp\h5_rolefix_publish_20260918_094500' -Recurse -Force -ErrorAction SilentlyContinue
 Write-Host "ROLEFIX_PUBLISHED_OK NEW_TOKEN=$newToken" -ForegroundColor Green
-}
