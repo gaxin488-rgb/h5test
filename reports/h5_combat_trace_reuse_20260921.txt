@@ -1,0 +1,65 @@
+H5 Combat Trace Report - reuse GitHub partner data
+Date: 2026-09-21 (Asia/Bangkok)
+Client: LDPlayer 9, emulator-5554, com.langla.net
+Task: Chiến đấu -> Bắt đầu -> read the trace after the Bắt đầu tap
+
+1. Server partner reuse and deployment
+
+- Reused the first-pass GitHub server module:
+  hero_asset_debug/ssh_assets_192_168_1_234_20260916/server/partner_data.beam
+  GitHub blob SHA: 398a8d095e20b866dc0085cb0953eb59b8657395
+  Size: 3408 bytes.
+- The GitHub module is a patch wrapper, so it was deployed together with the
+  old full data module renamed as partner_data_orig.beam. This preserves the
+  original partner table and delegates all non-patched calls to it.
+- Runtime files:
+  /data/sszg_code/v200408/server/ebin/partner_data.beam
+  SHA-256: e29be8a90e616d36b1872d74df188fa3d560044a3c3f56d796c40525573e835f
+  /data/sszg_code/v200408/server/ebin/partner_data_orig.beam
+  SHA-256: 8a1c939e22cd46bc3cd4b5665f3c2fe7f6709fde003fe571d6820934b0dc59e1
+- The wrapper was extended using direct client-config evidence for partner
+  10101: get_skills(10101) returns [{1,259001},{2,259101}]. It also exposes
+  the GitHub 60942 mapping for the actual integer runtime call.
+- Hot-swap completed successfully on sszg_symlf_1 through sszg_symlf_4.
+- Post-swap RPC probes on all four zones returned:
+  partner_data:get_skills(10101) -> [{1,259001},{2,259101}]
+  partner_data:get_skills(60942) -> [{1,744001},{2,744903},{3,744103},{4,744203},{5,744303}]
+
+2. Controlled client action
+
+- Cleared client logcat before the run.
+- Server trace marker before the run: 2026-09-21 09:31:24.866 +0700.
+- Tapped the bottom Chiến đấu menu at (360,1110).
+- Verified the Xuất chiến ninja popup opened.
+- Tapped Bắt đầu at (360,1138).
+- The popup remained visible in the immediate post-tap frame, then closed
+  after the wait window; the hero and enemy were visibly fighting while the
+  Chiến đấu menu remained visible.
+- Per the task rule, this is AFK combat, not proof of a successful manual
+  combat trace.
+
+3. Trace after the Bắt đầu tap
+
+- Server trace marker after the run: 2026-09-21 09:32:25.180 +0700.
+- At 09:31:38.961, zone 1 logged dungeon_rpc Cmd:13003 Data:{0}.
+- Failure: lists:filtermap received undefined; stack:
+  partner_lib:gen_fight_object_/7 line 844 -> combat_lib:to_fight_object/2
+  -> combat_lib:do_start_mon_combat/4 -> dungeon:do_combat/2
+  -> dungeon_rpc:handle/3 -> role:handle_info/2.
+- No Cmd:11212 formation trace was emitted in this latest run.
+- Interpretation: the reused 10101 and 60942 skill lookups now resolve, but
+  the AFK dungeon combat still reaches an undefined partner object elsewhere.
+  The trace does not identify that partner ID, so no additional mapping was
+  guessed.
+
+4. Result
+
+FAIL for manual combat trace success; CONFIRMED AFK state.
+The decisive UI evidence is hero combat plus the still-visible Chiến đấu menu.
+
+Artifacts
+- reused_partner_afk_before_retry_0925.png
+- reused_partner_afk_after_retry_0926.png
+- server_trace_excerpt_093138.txt
+- client logcat was cleared before the latest run; it contained no useful
+  application exception for this server-side failure.
