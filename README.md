@@ -1,11 +1,11 @@
-# 🎮 Tinh Linh Bot - Live Status Dashboard
+# 式 Tinh Linh Bot - Live Status Dashboard
 
-> 🕒 **Cap nhat luc:** `2026-10-04 18:51:32` (Tu dong dong bo tu VPS len GitHub)
+> 葡 **C蘯ｭp nh蘯ｭt lﾃｺc:** `2026-10-04 19:07:22` (T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・t盻ｫ VPS lﾃｪn GitHub)
 
-### ⚠️ Trang Thai: Khong ket noi hoac Game dang khoi dong lai
+### 笞・・Tr蘯｡ng Thﾃ｡i: Game ﾄ疎ng kh盻殃 ﾄ黛ｻ冢g l蘯｡i ho蘯ｷc chﾆｰa k蘯ｿt n盻訴
 
-### 📋 60 Dong Log Moi Nhat (Tu VPS)
-```text
+### 搭 60 Dﾃｲng Log M盻嬖 Nh蘯･t (T盻ｫ VPS)
+``text
 Sun Oct 04 18:22:51 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
 Sun Oct 04 18:23:00 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
 Sun Oct 04 18:23:08 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
@@ -66,7 +66,7 @@ Sun Oct 04 18:30:21 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server ->
 Sun Oct 04 18:30:29 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
 Sun Oct 04 18:30:37 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
 Sun Oct 04 18:30:45 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
-```
+``
 
 ---
-*He thong dong bo log tu dong Tinh Linh Bot - GitHub Integration*
+*H盻・th盻創g ﾄ黛ｻ渡g b盻・log t盻ｱ ﾄ黛ｻ冢g Tinh Linh Bot - GitHub Integration*
