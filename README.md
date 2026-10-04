@@ -1,28 +1,11 @@
 # 式 Tinh Linh Bot - Live Status Dashboard
 
-> 葡 **C蘯ｭp nh蘯ｭt lﾃｺc:** `2026-10-04 21:57:39` (T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・t盻ｫ VPS lﾃｪn GitHub)
+> 葡 **C蘯ｭp nh蘯ｭt lﾃｺc:** `2026-10-04 22:00:44` (T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・t盻ｫ VPS lﾃｪn GitHub)
 
-### 投 Thﾃｴng Tin Nhﾃ｢n V蘯ｭt
-| Thﾃｴng S盻・| Giﾃ｡ Tr盻・|
-| :--- | :--- |
-| 側 **Nhﾃ｢n v蘯ｭt** | **khoiidepzai** (C蘯･p 13) |
-| 亮・・**Map hi盻㌻ t蘯｡i** | **Thung lũng cỏ lau** (Khu 0) |
-| 笞｡ **Th盻・l盻ｱc** | `933 / 30000` (3.1%) |
-| 笶､・・**HP / MP** | HP: `4435/4435` | MP: `147/2884` |
-| 漉 **ﾄ静ｹi gﾃ cﾃｲn l蘯｡i** | **0 cﾃ｡i** (Ch盻・dﾃｹng khi th盻・l盻ｱc <= 50) |
-| 識 **Map Farm m蘯ｷc ﾄ黛ｻ杵h** | **Rừng cổ mộc** (ID: 7) |
-| 売 **Auto ﾄ雪ｻ品 Khu** | B蘯ｬT (40 giﾃ｢y/l蘯ｧn) |
-| 克 **Auto Thu Tﾃ｡o** | B蘯ｬT (6 phﾃｺt/l蘯ｧn) |
-| 孱・・**Ch盻創g k蘯ｹt trung gian** | T盻訴 ﾄ疎 6 phﾃｺt t盻ｱ v盻・lﾃng -> thu tﾃ｡o -> quay l蘯｡i map 7 |
+### 笞・・Tr蘯｡ng Thﾃ｡i: Game ﾄ疎ng kh盻殃 ﾄ黛ｻ冢g l蘯｡i ho蘯ｷc chﾆｰa k蘯ｿt n盻訴
 
 ### 搭 60 Dﾃｲng Log M盻嬖 Nh蘯･t (T盻ｫ VPS)
 ``text
-Sun Oct 04 21:54:34 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Thảo nguyên mạch gió
-Sun Oct 04 21:54:38 ICT 2026 [AutoFarm] Dang o [Thung lũng cỏ lau] (pos=61.3,2.9). Di chuyen toi Waypoint [Thảo nguyên mạch gió] (dist=16.3m)...
-Sun Oct 04 21:54:38 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Thảo nguyên mạch gió
-Sun Oct 04 21:54:47 ICT 2026 [AutoFarm] Dang o [Thung lũng cỏ lau] (pos=61.9,2.9). Di chuyen toi Waypoint [Thảo nguyên mạch gió] (dist=15.7m)...
-Sun Oct 04 21:54:47 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Thảo nguyên mạch gió
-Sun Oct 04 21:54:54 ICT 2026 [AutoFarm] Dang o [Thung lũng cỏ lau] (pos=65.2,2.9). Di chuyen toi Waypoint [Thảo nguyên mạch gió] (dist=12.5m)...
 Sun Oct 04 21:54:54 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Thảo nguyên mạch gió
 Sun Oct 04 21:55:02 ICT 2026 [AutoFarm] Dang o [Thung lũng cỏ lau] (pos=64.9,2.9). Di chuyen toi Waypoint [Thảo nguyên mạch gió] (dist=12.8m)...
 Sun Oct 04 21:55:02 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Thảo nguyên mạch gió
@@ -77,6 +60,12 @@ Sun Oct 04 21:56:56 ICT 2026 [AutoReconnect] Mat ket noi server! Cho 5 giay de t
 Sun Oct 04 21:57:01 ICT 2026 [AutoReconnect] Dang thu ket noi lai lan 1...
 Sun Oct 04 21:57:07 ICT 2026 [AutoReconnect] Chua ket noi duoc. Thu lai sau 5 giay...
 Sun Oct 04 21:57:12 ICT 2026 [AutoReconnect] Dang thu ket noi lai lan 2...
+Sun Oct 04 21:57:47 ICT 2026 [AutoReconnect] Chua ket noi duoc. Thu lai sau 5 giay...
+Sun Oct 04 21:57:52 ICT 2026 [AutoReconnect] Dang thu ket noi lai lan 3...
+Sun Oct 04 21:58:08 ICT 2026 [AutoReconnect] Chua ket noi duoc. Thu lai sau 5 giay...
+Sun Oct 04 21:58:13 ICT 2026 [AutoReconnect] Dang thu ket noi lai lan 4...
+Sun Oct 04 21:58:58 ICT 2026 [AutoReconnect] Chua ket noi duoc. Thu lai sau 5 giay...
+Sun Oct 04 21:59:00 ICT 2026 [AutoFarm] Game dispose/exit duoc goi. Thoat JVM sach se...
 ``
 
 ---
