@@ -1,10 +1,10 @@
-# 🎮 Tinh Linh Bot - Live Status Dashboard
+# 式 Tinh Linh Bot - Live Status Dashboard
 
-> 🕒 **Cập nhật lúc:** `2026-10-04 20:22:28` (Tự động đồng bộ từ VPS lên GitHub)
+> 葡 **C蘯ｭp nh蘯ｭt lﾃｺc:** `2026-10-04 21:39:28` (T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・t盻ｫ VPS lﾃｪn GitHub)
 
-### ⚠️ Trạng Thái: Game đang khởi động lại hoặc chưa kết nối
+### 笞・・Tr蘯｡ng Thﾃ｡i: Game ﾄ疎ng kh盻殃 ﾄ黛ｻ冢g l蘯｡i ho蘯ｷc chﾆｰa k蘯ｿt n盻訴
 
-### 📋 60 Dòng Log Mới Nhất (Từ VPS)
+### 搭 60 Dﾃｲng Log M盻嬖 Nh蘯･t (T盻ｫ VPS)
 ``text
 Sun Oct 04 18:23:40 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
 Sun Oct 04 18:23:48 ICT 2026 [AutoLogin] Chua co ket noi mang toi game server -> Dang ket noi mang (serverId=0)...
@@ -69,4 +69,4 @@ Sun Oct 04 20:01:11 ICT 2026 [AutoFarm] He thong tu dong di chuyen & tu dong dan
 ``
 
 ---
-*Hệ thống đồng bộ log tự động Tinh Linh Bot - GitHub Integration*
+*H盻・th盻創g ﾄ黛ｻ渡g b盻・log t盻ｱ ﾄ黛ｻ冢g Tinh Linh Bot - GitHub Integration*
