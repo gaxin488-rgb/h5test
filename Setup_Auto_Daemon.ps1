@@ -32,7 +32,7 @@ try {
 # 2. Tai ve cac tep moi nhat tu GitHub
 Write-Host "[2/6] Dang tai ban moi nhat tu GitHub..." -ForegroundColor Cyan
 $repo = "gaxin488-rgb/h5test"
-$files = @("vps_agent.ps1", "MCP_Daemon.ps1", "Start_MCP_Daemon.bat", "Cai_Dat_Tu_Khoi_Dong.bat")
+$files = @("vps_agent.ps1", "MCP_Daemon.ps1", "Start_MCP_Daemon.bat", "Cai_Dat_Tu_Khoi_Dong.bat", "Auto_Tunnel_GitHub.ps1")
 $wc = New-Object System.Net.WebClient
 foreach ($f in $files) {
     try {
