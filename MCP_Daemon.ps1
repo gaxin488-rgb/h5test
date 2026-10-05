@@ -118,6 +118,7 @@ $lastRamTrimTime = [DateTime]::MinValue
 $lastTunnelCheckTime = [DateTime]::MinValue
 $agentFailCount = 0
 $tunnelFailCount = 0
+$lastGameCheckTime = [DateTime]::MinValue
 
 function Start-AgentProcess() {
     Kill-PortProcess $Port
@@ -262,5 +263,16 @@ while ($true) {
                 Write-Host "[*] [Auto-RAM-Trim] Da toi uu hoa RAM cho $trimmedCount tien trinh game javaw.exe" -ForegroundColor Green
             }
         } catch {}
+    }
+
+    # F. Tu dong kiem tra va khoi dong 2 Acc Game (moi 30 giay)
+    if (-not $lastGameCheckTime -or ($now - $lastGameCheckTime).TotalSeconds -ge 30) {
+        $lastGameCheckTime = $now
+        $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
+        $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
+        if ($javawCount -lt 2 -and (Test-Path $gameScript)) {
+            Write-Host "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." -ForegroundColor Cyan
+            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`""
+        }
     }
 }
