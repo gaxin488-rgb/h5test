@@ -126,8 +126,8 @@ function Start-TunnelProcess() {
     Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> 127.0.0.1:$Port)..." -ForegroundColor Cyan
     try { Remove-Item $cfLogPath -Force -ErrorAction SilentlyContinue } catch {}
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $cloudflaredPath
-    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost --logfile `"$cfLogPath`""
+    $psi.FileName = "cmd.exe"
+    $psi.Arguments = "/c `"`"$cloudflaredPath`" tunnel --url http://127.0.0.1:$Port --http-host-header localhost 2> `"$cfLogPath`"`""
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
@@ -157,23 +157,26 @@ while ($true) {
     Start-Sleep -Seconds 5
     $now = [DateTime]::Now
 
-    # A. Doc link Cloudflare Tunnel moi tu Logfile (NON-BLOCKING)
+    # A. Doc link Cloudflare Tunnel moi tu Logfile (NON-BLOCKING, FileShare ReadWrite)
     if (Test-Path $cfLogPath) {
         try {
-            $lines = Get-Content -Path $cfLogPath -Tail 40 -ErrorAction SilentlyContinue
-            foreach ($line in $lines) {
-                if ($line -match "https://(?!(?:api|pkg|update)\.)[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com") {
-                    $found = $matches[0]
-                    if ($found -ne $currentTunnelUrl) {
-                        $currentTunnelUrl = $found
-                        Write-Host "[+] Phat hien Cloudflare Tunnel URL moi: $currentTunnelUrl" -ForegroundColor Yellow
-                        Push-UrlToGitHub $currentTunnelUrl
-                    }
-                    break
+            $fs = [System.IO.File]::Open($cfLogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+            $logContent = $sr.ReadToEnd()
+            $sr.Close()
+            $fs.Close()
+
+            if ($logContent -match "https://(?!(?:api|pkg|update)\.)[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com") {
+                $found = $matches[0]
+                if ($found -ne $currentTunnelUrl) {
+                    $currentTunnelUrl = $found
+                    Write-Host "[+] Phat hien Cloudflare Tunnel URL moi: $currentTunnelUrl" -ForegroundColor Yellow
+                    Push-UrlToGitHub $currentTunnelUrl
                 }
             }
         } catch {}
     }
+
 
     # B. Kiem tra tien trinh Tunnel (Auto-Restart neu crash)
     if ($null -eq $tunnelProc -or $tunnelProc.HasExited) {
