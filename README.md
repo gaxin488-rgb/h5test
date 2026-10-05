@@ -1,71 +1,71 @@
 # 式 Tinh Linh Bot - Live Status Dashboard
 
-> 葡 **C蘯ｭp nh蘯ｭt lﾃｺc:** `2026-10-05 16:24:27` (T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・t盻ｫ VPS lﾃｪn GitHub)
+> 葡 **C蘯ｭp nh蘯ｭt lﾃｺc:** `2026-10-05 16:27:32` (T盻ｱ ﾄ黛ｻ冢g ﾄ黛ｻ渡g b盻・t盻ｫ VPS lﾃｪn GitHub)
 
 ### 笞・・Tr蘯｡ng Thﾃ｡i: Game ﾄ疎ng kh盻殃 ﾄ黛ｻ冢g l蘯｡i ho蘯ｷc chﾆｰa k蘯ｿt n盻訴
 
 ### 搭 60 Dﾃｲng Log M盻嬖 Nh蘯･t (T盻ｫ VPS)
 ``text
-Sun Oct 04 23:05:23 ICT 2026    -> Cong [1]: Thung lũng cỏ lau
-Sun Oct 04 23:05:23 ICT 2026    -> Cong [2]: Nông trại
-Sun Oct 04 23:05:23 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Thung lũng cỏ lau
-Sun Oct 04 23:05:24 ICT 2026 [AutoFarm] Map [Làng ánh sáng Eldarah] co 3 Waypoint(s):
-Sun Oct 04 23:05:24 ICT 2026    -> Cong [0]: Vách núi Eldarah
-Sun Oct 04 23:05:24 ICT 2026    -> Cong [1]: Thung lũng cỏ lau
-Sun Oct 04 23:05:24 ICT 2026    -> Cong [2]: Nông trại
-Sun Oct 04 23:05:24 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Thung lũng cỏ lau
-Sun Oct 04 23:05:24 ICT 2026 [AutoFarm] Dang o [Làng ánh sáng Eldarah] (pos=77.8,4.3). Di chuyen toi Waypoint [Thung lũng cỏ lau] (dist=36.5m)...
-Sun Oct 04 23:05:24 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Thung lũng cỏ lau
-Sun Oct 04 23:05:34 ICT 2026 [AutoFarm] Chuyen map thanh cong: [Làng ánh sáng Eldarah] -> [Thung lũng cỏ lau]
-Sun Oct 04 23:05:35 ICT 2026 [AutoFarm] Map [Thung lũng cỏ lau] co 2 Waypoint(s):
-Sun Oct 04 23:05:35 ICT 2026    -> Cong [0]: Làng ánh sáng
-Sun Oct 04 23:05:35 ICT 2026    -> Cong [1]: Thảo nguyên mạch gió
-Sun Oct 04 23:05:35 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Thảo nguyên mạch gió
-Sun Oct 04 23:05:36 ICT 2026 [AutoFarm] Map [Thung lũng cỏ lau] co 2 Waypoint(s):
-Sun Oct 04 23:05:36 ICT 2026    -> Cong [0]: Làng ánh sáng
-Sun Oct 04 23:05:36 ICT 2026    -> Cong [1]: Thảo nguyên mạch gió
-Sun Oct 04 23:05:36 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Thảo nguyên mạch gió
-Sun Oct 04 23:05:36 ICT 2026 [AutoFarm] Dang o [Thung lũng cỏ lau] (pos=1.4,2.9). Di chuyen toi Waypoint [Thảo nguyên mạch gió] (dist=76.0m)...
-Sun Oct 04 23:05:36 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Thảo nguyên mạch gió
-Sun Oct 04 23:05:56 ICT 2026 [AutoFarm] Chuyen map thanh cong: [Thung lũng cỏ lau] -> [Thảo nguyên mạch gió]
-Sun Oct 04 23:05:57 ICT 2026 [AutoFarm] Map [Thảo nguyên mạch gió] co 2 Waypoint(s):
-Sun Oct 04 23:05:57 ICT 2026    -> Cong [0]: Thung lũng cỏ lau
-Sun Oct 04 23:05:57 ICT 2026    -> Cong [1]: Đại ngàn Sayari
-Sun Oct 04 23:05:57 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Đại ngàn Sayari
-Sun Oct 04 23:05:58 ICT 2026 [AutoFarm] Map [Thảo nguyên mạch gió] co 2 Waypoint(s):
-Sun Oct 04 23:05:58 ICT 2026    -> Cong [0]: Thung lũng cỏ lau
-Sun Oct 04 23:05:58 ICT 2026    -> Cong [1]: Đại ngàn Sayari
-Sun Oct 04 23:05:58 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Đại ngàn Sayari
-Sun Oct 04 23:05:58 ICT 2026 [AutoFarm] Dang o [Thảo nguyên mạch gió] (pos=1.4,7.9). Di chuyen toi Waypoint [Đại ngàn Sayari] (dist=76.0m)...
-Sun Oct 04 23:05:58 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Đại ngàn Sayari
-Sun Oct 04 23:06:18 ICT 2026 [AutoFarm] [Waypoint] Da toi gan cong: [Đại ngàn Sayari - ID=1] (dist=0.23m) -> Gui lenh qua cong ngay!
-Sun Oct 04 23:06:19 ICT 2026 [AutoFarm] Chuyen map thanh cong: [Thảo nguyên mạch gió] -> [Đại ngàn Sayari]
-Sun Oct 04 23:06:21 ICT 2026 [AutoFarm] Map [Đại ngàn Sayari] co 2 Waypoint(s):
-Sun Oct 04 23:06:21 ICT 2026    -> Cong [0]: Thảo nguyên mạch gió
-Sun Oct 04 23:06:21 ICT 2026    -> Cong [1]: Rừng cổ mộc
-Sun Oct 04 23:06:21 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Rừng cổ mộc
-Sun Oct 04 23:06:21 ICT 2026 [AutoFarm] Map [Đại ngàn Sayari] co 2 Waypoint(s):
-Sun Oct 04 23:06:21 ICT 2026    -> Cong [0]: Thảo nguyên mạch gió
-Sun Oct 04 23:06:21 ICT 2026    -> Cong [1]: Rừng cổ mộc
-Sun Oct 04 23:06:21 ICT 2026 [AutoFarm] [Direct Route] Chon Waypoint di tiep toi Map 7: Rừng cổ mộc
-Sun Oct 04 23:06:21 ICT 2026 [AutoFarm] Dang o [Đại ngàn Sayari] (pos=1.4,5.0). Di chuyen toi Waypoint [Rừng cổ mộc] (dist=76.0m)...
-Sun Oct 04 23:06:21 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Rừng cổ mộc
-Sun Oct 04 23:06:40 ICT 2026 [AutoFarm] Chuyen map thanh cong: [Đại ngàn Sayari] -> [Rừng cổ mộc]
-Sun Oct 04 23:06:40 ICT 2026 [AutoFarm] [V] Vua buoc vao dung map farm: [Rừng cổ mộc]! Chuan bi chay them vao sau gan cuoi map de treo...
-Sun Oct 04 23:06:41 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [joyboyss] (ID=2581) trong map (Doi: 1/5). Dang gui loi moi vao doi...
-Sun Oct 04 23:06:41 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [joyboyss] trong map!
-Sun Oct 04 23:06:42 ICT 2026 [AutoFarm] [Chay Sau Vao Map] Bat dau chay vao bai quai tu X=1.4m toi X=16.4m (MapWidth=77.8m)...
-Sun Oct 04 23:06:44 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Noisrym] (ID=1376) trong map (Doi: 1/5). Dang gui loi moi vao doi...
-Sun Oct 04 23:06:44 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Noisrym] trong map!
-Sun Oct 04 23:06:46 ICT 2026 [AutoFarm] [Chay Sau Vao Map] Da den vi tri bai quai (X=16.4m) -> DUNG lai va BAT Tu Dong Danh de treo!
-Sun Oct 04 23:06:46 ICT 2026 [AutoFarm] Da bat nut Tu Dong Danh thanh cong tai vi tri cuoi map!
-Sun Oct 04 23:06:47 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Moara] (ID=1529891) trong map (Doi: 1/5). Dang gui loi moi vao doi...
-Sun Oct 04 23:06:47 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Moara] trong map!
-Sun Oct 04 23:06:50 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [joyboyss] (ID=2581) trong map (Doi: 1/5). Dang gui loi moi vao doi...
-Sun Oct 04 23:06:50 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [joyboyss] trong map!
-Sun Oct 04 23:06:54 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Noisrym] (ID=1376) trong map (Doi: 1/5). Dang gui loi moi vao doi...
-Sun Oct 04 23:06:54 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Noisrym] trong map!
-Sun Oct 04 23:06:54 ICT 2026 [AutoFarm] Phat hien nguoi dung da bam nut [X] dong game. Thoat tien trinh de Watchdog tu dong khoi dong lai...
+Mon Oct 05 16:24:50 ICT 2026 [AutoReconnect] Dang tu dong dang nhap tai khoan: ggu3ucujf3
+Mon Oct 05 16:24:50 ICT 2026 [WatchdogLoad] Phat hien man hinh 'Kiem Tra Du Lieu' (LoadingScreen). Bat dau theo doi timeout...
+Mon Oct 05 16:24:52 ICT 2026 [WatchdogLoad] Da thoat man hinh loading. Reset timeout.
+Mon Oct 05 16:24:53 ICT 2026 [AutoFarm] [An Item] Da gui packet su dung 1x [Nấm hương] (ID=8) tai slot #8 (so luong hien co: 14, chu ky 30 phut/lan de duy tri buff).
+Mon Oct 05 16:24:53 ICT 2026 [AutoFarm] [An Item Dinh Ky] Da den chu ky 30 phut -> Da tu dong su dung 1 vat pham trong tui de duy tri buff!
+Mon Oct 05 16:24:53 ICT 2026 [AutoFarm] Phat hien Tu Dong Danh dang tat tai map farm: [Rừng cổ mộc] -> Tu dong bat lai ngay!
+Mon Oct 05 16:24:54 ICT 2026 [Party] Nhan vat [khoiidepzai] chua co to doi -> Da TU DONG tao to doi!
+Mon Oct 05 16:24:54 ICT 2026 [DiemDanh] Da gui lenh Diem Danh len server thanh cong!
+Mon Oct 05 16:24:54 ICT 2026 [AutoFarm] [Auto Attack] Da kich hoat menu bat lai Tu Dong Danh tiep tuc cay!
+Mon Oct 05 16:24:55 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Shanks Gaming] (ID=40) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:24:56 ICT 2026 [Party] To doi chua bat duyet -> Da gui lenh bat 'Tu dong duyet thanh vien' len server!
+Mon Oct 05 16:24:56 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Shanks Gaming] trong map!
+Mon Oct 05 16:24:59 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [BuLonVoBan] (ID=7995) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:24:59 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [BuLonVoBan] trong map!
+Mon Oct 05 16:25:02 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [TungDragon] (ID=322) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:25:02 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [TungDragon] trong map!
+Mon Oct 05 16:25:05 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Shanks Gaming] (ID=40) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:25:05 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Shanks Gaming] trong map!
+Mon Oct 05 16:25:08 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [BuLonVoBan] (ID=7995) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:25:08 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [BuLonVoBan] trong map!
+Mon Oct 05 16:25:12 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [TungDragon] (ID=322) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:25:12 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [TungDragon] trong map!
+Mon Oct 05 16:25:15 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Shanks Gaming] (ID=40) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:25:15 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Shanks Gaming] trong map!
+Mon Oct 05 16:25:18 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [BuLonVoBan] (ID=7995) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:25:18 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [BuLonVoBan] trong map!
+Mon Oct 05 16:25:21 ICT 2026 [AutoFarm] Phat hien nguoi dung da bam nut [X] dong game. Thoat tien trinh de Watchdog tu dong khoi dong lai...
+Mon Oct 05 16:25:40 ICT 2026 [AutoFarm] [DiemDanh] Da khoi phuc ngay diem danh da luu: 2026-10-05
+Mon Oct 05 16:25:40 ICT 2026 [AutoFarm] Khoi phuc map farm da luu: [Rừng cổ mộc - ID=7]
+Mon Oct 05 16:25:40 ICT 2026 [AutoFarm] Da nap 497 lien ket map hop le tu route_cache.txt
+Mon Oct 05 16:25:40 ICT 2026 [AutoLogin] Da khoi phuc tai khoan tu saved_account.txt: ggu3ucujf3
+Mon Oct 05 16:25:40 ICT 2026 [API] HTTP API server khoi dong thanh cong tai localhost:7654
+Mon Oct 05 16:25:40 ICT 2026 [AutoFarm] He thong tu dong di chuyen & tu dong danh san sang!
+Mon Oct 05 16:25:52 ICT 2026 [AutoLogin] Server da ket noi. Dang tu dong dang nhap lan 1...
+Mon Oct 05 16:25:52 ICT 2026 [AutoReconnect] Dang tu dong dang nhap tai khoan: ggu3ucujf3
+Mon Oct 05 16:25:53 ICT 2026 [WatchdogLoad] Phat hien man hinh 'Kiem Tra Du Lieu' (LoadingScreen). Bat dau theo doi timeout...
+Mon Oct 05 16:25:53 ICT 2026 [WatchdogLoad] Da thoat man hinh loading. Reset timeout.
+Mon Oct 05 16:25:55 ICT 2026 [AutoFarm] [An Item] Da gui packet su dung 1x [Nấm hương] (ID=8) tai slot #8 (so luong hien co: 13, chu ky 30 phut/lan de duy tri buff).
+Mon Oct 05 16:25:55 ICT 2026 [AutoFarm] [An Item Dinh Ky] Da den chu ky 30 phut -> Da tu dong su dung 1 vat pham trong tui de duy tri buff!
+Mon Oct 05 16:25:55 ICT 2026 [AutoFarm] Phat hien Tu Dong Danh dang tat tai map farm: [Rừng cổ mộc] -> Tu dong bat lai ngay!
+Mon Oct 05 16:25:56 ICT 2026 [Party] Nhan vat [khoiidepzai] chua co to doi -> Da TU DONG tao to doi!
+Mon Oct 05 16:25:56 ICT 2026 [AutoFarm] [Auto Attack] Da kich hoat menu bat lai Tu Dong Danh tiep tuc cay!
+Mon Oct 05 16:25:57 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Shanks Gaming] (ID=40) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:25:57 ICT 2026 [Party] To doi chua bat duyet -> Da gui lenh bat 'Tu dong duyet thanh vien' len server!
+Mon Oct 05 16:25:57 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Shanks Gaming] trong map!
+Mon Oct 05 16:26:00 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [BuLonVoBan] (ID=7995) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:26:00 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [BuLonVoBan] trong map!
+Mon Oct 05 16:26:03 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [TungDragon] (ID=322) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:26:03 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [TungDragon] trong map!
+Mon Oct 05 16:26:07 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [Shanks Gaming] (ID=40) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:26:07 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [Shanks Gaming] trong map!
+Mon Oct 05 16:26:10 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [BuLonVoBan] (ID=7995) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:26:10 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [BuLonVoBan] trong map!
+Mon Oct 05 16:26:13 ICT 2026 [Party] [Map Invite] Phat hien nhan vat [TungDragon] (ID=322) trong map (Doi: 1/5). Dang gui loi moi vao doi...
+Mon Oct 05 16:26:13 ICT 2026 [Party] [V] Da gui goi tin moi to doi toi [TungDragon] trong map!
+Mon Oct 05 16:26:16 ICT 2026 [AutoReconnect] Mat ket noi server! Cho 5 giay de thu ket noi lai...
+Mon Oct 05 16:26:21 ICT 2026 [AutoReconnect] Dang thu ket noi lai lan 1...
+Mon Oct 05 16:26:27 ICT 2026 [AutoReconnect] Chua ket noi duoc. Thu lai sau 5 giay...
+Mon Oct 05 16:26:32 ICT 2026 [AutoReconnect] Dang thu ket noi lai lan 2...
+Mon Oct 05 16:26:32 ICT 2026 [AutoFarm] Game dispose/exit duoc goi. Thoat JVM sach se...
 ``
 
 ---
