@@ -14,6 +14,7 @@ param(
 
 $root = $PSScriptRoot
 $cloudflaredPath = Join-Path $root "cloudflared.exe"
+$cfLogPath = Join-Path $root "cloudflared.log"
 $agentScriptPath = Join-Path $root "vps_agent.ps1"
 $githubAgentUrl = "https://raw.githubusercontent.com/$Repo/main/vps_agent.ps1"
 $githubDaemonUrl = "https://raw.githubusercontent.com/$Repo/main/MCP_Daemon.ps1"
@@ -44,7 +45,7 @@ try {
 } catch {}
 
 function Push-UrlToGitHub([string]$tunnelUrl) {
-    if (-not $GithubToken -or -not $tunnelUrl) { return }
+    if (-not $GithubToken) { return }
     try {
         $apiUrl = "https://api.github.com/repos/$Repo/contents/$TunnelFile"
         $headers = @{
@@ -90,22 +91,8 @@ function Update-AgentScriptFromGitHub() {
     }
 }
 
-function Update-DaemonSelfFromGitHub() {
+function Kill-AgentProcesses() {
     try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "Antigravity-VPS-Daemon")
-        $newCode = $wc.DownloadString($githubDaemonUrl)
-        if ($newCode -and $newCode.Length -gt 1000 -and $newCode.Contains("ANTIGRAVITY VPS MASTER WATCHDOG")) {
-            $daemonPath = Join-Path $root "MCP_Daemon.ps1"
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            [System.IO.File]::WriteAllText($daemonPath, $newCode, $utf8NoBom)
-        }
-    } catch {}
-}
-
-function Kill-PortProcess([int]$p) {
-    try {
-        # Chi dung cac tien trinh powershell chay vps_agent, KHONG DUNG PID 4 (System) va KHONG DUNG cloudflared!
         Get-WmiObject Win32_Process | Where-Object {
             $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $PID -and ($_.CommandLine -like "*vps_agent.ps1*")
         } | ForEach-Object {
@@ -115,24 +102,8 @@ function Kill-PortProcess([int]$p) {
     } catch {}
 }
 
-# 1. Update Agent & Daemon tu GitHub
-Update-AgentScriptFromGitHub
-Update-DaemonSelfFromGitHub
-
-# 2. Don dep Agent cu neu co
-Kill-PortProcess $Port
-
-$agentProc = $null
-$tunnelProc = $null
-$currentTunnelUrl = $null
-$lastRamTrimTime = [DateTime]::MinValue
-$lastTunnelCheckTime = [DateTime]::MinValue
-$agentFailCount = 0
-$tunnelFailCount = 0
-$lastGameCheckTime = [DateTime]::MinValue
-
 function Start-AgentProcess() {
-    Kill-PortProcess $Port
+    Kill-AgentProcesses
     Start-Sleep -Milliseconds 600
     Write-Host "[*] Dang khoi dong VPS Agent (Port $Port)..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -148,32 +119,44 @@ function Start-TunnelProcess() {
         Write-Host "[-] Khong tim thay cloudflared.exe tai $cloudflaredPath!" -ForegroundColor Red
         return $null
     }
-    Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> localhost:$Port)..." -ForegroundColor Cyan
+    Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> 127.0.0.1:$Port)..." -ForegroundColor Cyan
+    try { Remove-Item $cfLogPath -Force -ErrorAction SilentlyContinue } catch {}
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cloudflaredPath
-    $psi.Arguments = "tunnel --url http://localhost:$Port --http-host-header localhost"
-    $psi.RedirectStandardError = $true
+    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost --logfile `"$cfLogPath`""
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
 }
 
+# 1. Update Agent tu GitHub
+Update-AgentScriptFromGitHub
+
+# 2. Don dep Agent cu
+Kill-AgentProcesses
+
 $agentProc = Start-AgentProcess
-Start-Sleep -Seconds 2
+Start-Sleep -Seconds 3
 $tunnelProc = Start-TunnelProcess
+
+$currentTunnelUrl = $null
+$lastRamTrimTime = [DateTime]::Now
+$lastTunnelCheckTime = [DateTime]::Now
+$agentFailCount = 0
+$tunnelFailCount = 0
+$lastGameCheckTime = [DateTime]::Now.AddSeconds(30)
 
 Write-Host "`n[V] DA KHOI DONG THANH CONG! BAT DAU VONG LAP GIAM SAT 24/7...`n" -ForegroundColor Green
 
-# VONG LAP GIAM SAT 24/7
 while ($true) {
     Start-Sleep -Seconds 5
     $now = [DateTime]::Now
 
-    # A. Doc link Cloudflare Tunnel moi tu Stderr neu co
-    if ($tunnelProc -and -not $tunnelProc.HasExited) {
+    # A. Doc link Cloudflare Tunnel moi tu Logfile (NON-BLOCKING)
+    if (Test-Path $cfLogPath) {
         try {
-            while (-not $tunnelProc.StandardError.EndOfStream) {
-                $line = $tunnelProc.StandardError.ReadLine()
+            $lines = Get-Content -Path $cfLogPath -Tail 40 -ErrorAction SilentlyContinue
+            foreach ($line in $lines) {
                 if ($line -match "https://(?!(?:api|pkg|update)\.)[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com") {
                     $found = $matches[0]
                     if ($found -ne $currentTunnelUrl) {
@@ -194,57 +177,47 @@ while ($true) {
         Start-Sleep -Seconds 2
     }
 
-    # C. Health Check Agent (Kiem tra treo / deadlock tren localhost:Port)
+    # C. Health Check Agent (Kiem tra treo / deadlock tren 127.0.0.1:Port)
     $isAgentAlive = $false
     try {
-        $req = [System.Net.HttpWebRequest]::Create("http://localhost:$Port/ping")
-        $req.Timeout = 20000
-        $req.ReadWriteTimeout = 20000
+        $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/ping")
+        $req.Timeout = 15000
+        $req.ReadWriteTimeout = 15000
         $resp = $req.GetResponse()
         if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
             $isAgentAlive = $true
         }
         $resp.Close()
     } catch {
-        try {
-            $req2 = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/ping")
-            $req2.Timeout = 2000
-            $resp2 = $req2.GetResponse()
-            if ($resp2.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
-                $isAgentAlive = $true
-            }
-            $resp2.Close()
-        } catch {
-            $isAgentAlive = $false
-        }
+        $isAgentAlive = $false
     }
 
     if ($isAgentAlive) {
         $agentFailCount = 0
     } else {
         $agentFailCount++
-        Write-Host "[-] Canh bao: Agent khong phan hoi tai localhost:$Port (Lan $agentFailCount/2)..." -ForegroundColor Yellow
-        if ($agentFailCount -ge 4) {
-            Write-Host "[!] AGENT BI TREO HOAC MAT KET NOI! Tu dong reset Agent..." -ForegroundColor Red
+        Write-Host "[-] Canh bao: Agent khong phan hoi tai 127.0.0.1:$Port (Lan $agentFailCount/10)..." -ForegroundColor Yellow
+        if ($agentFailCount -ge 10) {
+            Write-Host "[!] AGENT BI TREO HOAC MAT KET NOI (50s)! Tu dong reset Agent..." -ForegroundColor Red
             if ($agentProc -and -not $agentProc.HasExited) {
                 try { $agentProc.Kill() } catch {}
             }
-            Kill-PortProcess $Port
+            Kill-AgentProcesses
             Update-AgentScriptFromGitHub
             $agentProc = Start-AgentProcess
             $agentFailCount = 0
-            Start-Sleep -Seconds 2
+            Start-Sleep -Seconds 3
         }
     }
 
-    # D. Kiem tra Public Cloudflare URL (moi 60 giay)
-    if ($currentTunnelUrl -and ($now - $lastTunnelCheckTime).TotalSeconds -ge 180) {
+    # D. Kiem tra Public Cloudflare URL (moi 120 giay)
+    if ($currentTunnelUrl -and ($now - $lastTunnelCheckTime).TotalSeconds -ge 120) {
         $lastTunnelCheckTime = $now
         $isPublicOk = $false
         try {
             $req = [System.Net.HttpWebRequest]::Create("$currentTunnelUrl/ping")
-            $req.Timeout = 25000
-            $req.ReadWriteTimeout = 25000
+            $req.Timeout = 20000
+            $req.ReadWriteTimeout = 20000
             $resp = $req.GetResponse()
             if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
                 $isPublicOk = $true
@@ -258,8 +231,8 @@ while ($true) {
             $tunnelFailCount = 0
         } else {
             $tunnelFailCount++
-            Write-Host "[-] Public Tunnel khong phan hoi: $currentTunnelUrl (Lan $tunnelFailCount/3)" -ForegroundColor Yellow
-            if ($tunnelFailCount -ge 6) {
+            Write-Host "[-] Public Tunnel khong phan hoi: $currentTunnelUrl (Lan $tunnelFailCount/4)" -ForegroundColor Yellow
+            if ($tunnelFailCount -ge 4) {
                 Write-Host "[!] CLOUDFLARE TUNNEL HONG! Tu dong khoi dong lai Tunnel moi..." -ForegroundColor Red
                 if ($tunnelProc -and -not $tunnelProc.HasExited) {
                     try { $tunnelProc.Kill() } catch {}
@@ -286,14 +259,15 @@ while ($true) {
         } catch {}
     }
 
-    # F. Tu dong kiem tra va khoi dong 2 Acc Game (moi 30 giay)
-    if (-not $lastGameCheckTime -or ($now - $lastGameCheckTime).TotalSeconds -ge 60) {
+    # F. Tu dong kiem tra va khoi dong 2 Acc Game (moi 60 giay)
+    if (($now - $lastGameCheckTime).TotalSeconds -ge 60) {
         $lastGameCheckTime = $now
         $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
         $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
         if ($javawCount -lt 2 -and (Test-Path $gameScript)) {
             Write-Host "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." -ForegroundColor Cyan
             Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
+            $lastGameCheckTime = [DateTime]::Now.AddSeconds(45)
         }
     }
 }
