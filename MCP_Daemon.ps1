@@ -174,7 +174,7 @@ while ($true) {
         try {
             while (-not $tunnelProc.StandardError.EndOfStream) {
                 $line = $tunnelProc.StandardError.ReadLine()
-                if ($line -match "https://[a-zA-Z0-9\-]+\.trycloudflare\.com") {
+                if ($line -match "https://(?!(?:api|pkg|update)\.)[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com") {
                     $found = $matches[0]
                     if ($found -ne $currentTunnelUrl) {
                         $currentTunnelUrl = $found
