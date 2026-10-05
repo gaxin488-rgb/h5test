@@ -198,8 +198,8 @@ while ($true) {
     $isAgentAlive = $false
     try {
         $req = [System.Net.HttpWebRequest]::Create("http://localhost:$Port/ping")
-        $req.Timeout = 4000
-        $req.ReadWriteTimeout = 4000
+        $req.Timeout = 20000
+        $req.ReadWriteTimeout = 20000
         $resp = $req.GetResponse()
         if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
             $isAgentAlive = $true
@@ -224,7 +224,7 @@ while ($true) {
     } else {
         $agentFailCount++
         Write-Host "[-] Canh bao: Agent khong phan hoi tai localhost:$Port (Lan $agentFailCount/2)..." -ForegroundColor Yellow
-        if ($agentFailCount -ge 2) {
+        if ($agentFailCount -ge 4) {
             Write-Host "[!] AGENT BI TREO HOAC MAT KET NOI! Tu dong reset Agent..." -ForegroundColor Red
             if ($agentProc -and -not $agentProc.HasExited) {
                 try { $agentProc.Kill() } catch {}
@@ -238,13 +238,13 @@ while ($true) {
     }
 
     # D. Kiem tra Public Cloudflare URL (moi 60 giay)
-    if ($currentTunnelUrl -and ($now - $lastTunnelCheckTime).TotalSeconds -ge 60) {
+    if ($currentTunnelUrl -and ($now - $lastTunnelCheckTime).TotalSeconds -ge 180) {
         $lastTunnelCheckTime = $now
         $isPublicOk = $false
         try {
             $req = [System.Net.HttpWebRequest]::Create("$currentTunnelUrl/ping")
-            $req.Timeout = 6000
-            $req.ReadWriteTimeout = 6000
+            $req.Timeout = 25000
+            $req.ReadWriteTimeout = 25000
             $resp = $req.GetResponse()
             if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
                 $isPublicOk = $true
@@ -259,7 +259,7 @@ while ($true) {
         } else {
             $tunnelFailCount++
             Write-Host "[-] Public Tunnel khong phan hoi: $currentTunnelUrl (Lan $tunnelFailCount/3)" -ForegroundColor Yellow
-            if ($tunnelFailCount -ge 3) {
+            if ($tunnelFailCount -ge 6) {
                 Write-Host "[!] CLOUDFLARE TUNNEL HONG! Tu dong khoi dong lai Tunnel moi..." -ForegroundColor Red
                 if ($tunnelProc -and -not $tunnelProc.HasExited) {
                     try { $tunnelProc.Kill() } catch {}
@@ -287,7 +287,7 @@ while ($true) {
     }
 
     # F. Tu dong kiem tra va khoi dong 2 Acc Game (moi 30 giay)
-    if (-not $lastGameCheckTime -or ($now - $lastGameCheckTime).TotalSeconds -ge 30) {
+    if (-not $lastGameCheckTime -or ($now - $lastGameCheckTime).TotalSeconds -ge 60) {
         $lastGameCheckTime = $now
         $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
         $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
