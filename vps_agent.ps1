@@ -151,11 +151,13 @@ while ($listener.IsListening) {
                     $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object {
                         if ($filter) { $_.ProcessName -like "*$filter*" } else { $true }
                     } | ForEach-Object {
+                        $cpuVal = 0.0
+                        try { if ($_.CPU -ne $null) { $cpuVal = [math]::Round([double]$_.CPU, 1) } } catch {}
                         @{
                             pid = $_.Id
                             name = $_.ProcessName
                             mem_mb = [math]::Round($_.WorkingSet64 / 1MB, 1)
-                            cpu = if ($_.CPU) { [math]::Round([double]$_.CPU, 1) } else { 0 }
+                            cpu = $cpuVal
                         }
                     }
                     Send-JsonResponse $response 200 @{ ok = $true; count = $procs.Count; processes = $procs }
