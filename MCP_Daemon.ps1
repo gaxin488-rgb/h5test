@@ -119,6 +119,10 @@ function Start-TunnelProcess() {
         Write-Host "[-] Khong tim thay cloudflared.exe tai $cloudflaredPath!" -ForegroundColor Red
         return $null
     }
+    # Dung tat ca tien trinh cloudflared cu de tranh xung dot
+    try { Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue } catch {}
+    Start-Sleep -Milliseconds 500
+
     Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> 127.0.0.1:$Port)..." -ForegroundColor Cyan
     try { Remove-Item $cfLogPath -Force -ErrorAction SilentlyContinue } catch {}
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -128,6 +132,7 @@ function Start-TunnelProcess() {
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
 }
+
 
 # 1. Update Agent tu GitHub
 Update-AgentScriptFromGitHub
