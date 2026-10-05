@@ -5,19 +5,43 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# KHOI DONG HTTP LISTENER NGAY LAP TUC (<10ms)
+# 1. AUTO-UPGRADE MCP_DAEMON.PS1 TU GITHUB VA RESTART NEU CO BAN MOI
+try {
+    $daemonFile = Join-Path $PSScriptRoot "MCP_Daemon.ps1"
+    $wcSync = New-Object System.Net.WebClient
+    $wcSync.Headers.Add("User-Agent", "Antigravity-Sync")
+    $newDaemonCode = $wcSync.DownloadString("https://raw.githubusercontent.com/gaxin488-rgb/h5test/main/MCP_Daemon.ps1")
+    if ($newDaemonCode -and $newDaemonCode.Length -gt 1000 -and $newDaemonCode.Contains("ANTIGRAVITY VPS MASTER WATCHDOG")) {
+        $oldDaemonCode = if (Test-Path $daemonFile) { [System.IO.File]::ReadAllText($daemonFile) } else { "" }
+        if ($oldDaemonCode.Trim() -ne $newDaemonCode.Trim()) {
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($daemonFile, $newDaemonCode, $utf8NoBom)
+            Write-Host "[*] [Auto-Sync] Da cap nhat MCP_Daemon.ps1 moi tu GitHub!" -ForegroundColor Green
+            # Stop MCP_Daemon cu de Start_MCP_Daemon.bat tu dong nap ban moi sau 3s!
+            Get-WmiObject Win32_Process | Where-Object {
+                $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $PID -and ($_.CommandLine -like "*MCP_Daemon.ps1*")
+            } | ForEach-Object {
+                Write-Host "[!] Dung tien trinh MCP_Daemon cu (PID $($_.ProcessId)) de nap ban moi..." -ForegroundColor Magenta
+                try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+            }
+        }
+    }
+} catch {}
+
+# 2. KHOI DONG HTTP LISTENER
 $listener = New-Object System.Net.HttpListener
 try {
-    $listener.Prefixes.Add("http://*:$Port/")
+    $listener.Prefixes.Add("http://127.0.0.1:$Port/")
+    $listener.Prefixes.Add("http://localhost:$Port/")
     $listener.Start()
 } catch {
     try {
         $listener.Prefixes.Clear()
-        $listener.Prefixes.Add("http://+:$Port/")
+        $listener.Prefixes.Add("http://*:$Port/")
         $listener.Start()
     } catch {
         $listener.Prefixes.Clear()
-        $listener.Prefixes.Add("http://localhost:$Port/")
+        $listener.Prefixes.Add("http://+:$Port/")
         $listener.Start()
     }
 }
@@ -99,7 +123,7 @@ while ($listener.IsListening) {
 
             if ($rawUrl -eq "/read_file") {
                 $filePath = $request.QueryString["path"]
-                $tail = if ($request.QueryString["tail"]) { [int]($request.QueryString["tail"]) } else { 0 }
+                $tail = [int]($request.QueryString["tail"] -as [int])
                 if ([string]::IsNullOrWhiteSpace($filePath) -or -not (Test-Path -LiteralPath $filePath)) {
                     Send-JsonResponse $response 404 @{ ok = $false; error = "File khong ton tai: $filePath" }
                     continue
