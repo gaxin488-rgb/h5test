@@ -99,7 +99,7 @@ while ($listener.IsListening) {
 
             if ($rawUrl -eq "/read_file") {
                 $filePath = $request.QueryString["path"]
-                $tail = [int]($request.QueryString["tail"] -as [int])
+                $tail = if ($request.QueryString["tail"]) { [int]($request.QueryString["tail"]) } else { 0 }
                 if ([string]::IsNullOrWhiteSpace($filePath) -or -not (Test-Path -LiteralPath $filePath)) {
                     Send-JsonResponse $response 404 @{ ok = $false; error = "File khong ton tai: $filePath" }
                     continue
@@ -155,7 +155,7 @@ while ($listener.IsListening) {
                             pid = $_.Id
                             name = $_.ProcessName
                             mem_mb = [math]::Round($_.WorkingSet64 / 1MB, 1)
-                            cpu = [math]::Round($_.CPU, 1)
+                            cpu = if ($_.CPU) { [math]::Round([double]$_.CPU, 1) } else { 0 }
                         }
                     }
                     Send-JsonResponse $response 200 @{ ok = $true; count = $procs.Count; processes = $procs }
