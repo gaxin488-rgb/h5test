@@ -28,8 +28,17 @@ try {
     }
 } catch {}
 
+# 1.5. Don dep tat ca cloudflared thua neu co de tranh xung dot nhieu tunnel
+try {
+    $cfs = Get-Process cloudflared -ErrorAction SilentlyContinue
+    if ($cfs -and $cfs.Count -gt 1) {
+        Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
+    }
+} catch {}
+
 # 2. KHOI DONG HTTP LISTENER
 $listener = New-Object System.Net.HttpListener
+
 try {
     $listener.Prefixes.Add("http://127.0.0.1:$Port/")
     $listener.Prefixes.Add("http://localhost:$Port/")
