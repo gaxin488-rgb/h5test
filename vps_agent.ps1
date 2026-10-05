@@ -87,7 +87,7 @@ function Send-JsonResponse($response, [int]$statusCode, $obj) {
         $response.OutputStream.Write($buffer, 0, $buffer.Length)
     } catch {}
     finally {
-        try { $response.OutputStream.Close() } catch {}
+        try { $response.Close() } catch {}
     }
 }
 
