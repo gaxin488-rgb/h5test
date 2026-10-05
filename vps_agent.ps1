@@ -9,23 +9,72 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-$listener = New-Object System.Net.HttpListener
-$prefix = "http://*:$Port/"
+# 0. Don dep cac tien trinh Agent cu (Powershell) dang chay de tranh xung dot port
+$myPid = $PID
 try {
-    $listener.Prefixes.Add($prefix)
+    Get-WmiObject Win32_Process | Where-Object {
+        $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $myPid -and ($_.CommandLine -like "*vps_agent.ps1*")
+    } | ForEach-Object {
+        Write-Host "[!] Tat tien trinh PowerShell Agent cu (PID $($_.ProcessId))..." -ForegroundColor Yellow
+        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+    }
+} catch {}
+Start-Sleep -Milliseconds 600
+
+# 1. Cap quyen URLACL neu can
+try {
+    & netsh http add urlacl url="http://+:$Port/" sddl="D:(A;;GX;;;WD)" | Out-Null
+} catch {}
+
+# 2. Khoi tao HttpListener
+$prefixesToTry = @(
+    "http://+:$Port/",
+    "http://*:$Port/",
+    "http://localhost:$Port/",
+    "http://127.0.0.1:$Port/"
+)
+
+$listener = $null
+$boundPrefix = $null
+
+foreach ($pref in $prefixesToTry) {
+    try {
+        $l = New-Object System.Net.HttpListener
+        $l.Prefixes.Add($pref)
+        $l.Start()
+        $listener = $l
+        $boundPrefix = $pref
+        break
+    } catch {
+        try { $l.Close() } catch {}
+    }
+}
+
+if (-not $listener) {
+    Start-Sleep -Seconds 1
+    $listener = New-Object System.Net.HttpListener
+    $listener.Prefixes.Add("http://localhost:$Port/")
     $listener.Start()
-} catch {
-    $prefix = "http://localhost:$Port/"
-    $listener.Prefixes.Clear()
-    $listener.Prefixes.Add($prefix)
-    $listener.Start()
+    $boundPrefix = "http://localhost:$Port/"
 }
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "  [*] VPS REMOTE CONTROL AGENT (PowerShell Edition)" -ForegroundColor Green
-Write-Host "  [*] Dang lang nghe tai: $prefix" -ForegroundColor Yellow
+Write-Host "  [*] Dang lang nghe tai: $boundPrefix" -ForegroundColor Yellow
 Write-Host "  [*] Token bao mat: $Token" -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Cyan
+
+# 3. Kiem tra va khoi dong 2 Acc Game neu chua chay
+try {
+    $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
+    if ($javawCount -lt 2) {
+        $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
+        if (Test-Path $gameScript) {
+            Write-Host "[*] [Game-Autostart] Khoi dong 2 acc game Tinh Linh qua Chay_2_Acc.bat..." -ForegroundColor Cyan
+            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
+        }
+    }
+} catch {}
 
 function Send-JsonResponse($response, [int]$statusCode, $obj) {
     try {
@@ -68,6 +117,7 @@ while ($listener.IsListening) {
             continue
         }
 
+        # Health & Ping khong yeu cau Token
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
             Send-JsonResponse $response 200 @{ ok = $true; status = "online"; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
             continue
@@ -184,32 +234,28 @@ while ($listener.IsListening) {
                 }
                 try {
                     $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                    $tempOut = [System.IO.Path]::GetTempFileName()
+                    $tempErr = [System.IO.Path]::GetTempFileName()
                     $psi = New-Object System.Diagnostics.ProcessStartInfo
                     $psi.FileName = "cmd.exe"
-                    $psi.Arguments = "/c `"$cmd`""
-                    $psi.RedirectStandardOutput = $true
-                    $psi.RedirectStandardError = $true
+                    $psi.Arguments = "/c `"$cmd > `"$tempOut`" 2> `"$tempErr`"`""
                     $psi.UseShellExecute = $false
                     $psi.CreateNoWindow = $true
                     $p = [System.Diagnostics.Process]::Start($psi)
-                    $stdoutTask = $p.StandardOutput.ReadToEndAsync()
-                    $stderrTask = $p.StandardError.ReadToEndAsync()
-                    if ($p.WaitForExit($timeoutSec * 1000)) {
-                        try {
-                            [System.Threading.Tasks.Task]::WaitAll(@($stdoutTask, $stderrTask), 2000) | Out-Null
-                            $stdout = if ($stdoutTask.IsCompleted) { $stdoutTask.Result } else { "" }
-                            $stderr = if ($stderrTask.IsCompleted) { $stderrTask.Result } else { "" }
-                        } catch {
-                            $stdout = ""
-                            $stderr = ""
-                        }
+                    $finished = $p.WaitForExit($timeoutSec * 1000)
+                    if ($finished) {
                         $exitCode = $p.ExitCode
+                        Start-Sleep -Milliseconds 80
+                        $stdout = if (Test-Path $tempOut) { [System.IO.File]::ReadAllText($tempOut, [System.Text.Encoding]::Default) } else { "" }
+                        $stderr = if (Test-Path $tempErr) { [System.IO.File]::ReadAllText($tempErr, [System.Text.Encoding]::Default) } else { "" }
                     } else {
                         try { $p.Kill() } catch {}
-                        $stdout = if ($stdoutTask.IsCompleted) { $stdoutTask.Result } else { "" }
+                        $stdout = ""
                         $stderr = "Lenh bi timeout sau $timeoutSec giay!"
                         $exitCode = 124
                     }
+                    try { Remove-Item $tempOut -Force -ErrorAction SilentlyContinue } catch {}
+                    try { Remove-Item $tempErr -Force -ErrorAction SilentlyContinue } catch {}
                     $sw.Stop()
                     Send-JsonResponse $response 200 @{
                         ok = ($exitCode -eq 0)
