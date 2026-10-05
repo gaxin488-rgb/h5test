@@ -16,6 +16,7 @@ $root = $PSScriptRoot
 $cloudflaredPath = Join-Path $root "cloudflared.exe"
 $agentScriptPath = Join-Path $root "vps_agent.ps1"
 $githubAgentUrl = "https://raw.githubusercontent.com/$Repo/main/vps_agent.ps1"
+$githubDaemonUrl = "https://raw.githubusercontent.com/$Repo/main/MCP_Daemon.ps1"
 
 $GithubToken = if (Test-Path $TokenFile) { 
     (Get-Content $TokenFile).Trim() 
@@ -89,26 +90,36 @@ function Update-AgentScriptFromGitHub() {
     }
 }
 
-function Kill-PortProcess([int]$p) {
+function Update-DaemonSelfFromGitHub() {
     try {
-        $lines = netstat -ano | Select-String ":$p\s"
-        foreach ($l in $lines) {
-            $parts = ($l.ToString().Trim() -split "\s+")
-            if ($parts.Length -ge 5) {
-                $pidToKill = [int]$parts[-1]
-                if ($pidToKill -gt 0 -and $pidToKill -ne $PID) {
-                    Write-Host "[!] Dang dung tien trinh PID $pidToKill tren cong $p..." -ForegroundColor Yellow
-                    Stop-Process -Id $pidToKill -Force -ErrorAction SilentlyContinue
-                }
-            }
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "Antigravity-VPS-Daemon")
+        $newCode = $wc.DownloadString($githubDaemonUrl)
+        if ($newCode -and $newCode.Length -gt 1000 -and $newCode.Contains("ANTIGRAVITY VPS MASTER WATCHDOG")) {
+            $daemonPath = Join-Path $root "MCP_Daemon.ps1"
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($daemonPath, $newCode, $utf8NoBom)
         }
     } catch {}
 }
 
-# 1. Update Agent ban moi nhat
-Update-AgentScriptFromGitHub
+function Kill-PortProcess([int]$p) {
+    try {
+        # Chi dung cac tien trinh powershell chay vps_agent, KHONG DUNG PID 4 (System) va KHONG DUNG cloudflared!
+        Get-WmiObject Win32_Process | Where-Object {
+            $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $PID -and ($_.CommandLine -like "*vps_agent.ps1*")
+        } | ForEach-Object {
+            Write-Host "[!] Dung tien trinh PowerShell Agent cu (PID $($_.ProcessId))..." -ForegroundColor Yellow
+            try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    } catch {}
+}
 
-# 2. Don dep cong cu neu bi treo
+# 1. Update Agent & Daemon tu GitHub
+Update-AgentScriptFromGitHub
+Update-DaemonSelfFromGitHub
+
+# 2. Don dep Agent cu neu co
 Kill-PortProcess $Port
 
 $agentProc = $null
@@ -122,7 +133,7 @@ $lastGameCheckTime = [DateTime]::MinValue
 
 function Start-AgentProcess() {
     Kill-PortProcess $Port
-    Start-Sleep -Milliseconds 500
+    Start-Sleep -Milliseconds 600
     Write-Host "[*] Dang khoi dong VPS Agent (Port $Port)..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "powershell.exe"
@@ -140,7 +151,7 @@ function Start-TunnelProcess() {
     Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> localhost:$Port)..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cloudflaredPath
-    $psi.Arguments = "tunnel --url http://localhost:$Port"
+    $psi.Arguments = "tunnel --url http://localhost:$Port --http-host-header localhost"
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
@@ -187,15 +198,25 @@ while ($true) {
     $isAgentAlive = $false
     try {
         $req = [System.Net.HttpWebRequest]::Create("http://localhost:$Port/ping")
-        $req.Timeout = 3000
-        $req.ReadWriteTimeout = 3000
+        $req.Timeout = 4000
+        $req.ReadWriteTimeout = 4000
         $resp = $req.GetResponse()
         if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
             $isAgentAlive = $true
         }
         $resp.Close()
     } catch {
-        $isAgentAlive = $false
+        try {
+            $req2 = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/ping")
+            $req2.Timeout = 2000
+            $resp2 = $req2.GetResponse()
+            if ($resp2.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
+                $isAgentAlive = $true
+            }
+            $resp2.Close()
+        } catch {
+            $isAgentAlive = $false
+        }
     }
 
     if ($isAgentAlive) {
@@ -222,8 +243,8 @@ while ($true) {
         $isPublicOk = $false
         try {
             $req = [System.Net.HttpWebRequest]::Create("$currentTunnelUrl/ping")
-            $req.Timeout = 5000
-            $req.ReadWriteTimeout = 5000
+            $req.Timeout = 6000
+            $req.ReadWriteTimeout = 6000
             $resp = $req.GetResponse()
             if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
                 $isPublicOk = $true
@@ -272,7 +293,7 @@ while ($true) {
         $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
         if ($javawCount -lt 2 -and (Test-Path $gameScript)) {
             Write-Host "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." -ForegroundColor Cyan
-            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`""
+            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
         }
     }
 }
