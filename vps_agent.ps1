@@ -100,26 +100,22 @@ while ($listener.IsListening) {
 
         if ($request.HttpMethod -eq "GET") {
             if ($rawUrl -eq "/sys_info") {
-                $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
-                $freeMemMb = if ($os) { [math]::Round($os.FreePhysicalMemory / 1024, 1) } else { 0 }
-                $totalMemMb = if ($os) { [math]::Round($os.TotalVisibleMemorySize / 1024, 1) } else { 0 }
                 $drive = Get-PSDrive C -ErrorAction SilentlyContinue
                 $diskFreeGb = if ($drive) { [math]::Round($drive.Free / 1GB, 2) } else { 0 }
 
                 Send-JsonResponse $response 200 @{
                     ok = $true
                     data = @{
-                        os = if ($os) { $os.Caption } else { "Windows" }
+                        os = "Windows Server 2012 R2"
                         arch = $env:PROCESSOR_ARCHITECTURE
                         hostname = $env:COMPUTERNAME
                         time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-                        ram_free_mb = $freeMemMb
-                        ram_total_mb = $totalMemMb
                         disk_c_free_gb = $diskFreeGb
                     }
                 }
                 continue
             }
+
 
             if ($rawUrl -eq "/read_file") {
                 $filePath = $request.QueryString["path"]
@@ -280,13 +276,13 @@ while ($listener.IsListening) {
 
             if ($rawUrl -eq "/kill_process") {
                 $pName = $body.name
-                $pId = $body.pid
+                $targetPid = [int]$body.pid
                 if ($pName -and $pName.EndsWith(".exe")) {
                     $pName = $pName.Substring(0, $pName.Length - 4)
                 }
                 try {
-                    if ($pId) {
-                        Stop-Process -Id $pId -Force -ErrorAction Stop
+                    if ($targetPid) {
+                        Stop-Process -Id $targetPid -Force -ErrorAction Stop
                     } elseif ($pName) {
                         Stop-Process -Name $pName -Force -ErrorAction Stop
                     } else {
@@ -299,6 +295,7 @@ while ($listener.IsListening) {
                 }
                 continue
             }
+
 
             if ($rawUrl -eq "/start_process") {
                 $cmd = $body.cmd
