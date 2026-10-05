@@ -1,7 +1,3 @@
-# ==============================================================================
-# VPS Remote Control Agent (PowerShell Edition - Khong can cai dat Python)
-# Chay duoc tren tat ca Windows Server (2012, 2016, 2019, 2022, Windows 10/11)
-# ==============================================================================
 param(
     [int]$Port = 8765,
     [string]$Token = "tinhlinh_vps_secret_key_2026"
@@ -9,72 +5,22 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# 0. Don dep cac tien trinh Agent cu (Powershell) dang chay de tranh xung dot port
-$myPid = $PID
+# KHOI DONG HTTP LISTENER NGAY LAP TUC (<10ms)
+$listener = New-Object System.Net.HttpListener
 try {
-    Get-WmiObject Win32_Process | Where-Object {
-        $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $myPid -and ($_.CommandLine -like "*vps_agent.ps1*")
-    } | ForEach-Object {
-        Write-Host "[!] Tat tien trinh PowerShell Agent cu (PID $($_.ProcessId))..." -ForegroundColor Yellow
-        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
-    }
-} catch {}
-Start-Sleep -Milliseconds 600
-
-# 1. Cap quyen URLACL neu can
-try {
-    & netsh http add urlacl url="http://+:$Port/" sddl="D:(A;;GX;;;WD)" | Out-Null
-} catch {}
-
-# 2. Khoi tao HttpListener
-$prefixesToTry = @(
-    "http://+:$Port/",
-    "http://*:$Port/",
-    "http://localhost:$Port/",
-    "http://127.0.0.1:$Port/"
-)
-
-$listener = $null
-$boundPrefix = $null
-
-foreach ($pref in $prefixesToTry) {
-    try {
-        $l = New-Object System.Net.HttpListener
-        $l.Prefixes.Add($pref)
-        $l.Start()
-        $listener = $l
-        $boundPrefix = $pref
-        break
-    } catch {
-        try { $l.Close() } catch {}
-    }
-}
-
-if (-not $listener) {
-    Start-Sleep -Seconds 1
-    $listener = New-Object System.Net.HttpListener
-    $listener.Prefixes.Add("http://localhost:$Port/")
+    $listener.Prefixes.Add("http://*:$Port/")
     $listener.Start()
-    $boundPrefix = "http://localhost:$Port/"
-}
-
-Write-Host "============================================================" -ForegroundColor Cyan
-Write-Host "  [*] VPS REMOTE CONTROL AGENT (PowerShell Edition)" -ForegroundColor Green
-Write-Host "  [*] Dang lang nghe tai: $boundPrefix" -ForegroundColor Yellow
-Write-Host "  [*] Token bao mat: $Token" -ForegroundColor Yellow
-Write-Host "============================================================" -ForegroundColor Cyan
-
-# 3. Kiem tra va khoi dong 2 Acc Game neu chua chay
-try {
-    $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
-    if ($javawCount -lt 2) {
-        $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
-        if (Test-Path $gameScript) {
-            Write-Host "[*] [Game-Autostart] Khoi dong 2 acc game Tinh Linh qua Chay_2_Acc.bat..." -ForegroundColor Cyan
-            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
-        }
+} catch {
+    try {
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add("http://+:$Port/")
+        $listener.Start()
+    } catch {
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add("http://localhost:$Port/")
+        $listener.Start()
     }
-} catch {}
+}
 
 function Send-JsonResponse($response, [int]$statusCode, $obj) {
     try {
@@ -113,11 +59,11 @@ while ($listener.IsListening) {
             $response.AddHeader("Access-Control-Allow-Origin", "*")
             $response.AddHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             $response.AddHeader("Access-Control-Allow-Headers", "Content-Type, X-Agent-Token, Authorization")
-            $response.OutputStream.Close()
+            $response.Close()
             continue
         }
 
-        # Health & Ping khong yeu cau Token
+        # Health / Ping khong can Token
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
             Send-JsonResponse $response 200 @{ ok = $true; status = "online"; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
             continue
@@ -155,7 +101,7 @@ while ($listener.IsListening) {
                 $filePath = $request.QueryString["path"]
                 $tail = [int]($request.QueryString["tail"] -as [int])
                 if ([string]::IsNullOrWhiteSpace($filePath) -or -not (Test-Path -LiteralPath $filePath)) {
-                    Send-JsonResponse $response 404 @{ ok = $false; error = "File khong ton tai hoac duong dan trong: $filePath" }
+                    Send-JsonResponse $response 404 @{ ok = $false; error = "File khong ton tai: $filePath" }
                     continue
                 }
                 try {
@@ -245,13 +191,13 @@ while ($listener.IsListening) {
                     $finished = $p.WaitForExit($timeoutSec * 1000)
                     if ($finished) {
                         $exitCode = $p.ExitCode
-                        Start-Sleep -Milliseconds 80
+                        Start-Sleep -Milliseconds 50
                         $stdout = if (Test-Path $tempOut) { [System.IO.File]::ReadAllText($tempOut, [System.Text.Encoding]::Default) } else { "" }
                         $stderr = if (Test-Path $tempErr) { [System.IO.File]::ReadAllText($tempErr, [System.Text.Encoding]::Default) } else { "" }
                     } else {
                         try { $p.Kill() } catch {}
                         $stdout = ""
-                        $stderr = "Lenh bi timeout sau $timeoutSec giay!"
+                        $stderr = "Lenh timeout sau $timeoutSec giay!"
                         $exitCode = 124
                     }
                     try { Remove-Item $tempOut -Force -ErrorAction SilentlyContinue } catch {}
@@ -366,7 +312,6 @@ while ($listener.IsListening) {
 
         Send-JsonResponse $response 404 @{ ok = $false; error = "Endpoint khong ton tai: $rawUrl" }
     } catch {
-        Write-Host "[-] Request error: $($_.Exception.Message)" -ForegroundColor Red
         try {
             if ($response) {
                 Send-JsonResponse $response 500 @{ ok = $false; error = $_.Exception.Message }
