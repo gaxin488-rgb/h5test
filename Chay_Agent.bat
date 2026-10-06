@@ -7,7 +7,8 @@ cd /d "%~dp0"
 echo ========================================================
 echo   KHOI DONG ANTIGRAVITY MASTER WATCHDOG DAEMON 24/7
 echo ========================================================
-echo [*] Tu dong khoi chay Agent, Tunnel, Auto-Restart & Disk-Watchdog...
+echo [*] Tu dong khoi chay Agent, Tunnel, Auto-Restart va Disk-Watchdog...
+
 
 :: Dam bao thu muc ton tai
 if not exist "%~dp0" mkdir "%~dp0"
