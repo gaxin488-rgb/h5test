@@ -6,8 +6,7 @@ param(
     [int]$Port = 8765,
     [string]$Token = "tinhlinh_vps_secret_key_2026",
     [string]$Repo = "gaxin488-rgb/h5test",
-    [string]$TunnelFile = "vps_tunnel_url.txt",
-    [string]$TokenFile = "$PSScriptRoot\github_token.txt"
+    [string]$TunnelFile = "vps_tunnel_url.txt"
 )
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
@@ -17,13 +16,7 @@ $cloudflaredPath = Join-Path $root "cloudflared.exe"
 $cfLogPath = Join-Path $root "cloudflared.log"
 $agentScriptPath = Join-Path $root "vps_agent.ps1"
 $githubAgentUrl = "https://raw.githubusercontent.com/$Repo/main/vps_agent.ps1"
-$githubDaemonUrl = "https://raw.githubusercontent.com/$Repo/main/MCP_Daemon.ps1"
-
-$GithubToken = if (Test-Path $TokenFile) { 
-    (Get-Content $TokenFile).Trim() 
-} else { 
-    ("github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H")
-}
+$GithubToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "   ANTIGRAVITY VPS MASTER WATCHDOG DAEMON (24/7)" -ForegroundColor Green
@@ -33,30 +26,45 @@ Write-Host "   [*] GitHub Sync: $Repo/$TunnelFile" -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Cyan
 
 function Push-UrlToGitHub([string]$tunnelUrl) {
-    if (-not $GithubToken) { return }
+    if (-not $GithubToken -or -not $tunnelUrl) { return }
     try {
         $apiUrl = "https://api.github.com/repos/$Repo/contents/$TunnelFile"
-        $headers = @{
-            "Authorization" = "Bearer $GithubToken"
-            "Accept"        = "application/vnd.github.v3+json"
-            "User-Agent"    = "Antigravity-VPS-Daemon"
-        }
         $sha = $null
         try {
-            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 8
-            $sha = $resp.sha
+            $getReq = [System.Net.HttpWebRequest]::Create($apiUrl)
+            $getReq.Method = "GET"
+            $getReq.UserAgent = "Antigravity-VPS-Daemon"
+            $getReq.Accept = "application/vnd.github.v3+json"
+            $getReq.Headers.Add("Authorization", "Bearer $GithubToken")
+            $getReq.Timeout = 6000
+            $getResp = $getReq.GetResponse()
+            $stream = $getResp.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream)
+            $sha = ($reader.ReadToEnd() | ConvertFrom-Json).sha
+            $getResp.Close()
         } catch {}
 
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($tunnelUrl)
-        $b64 = [Convert]::ToBase64String($bytes)
-        $body = @{
+        $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($tunnelUrl))
+        $payload = @{
             message = "Auto-update VPS Cloudflare Tunnel URL: $tunnelUrl"
             content = $b64
         }
-        if ($sha) { $body["sha"] = $sha }
+        if ($sha) { $payload["sha"] = $sha }
 
-        $jsonBody = $body | ConvertTo-Json
-        $null = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method PUT -Body $jsonBody -TimeoutSec 12
+        $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
+        $putReq = [System.Net.HttpWebRequest]::Create($apiUrl)
+        $putReq.Method = "PUT"
+        $putReq.ContentType = "application/json; charset=utf-8"
+        $putReq.UserAgent = "Antigravity-VPS-Daemon"
+        $putReq.Accept = "application/vnd.github.v3+json"
+        $putReq.Headers.Add("Authorization", "Bearer $GithubToken")
+        $putReq.ContentLength = $bodyBytes.Length
+        $putReq.Timeout = 10000
+        $putStream = $putReq.GetRequestStream()
+        $putStream.Write($bodyBytes, 0, $bodyBytes.Length)
+        $putStream.Close()
+        $putResp = $putReq.GetResponse()
+        $putResp.Close()
         Write-Host "[+] [GitHub Sync] Da cap nhat URL moi len GitHub: $tunnelUrl" -ForegroundColor Green
     } catch {
         Write-Host "[-] [GitHub Sync] Loi cap nhat URL: $($_.Exception.Message)" -ForegroundColor Red
@@ -105,7 +113,6 @@ function Start-TunnelProcess() {
         Write-Host "[-] Khong tim thay cloudflared.exe tai $cloudflaredPath!" -ForegroundColor Red
         return $null
     }
-    # Dung tat ca tien trinh cloudflared cu de tranh xung dot
     try { Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue } catch {}
     Start-Sleep -Milliseconds 500
 
@@ -235,27 +242,14 @@ while ($true) {
         }
     }
 
-    # E. Tu dong don dep disk & crash dumps moi 4 phut (KHONG dung EmptyWorkingSet tren javaw vi gay crash C2 compiler)
-    if (($now - $lastCleanupTime).TotalSeconds -ge 240) {
-        $lastCleanupTime = $now
-        try {
-            Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\2\*" -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
-            Write-Host "[*] [Auto-Cleanup] Da don dep disk va log rac thanh cong." -ForegroundColor Green
-        } catch {}
-    }
-
-    # F. Tu dong kiem tra va khoi dong 2 Acc Game (moi 60 giay)
-    if (($now - $lastGameCheckTime).TotalSeconds -ge 60) {
+    # E. Kiem tra va giu game chay (moi 30 giay)
+    if (($now - $lastGameCheckTime).TotalSeconds -ge 30) {
         $lastGameCheckTime = $now
         $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
         $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
         if ($javawCount -lt 2 -and (Test-Path $gameScript)) {
             Write-Host "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." -ForegroundColor Cyan
-            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
-            $lastGameCheckTime = [DateTime]::Now.AddSeconds(45)
+            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`""
         }
     }
 }
