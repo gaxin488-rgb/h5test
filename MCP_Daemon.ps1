@@ -114,56 +114,13 @@ function Log-Msg([string]$msg, [string]$color = "White") {
 
 
 function Update-AgentScriptFromGitHub() {
-    try {
-        Write-Host "[*] [Auto-Update] Kiem tra va cap nhat vps_agent.ps1 tu GitHub..." -ForegroundColor Cyan
-        $newCode = $null
-        try {
-            $apiUrl = "https://api.github.com/repos/$Repo/contents/vps_agent.ps1"
-            $headers = @{
-                "User-Agent" = "Antigravity-VPS-Daemon"
-                "Accept"     = "application/vnd.github.v3+json"
-            }
-            if ($GithubToken) { $headers["Authorization"] = "Bearer $GithubToken" }
-            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 8
-            if ($resp.content) {
-                $newCode = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content))
-            }
-        } catch {
-            $wc = New-Object System.Net.WebClient
-            $wc.Headers.Add("User-Agent", "Antigravity-VPS-Daemon")
-            $newCode = $wc.DownloadString("https://raw.githubusercontent.com/$Repo/20986b776121fb8b11a9e7e147b7a23cb219acbf/vps_agent.ps1")
-        }
-        if ($newCode -and $newCode.Length -gt 1000 -and $newCode.Contains("HttpListener")) {
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            [System.IO.File]::WriteAllText($agentScriptPath, $newCode, $utf8NoBom)
-            Write-Host "[+] [Auto-Update] Cap nhat vps_agent.ps1 thanh cong!" -ForegroundColor Green
-        }
-    } catch {
-        Write-Host "[-] [Auto-Update] Khong the tai agent tu GitHub (giu ban cu): $($_.Exception.Message)" -ForegroundColor Yellow
-    }
+    # Giu nguyen ban cap nhat toi uu noi bo, tranh bi rollback tu GitHub commit cu
+    return
 }
 
 function Update-DaemonSelfFromGitHub() {
-    try {
-        $newCode = $null
-        try {
-            $apiUrl = "https://api.github.com/repos/$Repo/contents/MCP_Daemon.ps1"
-            $headers = @{
-                "User-Agent" = "Antigravity-VPS-Daemon"
-                "Accept"     = "application/vnd.github.v3+json"
-            }
-            if ($GithubToken) { $headers["Authorization"] = "Bearer $GithubToken" }
-            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 8
-            if ($resp.content) {
-                $newCode = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content))
-            }
-        } catch {}
-        if ($newCode -and $newCode.Length -gt 1000 -and $newCode.Contains("ANTIGRAVITY VPS MASTER WATCHDOG")) {
-            $daemonPath = Join-Path $root "MCP_Daemon.ps1"
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            [System.IO.File]::WriteAllText($daemonPath, $newCode, $utf8NoBom)
-        }
-    } catch {}
+    # Giu nguyen ban cap nhat toi uu noi bo, tranh bi rollback tu GitHub commit cu
+    return
 }
 
 function Kill-PortProcess([int]$p) {
@@ -398,14 +355,55 @@ while ($true) {
         } catch {}
     }
 
-    # F. Tu dong kiem tra va khoi dong 2 Acc Game (moi 30 giay)
+    # F. Tu dong kiem tra va khoi dong 2 Acc Game doc lap (moi 30 giay)
     if (-not $lastGameCheckTime -or ($now - $lastGameCheckTime).TotalSeconds -ge 30) {
         $lastGameCheckTime = $now
-        $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
-        $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
-        if ($javawCount -lt 2 -and (Test-Path $gameScript)) {
-            Log-Msg "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." "Cyan"
-            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
+        $gameBase = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite"
+        if (Test-Path $gameBase) {
+            $javawProcs = @(Get-CimInstance Win32_Process -Filter "name='javaw.exe'" -ErrorAction SilentlyContinue)
+            $tab1Running = $false
+            $tab2Running = $false
+            $tab1Pids = @()
+            $tab2Pids = @()
+
+            foreach ($jp in $javawProcs) {
+                $cmdLine = $jp.CommandLine
+                if ($cmdLine -like "*-Dtab=1*") {
+                    $tab1Running = $true
+                    $tab1Pids += $jp.ProcessId
+                }
+                elseif ($cmdLine -like "*-Dtab=2*") {
+                    $tab2Running = $true
+                    $tab2Pids += $jp.ProcessId
+                }
+            }
+
+            # Neu co tien trinh trung lap cua cung 1 tab -> Kill ban sao thua de tranh xung dot socket va port
+            if ($tab1Pids.Count -gt 1) {
+                for ($i = 1; $i -lt $tab1Pids.Count; $i++) {
+                    Log-Msg "[!] [Game-Watchdog] Phat hien trung lap Acc 1 (PID $($tab1Pids[$i])) -> Kill ban sao thua..." "Yellow"
+                    Stop-Process -Id $tab1Pids[$i] -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if ($tab2Pids.Count -gt 1) {
+                for ($i = 1; $i -lt $tab2Pids.Count; $i++) {
+                    Log-Msg "[!] [Game-Watchdog] Phat hien trung lap Acc 2 (PID $($tab2Pids[$i])) -> Kill ban sao thua..." "Yellow"
+                    Stop-Process -Id $tab2Pids[$i] -Force -ErrorAction SilentlyContinue
+                }
+            }
+
+            # Khoi dong rieng biet tung tab neu chua chay
+            $script1 = Join-Path $gameBase "Acc1\Run_Acc1.bat"
+            $script2 = Join-Path $gameBase "Acc2\Run_Acc2.bat"
+
+            if (-not $tab1Running -and (Test-Path $script1)) {
+                Log-Msg "[*] [Game-Watchdog] Acc 1 (Tab 1 - gg3umwdt13) chua chay -> Tu dong khoi chay Run_Acc1.bat..." "Cyan"
+                Start-Process "cmd.exe" -ArgumentList "/c `"$script1`"" -WorkingDirectory (Split-Path $script1) -WindowStyle Minimized
+            }
+            if (-not $tab2Running -and (Test-Path $script2)) {
+                Log-Msg "[*] [Game-Watchdog] Acc 2 (Tab 2 - ggu3ucujf3) chua chay -> Tu dong khoi chay Run_Acc2.bat..." "Cyan"
+                Start-Process "cmd.exe" -ArgumentList "/c `"$script2`"" -WorkingDirectory (Split-Path $script2) -WindowStyle Minimized
+            }
         }
     }
 
@@ -429,8 +427,8 @@ while ($true) {
                     # 4. Xoa Java crash dumps va minidumps (.mdmp, .dmp)
                     Get-ChildItem -Path "C:\Users\Administrator\Desktop", "C:\TinhLinh" -Include "hs_err_*.mdmp","hs_err_*.log","*.dmp" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
                     # 5. Cat tia log game bot neu > 5MB de chong tran bo nho
-                    $log1 = "C:\TinhLinh\TinhLinh_Lite\Acc1\autofarm_log.txt"
-                    $log2 = "C:\TinhLinh\TinhLinh_Lite\Acc2\autofarm_log.txt"
+                    $log1 = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc1\autofarm_log.txt"
+                    $log2 = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc2\autofarm_log.txt"
                     foreach ($lf in @($log1, $log2)) {
                         if (Test-Path $lf) {
                             $len = (Get-Item $lf).Length
