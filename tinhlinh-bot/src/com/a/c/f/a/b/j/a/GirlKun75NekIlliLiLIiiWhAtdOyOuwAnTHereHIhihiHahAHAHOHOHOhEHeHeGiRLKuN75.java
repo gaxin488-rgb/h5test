@@ -73,6 +73,9 @@ extends com.a.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEH
     }
 
     public final void GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(float f, float f2, int n) {
+        if (com.a.d.AutoReconnect.isExternalMovementControlActive()) {
+            return;
+        }
         this.GirlkUn75neKiLlIIiLLiLWhATDoyouWanTherehIHihihAhaHAhOhOHOhehEHEGIrLkun75.setLinearVelocity(f, f2);
         this.gIRLkun75NEKLILLLilLILWHaTDoyouWAnthEReHiHihIhAHAHaHOHOHOHEHeHeGiRLKuN75 = n;
         this.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75 = System.currentTimeMillis();
@@ -105,6 +108,9 @@ extends com.a.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEH
     }
 
     public final void GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(float f2) {
+        if (com.a.d.AutoReconnect.isExternalMovementControlActive()) {
+            return;
+        }
         Vector2 vector23;
         block39: {
             float f3;
@@ -330,6 +336,9 @@ extends com.a.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEH
     }
 
     private void gIRLkun75NEKLILLLilLILWHaTDoyouWAnthEReHiHihIhAHAHaHOHOHOHEHeHeGiRLKuN75() {
+        if (com.a.d.AutoReconnect.isExternalMovementControlActive()) {
+            return;
+        }
         if (!this.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75()) {
             return;
         }
@@ -343,6 +352,9 @@ extends com.a.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEH
     }
 
     private void GiRLkUn75nekiLLLlLLlIIwhatdOYOUwaNThereHIHihIhAHahAhOhoHOhehehEGirLkUn75() {
+        if (com.a.d.AutoReconnect.isExternalMovementControlActive()) {
+            return;
+        }
         if (!this.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75()) {
             return;
         }

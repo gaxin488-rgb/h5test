@@ -278,6 +278,104 @@ public class AutoReconnect {
         return movementCommandId.get() == commandId && movementMode == mode;
     }
 
+    public static volatile long externalControlUntilMs = 0L;
+
+    public static boolean isExternalMovementControlActive() {
+        int mode = movementMode;
+        if (mode == MOVE_JUMP || mode == MOVE_PHASE_STEP) {
+            long now = System.currentTimeMillis();
+            if (now < externalControlUntilMs) {
+                return true;
+            }
+            movementMode = MOVE_NORMAL;
+        }
+        return false;
+    }
+
+    public static void scheduleJumpSample(final long cmdId, final com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        externalControlUntilMs = System.currentTimeMillis() + 250L;
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    Thread.sleep(250L);
+                } catch (InterruptedException ignored) {}
+
+                if (!AutoReconnect.isMovementCommandValid(cmdId, MOVE_JUMP)) {
+                    return;
+                }
+
+                Gdx.app.postRunnable(new Runnable() {
+                    public void run() {
+                        try {
+                            if (!AutoReconnect.isMovementCommandValid(cmdId, MOVE_JUMP)) {
+                                return;
+                            }
+                            Body b = AutoReconnect.getPlayerBody(player);
+                            if (b != null) {
+                                Vector2 pos = b.getPosition();
+                                Vector2 vel = b.getLinearVelocity();
+                                AutoReconnect.log("[MoveDebug] JUMP_SAMPLE cmdId=" + cmdId 
+                                    + " pos=(" + String.format("%.2f,%.2f", Float.valueOf(pos.x), Float.valueOf(pos.y)) 
+                                    + ") vel=(" + String.format("%.2f,%.2f", Float.valueOf(vel.x), Float.valueOf(vel.y)) 
+                                    + ") -> End Jump Control Window, Return Navigator");
+                            }
+                        } catch (Throwable t) {
+                            AutoReconnect.log("[MoveDebug] JUMP_SAMPLE error: " + t.getMessage());
+                        } finally {
+                            if (AutoReconnect.movementMode == MOVE_JUMP && AutoReconnect.movementCommandId.get() == cmdId) {
+                                AutoReconnect.movementMode = MOVE_NORMAL;
+                            }
+                        }
+                    }
+                });
+            }
+        }, "Jump-Sample-Thread");
+        t.setDaemon(true);
+        t.start();
+    }
+
+    public static void schedulePhaseStepSample(final long cmdId, final com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        externalControlUntilMs = System.currentTimeMillis() + 450L;
+        Thread t = new Thread(new Runnable() {
+            public void run() {
+                try {
+                    Thread.sleep(450L);
+                } catch (InterruptedException ignored) {}
+
+                if (!AutoReconnect.isMovementCommandValid(cmdId, MOVE_PHASE_STEP)) {
+                    return;
+                }
+
+                Gdx.app.postRunnable(new Runnable() {
+                    public void run() {
+                        try {
+                            if (!AutoReconnect.isMovementCommandValid(cmdId, MOVE_PHASE_STEP)) {
+                                return;
+                            }
+                            Body b = AutoReconnect.getPlayerBody(player);
+                            if (b != null) {
+                                Vector2 pos = b.getPosition();
+                                Vector2 vel = b.getLinearVelocity();
+                                AutoReconnect.log("[MoveDebug] PHASE_STEP_SAMPLE cmdId=" + cmdId 
+                                    + " pos=(" + String.format("%.2f,%.2f", Float.valueOf(pos.x), Float.valueOf(pos.y)) 
+                                    + ") vel=(" + String.format("%.2f,%.2f", Float.valueOf(vel.x), Float.valueOf(vel.y)) 
+                                    + ") -> End Phase Step Control Window, Return Navigator");
+                            }
+                        } catch (Throwable t) {
+                            AutoReconnect.log("[MoveDebug] PHASE_STEP_SAMPLE error: " + t.getMessage());
+                        } finally {
+                            if (AutoReconnect.movementMode == MOVE_PHASE_STEP && AutoReconnect.movementCommandId.get() == cmdId) {
+                                AutoReconnect.movementMode = MOVE_NORMAL;
+                            }
+                        }
+                    }
+                });
+            }
+        }, "PhaseStep-Sample-Thread");
+        t.setDaemon(true);
+        t.start();
+    }
+
     public static Body getPlayerBody(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
         if (player == null) {
             return null;
@@ -4126,11 +4224,12 @@ public class AutoReconnect {
                         }
                         Vector2 p = body.getPosition();
                         Vector2 v = body.getLinearVelocity();
-                        AutoReconnect.log("[MoveDebug] JUMP_WRITE cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + (f > 0.0f ? "Phai" : "Trai") + " targetVx=" + String.format("%.1f", f2) + " targetVy=" + String.format("%.1f", f3));
+                        AutoReconnect.log("[MoveDebug] JUMP_START cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + (f > 0.0f ? "Phai" : "Trai") + " targetVx=" + String.format("%.1f", f2) + " targetVy=" + String.format("%.1f", f3) + " window=250ms");
                         body.setLinearVelocity(f2, f3);
                         Vector2 pAfter = body.getPosition();
                         Vector2 vAfter = body.getLinearVelocity();
                         AutoReconnect.log("[MoveDebug] JUMP_AFTER cmdId=" + this.val$cmdId + " posAfter=(" + String.format("%.2f,%.2f", pAfter.x, pAfter.y) + ") velAfter=(" + String.format("%.2f,%.2f", vAfter.x, vAfter.y) + ")");
+                        AutoReconnect.scheduleJumpSample(this.val$cmdId, this.val$player);
                         return;
                     }
                     AutoReconnect.log("[AutoFarm] Da thuc hien nhay (jump) vuot dia hinh / vach da!");
@@ -5745,11 +5844,12 @@ public class AutoReconnect {
                                                         if (body != null) {
                                                             Vector2 p = body.getPosition();
                                                             Vector2 v = body.getLinearVelocity();
-                                                            AutoReconnect.log("[MoveDebug] PHASE_STEP_WRITE cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + this.val$fDir + " speed=" + this.val$dashSpeed);
+                                                            AutoReconnect.log("[MoveDebug] PHASE_STEP_START cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + this.val$fDir + " speed=" + this.val$dashSpeed + " window=450ms");
                                                             body.setLinearVelocity(this.val$fDir * this.val$dashSpeed, 22.0f);
                                                             Vector2 pAfter = body.getPosition();
                                                             Vector2 vAfter = body.getLinearVelocity();
                                                             AutoReconnect.log("[MoveDebug] PHASE_STEP_AFTER cmdId=" + this.val$cmdId + " posAfter=(" + String.format("%.2f,%.2f", pAfter.x, pAfter.y) + ") velAfter=(" + String.format("%.2f,%.2f", vAfter.x, vAfter.y) + ")");
+                                                            AutoReconnect.schedulePhaseStepSample(this.val$cmdId, this.val$player);
                                                         }
                                                         // TUYET DOI KHONG GOI MOVEMENT CONTROLLER TAI DAY DE TRANH BI OVERRIDE
                                                     }
