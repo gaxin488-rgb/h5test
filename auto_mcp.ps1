@@ -6,6 +6,15 @@ Write-Host "`n========================================================" -Foregro
 Write-Host "   CAI DAT AUTO MCP & STORAGE GUARD CHO VPS 24/7" -ForegroundColor Cyan
 Write-Host "========================================================`n" -ForegroundColor Cyan
 
+# 0. Dung toan bo tien trinh Agent va Tunnel cu
+Write-Host "[*] Dung tien trinh Daemon, Agent va Tunnel cu neu dang chay..." -ForegroundColor Yellow
+try {
+    Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-WmiObject Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -eq "powershell.exe" -and ($_.CommandLine -like "*MCP_Daemon*" -or $_.CommandLine -like "*vps_agent*")
+    } | ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {} }
+} catch {}
+
 # 1. Giai phong dung luong o C: khan cap
 Write-Host "[*] Dang don dep o C: (xoa Temp, cache WER, Thung rac)..." -ForegroundColor Yellow
 Clear-RecycleBin -Force -ErrorAction SilentlyContinue
@@ -33,16 +42,23 @@ if ((Test-Path $cfDesk) -and -not (Test-Path $cfDest)) {
     Copy-Item $cfDesk $cfDest -Force
 }
 $files = @("Chay_Agent.bat", "MCP_Daemon.ps1", "vps_agent.ps1")
+$nowTicks = [DateTime]::UtcNow.Ticks
 foreach ($f in $files) {
     Write-Host "[*] Dang tai $f tu GitHub..." -ForegroundColor Cyan
     $dest = Join-Path $dir $f
     try {
-        $wc.DownloadFile("https://raw.githubusercontent.com/gaxin488-rgb/h5test/495b67fed20224ee225935173f2af2dd4936dbe3/$f", $dest)
+        $url = "https://raw.githubusercontent.com/gaxin488-rgb/h5test/main/$f" + "?v=$nowTicks"
+        $wc.DownloadFile($url, $dest)
         Write-Host "  -> Da tai $f thanh cong!" -ForegroundColor Green
     } catch {
-        Write-Host "  [-] Loi tai $($f) - $($_.Exception.Message)" -ForegroundColor Red
+        try {
+            $fallbackUrl = "https://raw.githubusercontent.com/gaxin488-rgb/h5test/dba4ea363987a53ed2c695cc22f45e9c684f12bd/$f"
+            $wc.DownloadFile($fallbackUrl, $dest)
+            Write-Host "  -> Da tai $f (fallback) thanh cong!" -ForegroundColor Green
+        } catch {
+            Write-Host "  [-] Loi tai $($f) - $($_.Exception.Message)" -ForegroundColor Red
+        }
     }
-
 }
 
 # 4. Cai dat tu khoi dong khi bat may / dang nhap
@@ -58,7 +74,6 @@ Write-Host "[V] Da cai dat Task Scheduler thanh cong!" -ForegroundColor Green
 
 # 5. Khoi dong MCP Daemon ngay lap tuc
 Write-Host "`n[*] Dang khoi dong Agent & Cloudflare Tunnel..." -ForegroundColor Yellow
-Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Process -FilePath $batPath -WorkingDirectory $dir
 
 Write-Host "`n========================================================" -ForegroundColor Green
