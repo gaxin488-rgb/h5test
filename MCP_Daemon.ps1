@@ -1,6 +1,6 @@
 # ==============================================================================
 # Antigravity VPS Master Watchdog Daemon (24/7 Self-Healing Loop)
-# Tu dong khoi dong, giam sat suc khoe, tu sua loi, toi uu RAM va giu ket noi 24/7
+# Tu dong khoi dong, giam sat suc khoe, tu sua loi, giu ket noi va treo game 24/7
 # ==============================================================================
 param(
     [int]$Port = 8765,
@@ -31,18 +31,6 @@ Write-Host "   [*] Thu muc lam viec: $root" -ForegroundColor Yellow
 Write-Host "   [*] Agent Port: $Port | Token: $Token" -ForegroundColor Yellow
 Write-Host "   [*] GitHub Sync: $Repo/$TunnelFile" -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Cyan
-
-# Memory API
-try {
-    Add-Type -TypeDefinition @"
-    using System;
-    using System.Runtime.InteropServices;
-    public class VpsMem {
-        [DllImport("psapi.dll")]
-        public static extern int EmptyWorkingSet(IntPtr hProcess);
-    }
-"@ -ErrorAction SilentlyContinue
-} catch {}
 
 function Push-UrlToGitHub([string]$tunnelUrl) {
     if (-not $GithubToken) { return }
@@ -93,11 +81,9 @@ function Update-AgentScriptFromGitHub() {
 
 function Kill-AgentProcesses() {
     try {
-        Get-WmiObject Win32_Process | Where-Object {
-            $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $PID -and ($_.CommandLine -like "*vps_agent.ps1*")
-        } | ForEach-Object {
-            Write-Host "[!] Dung tien trinh PowerShell Agent cu (PID $($_.ProcessId))..." -ForegroundColor Yellow
-            try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+        Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID } | ForEach-Object {
+            Write-Host "[!] Dung tien trinh PowerShell Agent cu (PID $($_.Id))..." -ForegroundColor Yellow
+            try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
         }
     } catch {}
 }
@@ -133,7 +119,6 @@ function Start-TunnelProcess() {
     return [System.Diagnostics.Process]::Start($psi)
 }
 
-
 # 1. Update Agent tu GitHub
 Update-AgentScriptFromGitHub
 
@@ -145,7 +130,7 @@ Start-Sleep -Seconds 3
 $tunnelProc = Start-TunnelProcess
 
 $currentTunnelUrl = $null
-$lastRamTrimTime = [DateTime]::Now
+$lastCleanupTime = [DateTime]::Now
 $lastTunnelCheckTime = [DateTime]::Now
 $agentFailCount = 0
 $tunnelFailCount = 0
@@ -157,7 +142,7 @@ while ($true) {
     Start-Sleep -Seconds 5
     $now = [DateTime]::Now
 
-    # A. Doc link Cloudflare Tunnel moi tu Logfile (NON-BLOCKING, FileShare ReadWrite)
+    # A. Doc link Cloudflare Tunnel moi tu Logfile (NON-BLOCKING)
     if (Test-Path $cfLogPath) {
         try {
             $fs = [System.IO.File]::Open($cfLogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
@@ -177,7 +162,6 @@ while ($true) {
         } catch {}
     }
 
-
     # B. Kiem tra tien trinh Tunnel (Auto-Restart neu crash)
     if ($null -eq $tunnelProc -or $tunnelProc.HasExited) {
         Write-Host "[-] Cloudflare Tunnel bi dung! Tu dong khoi dong lai ngay..." -ForegroundColor Red
@@ -189,8 +173,8 @@ while ($true) {
     $isAgentAlive = $false
     try {
         $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/ping")
-        $req.Timeout = 15000
-        $req.ReadWriteTimeout = 15000
+        $req.Timeout = 10000
+        $req.ReadWriteTimeout = 10000
         $resp = $req.GetResponse()
         if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
             $isAgentAlive = $true
@@ -204,9 +188,9 @@ while ($true) {
         $agentFailCount = 0
     } else {
         $agentFailCount++
-        Write-Host "[-] Canh bao: Agent khong phan hoi tai 127.0.0.1:$Port (Lan $agentFailCount/10)..." -ForegroundColor Yellow
-        if ($agentFailCount -ge 10) {
-            Write-Host "[!] AGENT BI TREO HOAC MAT KET NOI (50s)! Tu dong reset Agent..." -ForegroundColor Red
+        Write-Host "[-] Canh bao: Agent khong phan hoi tai 127.0.0.1:$Port (Lan $agentFailCount/6)..." -ForegroundColor Yellow
+        if ($agentFailCount -ge 6) {
+            Write-Host "[!] AGENT BI TREO HOAC MAT KET NOI! Tu dong reset Agent..." -ForegroundColor Red
             if ($agentProc -and -not $agentProc.HasExited) {
                 try { $agentProc.Kill() } catch {}
             }
@@ -251,19 +235,15 @@ while ($true) {
         }
     }
 
-    # E. Tu dong giai phong RAM (Trim Working Set) moi 4 phut (240 giay)
-    if (($now - $lastRamTrimTime).TotalSeconds -ge 240) {
-        $lastRamTrimTime = $now
+    # E. Tu dong don dep disk & crash dumps moi 4 phut (KHONG dung EmptyWorkingSet tren javaw vi gay crash C2 compiler)
+    if (($now - $lastCleanupTime).TotalSeconds -ge 240) {
+        $lastCleanupTime = $now
         try {
-            $javawProcs = Get-Process javaw -ErrorAction SilentlyContinue
-            if ($javawProcs) {
-                $trimmedCount = 0
-                foreach ($jp in $javawProcs) {
-                    [VpsMem]::EmptyWorkingSet($jp.Handle) | Out-Null
-                    $trimmedCount++
-                }
-                Write-Host "[*] [Auto-RAM-Trim] Da toi uu hoa RAM cho $trimmedCount tien trinh game javaw.exe" -ForegroundColor Green
-            }
+            Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\2\*" -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+            Write-Host "[*] [Auto-Cleanup] Da don dep disk va log rac thanh cong." -ForegroundColor Green
         } catch {}
     }
 
