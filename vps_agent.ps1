@@ -5,18 +5,73 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# KHOI DONG LISTENER TRONG 5MS - KHONG GOI GITHUB, KHONG TAO PROCESS, KHONG DELAY
-$listener = New-Object System.Net.HttpListener
-try { $listener.Prefixes.Add("http://localhost:$Port/") } catch {}
-try { $listener.Prefixes.Add("http://127.0.0.1:$Port/") } catch {}
-try { $listener.Prefixes.Add("http://*:$Port/") } catch {}
+# 1. DUNG TAT CA TIEN TRINH POWERSHELL AGENT CU DE GIAI PHONG PORT
+$myPid = $PID
 try {
-    $listener.Start()
+    Get-CimInstance Win32_Process | Where-Object { 
+        $_.Name -eq "powershell.exe" -and 
+        $_.ProcessId -ne $myPid -and 
+        $_.CommandLine -notlike "*MCP_Daemon*" -and 
+        $_.CommandLine -notlike "*DongBo*" 
+    } | ForEach-Object {
+        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+    }
 } catch {
+    try {
+        Get-WmiObject Win32_Process | Where-Object { 
+            $_.Name -eq "powershell.exe" -and 
+            $_.ProcessId -ne $myPid -and 
+            $_.CommandLine -notlike "*MCP_Daemon*" -and 
+            $_.CommandLine -notlike "*DongBo*" 
+        } | ForEach-Object {
+            try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    } catch {}
+}
+
+Start-Sleep -Milliseconds 400
+
+# 2. KHOI DONG HTTP LISTENER CHO CA LOCALHOST VA 127.0.0.1
+$listener = $null
+$started = $false
+
+for ($i = 0; $i -lt 5; $i++) {
+    try {
+        $listener = New-Object System.Net.HttpListener
+        $listener.Prefixes.Add("http://localhost:$Port/")
+        $listener.Prefixes.Add("http://127.0.0.1:$Port/")
+        $listener.Start()
+        $started = $true
+        break
+    } catch {
+        # Neu bi trung port, thu don dep lai
+        try {
+            Get-CimInstance Win32_Process | Where-Object { 
+                $_.Name -eq "powershell.exe" -and 
+                $_.ProcessId -ne $myPid -and 
+                $_.CommandLine -notlike "*MCP_Daemon*" -and 
+                $_.CommandLine -notlike "*DongBo*" 
+            } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+        } catch {}
+        Start-Sleep -Milliseconds 500
+    }
+}
+
+if (-not $started) {
+    try {
+        $listener = New-Object System.Net.HttpListener
+        $listener.Prefixes.Add("http://127.0.0.1:$Port/")
+        $listener.Start()
+        $started = $true
+    } catch {}
+}
+
+if (-not $started) {
     try {
         $listener = New-Object System.Net.HttpListener
         $listener.Prefixes.Add("http://localhost:$Port/")
         $listener.Start()
+        $started = $true
     } catch {
         exit 1
     }
@@ -48,7 +103,7 @@ function Check-Auth($request) {
 }
 
 $startTime = [DateTime]::Now
-$lastBgCheck = [DateTime]::MinValue
+$lastDiskClean = [DateTime]::MinValue
 
 while ($listener.IsListening) {
     try {
@@ -66,7 +121,7 @@ while ($listener.IsListening) {
             continue
         }
 
-        # Health / Ping khong can Token - tra ve ngay lap tuc cho Watchdog
+        # Health / Ping khong can Token de Watchdog va Cloudflare kiem tra nhanh nhat
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
             Send-JsonResponse $response 200 @{
                 ok = $true
@@ -75,11 +130,11 @@ while ($listener.IsListening) {
                 time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
                 uptime_sec = [math]::Round(((Get-Date) - $startTime).TotalSeconds)
             }
-            
-            # Don dep disk dinh ky moi 5 phut
+
+            # Don dep o C dinh ky moi 5 phut
             $now = [DateTime]::Now
-            if (($now - $lastBgCheck).TotalSeconds -ge 300) {
-                $lastBgCheck = $now
+            if (($now - $lastDiskClean).TotalSeconds -ge 300) {
+                $lastDiskClean = $now
                 try {
                     Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
                     Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
@@ -97,49 +152,44 @@ while ($listener.IsListening) {
 
         if ($request.HttpMethod -eq "GET") {
             if ($rawUrl -eq "/sys_info") {
+                $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue
+                $freeMemMb = if ($os) { [math]::Round($os.FreePhysicalMemory / 1024, 1) } else { 0 }
+                $totalMemMb = if ($os) { [math]::Round($os.TotalVisibleMemorySize / 1024, 1) } else { 0 }
                 $drive = Get-PSDrive C -ErrorAction SilentlyContinue
                 $diskFreeGb = if ($drive) { [math]::Round($drive.Free / 1GB, 2) } else { 0 }
-                $diskTotalGb = if ($drive) { [math]::Round(($drive.Used + $drive.Free) / 1GB, 2) } else { 0 }
+
                 Send-JsonResponse $response 200 @{
                     ok = $true
-                    os = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
-                    cpu_cores = $env:NUMBER_OF_PROCESSORS
-                    ram_free_mb = [math]::Round((Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).FreePhysicalMemory / 1024, 0)
-                    disk_c_free_gb = $diskFreeGb
-                    disk_c_total_gb = $diskTotalGb
-                    time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                    data = @{
+                        os = if ($os) { $os.Caption } else { "Windows" }
+                        arch = $env:PROCESSOR_ARCHITECTURE
+                        hostname = $env:COMPUTERNAME
+                        time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                        ram_free_mb = $freeMemMb
+                        ram_total_mb = $totalMemMb
+                        disk_c_free_gb = $diskFreeGb
+                    }
                 }
                 continue
             }
 
-            if ($rawUrl -eq "/read_file") {
+            if ($rawUrl -eq "/read_file" -or $rawUrl -eq "/file/read") {
                 $filePath = $request.QueryString["path"]
-                $tail = $request.QueryString["tail"]
-                if (-not $filePath) {
-                    Send-JsonResponse $response 400 @{ ok = $false; error = "Thieu tham so path" }
-                    continue
-                }
-                if (-not (Test-Path $filePath)) {
+                $tail = [int]($request.QueryString["tail"] -as [int])
+                if ([string]::IsNullOrWhiteSpace($filePath) -or -not (Test-Path -LiteralPath $filePath)) {
                     Send-JsonResponse $response 404 @{ ok = $false; error = "File khong ton tai: $filePath" }
                     continue
                 }
                 try {
-                    $content = ""
-                    if ($tail) {
-                        $tailN = [int]$tail
-                        $lines = Get-Content $filePath -Tail $tailN -Encoding UTF8 -ErrorAction SilentlyContinue
-                        $content = ($lines -join "`n")
+                    $content = if ($tail -gt 0) {
+                        (Get-Content -LiteralPath $filePath -Tail $tail -Encoding UTF8 -ErrorAction Stop) -join "`n"
                     } else {
-                        $fs = [System.IO.File]::Open($filePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-                        $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
-                        $content = $sr.ReadToEnd()
-                        $sr.Close()
-                        $fs.Close()
+                        Get-Content -LiteralPath $filePath -Raw -Encoding UTF8 -ErrorAction Stop
                     }
                     Send-JsonResponse $response 200 @{
                         ok = $true
                         path = $filePath
-                        size = (Get-Item $filePath).Length
+                        size = (Get-Item -LiteralPath $filePath).Length
                         content = $content
                     }
                 } catch {
@@ -148,20 +198,20 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/list_files") {
-                $dirPath = $request.QueryString["path"]
-                if (-not $dirPath) { $dirPath = "C:\Users\Administrator\Desktop" }
+            if ($rawUrl -eq "/list_files" -or $rawUrl -eq "/file/list") {
+                $dirPath = if ($request.QueryString["path"]) { $request.QueryString["path"] } else { "." }
                 if (-not (Test-Path $dirPath)) {
                     Send-JsonResponse $response 404 @{ ok = $false; error = "Thu muc khong ton tai: $dirPath" }
                     continue
                 }
                 try {
-                    $items = Get-ChildItem -Path $dirPath -ErrorAction Stop | ForEach-Object {
+                    $items = Get-ChildItem -Path $dirPath -ErrorAction SilentlyContinue | ForEach-Object {
                         @{
                             name = $_.Name
+                            path = $_.FullName
                             is_dir = $_.PSIsContainer
                             size = if ($_.PSIsContainer) { 0 } else { $_.Length }
-                            last_modified = $_.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                            modified = $_.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
                         }
                     }
                     Send-JsonResponse $response 200 @{ ok = $true; path = $dirPath; count = $items.Count; items = $items }
@@ -171,19 +221,17 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/process_list" -or $rawUrl -eq "/processes") {
+            if ($rawUrl -eq "/processes" -or $rawUrl -eq "/process/list") {
                 $filter = $request.QueryString["filter"]
                 try {
                     $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object {
                         if ($filter) { $_.ProcessName -like "*$filter*" } else { $true }
                     } | ForEach-Object {
-                        $cpuVal = 0.0
-                        try { if ($_.CPU -ne $null) { $cpuVal = [math]::Round([double]$_.CPU, 1) } } catch {}
                         @{
                             pid = $_.Id
                             name = $_.ProcessName
                             mem_mb = [math]::Round($_.WorkingSet64 / 1MB, 1)
-                            cpu = $cpuVal
+                            cpu = [math]::Round($_.CPU, 1)
                         }
                     }
                     Send-JsonResponse $response 200 @{ ok = $true; count = $procs.Count; processes = $procs }
@@ -249,7 +297,7 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/write_file") {
+            if ($rawUrl -eq "/write_file" -or $rawUrl -eq "/file/write") {
                 $filePath = $body.path
                 $content = $body.content
                 $append = [bool]$body.append
@@ -280,19 +328,19 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/kill_process") {
+            if ($rawUrl -eq "/kill_process" -or $rawUrl -eq "/process/kill") {
                 $pName = $body.name
-                $targetPid = [int]$body.pid
+                $pId = $body.pid
                 if ($pName -and $pName.EndsWith(".exe")) {
                     $pName = $pName.Substring(0, $pName.Length - 4)
                 }
                 try {
-                    if ($targetPid) {
-                        Stop-Process -Id $targetPid -Force -ErrorAction Stop
+                    if ($pId) {
+                        Stop-Process -Id $pId -Force -ErrorAction Stop
                     } elseif ($pName) {
                         Stop-Process -Name $pName -Force -ErrorAction Stop
                     } else {
-                        Send-JsonResponse 400 @{ ok = $false; error = "Thieu pid hoac name" }
+                        Send-JsonResponse $response 400 @{ ok = $false; error = "Thieu pid hoac name" }
                         continue
                     }
                     Send-JsonResponse $response 200 @{ ok = $true; message = "Da dung tien trinh thanh cong" }
@@ -307,8 +355,8 @@ while ($listener.IsListening) {
                 $cwd = $body.cwd
                 try {
                     $psi = New-Object System.Diagnostics.ProcessStartInfo
-                    $psi.FileName = "cmd.exe"
-                    $psi.Arguments = "/c `"$cmd`""
+                    $psi.FileName = "powershell.exe"
+                    $psi.Arguments = "-NoProfile -Command $cmd"
                     if ($cwd) { $psi.WorkingDirectory = $cwd }
                     $psi.UseShellExecute = $true
                     $p = [System.Diagnostics.Process]::Start($psi)
