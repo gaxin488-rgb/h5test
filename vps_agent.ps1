@@ -17,16 +17,22 @@ try {
 Start-Sleep -Milliseconds 300
 
 
-# 2. KHOI DONG HTTP LISTENER VOI CAC PREFIX PHU HOP
+# 2. KHOI DONG HTTP LISTENER VOI CAC PREFIX PHU HOP (Uu tien http://+:port de nhan moi Host header tu Cloudflare)
+try {
+    & netsh http add urlacl url="http://+:$Port/" user="Everyone" | Out-Null
+    & netsh http add urlacl url="http://+:$Port/" user="Administrator" | Out-Null
+} catch {}
+
 $listener = $null
 $started = $false
 $prefixesToTry = @(
-    @("http://localhost:$Port/", "http://127.0.0.1:$Port/"),
-    @("http://127.0.0.1:$Port/"),
-    @("http://localhost:$Port/"),
     @("http://+:$Port/"),
-    @("http://*:$Port/")
+    @("http://*:$Port/"),
+    @("http://+:$Port/", "http://localhost:$Port/", "http://127.0.0.1:$Port/"),
+    @("http://localhost:$Port/", "http://127.0.0.1:$Port/"),
+    @("http://127.0.0.1:$Port/")
 )
+
 
 foreach ($pList in $prefixesToTry) {
     try {
