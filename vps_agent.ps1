@@ -5,22 +5,54 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# 1. KHOI DONG HTTP LISTENER NGAY LAP TUC (<10ms) DE QUA MAT HEALTH-CHECK CUA DAEMON
-$listener = New-Object System.Net.HttpListener
-$bound = $false
-$prefixes = @("http://127.0.0.1:$Port/", "http://localhost:$Port/", "http://*:$Port/", "http://+:$Port/")
-
-foreach ($pref in $prefixes) {
+# HAM TAO VA START LISTENER
+function Start-MyListener([int]$p) {
+    $l = New-Object System.Net.HttpListener
     try {
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add($pref)
-        $listener.Start()
-        $bound = $true
-        break
-    } catch {}
+        $l.Prefixes.Add("http://127.0.0.1:$p/")
+        $l.Start()
+        return $l
+    } catch {
+        try { $l.Close() } catch {}
+        return $null
+    }
 }
 
-if (-not $bound) {
+# 1. THU BIND PORT CHINH
+$listener = Start-MyListener $Port
+
+# 2. NEU BI KENH, RESET HTTP.SYS DE XOA TAT CA 503 DANG DANG DO
+if (-not $listener) {
+    try {
+        $psi = New-Object System.Diagnostics.ProcessStartInfo
+        $psi.FileName = "cmd.exe"
+        $psi.Arguments = "/c net stop http /y && net start http"
+        $psi.CreateNoWindow = $true
+        $psi.UseShellExecute = $false
+        $p = [System.Diagnostics.Process]::Start($psi)
+        $p.WaitForExit(8000)
+    } catch {}
+    Start-Sleep -Seconds 1
+    $listener = Start-MyListener $Port
+}
+
+# 3. NEU VAN KHONG DUOC, FALLBACK SANG PORT 8766 VA CHUYEN CLOUDFLARED SANG 8766
+if (-not $listener) {
+    $Port = 8766
+    $listener = Start-MyListener $Port
+    if ($listener) {
+        try {
+            Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Milliseconds 500
+            $cfPath = Join-Path $PSScriptRoot "cloudflared.exe"
+            $cfLog = Join-Path $PSScriptRoot "cloudflared.log"
+            Remove-Item $cfLog -Force -ErrorAction SilentlyContinue
+            Start-Process "cmd.exe" -ArgumentList "/c `"`"$cfPath`" tunnel --url http://127.0.0.1:8766 --http-host-header localhost 2> `"$cfLog`"`"" -WindowStyle Hidden
+        } catch {}
+    }
+}
+
+if (-not $listener -or -not $listener.IsListening) {
     exit 1
 }
 
@@ -49,7 +81,6 @@ function Check-Auth($request) {
     return $false
 }
 
-# 2. DON DEP CRASH DUMPS VA UPDATE DAEMON TRONG BACKGROUND (KHONG BLOCK LISTENER)
 $lastBgCheck = [DateTime]::MinValue
 
 while ($listener.IsListening) {
@@ -68,11 +99,11 @@ while ($listener.IsListening) {
             continue
         }
 
-        # Health / Ping khong can Token - tra ve ngay lap tuc
+        # Health / Ping khong can Token
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
-            Send-JsonResponse $response 200 @{ ok = $true; status = "online"; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
+            Send-JsonResponse $response 200 @{ ok = $true; status = "online"; port = $Port; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
             
-            # Kiem tra don dep disk moi 5 phut
+            # Tu dong don dep disk moi 5 phut
             $now = [DateTime]::Now
             if (($now - $lastBgCheck).TotalSeconds -ge 300) {
                 $lastBgCheck = $now
@@ -104,6 +135,7 @@ while ($listener.IsListening) {
                         hostname = $env:COMPUTERNAME
                         time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
                         disk_c_free_gb = $diskFreeGb
+                        port = $Port
                     }
                 }
                 continue
