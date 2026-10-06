@@ -5,23 +5,36 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# HAM TAO VA START LISTENER
+# HAM TAO VA START LISTENER VOI DAY DU PREFIX (LOCALHOST + 127.0.0.1)
 function Start-MyListener([int]$p) {
-    $l = New-Object System.Net.HttpListener
-    try {
-        $l.Prefixes.Add("http://127.0.0.1:$p/")
-        $l.Start()
-        return $l
-    } catch {
-        try { $l.Close() } catch {}
-        return $null
+    # Thu nghiem cac to hop prefix tu tot nhat den co ban nhat
+    $combinations = @(
+        @("http://localhost:$p/", "http://127.0.0.1:$p/"),
+        @("http://localhost:$p/"),
+        @("http://127.0.0.1:$p/"),
+        @("http://*:$p/"),
+        @("http://+:$p/")
+    )
+    
+    foreach ($combo in $combinations) {
+        $l = New-Object System.Net.HttpListener
+        foreach ($pref in $combo) {
+            try { $l.Prefixes.Add($pref) } catch {}
+        }
+        try {
+            $l.Start()
+            if ($l.IsListening) { return $l }
+        } catch {
+            try { $l.Close() } catch {}
+        }
     }
+    return $null
 }
 
 # 1. THU BIND PORT CHINH
 $listener = Start-MyListener $Port
 
-# 2. NEU BI KENH, RESET HTTP.SYS DE XOA TAT CA 503 DANG DANG DO
+# 2. NEU BI KENH DO HTTP.SYS, DUNG NET STOP HTTP DE GIAI PHONG TOAN BO KERNEL QUEUE
 if (-not $listener) {
     try {
         $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -34,22 +47,6 @@ if (-not $listener) {
     } catch {}
     Start-Sleep -Seconds 1
     $listener = Start-MyListener $Port
-}
-
-# 3. NEU VAN KHONG DUOC, FALLBACK SANG PORT 8766 VA CHUYEN CLOUDFLARED SANG 8766
-if (-not $listener) {
-    $Port = 8766
-    $listener = Start-MyListener $Port
-    if ($listener) {
-        try {
-            Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Milliseconds 500
-            $cfPath = Join-Path $PSScriptRoot "cloudflared.exe"
-            $cfLog = Join-Path $PSScriptRoot "cloudflared.log"
-            Remove-Item $cfLog -Force -ErrorAction SilentlyContinue
-            Start-Process "cmd.exe" -ArgumentList "/c `"`"$cfPath`" tunnel --url http://127.0.0.1:8766 --http-host-header localhost 2> `"$cfLog`"`"" -WindowStyle Hidden
-        } catch {}
-    }
 }
 
 if (-not $listener -or -not $listener.IsListening) {
@@ -99,7 +96,7 @@ while ($listener.IsListening) {
             continue
         }
 
-        # Health / Ping khong can Token
+        # Health / Ping khong can Token - tra ve ngay lap tuc
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
             Send-JsonResponse $response 200 @{ ok = $true; status = "online"; port = $Port; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
             
