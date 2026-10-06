@@ -52,10 +52,41 @@ flowchart TD
   - Nếu đi sang trái: $V_x = -2.0	ext{ m/s}, V_y = +6.5	ext{ m/s}$.
 * Áp dụng xung lực: `body.applyLinearImpulse(vector, body.getWorldCenter(), true)`.
 
-#### Cấp 2: Phase Step Acceleration
+#### Cấp 2: Phase Step Acceleration & Decoupling
 * Khi 3 lần nhảy liên tiếp vẫn không vượt qua được vật cản:
-* Bot áp dụng lực đẩy trực tiếp theo vector gia tốc cực đại: $V_x = 15.0	ext{ m/s}$ hướng về phía mục tiêu.
+* Bot chuyển sang trạng thái `MOVE_PHASE_STEP` và áp dụng lực đẩy trực tiếp theo vector gia tốc cực đại: $V_x = 12.0 - 15.0\text{ m/s}, V_y = 22.0\text{ m/s}$ hướng về phía mục tiêu.
+* **Độc quyền điều khiển (Decoupling):** Triệt tiêu hoàn toàn lệnh gọi Controller (`controller.setWaypoint()`) trong callback của Phase Step để tránh xung đột hai bên cùng ghi đè Body velocity.
 
 #### Cấp 3: Emergency Recall (Về Làng Khẩn Cấp)
-* Nếu nhân vật đứng kẹt tại cùng một vị trí quá 4 chu kỳ lặp liên tiếp (`samePositionStuckCycles > 4`) hoặc thời gian ở map trung gian vượt quá **6 phút**:
-* Bot kích hoạt gửi gói tin Về Làng lên server để đưa nhân vật về vùng an toàn, xóa bỏ toàn bộ cờ kẹt và bắt đầu lại lộ trình di chuyển. Kỹ thuật này triệt tiêu hoàn toàn khả năng nhân vật bị rơi vào vòng lặp kẹt vĩnh viễn.
+* Nếu nhân vật đứng kẹt tại cùng một vị trí quá 3 chu kỳ lặp liên tiếp (`samePositionStuckCycles >= 3`) hoặc thời gian ở map trung gian vượt quá **6 phút**:
+* Bot kích hoạt trạng thái `MOVE_STOP` và gửi gói tin Về Làng lên server để đưa nhân vật về vùng an toàn, xóa bỏ toàn bộ cờ kẹt và bắt đầu lại lộ trình di chuyển. Kỹ thuật này triệt tiêu hoàn toàn khả năng nhân vật bị rơi vào vòng lặp kẹt vĩnh viễn.
+
+---
+
+## 3. Kiến Trúc Movement State Machine & Telemetry Guard (TEST6)
+
+Hệ thống di chuyển áp dụng mô hình 4 tầng kiểm soát:
+
+```
+                    MOVEMENT STATE
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+         commandId              movementMode
+         (AtomicLong)           (MOVE_NORMAL / JUMP / PHASE / PORTAL / STOP)
+              │                     │
+              └──────────┬──────────┘
+                         ↓
+                  postRunnable(cmdId)
+                         ↓
+             Kiểm tra isMovementCommandValid(cmdId, mode)
+                         ↓
+               Ghi Box2D Body Velocity
+```
+
+### Các nguyên tắc cốt lõi:
+1. **Command Invalidation:** Mọi `Runnable` chuyển giao vào `Gdx.app.postRunnable` đều mang một `commandId` duy nhất từ `newMovementCommand(mode)`. Nếu một lệnh mới phát sinh trước khi callback chạy, callback cũ tự hủy lập tức (`isMovementCommandValid == false`).
+2. **Portal Lock:** Khi gửi lệnh qua cổng (`MOVE_PORTAL`), mọi thao tác ghi velocity từ Normal Movement hay Near Gate đều bị khóa tuyệt đối.
+3. **Phát hiện kẹt 2D:** Đo lường tiến độ dịch chuyển bằng $\text{progress} = \sqrt{\Delta x^2 + \Delta y^2}$ kết hợp tiến độ khoảng cách đích $\Delta d = d_{\text{trước}} - d_{\text{hiện tại}}$, loại bỏ hoàn toàn việc nhận diện kẹt sai khi nhân vật di chuyển dọc trục Y.
+4. **Telemetry Before/After (`[MoveDebug]`):** Ghi log quả tang `cmdId`, `pos`, `velBefore`, `dir` trước khi ghi, và `posAfter`, `velAfter` ngay sau khi ghi, giúp phân định rõ ràng giữa Va chạm vật lý (Case A), Tranh chấp Controller (Case B), Server Snap-back (Case C) và Lệch pha hiển thị (Case D).
+
