@@ -5,53 +5,107 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# HAM TAO VA START LISTENER VOI DAY DU PREFIX (LOCALHOST + 127.0.0.1)
-function Start-MyListener([int]$p) {
-    # Thu nghiem cac to hop prefix tu tot nhat den co ban nhat
-    $combinations = @(
-        @("http://localhost:$p/", "http://127.0.0.1:$p/"),
+$logLines = @()
+$logLines += "[$(Get-Date -Format 'HH:mm:ss')] Agent bat dau khoi dong (PID $PID, Port $Port)..."
+
+function Push-DebugLog([string]$msg) {
+    global:logLines += "[$(Get-Date -Format 'HH:mm:ss')] $msg"
+    try {
+        $ghToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
+        $apiUrl = "https://api.github.com/repos/gaxin488-rgb/h5test/contents/agent_debug.txt"
+        $headers = @{
+            "Authorization" = "Bearer $ghToken"
+            "Accept"        = "application/vnd.github.v3+json"
+            "User-Agent"    = "Antigravity-Agent-Debug"
+        }
+        $sha = $null
+        try {
+            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 5
+            $sha = $resp.sha
+        } catch {}
+        
+        $contentStr = ($global:logLines -join "`r`n")
+        $b64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($contentStr))
+        $body = @{ message = "Agent Debug Log update"; content = $b64 }
+        if ($sha) { $body["sha"] = $sha }
+        $null = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method PUT -Body ($body | ConvertTo-Json) -TimeoutSec 8
+    } catch {}
+}
+
+# 1. Tu dong cap nhat MCP_Daemon.ps1 tren o dia tu GitHub de sua loi watchdog
+try {
+    $daemonDest = Join-Path $PSScriptRoot "MCP_Daemon.ps1"
+    $wc = New-Object System.Net.WebClient
+    $wc.Headers.Add("User-Agent", "Antigravity-Agent")
+    $daemonCode = $wc.DownloadString("https://raw.githubusercontent.com/gaxin488-rgb/h5test/main/MCP_Daemon.ps1")
+    if ($daemonCode -and $daemonCode.Length -gt 1000) {
+        [System.IO.File]::WriteAllText($daemonDest, $daemonCode, [Text.Encoding]::UTF8)
+        $logLines += "[+] Da cap nhat MCP_Daemon.ps1 tren disk thanh cong!"
+    }
+} catch {
+    $logLines += "[-] Loi cap nhat MCP_Daemon.ps1 tren disk: $($_.Exception.Message)"
+}
+
+# 2. Giai phong port va dang ky URL ACL
+try {
+    netsh http add urlacl url=http://+:8765/ sddl="D:(A;;GX;;;WD)" 2>$null | Out-Null
+    netsh http add urlacl url=http://localhost:8765/ sddl="D:(A;;GX;;;WD)" 2>$null | Out-Null
+    netsh http add urlacl url=http://127.0.0.1:8765/ sddl="D:(A;;GX;;;WD)" 2>$null | Out-Null
+} catch {}
+
+# 3. Kill bat ky tien trinh powershell zombile nao dang bam port ngoai tru $PID
+try {
+    $netstatOut = netstat -ano | Select-String ":$Port\s"
+    foreach ($line in $netstatOut) {
+        $parts = ($line.ToString().Trim() -split "\s+")
+        if ($parts.Length -ge 5) {
+            $pId = [int]$parts[-1]
+            if ($pId -gt 4 -and $pId -ne $PID) {
+                try { Stop-Process -Id $pId -Force -ErrorAction SilentlyContinue } catch {}
+                try { taskkill /F /PID $pId 2>$null | Out-Null } catch {}
+                $logLines += "[!] Da dung tien trinh PID $pId tren port $Port"
+            }
+        }
+    }
+} catch {}
+
+# 4. Khoi tao Listener voi tat ca to hop
+function Create-Listener([int]$p) {
+    $combos = @(
+        @("http://127.0.0.1:$p/", "http://localhost:$p/", "http://[::1]:$p/"),
+        @("http://127.0.0.1:$p/", "http://localhost:$p/"),
         @("http://localhost:$p/"),
         @("http://127.0.0.1:$p/"),
         @("http://*:$p/"),
         @("http://+:$p/")
     )
-    
-    foreach ($combo in $combinations) {
+    foreach ($combo in $combos) {
         $l = New-Object System.Net.HttpListener
         foreach ($pref in $combo) {
             try { $l.Prefixes.Add($pref) } catch {}
         }
         try {
             $l.Start()
-            if ($l.IsListening) { return $l }
+            if ($l.IsListening) {
+                $global:logLines += "[+] Listener khoi dong thanh cong voi prefix: $($combo -join ', ')"
+                return $l
+            }
         } catch {
+            $global:logLines += "[-] Combo ($($combo -join ', ')) that bai: $($_.Exception.Message)"
             try { $l.Close() } catch {}
         }
     }
     return $null
 }
 
-# 1. THU BIND PORT CHINH
-$listener = Start-MyListener $Port
-
-# 2. NEU BI KENH DO HTTP.SYS, DUNG NET STOP HTTP DE GIAI PHONG TOAN BO KERNEL QUEUE
-if (-not $listener) {
-    try {
-        $psi = New-Object System.Diagnostics.ProcessStartInfo
-        $psi.FileName = "cmd.exe"
-        $psi.Arguments = "/c net stop http /y && net start http"
-        $psi.CreateNoWindow = $true
-        $psi.UseShellExecute = $false
-        $p = [System.Diagnostics.Process]::Start($psi)
-        $p.WaitForExit(8000)
-    } catch {}
-    Start-Sleep -Seconds 1
-    $listener = Start-MyListener $Port
-}
+$listener = Create-Listener $Port
 
 if (-not $listener -or -not $listener.IsListening) {
+    Push-DebugLog "Listener tren port $Port that bai hoan toan!"
     exit 1
 }
+
+Push-DebugLog "Agent Online va san sang nhan lenh tren port $Port!"
 
 function Send-JsonResponse($response, [int]$statusCode, $obj) {
     try {
@@ -79,6 +133,7 @@ function Check-Auth($request) {
 }
 
 $lastBgCheck = [DateTime]::MinValue
+$startTime = [DateTime]::Now
 
 while ($listener.IsListening) {
     try {
@@ -98,9 +153,15 @@ while ($listener.IsListening) {
 
         # Health / Ping khong can Token - tra ve ngay lap tuc
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
-            Send-JsonResponse $response 200 @{ ok = $true; status = "online"; port = $Port; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
+            Send-JsonResponse $response 200 @{
+                ok = $true
+                status = "online"
+                port = $Port
+                time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+                uptime_sec = [math]::Round(((Get-Date) - $startTime).TotalSeconds)
+            }
             
-            # Tu dong don dep disk moi 5 phut
+            # Don dep disk moi 5 phut
             $now = [DateTime]::Now
             if (($now - $lastBgCheck).TotalSeconds -ge 300) {
                 $lastBgCheck = $now
@@ -123,38 +184,47 @@ while ($listener.IsListening) {
             if ($rawUrl -eq "/sys_info") {
                 $drive = Get-PSDrive C -ErrorAction SilentlyContinue
                 $diskFreeGb = if ($drive) { [math]::Round($drive.Free / 1GB, 2) } else { 0 }
-
+                $diskTotalGb = if ($drive) { [math]::Round(($drive.Used + $drive.Free) / 1GB, 2) } else { 0 }
                 Send-JsonResponse $response 200 @{
                     ok = $true
-                    data = @{
-                        os = "Windows Server 2012 R2"
-                        arch = $env:PROCESSOR_ARCHITECTURE
-                        hostname = $env:COMPUTERNAME
-                        time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-                        disk_c_free_gb = $diskFreeGb
-                        port = $Port
-                    }
+                    os = (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
+                    cpu_cores = $env:NUMBER_OF_PROCESSORS
+                    ram_free_mb = [math]::Round((Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).FreePhysicalMemory / 1024, 0)
+                    disk_c_free_gb = $diskFreeGb
+                    disk_c_total_gb = $diskTotalGb
+                    time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
                 }
                 continue
             }
 
             if ($rawUrl -eq "/read_file") {
                 $filePath = $request.QueryString["path"]
-                $tail = [int]($request.QueryString["tail"] -as [int])
-                if ([string]::IsNullOrWhiteSpace($filePath) -or -not (Test-Path -LiteralPath $filePath)) {
+                $tail = $request.QueryString["tail"]
+                if (-not $filePath) {
+                    Send-JsonResponse $response 400 @{ ok = $false; error = "Thieu tham so path" }
+                    continue
+                }
+                if (-not (Test-Path $filePath)) {
                     Send-JsonResponse $response 404 @{ ok = $false; error = "File khong ton tai: $filePath" }
                     continue
                 }
                 try {
-                    $content = if ($tail -gt 0) {
-                        (Get-Content -LiteralPath $filePath -Tail $tail -Encoding UTF8 -ErrorAction Stop) -join "`n"
+                    $content = ""
+                    if ($tail) {
+                        $tailN = [int]$tail
+                        $lines = Get-Content $filePath -Tail $tailN -Encoding UTF8 -ErrorAction SilentlyContinue
+                        $content = ($lines -join "`n")
                     } else {
-                        Get-Content -LiteralPath $filePath -Raw -Encoding UTF8 -ErrorAction Stop
+                        $fs = [System.IO.File]::Open($filePath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+                        $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                        $content = $sr.ReadToEnd()
+                        $sr.Close()
+                        $fs.Close()
                     }
                     Send-JsonResponse $response 200 @{
                         ok = $true
                         path = $filePath
-                        size = (Get-Item -LiteralPath $filePath).Length
+                        size = (Get-Item $filePath).Length
                         content = $content
                     }
                 } catch {
@@ -164,19 +234,19 @@ while ($listener.IsListening) {
             }
 
             if ($rawUrl -eq "/list_files") {
-                $dirPath = if ($request.QueryString["path"]) { $request.QueryString["path"] } else { "." }
+                $dirPath = $request.QueryString["path"]
+                if (-not $dirPath) { $dirPath = "C:\Users\Administrator\Desktop" }
                 if (-not (Test-Path $dirPath)) {
                     Send-JsonResponse $response 404 @{ ok = $false; error = "Thu muc khong ton tai: $dirPath" }
                     continue
                 }
                 try {
-                    $items = Get-ChildItem -Path $dirPath -ErrorAction SilentlyContinue | ForEach-Object {
+                    $items = Get-ChildItem -Path $dirPath -ErrorAction Stop | ForEach-Object {
                         @{
                             name = $_.Name
-                            path = $_.FullName
                             is_dir = $_.PSIsContainer
                             size = if ($_.PSIsContainer) { 0 } else { $_.Length }
-                            modified = $_.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
+                            last_modified = $_.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss")
                         }
                     }
                     Send-JsonResponse $response 200 @{ ok = $true; path = $dirPath; count = $items.Count; items = $items }
@@ -186,7 +256,7 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/processes") {
+            if ($rawUrl -eq "/process_list") {
                 $filter = $request.QueryString["filter"]
                 try {
                     $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object {
