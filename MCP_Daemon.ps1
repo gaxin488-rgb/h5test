@@ -77,9 +77,23 @@ function Push-UrlToGitHub([string]$tunnelUrl) {
 function Update-AgentScriptFromGitHub() {
     try {
         Write-Host "[*] [Auto-Update] Kiem tra va cap nhat vps_agent.ps1 tu GitHub..." -ForegroundColor Cyan
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "Antigravity-VPS-Daemon")
-        $newCode = $wc.DownloadString($githubAgentUrl)
+        $newCode = $null
+        try {
+            $apiUrl = "https://api.github.com/repos/$Repo/contents/vps_agent.ps1"
+            $headers = @{
+                "User-Agent" = "Antigravity-VPS-Daemon"
+                "Accept"     = "application/vnd.github.v3+json"
+            }
+            if ($GithubToken) { $headers["Authorization"] = "Bearer $GithubToken" }
+            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 8
+            if ($resp.content) {
+                $newCode = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content))
+            }
+        } catch {
+            $wc = New-Object System.Net.WebClient
+            $wc.Headers.Add("User-Agent", "Antigravity-VPS-Daemon")
+            $newCode = $wc.DownloadString("https://raw.githubusercontent.com/$Repo/20986b776121fb8b11a9e7e147b7a23cb219acbf/vps_agent.ps1")
+        }
         if ($newCode -and $newCode.Length -gt 1000 -and $newCode.Contains("HttpListener")) {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($agentScriptPath, $newCode, $utf8NoBom)
@@ -92,9 +106,19 @@ function Update-AgentScriptFromGitHub() {
 
 function Update-DaemonSelfFromGitHub() {
     try {
-        $wc = New-Object System.Net.WebClient
-        $wc.Headers.Add("User-Agent", "Antigravity-VPS-Daemon")
-        $newCode = $wc.DownloadString($githubDaemonUrl)
+        $newCode = $null
+        try {
+            $apiUrl = "https://api.github.com/repos/$Repo/contents/MCP_Daemon.ps1"
+            $headers = @{
+                "User-Agent" = "Antigravity-VPS-Daemon"
+                "Accept"     = "application/vnd.github.v3+json"
+            }
+            if ($GithubToken) { $headers["Authorization"] = "Bearer $GithubToken" }
+            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 8
+            if ($resp.content) {
+                $newCode = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($resp.content))
+            }
+        } catch {}
         if ($newCode -and $newCode.Length -gt 1000 -and $newCode.Contains("ANTIGRAVITY VPS MASTER WATCHDOG")) {
             $daemonPath = Join-Path $root "MCP_Daemon.ps1"
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -145,14 +169,38 @@ function Start-AgentProcess() {
     return [System.Diagnostics.Process]::Start($psi)
 }
 
+function Get-CloudflaredPath() {
+    $candidates = @(
+        (Join-Path $root "cloudflared.exe"),
+        "C:\Users\Administrator\Desktop\cloudflared.exe",
+        "C:\cloudflared.exe",
+        "C:\TinhLinh\cloudflared.exe"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) {
+            $dest = Join-Path $root "cloudflared.exe"
+            if ($c -ne $dest -and -not (Test-Path $dest)) {
+                try { Copy-Item $c $dest -Force } catch {}
+            }
+            return (if (Test-Path $dest) { $dest } else { $c })
+        }
+    }
+    try {
+        $cmd = Get-Command cloudflared.exe -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+    } catch {}
+    return $null
+}
+
 function Start-TunnelProcess() {
-    if (-not (Test-Path $cloudflaredPath)) {
-        Write-Host "[-] Khong tim thay cloudflared.exe tai $cloudflaredPath!" -ForegroundColor Red
+    $cfPath = Get-CloudflaredPath
+    if (-not $cfPath -or -not (Test-Path $cfPath)) {
+        Write-Host "[-] Khong tim thay cloudflared.exe!" -ForegroundColor Red
         return $null
     }
-    Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> localhost:$Port)..." -ForegroundColor Cyan
+    Write-Host "[*] Dang khoi dong Cloudflare Tunnel ($cfPath -> localhost:$Port)..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = $cloudflaredPath
+    $psi.FileName = $cfPath
     $psi.Arguments = "tunnel --url http://localhost:$Port --http-host-header localhost"
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
