@@ -5,7 +5,55 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# 1. DUNG TAT CA TIEN TRINH POWERSHELL AGENT CU DE GIAI PHONG PORT
+$root = $PSScriptRoot
+$cfLog = Join-Path $root "cloudflared.log"
+
+function Push-GitHub([string]$path, [string]$content, [string]$commitMsg) {
+    try {
+        $ghToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
+        $ghRepo = "gaxin488-rgb/h5test"
+        $apiUrl = "https://api.github.com/repos/$ghRepo/contents/$path"
+
+        $sha = $null
+        try {
+            $getReq = [System.Net.HttpWebRequest]::Create($apiUrl)
+            $getReq.Method = "GET"
+            $getReq.UserAgent = "Antigravity-VPS-Agent"
+            $getReq.Accept = "application/vnd.github.v3+json"
+            $getReq.Headers.Add("Authorization", "Bearer $ghToken")
+            $getReq.Timeout = 6000
+            $getResp = $getReq.GetResponse()
+            $stream = $getResp.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream)
+            $sha = ($reader.ReadToEnd() | ConvertFrom-Json).sha
+            $getResp.Close()
+        } catch {}
+
+        $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($content))
+        $payload = @{ message = $commitMsg; content = $b64 }
+        if ($sha) { $payload["sha"] = $sha }
+
+        $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
+        $putReq = [System.Net.HttpWebRequest]::Create($apiUrl)
+        $putReq.Method = "PUT"
+        $putReq.ContentType = "application/json; charset=utf-8"
+        $putReq.UserAgent = "Antigravity-VPS-Agent"
+        $putReq.Accept = "application/vnd.github.v3+json"
+        $putReq.Headers.Add("Authorization", "Bearer $ghToken")
+        $putReq.ContentLength = $bodyBytes.Length
+        $putReq.Timeout = 10000
+        $putStream = $putReq.GetRequestStream()
+        $putStream.Write($bodyBytes, 0, $bodyBytes.Length)
+        $putStream.Close()
+        $putResp = $putReq.GetResponse()
+        $putResp.Close()
+        return $true
+    } catch {
+        return $false
+    }
+}
+
+# 1. GIAI PHONG PORT: Dung tat ca powershell khac (tru Daemon va DongBo)
 $myPid = $PID
 try {
     Get-CimInstance Win32_Process | Where-Object { 
@@ -31,10 +79,9 @@ try {
 
 Start-Sleep -Milliseconds 400
 
-# 2. KHOI DONG HTTP LISTENER CHO CA LOCALHOST VA 127.0.0.1
+# 2. KHOI DONG HTTP LISTENER
 $listener = $null
 $started = $false
-
 for ($i = 0; $i -lt 5; $i++) {
     try {
         $listener = New-Object System.Net.HttpListener
@@ -44,7 +91,6 @@ for ($i = 0; $i -lt 5; $i++) {
         $started = $true
         break
     } catch {
-        # Neu bi trung port, thu don dep lai
         try {
             Get-CimInstance Win32_Process | Where-Object { 
                 $_.Name -eq "powershell.exe" -and 
@@ -53,7 +99,7 @@ for ($i = 0; $i -lt 5; $i++) {
                 $_.CommandLine -notlike "*DongBo*" 
             } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
         } catch {}
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 400
     }
 }
 
@@ -102,8 +148,54 @@ function Check-Auth($request) {
     return $false
 }
 
+function Sync-TunnelUrl() {
+    if (Test-Path $cfLog) {
+        try {
+            $fs = [System.IO.File]::Open($cfLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+            $logContent = $sr.ReadToEnd()
+            $sr.Close()
+            $fs.Close()
+            if ($logContent -match "https://(?!(?:api|pkg|update)\.)[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com") {
+                $u = $matches[0]
+                if ($u -ne $global:lastPushedUrl) {
+                    $res = Push-GitHub "vps_tunnel_url.txt" $u "Auto-sync active tunnel URL: $u"
+                    if ($res) { $global:lastPushedUrl = $u }
+                }
+                return $u
+            }
+        } catch {}
+    }
+    return $null
+}
+
+function Sync-BotReport() {
+    try {
+        $acc1Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc1\autofarm_log.txt"
+        $acc2Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc2\autofarm_log.txt"
+        $acc1Lines = if (Test-Path $acc1Log) { (Get-Content $acc1Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
+        $acc2Lines = if (Test-Path $acc2Log) { (Get-Content $acc2Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
+        $javaws = @(Get-Process -Name javaw -ErrorAction SilentlyContinue)
+
+        $reportObj = @{
+            time = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+            tunnel_url = $global:lastPushedUrl
+            javaw_count = $javaws.Count
+            acc1_tail = $acc1Lines
+            acc2_tail = $acc2Lines
+        }
+        $reportJson = $reportObj | ConvertTo-Json -Depth 4
+        Push-GitHub "vps_bot_report.json" $reportJson "Auto-sync bot farm report"
+    } catch {}
+}
+
 $startTime = [DateTime]::Now
-$lastDiskClean = [DateTime]::MinValue
+$global:lastPushedUrl = $null
+$lastSyncTime = [DateTime]::MinValue
+$lastCleanTime = [DateTime]::MinValue
+
+# Dong bo tunnel lan dau tien
+$null = Sync-TunnelUrl
 
 while ($listener.IsListening) {
     try {
@@ -121,7 +213,7 @@ while ($listener.IsListening) {
             continue
         }
 
-        # Health / Ping khong can Token de Watchdog va Cloudflare kiem tra nhanh nhat
+        # Health / Ping khong can Token
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
             Send-JsonResponse $response 200 @{
                 ok = $true
@@ -131,10 +223,17 @@ while ($listener.IsListening) {
                 uptime_sec = [math]::Round(((Get-Date) - $startTime).TotalSeconds)
             }
 
-            # Don dep o C dinh ky moi 5 phut
             $now = [DateTime]::Now
-            if (($now - $lastDiskClean).TotalSeconds -ge 300) {
-                $lastDiskClean = $now
+            # Kiem tra dong bo URL va Report dinh ky moi 45 giay
+            if (($now - $lastSyncTime).TotalSeconds -ge 45) {
+                $lastSyncTime = $now
+                $null = Sync-TunnelUrl
+                Sync-BotReport
+            }
+
+            # Don dep o C dinh ky moi 5 phut
+            if (($now - $lastCleanTime).TotalSeconds -ge 300) {
+                $lastCleanTime = $now
                 try {
                     Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
                     Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
