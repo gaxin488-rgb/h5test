@@ -1,22 +1,28 @@
 # ==============================================================================
 # Antigravity VPS Master Watchdog Daemon (24/7 Self-Healing Loop)
-# Tu dong khoi dong, giam sat suc khoe, tu sua loi, giu ket noi va treo game 24/7
+# Tu dong khoi dong, giam sat suc khoe, tu sua loi, toi uu RAM va giu ket noi 24/7
 # ==============================================================================
 param(
     [int]$Port = 8765,
     [string]$Token = "tinhlinh_vps_secret_key_2026",
     [string]$Repo = "gaxin488-rgb/h5test",
-    [string]$TunnelFile = "vps_tunnel_url.txt"
+    [string]$TunnelFile = "vps_tunnel_url.txt",
+    [string]$TokenFile = "$PSScriptRoot\github_token.txt"
 )
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
 $root = $PSScriptRoot
 $cloudflaredPath = Join-Path $root "cloudflared.exe"
-$cfLogPath = Join-Path $root "cloudflared.log"
 $agentScriptPath = Join-Path $root "vps_agent.ps1"
 $githubAgentUrl = "https://raw.githubusercontent.com/$Repo/main/vps_agent.ps1"
-$GithubToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
+$githubDaemonUrl = "https://raw.githubusercontent.com/$Repo/main/MCP_Daemon.ps1"
+
+$GithubToken = if (Test-Path $TokenFile) { 
+    (Get-Content $TokenFile).Trim() 
+} else { 
+    ("github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H")
+}
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "   ANTIGRAVITY VPS MASTER WATCHDOG DAEMON (24/7)" -ForegroundColor Green
@@ -25,46 +31,43 @@ Write-Host "   [*] Agent Port: $Port | Token: $Token" -ForegroundColor Yellow
 Write-Host "   [*] GitHub Sync: $Repo/$TunnelFile" -ForegroundColor Yellow
 Write-Host "============================================================" -ForegroundColor Cyan
 
+# Memory API
+try {
+    Add-Type -TypeDefinition @"
+    using System;
+    using System.Runtime.InteropServices;
+    public class VpsMem {
+        [DllImport("psapi.dll")]
+        public static extern int EmptyWorkingSet(IntPtr hProcess);
+    }
+"@ -ErrorAction SilentlyContinue
+} catch {}
+
 function Push-UrlToGitHub([string]$tunnelUrl) {
     if (-not $GithubToken -or -not $tunnelUrl) { return }
     try {
         $apiUrl = "https://api.github.com/repos/$Repo/contents/$TunnelFile"
+        $headers = @{
+            "Authorization" = "Bearer $GithubToken"
+            "Accept"        = "application/vnd.github.v3+json"
+            "User-Agent"    = "Antigravity-VPS-Daemon"
+        }
         $sha = $null
         try {
-            $getReq = [System.Net.HttpWebRequest]::Create($apiUrl)
-            $getReq.Method = "GET"
-            $getReq.UserAgent = "Antigravity-VPS-Daemon"
-            $getReq.Accept = "application/vnd.github.v3+json"
-            $getReq.Headers.Add("Authorization", "Bearer $GithubToken")
-            $getReq.Timeout = 6000
-            $getResp = $getReq.GetResponse()
-            $stream = $getResp.GetResponseStream()
-            $reader = New-Object System.IO.StreamReader($stream)
-            $sha = ($reader.ReadToEnd() | ConvertFrom-Json).sha
-            $getResp.Close()
+            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 8
+            $sha = $resp.sha
         } catch {}
 
-        $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($tunnelUrl))
-        $payload = @{
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($tunnelUrl)
+        $b64 = [Convert]::ToBase64String($bytes)
+        $body = @{
             message = "Auto-update VPS Cloudflare Tunnel URL: $tunnelUrl"
             content = $b64
         }
-        if ($sha) { $payload["sha"] = $sha }
+        if ($sha) { $body["sha"] = $sha }
 
-        $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
-        $putReq = [System.Net.HttpWebRequest]::Create($apiUrl)
-        $putReq.Method = "PUT"
-        $putReq.ContentType = "application/json; charset=utf-8"
-        $putReq.UserAgent = "Antigravity-VPS-Daemon"
-        $putReq.Accept = "application/vnd.github.v3+json"
-        $putReq.Headers.Add("Authorization", "Bearer $GithubToken")
-        $putReq.ContentLength = $bodyBytes.Length
-        $putReq.Timeout = 10000
-        $putStream = $putReq.GetRequestStream()
-        $putStream.Write($bodyBytes, 0, $bodyBytes.Length)
-        $putStream.Close()
-        $putResp = $putReq.GetResponse()
-        $putResp.Close()
+        $jsonBody = $body | ConvertTo-Json
+        $null = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method PUT -Body $jsonBody -TimeoutSec 12
         Write-Host "[+] [GitHub Sync] Da cap nhat URL moi len GitHub: $tunnelUrl" -ForegroundColor Green
     } catch {
         Write-Host "[-] [GitHub Sync] Loi cap nhat URL: $($_.Exception.Message)" -ForegroundColor Red
@@ -87,17 +90,51 @@ function Update-AgentScriptFromGitHub() {
     }
 }
 
-function Kill-AgentProcesses() {
+function Update-DaemonSelfFromGitHub() {
     try {
-        Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID } | ForEach-Object {
-            Write-Host "[!] Dung tien trinh PowerShell Agent cu (PID $($_.Id))..." -ForegroundColor Yellow
-            try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "Antigravity-VPS-Daemon")
+        $newCode = $wc.DownloadString($githubDaemonUrl)
+        if ($newCode -and $newCode.Length -gt 1000 -and $newCode.Contains("ANTIGRAVITY VPS MASTER WATCHDOG")) {
+            $daemonPath = Join-Path $root "MCP_Daemon.ps1"
+            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+            [System.IO.File]::WriteAllText($daemonPath, $newCode, $utf8NoBom)
         }
     } catch {}
 }
 
+function Kill-PortProcess([int]$p) {
+    try {
+        # Chi dung cac tien trinh powershell chay vps_agent, KHONG DUNG PID 4 (System) va KHONG DUNG cloudflared!
+        Get-WmiObject Win32_Process | Where-Object {
+            $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $PID -and ($_.CommandLine -like "*vps_agent.ps1*")
+        } | ForEach-Object {
+            Write-Host "[!] Dung tien trinh PowerShell Agent cu (PID $($_.ProcessId))..." -ForegroundColor Yellow
+            try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    } catch {}
+}
+
+# 1. Update Agent & Daemon tu GitHub
+Update-AgentScriptFromGitHub
+Update-DaemonSelfFromGitHub
+
+# 2. Don dep Agent cu neu co
+Kill-PortProcess $Port
+
+$agentProc = $null
+$tunnelProc = $null
+$currentTunnelUrl = $null
+$lastRamTrimTime = [DateTime]::MinValue
+$lastTunnelCheckTime = [DateTime]::MinValue
+$agentFailCount = 0
+$tunnelFailCount = 0
+$lastGameCheckTime = [DateTime]::MinValue
+$lastDiskCheckTime = [DateTime]::MinValue
+
+
 function Start-AgentProcess() {
-    Kill-AgentProcesses
+    Kill-PortProcess $Port
     Start-Sleep -Milliseconds 600
     Write-Host "[*] Dang khoi dong VPS Agent (Port $Port)..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
@@ -113,58 +150,40 @@ function Start-TunnelProcess() {
         Write-Host "[-] Khong tim thay cloudflared.exe tai $cloudflaredPath!" -ForegroundColor Red
         return $null
     }
-    try { Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue } catch {}
-    Start-Sleep -Milliseconds 500
-
-    Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> 127.0.0.1:$Port)..." -ForegroundColor Cyan
-    try { Remove-Item $cfLogPath -Force -ErrorAction SilentlyContinue } catch {}
+    Write-Host "[*] Dang khoi dong Cloudflare Tunnel (-> localhost:$Port)..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "cmd.exe"
-    $psi.Arguments = "/c `"`"$cloudflaredPath`" tunnel --url http://127.0.0.1:$Port --http-host-header localhost 2> `"$cfLogPath`"`""
+    $psi.FileName = $cloudflaredPath
+    $psi.Arguments = "tunnel --url http://localhost:$Port --http-host-header localhost"
+    $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
 }
 
-# 1. Update Agent tu GitHub
-Update-AgentScriptFromGitHub
-
-# 2. Don dep Agent cu
-Kill-AgentProcesses
-
 $agentProc = Start-AgentProcess
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 2
 $tunnelProc = Start-TunnelProcess
-
-$currentTunnelUrl = $null
-$lastCleanupTime = [DateTime]::Now
-$lastTunnelCheckTime = [DateTime]::Now
-$agentFailCount = 0
-$tunnelFailCount = 0
-$lastGameCheckTime = [DateTime]::Now.AddSeconds(30)
-$lastDiskCheckTime = [DateTime]::Now.AddSeconds(-280)
 
 Write-Host "`n[V] DA KHOI DONG THANH CONG! BAT DAU VONG LAP GIAM SAT 24/7...`n" -ForegroundColor Green
 
+# VONG LAP GIAM SAT 24/7
 while ($true) {
     Start-Sleep -Seconds 5
     $now = [DateTime]::Now
 
-    # A. Doc link Cloudflare Tunnel moi tu Logfile (NON-BLOCKING)
-    if (Test-Path $cfLogPath) {
+    # A. Doc link Cloudflare Tunnel moi tu Stderr neu co
+    if ($tunnelProc -and -not $tunnelProc.HasExited) {
         try {
-            $fs = [System.IO.File]::Open($cfLogPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-            $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
-            $logContent = $sr.ReadToEnd()
-            $sr.Close()
-            $fs.Close()
-
-            if ($logContent -match "https://(?!(?:api|pkg|update)\.)[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com") {
-                $found = $matches[0]
-                if ($found -ne $currentTunnelUrl) {
-                    $currentTunnelUrl = $found
-                    Write-Host "[+] Phat hien Cloudflare Tunnel URL moi: $currentTunnelUrl" -ForegroundColor Yellow
-                    Push-UrlToGitHub $currentTunnelUrl
+            while (-not $tunnelProc.StandardError.EndOfStream) {
+                $line = $tunnelProc.StandardError.ReadLine()
+                if ($line -match "https://[a-zA-Z0-9\-]+\.trycloudflare\.com") {
+                    $found = $matches[0]
+                    if ($found -ne $currentTunnelUrl) {
+                        $currentTunnelUrl = $found
+                        Write-Host "[+] Phat hien Cloudflare Tunnel URL moi: $currentTunnelUrl" -ForegroundColor Yellow
+                        Push-UrlToGitHub $currentTunnelUrl
+                    }
+                    break
                 }
             }
         } catch {}
@@ -177,47 +196,57 @@ while ($true) {
         Start-Sleep -Seconds 2
     }
 
-    # C. Health Check Agent (Kiem tra treo / deadlock tren 127.0.0.1:Port)
+    # C. Health Check Agent (Kiem tra treo / deadlock tren localhost:Port)
     $isAgentAlive = $false
     try {
-        $req = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/ping")
-        $req.Timeout = 10000
-        $req.ReadWriteTimeout = 10000
+        $req = [System.Net.HttpWebRequest]::Create("http://localhost:$Port/ping")
+        $req.Timeout = 4000
+        $req.ReadWriteTimeout = 4000
         $resp = $req.GetResponse()
         if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
             $isAgentAlive = $true
         }
         $resp.Close()
     } catch {
-        $isAgentAlive = $false
+        try {
+            $req2 = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/ping")
+            $req2.Timeout = 2000
+            $resp2 = $req2.GetResponse()
+            if ($resp2.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
+                $isAgentAlive = $true
+            }
+            $resp2.Close()
+        } catch {
+            $isAgentAlive = $false
+        }
     }
 
     if ($isAgentAlive) {
         $agentFailCount = 0
     } else {
         $agentFailCount++
-        Write-Host "[-] Canh bao: Agent khong phan hoi tai 127.0.0.1:$Port (Lan $agentFailCount/6)..." -ForegroundColor Yellow
-        if ($agentFailCount -ge 6) {
+        Write-Host "[-] Canh bao: Agent khong phan hoi tai localhost:$Port (Lan $agentFailCount/2)..." -ForegroundColor Yellow
+        if ($agentFailCount -ge 2) {
             Write-Host "[!] AGENT BI TREO HOAC MAT KET NOI! Tu dong reset Agent..." -ForegroundColor Red
             if ($agentProc -and -not $agentProc.HasExited) {
                 try { $agentProc.Kill() } catch {}
             }
-            Kill-AgentProcesses
+            Kill-PortProcess $Port
             Update-AgentScriptFromGitHub
             $agentProc = Start-AgentProcess
             $agentFailCount = 0
-            Start-Sleep -Seconds 3
+            Start-Sleep -Seconds 2
         }
     }
 
-    # D. Kiem tra Public Cloudflare URL (moi 120 giay)
-    if ($currentTunnelUrl -and ($now - $lastTunnelCheckTime).TotalSeconds -ge 120) {
+    # D. Kiem tra Public Cloudflare URL (moi 60 giay)
+    if ($currentTunnelUrl -and ($now - $lastTunnelCheckTime).TotalSeconds -ge 60) {
         $lastTunnelCheckTime = $now
         $isPublicOk = $false
         try {
             $req = [System.Net.HttpWebRequest]::Create("$currentTunnelUrl/ping")
-            $req.Timeout = 20000
-            $req.ReadWriteTimeout = 20000
+            $req.Timeout = 6000
+            $req.ReadWriteTimeout = 6000
             $resp = $req.GetResponse()
             if ($resp.StatusCode -eq [System.Net.HttpStatusCode]::OK) {
                 $isPublicOk = $true
@@ -231,8 +260,8 @@ while ($true) {
             $tunnelFailCount = 0
         } else {
             $tunnelFailCount++
-            Write-Host "[-] Public Tunnel khong phan hoi: $currentTunnelUrl (Lan $tunnelFailCount/4)" -ForegroundColor Yellow
-            if ($tunnelFailCount -ge 4) {
+            Write-Host "[-] Public Tunnel khong phan hoi: $currentTunnelUrl (Lan $tunnelFailCount/3)" -ForegroundColor Yellow
+            if ($tunnelFailCount -ge 3) {
                 Write-Host "[!] CLOUDFLARE TUNNEL HONG! Tu dong khoi dong lai Tunnel moi..." -ForegroundColor Red
                 if ($tunnelProc -and -not $tunnelProc.HasExited) {
                     try { $tunnelProc.Kill() } catch {}
@@ -243,30 +272,69 @@ while ($true) {
         }
     }
 
-    # E. Kiem tra va giu game chay (moi 30 giay)
-    if (($now - $lastGameCheckTime).TotalSeconds -ge 30) {
+    # E. Tu dong giai phong RAM (Trim Working Set) moi 4 phut (240 giay)
+    if (($now - $lastRamTrimTime).TotalSeconds -ge 240) {
+        $lastRamTrimTime = $now
+        try {
+            $javawProcs = Get-Process javaw -ErrorAction SilentlyContinue
+            if ($javawProcs) {
+                $trimmedCount = 0
+                foreach ($jp in $javawProcs) {
+                    [VpsMem]::EmptyWorkingSet($jp.Handle) | Out-Null
+                    $trimmedCount++
+                }
+                Write-Host "[*] [Auto-RAM-Trim] Da toi uu hoa RAM cho $trimmedCount tien trinh game javaw.exe" -ForegroundColor Green
+            }
+        } catch {}
+    }
+
+    # F. Tu dong kiem tra va khoi dong 2 Acc Game (moi 30 giay)
+    if (-not $lastGameCheckTime -or ($now - $lastGameCheckTime).TotalSeconds -ge 30) {
         $lastGameCheckTime = $now
         $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
         $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
         if ($javawCount -lt 2 -and (Test-Path $gameScript)) {
             Write-Host "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." -ForegroundColor Cyan
-            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`""
+            Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
         }
     }
 
-    # F. Tu dong don dep o C tranh tran disk (moi 300 giay)
-    if (($now - $lastDiskCheckTime).TotalSeconds -ge 300) {
+    # G. Tu dong giam sat va don dep dung luong o C: (Disk-Storage-Watchdog moi 300 giay)
+    if (-not $lastDiskCheckTime -or ($now - $lastDiskCheckTime).TotalSeconds -ge 300) {
         $lastDiskCheckTime = $now
         try {
-            $cDrive = Get-PSDrive C -ErrorAction SilentlyContinue
-            if ($cDrive -and $cDrive.Free -lt 500MB) {
-                Write-Host "[*] [Disk-Watchdog] O C con duoi 500MB -> Tu dong don rac..." -ForegroundColor Yellow
-                Remove-Item "$env:LOCALAPPDATA\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
-                Remove-Item "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
-                Remove-Item "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-                Remove-Item "C:\ProgramData\Microsoft\Windows\WER\ReportQueue\*" -Recurse -Force -ErrorAction SilentlyContinue
-                try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
+            $driveC = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -eq "C" }
+            if ($driveC) {
+                $freeMB = [math]::Round($driveC.Free / 1MB, 0)
+                $freeGB = [math]::Round($driveC.Free / 1GB, 2)
+                if ($freeMB -lt 1500) {
+                    Write-Host "[!] [Disk-Watchdog] Canh bao: O C: chi con $freeMB MB ($freeGB GB) trong! Bat dau tu dong don dep..." -ForegroundColor Yellow
+                    # 1. Don dep Temp
+                    Get-ChildItem -Path "$env:TEMP", "C:\Windows\Temp" -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-2) } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                    # 2. Xoa cache WER va SoftwareDistribution
+                    Get-ChildItem -Path "C:\ProgramData\Microsoft\Windows\WER\ReportQueue" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                    Get-ChildItem -Path "C:\Windows\SoftwareDistribution\Download" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                    # 3. Xoa Thung Rac
+                    Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+                    # 4. Cat tia log game bot neu > 5MB de chong tran bo nho
+                    $log1 = "C:\TinhLinh\TinhLinh_Lite\Acc1\autofarm_log.txt"
+                    $log2 = "C:\TinhLinh\TinhLinh_Lite\Acc2\autofarm_log.txt"
+                    foreach ($lf in @($log1, $log2)) {
+                        if (Test-Path $lf) {
+                            $len = (Get-Item $lf).Length
+                            if ($len -gt 5MB) {
+                                Write-Host "[*] [Disk-Watchdog] File log $lf vuot qua 5MB -> Cat tia giu 2000 dong moi nhat..." -ForegroundColor Cyan
+                                $tailLines = Get-Content $lf -Tail 2000
+                                Set-Content -Path $lf -Value $tailLines -Force
+                            }
+                        }
+                    }
+                    $afterC = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -eq "C" }
+                    $afterGB = [math]::Round($afterC.Free / 1GB, 2)
+                    Write-Host "[V] [Disk-Watchdog] Don dep thanh cong! O C: hien co $afterGB GB trong." -ForegroundColor Green
+                }
             }
         } catch {}
     }
 }
+
