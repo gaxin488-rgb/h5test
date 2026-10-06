@@ -5,14 +5,17 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# 1. GIAI PHONG PORT: Dung cac powershell cu dang chiem port
+# 1. GIAI PHONG PORT: Chi dung cac powershell chay vps_agent cu, khong dung MCP_Daemon
 $myPid = $PID
 try {
-    Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $myPid } | ForEach-Object {
-        try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
+    Get-WmiObject Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+        $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $myPid -and ($_.CommandLine -like "*vps_agent.ps1*")
+    } | ForEach-Object {
+        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
     }
 } catch {}
 Start-Sleep -Milliseconds 300
+
 
 # 2. KHOI DONG HTTP LISTENER VOI CAC PREFIX PHU HOP
 $listener = $null
