@@ -5,11 +5,11 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-$logLines = @()
-$logLines += "[$(Get-Date -Format 'HH:mm:ss')] Agent bat dau khoi dong (PID $PID, Port $Port)..."
+$global:logLines = @()
+$global:logLines += "[$(Get-Date -Format 'HH:mm:ss')] Agent bat dau khoi dong (PID $PID, Port $Port)..."
 
 function Push-DebugLog([string]$msg) {
-    global:logLines += "[$(Get-Date -Format 'HH:mm:ss')] $msg"
+    $global:logLines += "[$(Get-Date -Format 'HH:mm:ss')] $msg"
     try {
         $ghToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
         $apiUrl = "https://api.github.com/repos/gaxin488-rgb/h5test/contents/agent_debug.txt"
@@ -40,10 +40,10 @@ try {
     $daemonCode = $wc.DownloadString("https://raw.githubusercontent.com/gaxin488-rgb/h5test/main/MCP_Daemon.ps1")
     if ($daemonCode -and $daemonCode.Length -gt 1000) {
         [System.IO.File]::WriteAllText($daemonDest, $daemonCode, [Text.Encoding]::UTF8)
-        $logLines += "[+] Da cap nhat MCP_Daemon.ps1 tren disk thanh cong!"
+        $global:logLines += "[+] Da cap nhat MCP_Daemon.ps1 tren disk thanh cong!"
     }
 } catch {
-    $logLines += "[-] Loi cap nhat MCP_Daemon.ps1 tren disk: $($_.Exception.Message)"
+    $global:logLines += "[-] Loi cap nhat MCP_Daemon.ps1 tren disk: $($_.Exception.Message)"
 }
 
 # 2. Giai phong port va dang ky URL ACL
@@ -53,7 +53,7 @@ try {
     netsh http add urlacl url=http://127.0.0.1:8765/ sddl="D:(A;;GX;;;WD)" 2>$null | Out-Null
 } catch {}
 
-# 3. Kill bat ky tien trinh powershell zombile nao dang bam port ngoai tru $PID
+# 3. Kill bat ky tien trinh powershell zombie nao dang bam port ngoai tru $PID
 try {
     $netstatOut = netstat -ano | Select-String ":$Port\s"
     foreach ($line in $netstatOut) {
@@ -63,7 +63,7 @@ try {
             if ($pId -gt 4 -and $pId -ne $PID) {
                 try { Stop-Process -Id $pId -Force -ErrorAction SilentlyContinue } catch {}
                 try { taskkill /F /PID $pId 2>$null | Out-Null } catch {}
-                $logLines += "[!] Da dung tien trinh PID $pId tren port $Port"
+                $global:logLines += "[!] Da dung tien trinh PID $pId tren port $Port"
             }
         }
     }
