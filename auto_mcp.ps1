@@ -37,7 +37,7 @@ foreach ($f in $files) {
     Write-Host "[*] Dang tai $f tu GitHub..." -ForegroundColor Cyan
     $dest = Join-Path $dir $f
     try {
-        $wc.DownloadFile("https://raw.githubusercontent.com/gaxin488-rgb/h5test/a3136eddc6e43d7bc9fc4c80a34f01ae19986e01/$f", $dest)
+        $wc.DownloadFile("https://raw.githubusercontent.com/gaxin488-rgb/h5test/495b67fed20224ee225935173f2af2dd4936dbe3/$f", $dest)
         Write-Host "  -> Da tai $f thanh cong!" -ForegroundColor Green
     } catch {
         Write-Host "  [-] Loi tai $($f) - $($_.Exception.Message)" -ForegroundColor Red
