@@ -1,5 +1,5 @@
 # ==============================================================================
-# Auto Cloudflare Tunnel & GitHub URL Sync Daemon
+# Auto Cloudflare Tunnel & GitHub URL Sync Daemon (Co tu dong khoi chay Agent)
 # Tu dong tao Tunnel Cloudflare va cap nhat link moi len GitHub 24/7
 # ==============================================================================
 param(
@@ -57,11 +57,27 @@ function Push-UrlToGitHub([string]$tunnelUrl) {
 }
 
 while ($true) {
-    Write-Host "[*] Dang khoi dong Cloudflare Tunnel..." -ForegroundColor Cyan
+    # 1. Dam bao vps_agent.ps1 dang chay tren cong 8765
+    $agentScript = Join-Path $PSScriptRoot "vps_agent.ps1"
+    if (Test-Path $agentScript) {
+        $isAgentRunning = $false
+        try {
+            $testConn = Invoke-WebRequest -Uri "http://127.0.0.1:8765/ping" -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            if ($testConn.StatusCode -eq 200) { $isAgentRunning = $true }
+        } catch {}
+        if (-not $isAgentRunning) {
+            Write-Host "[*] Phat hien Agent chua chay -> Tu dong khoi chay vps_agent.ps1..." -ForegroundColor Yellow
+            Start-Process "powershell.exe" -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$agentScript`" -Port 8765 -Token tinhlinh_vps_secret_key_2026" -WindowStyle Hidden
+            Start-Sleep -Seconds 3
+        }
+    }
+
+    # 2. Khoi dong Cloudflare Tunnel
+    Write-Host "[*] Dang khoi dong Cloudflare Tunnel (127.0.0.1:8765)..." -ForegroundColor Cyan
 
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cloudflared
-    $psi.Arguments = "tunnel --url http://localhost:8765"
+    $psi.Arguments = "tunnel --url http://127.0.0.1:8765 --http-host-header localhost"
     $psi.RedirectStandardOutput = $true
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
