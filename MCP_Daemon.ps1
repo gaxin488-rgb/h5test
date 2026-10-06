@@ -172,8 +172,8 @@ function Start-AgentProcess() {
     Write-Host "[*] Dang khoi dong VPS Agent (Port $Port)..." -ForegroundColor Cyan
     $agentLog = Join-Path $root "agent.log"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "powershell.exe"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"& '$agentScriptPath' -Port $Port -Token '$Token' *>> '$agentLog'`""
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$agentScriptPath`" -Port $Port -Token `"$Token`""
+
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
@@ -219,7 +219,8 @@ function Start-TunnelProcess() {
     Write-Host "[*] Dang khoi dong Cloudflare Tunnel ($cfPath -> localhost:$Port)..." -ForegroundColor Cyan
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cfPath
-    $psi.Arguments = "tunnel --url http://localhost:$Port --http-host-header localhost"
+    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost"
+
     $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
