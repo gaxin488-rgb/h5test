@@ -129,12 +129,21 @@ function Update-DaemonSelfFromGitHub() {
 
 function Kill-PortProcess([int]$p) {
     try {
-        # Chi dung cac tien trinh powershell chay vps_agent, KHONG DUNG PID 4 (System) va KHONG DUNG cloudflared!
-        Get-WmiObject Win32_Process | Where-Object {
+        Get-WmiObject Win32_Process -ErrorAction SilentlyContinue | Where-Object {
             $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $PID -and ($_.CommandLine -like "*vps_agent.ps1*")
         } | ForEach-Object {
             Write-Host "[!] Dung tien trinh PowerShell Agent cu (PID $($_.ProcessId))..." -ForegroundColor Yellow
             try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+        }
+    } catch {}
+    try {
+        $netstat = netstat -ano | Select-String ":$p\s"
+        foreach ($line in $netstat) {
+            $parts = ($line -split '\s+') | Where-Object { $_ }
+            $pidToKill = $parts[-1]
+            if ($pidToKill -and $pidToKill -ne "0" -and $pidToKill -ne "4" -and $pidToKill -ne "$PID") {
+                try { Stop-Process -Id [int]$pidToKill -Force -ErrorAction SilentlyContinue } catch {}
+            }
         }
     } catch {}
 }
@@ -161,9 +170,10 @@ function Start-AgentProcess() {
     Kill-PortProcess $Port
     Start-Sleep -Milliseconds 600
     Write-Host "[*] Dang khoi dong VPS Agent (Port $Port)..." -ForegroundColor Cyan
+    $agentLog = Join-Path $root "agent.log"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = "powershell.exe"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$agentScriptPath`" -Port $Port -Token `"$Token`""
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"& '$agentScriptPath' -Port $Port -Token '$Token' *>> '$agentLog'`""
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
@@ -188,6 +198,14 @@ function Get-CloudflaredPath() {
     try {
         $cmd = Get-Command cloudflared.exe -ErrorAction SilentlyContinue
         if ($cmd) { return $cmd.Source }
+    } catch {}
+    try {
+        $dest = Join-Path $root "cloudflared.exe"
+        Write-Host "[*] Dang tu dong tai cloudflared.exe tu GitHub..." -ForegroundColor Cyan
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "Mozilla/5.0")
+        $wc.DownloadFile("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe", $dest)
+        if (Test-Path $dest) { return $dest }
     } catch {}
     return $null
 }
