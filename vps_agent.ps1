@@ -5,9 +5,6 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-$root = $PSScriptRoot
-$cfLog = Join-Path $root "cloudflared.log"
-
 function Push-GitHub([string]$path, [string]$content, [string]$commitMsg) {
     try {
         $ghToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
@@ -52,6 +49,9 @@ function Push-GitHub([string]$path, [string]$content, [string]$commitMsg) {
         return $false
     }
 }
+
+# PUSH PROOF OF EXECUTION TO GITHUB IMMEDIATELY
+$null = Push-GitHub "vps_agent_live.txt" "AGENT STARTED ON VPS AT $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') PID $PID" "Proof of Agent Execution"
 
 # 1. GIAI PHONG PORT: Dung tat ca powershell khac (tru Daemon va DongBo)
 $myPid = $PID
@@ -119,9 +119,12 @@ if (-not $started) {
         $listener.Start()
         $started = $true
     } catch {
+        $null = Push-GitHub "vps_agent_live.txt" "AGENT FAILED TO BIND PORT $Port AT $(Get-Date -Format 'HH:mm:ss')" "Agent bind fail"
         exit 1
     }
 }
+
+$null = Push-GitHub "vps_agent_live.txt" "AGENT BOUND PORT $Port SUCCESSFULLY AT $(Get-Date -Format 'HH:mm:ss') PID $PID" "Agent bound port"
 
 function Send-JsonResponse($response, [int]$statusCode, $obj) {
     try {
@@ -148,54 +151,8 @@ function Check-Auth($request) {
     return $false
 }
 
-function Sync-TunnelUrl() {
-    if (Test-Path $cfLog) {
-        try {
-            $fs = [System.IO.File]::Open($cfLog, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
-            $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
-            $logContent = $sr.ReadToEnd()
-            $sr.Close()
-            $fs.Close()
-            if ($logContent -match "https://(?!(?:api|pkg|update)\.)[a-zA-Z0-9]+-[a-zA-Z0-9\-]+\.trycloudflare\.com") {
-                $u = $matches[0]
-                if ($u -ne $global:lastPushedUrl) {
-                    $res = Push-GitHub "vps_tunnel_url.txt" $u "Auto-sync active tunnel URL: $u"
-                    if ($res) { $global:lastPushedUrl = $u }
-                }
-                return $u
-            }
-        } catch {}
-    }
-    return $null
-}
-
-function Sync-BotReport() {
-    try {
-        $acc1Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc1\autofarm_log.txt"
-        $acc2Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc2\autofarm_log.txt"
-        $acc1Lines = if (Test-Path $acc1Log) { (Get-Content $acc1Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
-        $acc2Lines = if (Test-Path $acc2Log) { (Get-Content $acc2Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
-        $javaws = @(Get-Process -Name javaw -ErrorAction SilentlyContinue)
-
-        $reportObj = @{
-            time = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-            tunnel_url = $global:lastPushedUrl
-            javaw_count = $javaws.Count
-            acc1_tail = $acc1Lines
-            acc2_tail = $acc2Lines
-        }
-        $reportJson = $reportObj | ConvertTo-Json -Depth 4
-        Push-GitHub "vps_bot_report.json" $reportJson "Auto-sync bot farm report"
-    } catch {}
-}
-
 $startTime = [DateTime]::Now
-$global:lastPushedUrl = $null
-$lastSyncTime = [DateTime]::MinValue
-$lastCleanTime = [DateTime]::MinValue
-
-# Dong bo tunnel lan dau tien
-$null = Sync-TunnelUrl
+$lastReportTime = [DateTime]::MinValue
 
 while ($listener.IsListening) {
     try {
@@ -213,7 +170,7 @@ while ($listener.IsListening) {
             continue
         }
 
-        # Health / Ping khong can Token
+        # Health / Ping
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
             Send-JsonResponse $response 200 @{
                 ok = $true
@@ -223,29 +180,31 @@ while ($listener.IsListening) {
                 uptime_sec = [math]::Round(((Get-Date) - $startTime).TotalSeconds)
             }
 
+            # Sync bot report dinh ky moi 45 giay
             $now = [DateTime]::Now
-            # Kiem tra dong bo URL va Report dinh ky moi 45 giay
-            if (($now - $lastSyncTime).TotalSeconds -ge 45) {
-                $lastSyncTime = $now
-                $null = Sync-TunnelUrl
-                Sync-BotReport
-            }
-
-            # Don dep o C dinh ky moi 5 phut
-            if (($now - $lastCleanTime).TotalSeconds -ge 300) {
-                $lastCleanTime = $now
+            if (($now - $lastReportTime).TotalSeconds -ge 45) {
+                $lastReportTime = $now
                 try {
-                    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
-                    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
-                    Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\2\*" -Recurse -Force -ErrorAction SilentlyContinue
-                    Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    $acc1Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc1\autofarm_log.txt"
+                    $acc2Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc2\autofarm_log.txt"
+                    $acc1Lines = if (Test-Path $acc1Log) { (Get-Content $acc1Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
+                    $acc2Lines = if (Test-Path $acc2Log) { (Get-Content $acc2Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
+                    $javaws = @(Get-Process -Name javaw -ErrorAction SilentlyContinue)
+
+                    $reportObj = @{
+                        time = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
+                        javaw_count = $javaws.Count
+                        acc1_tail = $acc1Lines
+                        acc2_tail = $acc2Lines
+                    }
+                    $null = Push-GitHub "vps_bot_report.json" ($reportObj | ConvertTo-Json -Depth 4) "Bot farm report"
                 } catch {}
             }
             continue
         }
 
         if (-not (Check-Auth $request)) {
-            Send-JsonResponse $response 401 @{ ok = $false; error = "Unauthorized: Sai token xac thuc" }
+            Send-JsonResponse $response 401 @{ ok = $false; error = "Unauthorized" }
             continue
         }
 
