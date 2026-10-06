@@ -142,6 +142,7 @@ $lastTunnelCheckTime = [DateTime]::Now
 $agentFailCount = 0
 $tunnelFailCount = 0
 $lastGameCheckTime = [DateTime]::Now.AddSeconds(30)
+$lastDiskCheckTime = [DateTime]::Now.AddSeconds(-280)
 
 Write-Host "`n[V] DA KHOI DONG THANH CONG! BAT DAU VONG LAP GIAM SAT 24/7...`n" -ForegroundColor Green
 
@@ -251,5 +252,21 @@ while ($true) {
             Write-Host "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." -ForegroundColor Cyan
             Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`""
         }
+    }
+
+    # F. Tu dong don dep o C tranh tran disk (moi 300 giay)
+    if (($now - $lastDiskCheckTime).TotalSeconds -ge 300) {
+        $lastDiskCheckTime = $now
+        try {
+            $cDrive = Get-PSDrive C -ErrorAction SilentlyContinue
+            if ($cDrive -and $cDrive.Free -lt 500MB) {
+                Write-Host "[*] [Disk-Watchdog] O C con duoi 500MB -> Tu dong don rac..." -ForegroundColor Yellow
+                Remove-Item "$env:LOCALAPPDATA\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
+                Remove-Item "C:\ProgramData\Microsoft\Windows\WER\ReportQueue\*" -Recurse -Force -ErrorAction SilentlyContinue
+                try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch {}
+            }
+        } catch {}
     }
 }
