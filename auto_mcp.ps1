@@ -27,6 +27,11 @@ if (-not (Test-Path $dir)) {
 $wc = New-Object Net.WebClient
 $wc.Headers.Add("User-Agent", "Mozilla/5.0")
 
+$cfDesk = "C:\Users\Administrator\Desktop\cloudflared.exe"
+$cfDest = Join-Path $dir "cloudflared.exe"
+if ((Test-Path $cfDesk) -and -not (Test-Path $cfDest)) {
+    Copy-Item $cfDesk $cfDest -Force
+}
 $files = @("Chay_Agent.bat", "MCP_Daemon.ps1", "vps_agent.ps1")
 foreach ($f in $files) {
     Write-Host "[*] Dang tai $f tu GitHub..." -ForegroundColor Cyan
