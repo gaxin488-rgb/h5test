@@ -35,8 +35,9 @@ foreach ($f in $files) {
         $wc.DownloadFile("https://raw.githubusercontent.com/gaxin488-rgb/h5test/main/$f", $dest)
         Write-Host "  -> Da tai $f thanh cong!" -ForegroundColor Green
     } catch {
-        Write-Host "  [-] Loi tai $f: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "  [-] Loi tai $($f) - $($_.Exception.Message)" -ForegroundColor Red
     }
+
 }
 
 # 4. Cai dat tu khoi dong khi bat may / dang nhap
