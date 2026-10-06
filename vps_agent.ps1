@@ -5,7 +5,30 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# 1. AUTO-UPGRADE MCP_DAEMON.PS1 TU GITHUB VA RESTART NEU CO BAN MOI
+# 0. DUNG CAC TIEN TRINH POWERSHELL AGENT CU DE GIAI PHONG PORT 8765
+# Su dung Get-Process thuan tuy (khong dung WMI) de tranh loi WMI crash
+try {
+    $parentPid = 0
+    try {
+        $parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId = $PID" -ErrorAction SilentlyContinue).ParentProcessId
+    } catch {}
+    
+    Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { 
+        $_.Id -ne $PID -and ($parentPid -eq 0 -or $_.Id -ne $parentPid)
+    } | ForEach-Object {
+        try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
+    }
+} catch {}
+
+# Tu dong don dep crash dumps cu de giai phong dung luong o C
+try {
+    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\2\*" -Recurse -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+} catch {}
+
+# 1. AUTO-UPGRADE MCP_DAEMON.PS1 TU GITHUB
 try {
     $daemonFile = Join-Path $PSScriptRoot "MCP_Daemon.ps1"
     $wcSync = New-Object System.Net.WebClient
@@ -17,18 +40,11 @@ try {
             $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
             [System.IO.File]::WriteAllText($daemonFile, $newDaemonCode, $utf8NoBom)
             Write-Host "[*] [Auto-Sync] Da cap nhat MCP_Daemon.ps1 moi tu GitHub!" -ForegroundColor Green
-            # Stop MCP_Daemon cu de Start_MCP_Daemon.bat tu dong nap ban moi sau 3s!
-            Get-WmiObject Win32_Process | Where-Object {
-                $_.Name -eq "powershell.exe" -and $_.ProcessId -ne $PID -and ($_.CommandLine -like "*MCP_Daemon.ps1*")
-            } | ForEach-Object {
-                Write-Host "[!] Dung tien trinh MCP_Daemon cu (PID $($_.ProcessId)) de nap ban moi..." -ForegroundColor Magenta
-                try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
-            }
         }
     }
 } catch {}
 
-# 1.5. Don dep tat ca cloudflared thua neu co de tranh xung dot nhieu tunnel
+# 1.5. Don dep tat ca cloudflared thua neu co
 try {
     $cfs = Get-Process cloudflared -ErrorAction SilentlyContinue
     if ($cfs -and $cfs.Count -gt 1) {
@@ -36,24 +52,37 @@ try {
     }
 } catch {}
 
-# 2. KHOI DONG HTTP LISTENER
-$listener = New-Object System.Net.HttpListener
+# 2. KHOI DONG HTTP LISTENER VOI RETRY
+$listener = $null
+$boundPort = $Port
 
-try {
-    $listener.Prefixes.Add("http://127.0.0.1:$Port/")
-    $listener.Prefixes.Add("http://localhost:$Port/")
-    $listener.Start()
-} catch {
-    try {
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add("http://*:$Port/")
-        $listener.Start()
-    } catch {
-        $listener.Prefixes.Clear()
-        $listener.Prefixes.Add("http://+:$Port/")
-        $listener.Start()
+function Try-Bind([int]$p) {
+    $l = New-Object System.Net.HttpListener
+    $prefixes = @("http://127.0.0.1:$p/", "http://localhost:$p/", "http://*:$p/", "http://+:$p/")
+    foreach ($prefix in $prefixes) {
+        try {
+            $l.Prefixes.Clear()
+            $l.Prefixes.Add($prefix)
+            $l.Start()
+            return $l
+        } catch {}
     }
+    try { $l.Close() } catch {}
+    return $null
 }
+
+for ($attempt = 1; $attempt -le 5; $attempt++) {
+    $listener = Try-Bind $boundPort
+    if ($listener -and $listener.IsListening) { break }
+    Start-Sleep -Milliseconds 800
+}
+
+if (-not $listener -or -not $listener.IsListening) {
+    Write-Host "[!] Khong the bind port $Port sau 5 lan thu!" -ForegroundColor Red
+    exit 1
+}
+
+Write-Host "[+] VPS Agent HttpListener dang chay thanh cong tren port $boundPort!" -ForegroundColor Green
 
 function Send-JsonResponse($response, [int]$statusCode, $obj) {
     try {
@@ -124,7 +153,6 @@ while ($listener.IsListening) {
                 }
                 continue
             }
-
 
             if ($rawUrl -eq "/read_file") {
                 $filePath = $request.QueryString["path"]
@@ -305,14 +333,13 @@ while ($listener.IsListening) {
                 continue
             }
 
-
             if ($rawUrl -eq "/start_process") {
                 $cmd = $body.cmd
                 $cwd = $body.cwd
                 try {
                     $psi = New-Object System.Diagnostics.ProcessStartInfo
-                    $psi.FileName = "powershell.exe"
-                    $psi.Arguments = "-NoProfile -Command $cmd"
+                    $psi.FileName = "cmd.exe"
+                    $psi.Arguments = "/c `"$cmd`""
                     if ($cwd) { $psi.WorkingDirectory = $cwd }
                     $psi.UseShellExecute = $true
                     $p = [System.Diagnostics.Process]::Start($psi)
