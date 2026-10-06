@@ -273,11 +273,23 @@ while ($listener.IsListening) {
                     if ($dir -and -not (Test-Path $dir)) {
                         New-Item -ItemType Directory -Path $dir -Force | Out-Null
                     }
-                    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-                    if ($append) {
-                        [System.IO.File]::AppendAllText($filePath, $content, $utf8NoBom)
+                    $isBase64 = [bool]$body.base64
+                    if ($isBase64) {
+                        $rawBytes = [Convert]::FromBase64String($content)
+                        if ($append -and (Test-Path $filePath)) {
+                            $fs = [System.IO.File]::Open($filePath, [System.IO.FileMode]::Append)
+                            $fs.Write($rawBytes, 0, $rawBytes.Length)
+                            $fs.Close()
+                        } else {
+                            [System.IO.File]::WriteAllBytes($filePath, $rawBytes)
+                        }
                     } else {
-                        [System.IO.File]::WriteAllText($filePath, $content, $utf8NoBom)
+                        $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+                        if ($append) {
+                            [System.IO.File]::AppendAllText($filePath, $content, $utf8NoBom)
+                        } else {
+                            [System.IO.File]::WriteAllText($filePath, $content, $utf8NoBom)
+                        }
                     }
                     Send-JsonResponse $response 200 @{
                         ok = $true
