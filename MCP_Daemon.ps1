@@ -182,7 +182,7 @@ function Get-CloudflaredPath() {
             if ($c -ne $dest -and -not (Test-Path $dest)) {
                 try { Copy-Item $c $dest -Force } catch {}
             }
-            return (if (Test-Path $dest) { $dest } else { $c })
+            if (Test-Path $dest) { return $dest } else { return $c }
         }
     }
     try {
