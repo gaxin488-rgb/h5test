@@ -214,12 +214,13 @@ function Start-TunnelProcess() {
         Log-Msg "[-] Khong tim thay cloudflared.exe!" "Red"
         return $null
     }
+    $cfLog = Join-Path $root "cloudflared.log"
     Log-Msg "[*] Dang khoi dong Cloudflare Tunnel ($cfPath -> localhost:$Port)..." "Cyan"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cfPath
-    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost"
+    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost --logfile `"$cfLog`""
 
-    $psi.RedirectStandardError = $true
+    $psi.RedirectStandardError = $false
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
@@ -237,11 +238,12 @@ while ($true) {
     Start-Sleep -Seconds 5
     $now = [DateTime]::Now
 
-    # A. Doc link Cloudflare Tunnel moi tu Stderr neu co
-    if ($tunnelProc -and -not $tunnelProc.HasExited) {
+    # A. Doc link Cloudflare Tunnel moi tu cloudflared.log (hoan toan non-blocking, khong bao gio bi deadlock)
+    $cfLog = Join-Path $root "cloudflared.log"
+    if (Test-Path $cfLog) {
         try {
-            while (-not $tunnelProc.StandardError.EndOfStream) {
-                $line = $tunnelProc.StandardError.ReadLine()
+            $logLines = Get-Content $cfLog -Tail 40 -ErrorAction SilentlyContinue
+            foreach ($line in $logLines) {
                 if ($line -match "https://[a-zA-Z0-9\-]+\.trycloudflare\.com") {
                     $found = $matches[0]
                     if ($found -ne $currentTunnelUrl) {
@@ -250,7 +252,6 @@ while ($true) {
                         Push-UrlToGitHub $currentTunnelUrl
                         Push-LogToGitHub ($logHistory.ToArray() -join "`r`n")
                     }
-                    break
                 }
             }
         } catch {}
@@ -392,15 +393,31 @@ while ($true) {
                 }
             }
 
+            # Kiem tra tien trinh cmd dang chay Run_Acc1 va Run_Acc2 de tranh tao nhieu bat loop
+            $cmdProcs = @(Get-CimInstance Win32_Process -Filter "name='cmd.exe'" -ErrorAction SilentlyContinue)
+            $tab1Cmds = @($cmdProcs | Where-Object { $_.CommandLine -like "*Run_Acc1.bat*" })
+            $tab2Cmds = @($cmdProcs | Where-Object { $_.CommandLine -like "*Run_Acc2.bat*" })
+
+            if ($tab1Cmds.Count -gt 1) {
+                for ($i = 1; $i -lt $tab1Cmds.Count; $i++) {
+                    Stop-Process -Id $tab1Cmds[$i].ProcessId -Force -ErrorAction SilentlyContinue
+                }
+            }
+            if ($tab2Cmds.Count -gt 1) {
+                for ($i = 1; $i -lt $tab2Cmds.Count; $i++) {
+                    Stop-Process -Id $tab2Cmds[$i].ProcessId -Force -ErrorAction SilentlyContinue
+                }
+            }
+
             # Khoi dong rieng biet tung tab neu chua chay
             $script1 = Join-Path $gameBase "Acc1\Run_Acc1.bat"
             $script2 = Join-Path $gameBase "Acc2\Run_Acc2.bat"
 
-            if (-not $tab1Running -and (Test-Path $script1)) {
+            if (-not $tab1Running -and $tab1Cmds.Count -eq 0 -and (Test-Path $script1)) {
                 Log-Msg "[*] [Game-Watchdog] Acc 1 (Tab 1 - gg3umwdt13) chua chay -> Tu dong khoi chay Run_Acc1.bat..." "Cyan"
                 Start-Process "cmd.exe" -ArgumentList "/c `"$script1`"" -WorkingDirectory (Split-Path $script1) -WindowStyle Minimized
             }
-            if (-not $tab2Running -and (Test-Path $script2)) {
+            if (-not $tab2Running -and $tab2Cmds.Count -eq 0 -and (Test-Path $script2)) {
                 Log-Msg "[*] [Game-Watchdog] Acc 2 (Tab 2 - ggu3ucujf3) chua chay -> Tu dong khoi chay Run_Acc2.bat..." "Cyan"
                 Start-Process "cmd.exe" -ArgumentList "/c `"$script2`"" -WorkingDirectory (Split-Path $script2) -WindowStyle Minimized
             }
