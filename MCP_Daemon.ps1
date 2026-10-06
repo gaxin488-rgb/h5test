@@ -214,13 +214,12 @@ function Start-TunnelProcess() {
         Log-Msg "[-] Khong tim thay cloudflared.exe!" "Red"
         return $null
     }
-    $cfLog = Join-Path $root "cloudflared.log"
     Log-Msg "[*] Dang khoi dong Cloudflare Tunnel ($cfPath -> localhost:$Port)..." "Cyan"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cfPath
-    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost --logfile `"$cfLog`""
+    $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost"
 
-    $psi.RedirectStandardError = $false
+    $psi.RedirectStandardError = $true
     $psi.UseShellExecute = $false
     $psi.CreateNoWindow = $true
     return [System.Diagnostics.Process]::Start($psi)
@@ -238,12 +237,11 @@ while ($true) {
     Start-Sleep -Seconds 5
     $now = [DateTime]::Now
 
-    # A. Doc link Cloudflare Tunnel moi tu cloudflared.log (hoan toan non-blocking, khong bao gio bi deadlock)
-    $cfLog = Join-Path $root "cloudflared.log"
-    if (Test-Path $cfLog) {
+    # A. Doc link Cloudflare Tunnel moi tu Stderr neu co
+    if ($tunnelProc -and -not $tunnelProc.HasExited) {
         try {
-            $logLines = Get-Content $cfLog -Tail 40 -ErrorAction SilentlyContinue
-            foreach ($line in $logLines) {
+            while (-not $tunnelProc.StandardError.EndOfStream) {
+                $line = $tunnelProc.StandardError.ReadLine()
                 if ($line -match "https://[a-zA-Z0-9\-]+\.trycloudflare\.com") {
                     $found = $matches[0]
                     if ($found -ne $currentTunnelUrl) {
@@ -252,6 +250,7 @@ while ($true) {
                         Push-UrlToGitHub $currentTunnelUrl
                         Push-LogToGitHub ($logHistory.ToArray() -join "`r`n")
                     }
+                    break
                 }
             }
         } catch {}
@@ -356,16 +355,14 @@ while ($true) {
         } catch {}
     }
 
-    # F. Tu dong kiem tra va khoi dong 2 Acc Game doc lap (moi 30 giay)
+    # F. Tu dong kiem tra va khoi dong 1 Acc Game (Acc 1 - Tab 1) (moi 30 giay)
     if (-not $lastGameCheckTime -or ($now - $lastGameCheckTime).TotalSeconds -ge 30) {
         $lastGameCheckTime = $now
         $gameBase = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite"
         if (Test-Path $gameBase) {
             $javawProcs = @(Get-CimInstance Win32_Process -Filter "name='javaw.exe'" -ErrorAction SilentlyContinue)
             $tab1Running = $false
-            $tab2Running = $false
             $tab1Pids = @()
-            $tab2Pids = @()
 
             foreach ($jp in $javawProcs) {
                 $cmdLine = $jp.CommandLine
@@ -374,52 +371,38 @@ while ($true) {
                     $tab1Pids += $jp.ProcessId
                 }
                 elseif ($cmdLine -like "*-Dtab=2*") {
-                    $tab2Running = $true
-                    $tab2Pids += $jp.ProcessId
+                    Log-Msg "[!] [Game-Watchdog] Phat hien Tab 2 (PID $($jp.ProcessId)) -> Kill vi dang chi treo 1 Tab..." "Yellow"
+                    Stop-Process -Id $jp.ProcessId -Force -ErrorAction SilentlyContinue
                 }
             }
 
-            # Neu co tien trinh trung lap cua cung 1 tab -> Kill ban sao thua de tranh xung dot socket va port
+            # Deduplicate Acc 1 javaw
             if ($tab1Pids.Count -gt 1) {
                 for ($i = 1; $i -lt $tab1Pids.Count; $i++) {
                     Log-Msg "[!] [Game-Watchdog] Phat hien trung lap Acc 1 (PID $($tab1Pids[$i])) -> Kill ban sao thua..." "Yellow"
                     Stop-Process -Id $tab1Pids[$i] -Force -ErrorAction SilentlyContinue
                 }
             }
-            if ($tab2Pids.Count -gt 1) {
-                for ($i = 1; $i -lt $tab2Pids.Count; $i++) {
-                    Log-Msg "[!] [Game-Watchdog] Phat hien trung lap Acc 2 (PID $($tab2Pids[$i])) -> Kill ban sao thua..." "Yellow"
-                    Stop-Process -Id $tab2Pids[$i] -Force -ErrorAction SilentlyContinue
+
+            # Deduplicate Acc 1 cmd
+            $cmdAcc1 = @(Get-CimInstance Win32_Process -Filter "name='cmd.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*Run_Acc1.bat*" })
+            if ($cmdAcc1.Count -gt 1) {
+                for ($i = 1; $i -lt $cmdAcc1.Count; $i++) {
+                    Stop-Process -Id $cmdAcc1[$i].ProcessId -Force -ErrorAction SilentlyContinue
                 }
             }
 
-            # Kiem tra tien trinh cmd dang chay Run_Acc1 va Run_Acc2 de tranh tao nhieu bat loop
-            $cmdProcs = @(Get-CimInstance Win32_Process -Filter "name='cmd.exe'" -ErrorAction SilentlyContinue)
-            $tab1Cmds = @($cmdProcs | Where-Object { $_.CommandLine -like "*Run_Acc1.bat*" })
-            $tab2Cmds = @($cmdProcs | Where-Object { $_.CommandLine -like "*Run_Acc2.bat*" })
-
-            if ($tab1Cmds.Count -gt 1) {
-                for ($i = 1; $i -lt $tab1Cmds.Count; $i++) {
-                    Stop-Process -Id $tab1Cmds[$i].ProcessId -Force -ErrorAction SilentlyContinue
-                }
-            }
-            if ($tab2Cmds.Count -gt 1) {
-                for ($i = 1; $i -lt $tab2Cmds.Count; $i++) {
-                    Stop-Process -Id $tab2Cmds[$i].ProcessId -Force -ErrorAction SilentlyContinue
-                }
+            # Kill cmd Acc 2
+            $cmdAcc2 = @(Get-CimInstance Win32_Process -Filter "name='cmd.exe'" -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*Run_Acc2.bat*" })
+            foreach ($c2 in $cmdAcc2) {
+                Stop-Process -Id $c2.ProcessId -Force -ErrorAction SilentlyContinue
             }
 
-            # Khoi dong rieng biet tung tab neu chua chay
+            # Khoi dong Tab 1 neu ca javaw va cmd deu chua chay
             $script1 = Join-Path $gameBase "Acc1\Run_Acc1.bat"
-            $script2 = Join-Path $gameBase "Acc2\Run_Acc2.bat"
-
-            if (-not $tab1Running -and $tab1Cmds.Count -eq 0 -and (Test-Path $script1)) {
+            if (-not $tab1Running -and ($cmdAcc1.Count -eq 0) -and (Test-Path $script1)) {
                 Log-Msg "[*] [Game-Watchdog] Acc 1 (Tab 1 - gg3umwdt13) chua chay -> Tu dong khoi chay Run_Acc1.bat..." "Cyan"
-                Start-Process "cmd.exe" -ArgumentList "/c `"$script1`"" -WorkingDirectory (Split-Path $script1) -WindowStyle Minimized
-            }
-            if (-not $tab2Running -and $tab2Cmds.Count -eq 0 -and (Test-Path $script2)) {
-                Log-Msg "[*] [Game-Watchdog] Acc 2 (Tab 2 - ggu3ucujf3) chua chay -> Tu dong khoi chay Run_Acc2.bat..." "Cyan"
-                Start-Process "cmd.exe" -ArgumentList "/c `"$script2`"" -WorkingDirectory (Split-Path $script2) -WindowStyle Minimized
+                Start-Process "cmd.exe" -ArgumentList "/c `"$script1`"" -WorkingDirectory (Split-Path $script1) -WindowStyle Normal
             }
         }
     }
