@@ -53,6 +53,7 @@ Write-Host "[V] Da cai dat Task Scheduler thanh cong!" -ForegroundColor Green
 
 # 5. Khoi dong MCP Daemon ngay lap tuc
 Write-Host "`n[*] Dang khoi dong Agent & Cloudflare Tunnel..." -ForegroundColor Yellow
+Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Process -FilePath $batPath -WorkingDirectory $dir
 
 Write-Host "`n========================================================" -ForegroundColor Green
