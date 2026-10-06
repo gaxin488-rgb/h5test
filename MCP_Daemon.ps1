@@ -74,6 +74,45 @@ function Push-UrlToGitHub([string]$tunnelUrl) {
     }
 }
 
+$logHistory = New-Object System.Collections.Generic.List[string]
+
+function Push-LogToGitHub([string]$text) {
+    if (-not $GithubToken -or -not $text) { return }
+    try {
+        $apiUrl = "https://api.github.com/repos/$Repo/contents/vps_daemon_log.txt"
+        $headers = @{
+            "Authorization" = "Bearer $GithubToken"
+            "Accept"        = "application/vnd.github.v3+json"
+            "User-Agent"    = "Antigravity-VPS-Daemon"
+        }
+        $sha = $null
+        try {
+            $resp = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method GET -TimeoutSec 6
+            $sha = $resp.sha
+        } catch {}
+
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+        $b64 = [Convert]::ToBase64String($bytes)
+        $body = @{
+            message = "Auto-update VPS Daemon & Error Log ($(Get-Date -Format 'yyyy-MM-dd HH:mm:ss'))"
+            content = $b64
+        }
+        if ($sha) { $body["sha"] = $sha }
+
+        $jsonBody = $body | ConvertTo-Json
+        $null = Invoke-RestMethod -Uri $apiUrl -Headers $headers -Method PUT -Body $jsonBody -TimeoutSec 10
+    } catch {}
+}
+
+function Log-Msg([string]$msg, [string]$color = "White") {
+    $time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $line = "[$time] $msg"
+    Write-Host $msg -ForegroundColor $color
+    $logHistory.Add($line)
+    if ($logHistory.Count -gt 250) { $logHistory.RemoveAt(0) }
+}
+
+
 function Update-AgentScriptFromGitHub() {
     try {
         Write-Host "[*] [Auto-Update] Kiem tra va cap nhat vps_agent.ps1 tu GitHub..." -ForegroundColor Cyan
@@ -164,14 +203,16 @@ $agentFailCount = 0
 $tunnelFailCount = 0
 $lastGameCheckTime = [DateTime]::MinValue
 $lastDiskCheckTime = [DateTime]::MinValue
+$lastLogPushTime = [DateTime]::MinValue
 
 
 function Start-AgentProcess() {
     Kill-PortProcess $Port
     Start-Sleep -Milliseconds 600
-    Write-Host "[*] Dang khoi dong VPS Agent (Port $Port)..." -ForegroundColor Cyan
+    Log-Msg "[*] Dang khoi dong VPS Agent (Port $Port)..." "Cyan"
     $agentLog = Join-Path $root "agent.log"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
     $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$agentScriptPath`" -Port $Port -Token `"$Token`""
 
     $psi.UseShellExecute = $false
@@ -213,10 +254,10 @@ function Get-CloudflaredPath() {
 function Start-TunnelProcess() {
     $cfPath = Get-CloudflaredPath
     if (-not $cfPath -or -not (Test-Path $cfPath)) {
-        Write-Host "[-] Khong tim thay cloudflared.exe!" -ForegroundColor Red
+        Log-Msg "[-] Khong tim thay cloudflared.exe!" "Red"
         return $null
     }
-    Write-Host "[*] Dang khoi dong Cloudflare Tunnel ($cfPath -> localhost:$Port)..." -ForegroundColor Cyan
+    Log-Msg "[*] Dang khoi dong Cloudflare Tunnel ($cfPath -> localhost:$Port)..." "Cyan"
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     $psi.FileName = $cfPath
     $psi.Arguments = "tunnel --url http://127.0.0.1:$Port --http-host-header localhost"
@@ -231,7 +272,8 @@ $agentProc = Start-AgentProcess
 Start-Sleep -Seconds 2
 $tunnelProc = Start-TunnelProcess
 
-Write-Host "`n[V] DA KHOI DONG THANH CONG! BAT DAU VONG LAP GIAM SAT 24/7...`n" -ForegroundColor Green
+Log-Msg "`n[V] DA KHOI DONG THANH CONG! BAT DAU VONG LAP GIAM SAT 24/7...`n" "Green"
+Push-LogToGitHub ($logHistory.ToArray() -join "`r`n")
 
 # VONG LAP GIAM SAT 24/7
 while ($true) {
@@ -247,8 +289,9 @@ while ($true) {
                     $found = $matches[0]
                     if ($found -ne $currentTunnelUrl) {
                         $currentTunnelUrl = $found
-                        Write-Host "[+] Phat hien Cloudflare Tunnel URL moi: $currentTunnelUrl" -ForegroundColor Yellow
+                        Log-Msg "[+] Phat hien Cloudflare Tunnel URL moi: $currentTunnelUrl" "Yellow"
                         Push-UrlToGitHub $currentTunnelUrl
+                        Push-LogToGitHub ($logHistory.ToArray() -join "`r`n")
                     }
                     break
                 }
@@ -258,7 +301,7 @@ while ($true) {
 
     # B. Kiem tra tien trinh Tunnel (Auto-Restart neu crash)
     if ($null -eq $tunnelProc -or $tunnelProc.HasExited) {
-        Write-Host "[-] Cloudflare Tunnel bi dung! Tu dong khoi dong lai ngay..." -ForegroundColor Red
+        Log-Msg "[-] Cloudflare Tunnel bi dung! Tu dong khoi dong lai ngay..." "Red"
         $tunnelProc = Start-TunnelProcess
         Start-Sleep -Seconds 2
     }
@@ -292,9 +335,9 @@ while ($true) {
         $agentFailCount = 0
     } else {
         $agentFailCount++
-        Write-Host "[-] Canh bao: Agent khong phan hoi tai localhost:$Port (Lan $agentFailCount/2)..." -ForegroundColor Yellow
+        Log-Msg "[-] Canh bao: Agent khong phan hoi tai localhost:$Port (Lan $agentFailCount/2)..." "Yellow"
         if ($agentFailCount -ge 2) {
-            Write-Host "[!] AGENT BI TREO HOAC MAT KET NOI! Tu dong reset Agent..." -ForegroundColor Red
+            Log-Msg "[!] AGENT BI TREO HOAC MAT KET NOI! Tu dong reset Agent..." "Red"
             if ($agentProc -and -not $agentProc.HasExited) {
                 try { $agentProc.Kill() } catch {}
             }
@@ -327,9 +370,9 @@ while ($true) {
             $tunnelFailCount = 0
         } else {
             $tunnelFailCount++
-            Write-Host "[-] Public Tunnel khong phan hoi: $currentTunnelUrl (Lan $tunnelFailCount/3)" -ForegroundColor Yellow
+            Log-Msg "[-] Public Tunnel khong phan hoi: $currentTunnelUrl (Lan $tunnelFailCount/3)" "Yellow"
             if ($tunnelFailCount -ge 3) {
-                Write-Host "[!] CLOUDFLARE TUNNEL HONG! Tu dong khoi dong lai Tunnel moi..." -ForegroundColor Red
+                Log-Msg "[!] CLOUDFLARE TUNNEL HONG! Tu dong khoi dong lai Tunnel moi..." "Red"
                 if ($tunnelProc -and -not $tunnelProc.HasExited) {
                     try { $tunnelProc.Kill() } catch {}
                 }
@@ -350,7 +393,7 @@ while ($true) {
                     [VpsMem]::EmptyWorkingSet($jp.Handle) | Out-Null
                     $trimmedCount++
                 }
-                Write-Host "[*] [Auto-RAM-Trim] Da toi uu hoa RAM cho $trimmedCount tien trinh game javaw.exe" -ForegroundColor Green
+                Log-Msg "[*] [Auto-RAM-Trim] Da toi uu hoa RAM cho $trimmedCount tien trinh game javaw.exe" "Green"
             }
         } catch {}
     }
@@ -361,7 +404,7 @@ while ($true) {
         $gameScript = "C:\Users\Administrator\Desktop\Chay_2_Acc.bat"
         $javawCount = @(Get-Process javaw -ErrorAction SilentlyContinue).Count
         if ($javawCount -lt 2 -and (Test-Path $gameScript)) {
-            Write-Host "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." -ForegroundColor Cyan
+            Log-Msg "[*] [Game-Watchdog] Phat hien chi co $javawCount / 2 acc dang chay -> Tu dong khoi chay Chay_2_Acc.bat..." "Cyan"
             Start-Process "cmd.exe" -ArgumentList "/c `"$gameScript`"" -WindowStyle Minimized
         }
     }
@@ -375,7 +418,7 @@ while ($true) {
                 $freeMB = [math]::Round($driveC.Free / 1MB, 0)
                 $freeGB = [math]::Round($driveC.Free / 1GB, 2)
                 if ($freeMB -lt 1500) {
-                    Write-Host "[!] [Disk-Watchdog] Canh bao: O C: chi con $freeMB MB ($freeGB GB) trong! Bat dau tu dong don dep..." -ForegroundColor Yellow
+                    Log-Msg "[!] [Disk-Watchdog] Canh bao: O C: chi con $freeMB MB ($freeGB GB) trong! Bat dau tu dong don dep..." "Yellow"
                     # 1. Don dep Temp
                     Get-ChildItem -Path "$env:TEMP", "C:\Windows\Temp" -Recurse -Force -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt (Get-Date).AddHours(-2) } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
                     # 2. Xoa cache WER va SoftwareDistribution
@@ -390,7 +433,7 @@ while ($true) {
                         if (Test-Path $lf) {
                             $len = (Get-Item $lf).Length
                             if ($len -gt 5MB) {
-                                Write-Host "[*] [Disk-Watchdog] File log $lf vuot qua 5MB -> Cat tia giu 2000 dong moi nhat..." -ForegroundColor Cyan
+                                Log-Msg "[*] [Disk-Watchdog] File log $lf vuot qua 5MB -> Cat tia giu 2000 dong moi nhat..." "Cyan"
                                 $tailLines = Get-Content $lf -Tail 2000
                                 Set-Content -Path $lf -Value $tailLines -Force
                             }
@@ -398,10 +441,20 @@ while ($true) {
                     }
                     $afterC = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Name -eq "C" }
                     $afterGB = [math]::Round($afterC.Free / 1GB, 2)
-                    Write-Host "[V] [Disk-Watchdog] Don dep thanh cong! O C: hien co $afterGB GB trong." -ForegroundColor Green
+                    Log-Msg "[V] [Disk-Watchdog] Don dep thanh cong! O C: hien co $afterGB GB trong." "Green"
+                    Push-LogToGitHub ($logHistory.ToArray() -join "`r`n")
                 }
             }
         } catch {}
+    }
+
+    # H. Day toan bo log giam sat len GitHub moi 60 giay
+    if (-not $lastLogPushTime -or ($now - $lastLogPushTime).TotalSeconds -ge 60) {
+        $lastLogPushTime = $now
+        if ($logHistory.Count -gt 0) {
+            $allLogs = ($logHistory.ToArray() -join "`r`n")
+            Push-LogToGitHub $allLogs
+        }
     }
 }
 
