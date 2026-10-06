@@ -5,126 +5,52 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-function Push-GitHub([string]$path, [string]$content, [string]$commitMsg) {
-    try {
-        $ghToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
-        $ghRepo = "gaxin488-rgb/h5test"
-        $apiUrl = "https://api.github.com/repos/$ghRepo/contents/$path"
-
-        $sha = $null
-        try {
-            $getReq = [System.Net.HttpWebRequest]::Create($apiUrl)
-            $getReq.Method = "GET"
-            $getReq.UserAgent = "Antigravity-VPS-Agent"
-            $getReq.Accept = "application/vnd.github.v3+json"
-            $getReq.Headers.Add("Authorization", "Bearer $ghToken")
-            $getReq.Timeout = 6000
-            $getResp = $getReq.GetResponse()
-            $stream = $getResp.GetResponseStream()
-            $reader = New-Object System.IO.StreamReader($stream)
-            $sha = ($reader.ReadToEnd() | ConvertFrom-Json).sha
-            $getResp.Close()
-        } catch {}
-
-        $b64 = [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($content))
-        $payload = @{ message = $commitMsg; content = $b64 }
-        if ($sha) { $payload["sha"] = $sha }
-
-        $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(($payload | ConvertTo-Json -Compress))
-        $putReq = [System.Net.HttpWebRequest]::Create($apiUrl)
-        $putReq.Method = "PUT"
-        $putReq.ContentType = "application/json; charset=utf-8"
-        $putReq.UserAgent = "Antigravity-VPS-Agent"
-        $putReq.Accept = "application/vnd.github.v3+json"
-        $putReq.Headers.Add("Authorization", "Bearer $ghToken")
-        $putReq.ContentLength = $bodyBytes.Length
-        $putReq.Timeout = 10000
-        $putStream = $putReq.GetRequestStream()
-        $putStream.Write($bodyBytes, 0, $bodyBytes.Length)
-        $putStream.Close()
-        $putResp = $putReq.GetResponse()
-        $putResp.Close()
-        return $true
-    } catch {
-        return $false
-    }
-}
-
-# PUSH PROOF OF EXECUTION TO GITHUB IMMEDIATELY
-$null = Push-GitHub "vps_agent_live.txt" "AGENT STARTED ON VPS AT $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') PID $PID" "Proof of Agent Execution"
-
-# 1. GIAI PHONG PORT: Dung tat ca powershell khac (tru Daemon va DongBo)
+# 1. GIAI PHONG PORT: Dung cac powershell cu dang chiem port
 $myPid = $PID
 try {
-    Get-CimInstance Win32_Process | Where-Object { 
-        $_.Name -eq "powershell.exe" -and 
-        $_.ProcessId -ne $myPid -and 
-        $_.CommandLine -notlike "*MCP_Daemon*" -and 
-        $_.CommandLine -notlike "*DongBo*" 
-    } | ForEach-Object {
-        try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
+    Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $myPid } | ForEach-Object {
+        try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
     }
-} catch {
-    try {
-        Get-WmiObject Win32_Process | Where-Object { 
-            $_.Name -eq "powershell.exe" -and 
-            $_.ProcessId -ne $myPid -and 
-            $_.CommandLine -notlike "*MCP_Daemon*" -and 
-            $_.CommandLine -notlike "*DongBo*" 
-        } | ForEach-Object {
-            try { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue } catch {}
-        }
-    } catch {}
-}
+} catch {}
+Start-Sleep -Milliseconds 300
 
-Start-Sleep -Milliseconds 400
-
-# 2. KHOI DONG HTTP LISTENER
+# 2. KHOI DONG HTTP LISTENER VOI CAC PREFIX PHU HOP
 $listener = $null
 $started = $false
-for ($i = 0; $i -lt 5; $i++) {
+$prefixesToTry = @(
+    @("http://localhost:$Port/", "http://127.0.0.1:$Port/"),
+    @("http://127.0.0.1:$Port/"),
+    @("http://localhost:$Port/"),
+    @("http://+:$Port/"),
+    @("http://*:$Port/")
+)
+
+foreach ($pList in $prefixesToTry) {
     try {
-        $listener = New-Object System.Net.HttpListener
-        $listener.Prefixes.Add("http://localhost:$Port/")
-        $listener.Prefixes.Add("http://127.0.0.1:$Port/")
-        $listener.Start()
-        $started = $true
-        break
+        $testListener = New-Object System.Net.HttpListener
+        foreach ($p in $pList) { $testListener.Prefixes.Add($p) }
+        $testListener.Start()
+        if ($testListener.IsListening) {
+            $listener = $testListener
+            $started = $true
+            Write-Host "[+] HttpListener khoi dong thanh cong tai: $($pList -join ', ')" -ForegroundColor Green
+            break
+        }
     } catch {
-        try {
-            Get-CimInstance Win32_Process | Where-Object { 
-                $_.Name -eq "powershell.exe" -and 
-                $_.ProcessId -ne $myPid -and 
-                $_.CommandLine -notlike "*MCP_Daemon*" -and 
-                $_.CommandLine -notlike "*DongBo*" 
-            } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-        } catch {}
-        Start-Sleep -Milliseconds 400
+        try { $testListener.Close() } catch {}
     }
 }
 
-if (-not $started) {
-    try {
-        $listener = New-Object System.Net.HttpListener
-        $listener.Prefixes.Add("http://127.0.0.1:$Port/")
-        $listener.Start()
-        $started = $true
-    } catch {}
+if (-not $started -or -not $listener) {
+    Write-Host "[!] KHONG THE KHOI DONG HTTPLISTENER TREN PORT $Port! Vui long kiem tra quyen Administrator hoac port bi chiem." -ForegroundColor Red
+    Start-Sleep -Seconds 3
+    exit 1
 }
 
-if (-not $started) {
-    try {
-        $listener = New-Object System.Net.HttpListener
-        $listener.Prefixes.Add("http://localhost:$Port/")
-        $listener.Start()
-        $started = $true
-    } catch {
-        $null = Push-GitHub "vps_agent_live.txt" "AGENT FAILED TO BIND PORT $Port AT $(Get-Date -Format 'HH:mm:ss')" "Agent bind fail"
-        exit 1
-    }
-}
-
-$null = Push-GitHub "vps_agent_live.txt" "AGENT BOUND PORT $Port SUCCESSFULLY AT $(Get-Date -Format 'HH:mm:ss') PID $PID" "Agent bound port"
+Write-Host "[*] ============================================================" -ForegroundColor Cyan
+Write-Host "    VPS AGENT CHO ANTIGRAVITY DANG CHAY 24/7 (PORT $Port)" -ForegroundColor Green
+Write-Host "    Token: $Token | San sang tiep nhan yeu cau..." -ForegroundColor Yellow
+Write-Host "[*] ============================================================" -ForegroundColor Cyan
 
 function Send-JsonResponse($response, [int]$statusCode, $obj) {
     try {
@@ -151,9 +77,6 @@ function Check-Auth($request) {
     return $false
 }
 
-$startTime = [DateTime]::Now
-$lastReportTime = [DateTime]::MinValue
-
 while ($listener.IsListening) {
     try {
         $context = $listener.GetContext()
@@ -170,41 +93,14 @@ while ($listener.IsListening) {
             continue
         }
 
-        # Health / Ping
+        # Health / Ping khong can Token
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
-            Send-JsonResponse $response 200 @{
-                ok = $true
-                status = "online"
-                port = $Port
-                time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
-                uptime_sec = [math]::Round(((Get-Date) - $startTime).TotalSeconds)
-            }
-
-            # Sync bot report dinh ky moi 45 giay
-            $now = [DateTime]::Now
-            if (($now - $lastReportTime).TotalSeconds -ge 45) {
-                $lastReportTime = $now
-                try {
-                    $acc1Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc1\autofarm_log.txt"
-                    $acc2Log = "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\Acc2\autofarm_log.txt"
-                    $acc1Lines = if (Test-Path $acc1Log) { (Get-Content $acc1Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
-                    $acc2Lines = if (Test-Path $acc2Log) { (Get-Content $acc2Log -Tail 40 -ErrorAction SilentlyContinue) -join "`n" } else { "No log" }
-                    $javaws = @(Get-Process -Name javaw -ErrorAction SilentlyContinue)
-
-                    $reportObj = @{
-                        time = (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')
-                        javaw_count = $javaws.Count
-                        acc1_tail = $acc1Lines
-                        acc2_tail = $acc2Lines
-                    }
-                    $null = Push-GitHub "vps_bot_report.json" ($reportObj | ConvertTo-Json -Depth 4) "Bot farm report"
-                } catch {}
-            }
+            Send-JsonResponse $response 200 @{ ok = $true; status = "online"; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
             continue
         }
 
         if (-not (Check-Auth $request)) {
-            Send-JsonResponse $response 401 @{ ok = $false; error = "Unauthorized" }
+            Send-JsonResponse $response 401 @{ ok = $false; error = "Unauthorized: Sai token xac thuc" }
             continue
         }
 
@@ -231,7 +127,7 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/read_file" -or $rawUrl -eq "/file/read") {
+            if ($rawUrl -eq "/read_file") {
                 $filePath = $request.QueryString["path"]
                 $tail = [int]($request.QueryString["tail"] -as [int])
                 if ([string]::IsNullOrWhiteSpace($filePath) -or -not (Test-Path -LiteralPath $filePath)) {
@@ -256,7 +152,7 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/list_files" -or $rawUrl -eq "/file/list") {
+            if ($rawUrl -eq "/list_files") {
                 $dirPath = if ($request.QueryString["path"]) { $request.QueryString["path"] } else { "." }
                 if (-not (Test-Path $dirPath)) {
                     Send-JsonResponse $response 404 @{ ok = $false; error = "Thu muc khong ton tai: $dirPath" }
@@ -279,7 +175,7 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/processes" -or $rawUrl -eq "/process/list") {
+            if ($rawUrl -eq "/processes") {
                 $filter = $request.QueryString["filter"]
                 try {
                     $procs = Get-Process -ErrorAction SilentlyContinue | Where-Object {
@@ -355,7 +251,7 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/write_file" -or $rawUrl -eq "/file/write") {
+            if ($rawUrl -eq "/write_file") {
                 $filePath = $body.path
                 $content = $body.content
                 $append = [bool]$body.append
@@ -386,7 +282,7 @@ while ($listener.IsListening) {
                 continue
             }
 
-            if ($rawUrl -eq "/kill_process" -or $rawUrl -eq "/process/kill") {
+            if ($rawUrl -eq "/kill_process") {
                 $pName = $body.name
                 $pId = $body.pid
                 if ($pName -and $pName.EndsWith(".exe")) {
