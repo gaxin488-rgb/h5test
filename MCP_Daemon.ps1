@@ -426,7 +426,9 @@ while ($true) {
                     Get-ChildItem -Path "C:\Windows\SoftwareDistribution\Download" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
                     # 3. Xoa Thung Rac
                     Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-                    # 4. Cat tia log game bot neu > 5MB de chong tran bo nho
+                    # 4. Xoa Java crash dumps va minidumps (.mdmp, .dmp)
+                    Get-ChildItem -Path "C:\Users\Administrator\Desktop", "C:\TinhLinh" -Include "hs_err_*.mdmp","hs_err_*.log","*.dmp" -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+                    # 5. Cat tia log game bot neu > 5MB de chong tran bo nho
                     $log1 = "C:\TinhLinh\TinhLinh_Lite\Acc1\autofarm_log.txt"
                     $log2 = "C:\TinhLinh\TinhLinh_Lite\Acc2\autofarm_log.txt"
                     foreach ($lf in @($log1, $log2)) {
