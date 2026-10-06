@@ -142,6 +142,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.lwjgl.glfw.GLFW;
 
@@ -250,12 +251,48 @@ public class AutoReconnect {
     private static volatile long zoneChangeStartTime = 0L;
     private static volatile int pendingZoneTargetId = -1;
     private static volatile long lastAutoEnableAttemptTime = 0L;
+    // Movement State & Command Cancellation (Chong Stale Callback & Tranh Chap Quyen Dieu Khien)
+    public static final AtomicLong movementCommandId = new AtomicLong(0L);
+    public static final int MOVE_NORMAL = 0;
+    public static final int MOVE_JUMP = 1;
+    public static final int MOVE_PHASE_STEP = 2;
+    public static final int MOVE_PORTAL = 3;
+    public static final int MOVE_STOP = 4;
+    public static volatile int movementMode = MOVE_NORMAL;
+
     private static volatile float lastProgressCheckX = 0.0f;
+    private static volatile float lastProgressCheckY = 0.0f;
+    private static volatile float lastTargetDistance = 999.0f;
     private static volatile long lastProgressCheckTime = 0L;
     private static volatile int terrainStuckCount = 0;
     private static volatile int jumpObstacleCount = 0;
     private static volatile float lastStuckPositionX = -999.0f;
     private static volatile int samePositionStuckCycles = 0;
+
+    public static long newMovementCommand(int mode) {
+        movementMode = mode;
+        return movementCommandId.incrementAndGet();
+    }
+
+    public static boolean isMovementCommandValid(long commandId, int mode) {
+        return movementCommandId.get() == commandId && movementMode == mode;
+    }
+
+    public static Body getPlayerBody(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        if (player == null) {
+            return null;
+        }
+        try {
+            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 bodyObj = player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+            if (bodyObj != null) {
+                Method method = bodyObj.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75", new Class[0]);
+                return (Body) method.invoke(bodyObj, new Object[0]);
+            }
+        }
+        catch (Throwable ignored) {
+        }
+        return null;
+    }
     public static volatile long periodicBagEatIntervalMs = 1800000L;
     public static volatile int minTheLucTrigger = 50;
     private static volatile long lastStaminaCheckTime = 0L;
@@ -4039,51 +4076,61 @@ public class AutoReconnect {
         if (girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 == null) {
             return;
         }
+        final long commandId = AutoReconnect.newMovementCommand(MOVE_JUMP);
         Gdx.app.postRunnable(new Runnable(){
             final /* synthetic */ com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player;
             final /* synthetic */ float val$forwardDir;
             final /* synthetic */ int val$jumpAttempt;
             final /* synthetic */ int val$stuckCycle;
+            final /* synthetic */ long val$cmdId;
             {
                 this.val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
                 this.val$forwardDir = f;
                 this.val$jumpAttempt = n;
                 this.val$stuckCycle = n2;
+                this.val$cmdId = commandId;
             }
 
             public void run() {
                 try {
-                    Method method;
-                    Body body;
-                    Object object;
+                    if (!AutoReconnect.isMovementCommandValid(this.val$cmdId, MOVE_JUMP)) {
+                        AutoReconnect.log("[MoveDebug] JUMP bo qua vi stale command (cmdId=" + this.val$cmdId + ", activeCmdId=" + movementCommandId.get() + ", mode=" + movementMode + ")");
+                        return;
+                    }
                     GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75 girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75 = this.val$player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
                     if (girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75 != null) {
                         try {
-                            object = girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75.getClass().getDeclaredField("GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75");
-                            ((Field)object).setAccessible(true);
-                            ((Field)object).setFloat(girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75, 28.0f);
+                            Field field = girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75.getClass().getDeclaredField("GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75");
+                            field.setAccessible(true);
+                            field.setFloat(girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75, 28.0f);
                         }
                         catch (Throwable throwable) {
                             // empty catch block
                         }
                         try {
-                            object = girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75.getClass().getDeclaredMethod("gIRLkun75NEKLILLLilLILWHaTDoyouWAnthEReHiHihIhAHAHaHOHOHOHEHeHeGiRLKuN75", new Class[0]);
-                            ((Method)object).setAccessible(true);
-                            ((Method)object).invoke(girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75, new Object[0]);
+                            Method method = girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75.getClass().getDeclaredMethod("gIRLkun75NEKLILLLilLILWHaTDoyouWAnthEReHiHihIhAHAHaHOHOHOHEHeHeGiRLKuN75", new Class[0]);
+                            method.setAccessible(true);
+                            method.invoke(girlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75, new Object[0]);
                         }
                         catch (Throwable throwable) {
                             // empty catch block
                         }
                     }
-                    if ((object = this.val$player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75) != null && (body = (Body)(method = object.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75", new Class[0])).invoke(object, new Object[0])) != null) {
+                    Body body = AutoReconnect.getPlayerBody(this.val$player);
+                    if (body != null) {
                         float f = this.val$forwardDir >= 0.0f ? 1.0f : -1.0f;
                         float f2 = f * (7.5f + (float)this.val$jumpAttempt * 1.5f + (float)this.val$stuckCycle * 1.5f);
                         float f3 = 20.0f + (float)this.val$jumpAttempt * 2.5f + (float)this.val$stuckCycle * 2.0f;
                         if (f3 > 30.0f) {
                             f3 = 30.0f;
                         }
+                        Vector2 p = body.getPosition();
+                        Vector2 v = body.getLinearVelocity();
+                        AutoReconnect.log("[MoveDebug] JUMP_WRITE cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + (f > 0.0f ? "Phai" : "Trai") + " targetVx=" + String.format("%.1f", f2) + " targetVy=" + String.format("%.1f", f3));
                         body.setLinearVelocity(f2, f3);
-                        AutoReconnect.log("[AutoFarm] [Box2D Jump Physics] Nhay vuot vach (dir=" + (f > 0.0f ? "Phai" : "Trai") + ", Vx=" + String.format("%.1f", Float.valueOf(f2)) + ", Vy=" + String.format("%.1f", Float.valueOf(f3)) + ", lan=" + this.val$jumpAttempt + ", chu ky=" + this.val$stuckCycle + ")");
+                        Vector2 pAfter = body.getPosition();
+                        Vector2 vAfter = body.getLinearVelocity();
+                        AutoReconnect.log("[MoveDebug] JUMP_AFTER cmdId=" + this.val$cmdId + " posAfter=(" + String.format("%.2f,%.2f", pAfter.x, pAfter.y) + ") velAfter=(" + String.format("%.2f,%.2f", vAfter.x, vAfter.y) + ")");
                         return;
                     }
                     AutoReconnect.log("[AutoFarm] Da thuc hien nhay (jump) vuot dia hinh / vach da!");
@@ -4105,12 +4152,17 @@ public class AutoReconnect {
 
     public static void sendReturnToVillage(String string) {
         AutoReconnect.log("[AutoFarm] [" + string + "] Dang gui lenh Ve Lang...");
+        AutoReconnect.newMovementCommand(MOVE_STOP);
         isReturningToFarm = false;
         transitStartTime = 0L;
         lastStuckPositionX = -999.0f;
         samePositionStuckCycles = 0;
         jumpObstacleCount = 0;
         terrainStuckCount = 0;
+        lastProgressCheckX = 0.0f;
+        lastProgressCheckY = 0.0f;
+        lastTargetDistance = 999.0f;
+        lastProgressCheckTime = 0L;
         isWalkingToEndOfMap = false;
         walkToEndStartTime = 0L;
         hasAutoEnabledThisSession = false;
@@ -4138,12 +4190,15 @@ public class AutoReconnect {
                     gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752;
                     com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 = com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
                     if (girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
-                        Method method;
                         Body body;
                         if (girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 != null) {
                             girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(false);
                         }
-                        if ((gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752 = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75) != null && (body = (Body)(method = gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75", new Class[0])).invoke(gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752, new Object[0])) != null) {
+                        body = AutoReconnect.getPlayerBody(girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75);
+                        if (body != null) {
+                            Vector2 p = body.getPosition();
+                            Vector2 v = body.getLinearVelocity();
+                            AutoReconnect.log("[MoveDebug] RETURN_VILLAGE_STOP pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ")");
                             body.setLinearVelocity(0.0f, 0.0f);
                         }
                     }
@@ -4851,12 +4906,7 @@ public class AutoReconnect {
 
                     public void run() {
                         try {
-                            Gdx.app.addLifecycleListener(new LifecycleListener(this){
-                                final /* synthetic */ 47 this$0;
-                                {
-                                    this.this$0 = var1_1;
-                                }
-
+                            Gdx.app.addLifecycleListener(new LifecycleListener(){
                                 public void resume() {
                                 }
 
@@ -4921,12 +4971,7 @@ public class AutoReconnect {
                             }
                             if (Gdx.input.isKeyPressed(137)) {
                                 AutoReconnect.log("[AutoFarm] [HOTKEY F7] Nguoi choi kich hoat AN NGAY cac vat pham da ngoai trong hanh trang!");
-                                new Thread(new Runnable(this){
-                                    final /* synthetic */ 48 this$0;
-                                    {
-                                        this.this$0 = var1_1;
-                                    }
-
+                                new Thread(new Runnable(){
                                     public void run() {
                                         try {
                                             int n = AutoReconnect.eatMatchingBagItems();
@@ -5070,12 +5115,7 @@ public class AutoReconnect {
                                 }
                                 if (!bl5) continue;
                                 AutoReconnect.log("[AutoLogin] Server da ket noi. Dang tu dong dang nhap lan " + ++startupLoginAttempts + "...");
-                                Gdx.app.postRunnable(new Runnable(this){
-                                    final /* synthetic */ 49 this$0;
-                                    {
-                                        this.this$0 = var1_1;
-                                    }
-
+                                Gdx.app.postRunnable(new Runnable(){
                                     public void run() {
                                         AutoReconnect.doLogin();
                                     }
@@ -5161,12 +5201,7 @@ public class AutoReconnect {
                                     AutoReconnect.log("[AutoFarm] [V] Vua buoc vao dung map farm: [" + string3 + "]! Chuan bi chay them vao sau gan cuoi map de treo...");
                                 }
                                 Gdx.app.postRunnable(new Runnable(){
-                                    final /* synthetic */ com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player;
-                                    final /* synthetic */ 49 this$0;
-                                    {
-                                        this.this$0 = var1_1;
-                                        this.val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-                                    }
+                                    final com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
 
                                     public void run() {
                                         try {
@@ -5226,12 +5261,7 @@ public class AutoReconnect {
                                 lastNavigatedMapName = "";
                                 lastNavigatedTime = 0L;
                                 AutoReconnect.log("[AutoFarm] Nhan vat kiet suc tai map: [" + lastFarmMapName + "]! Dang gui lenh ve lang de thu hoach Cay Tao...");
-                                Gdx.app.postRunnable(new Runnable(this){
-                                    final /* synthetic */ 49 this$0;
-                                    {
-                                        this.this$0 = var1_1;
-                                    }
-
+                                Gdx.app.postRunnable(new Runnable(){
                                     public void run() {
                                         try {
                                             gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752 = gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
@@ -5274,9 +5304,7 @@ public class AutoReconnect {
                                     Gdx.app.postRunnable(new Runnable(){
                                         final /* synthetic */ com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 val$targetFarmWp;
                                         final /* synthetic */ com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player;
-                                        final /* synthetic */ 49 this$0;
                                         {
-                                            this.this$0 = var1_1;
                                             this.val$targetFarmWp = gIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
                                             this.val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
                                         }
@@ -5288,7 +5316,7 @@ public class AutoReconnect {
                                                     Class<?> clazz = Class.forName("com.a.c.f.a.b.e.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75");
                                                     Constructor<?> constructor = clazz.getDeclaredConstructors()[0];
                                                     constructor.setAccessible(true);
-                                                    ? obj = constructor.newInstance(this.val$targetFarmWp);
+                                                    Object obj = constructor.newInstance(this.val$targetFarmWp);
                                                     this.val$player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(vector2.x, vector2.y, (GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75)obj);
                                                 }
                                             }
@@ -5428,9 +5456,7 @@ public class AutoReconnect {
                                         final /* synthetic */ com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player;
                                         final /* synthetic */ float val$fx;
                                         final /* synthetic */ float val$fy;
-                                        final /* synthetic */ 49 this$0;
                                         {
-                                            this.this$0 = var1_1;
                                             this.val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
                                             this.val$fx = f;
                                             this.val$fy = f2;
@@ -5471,10 +5497,8 @@ public class AutoReconnect {
                                 AutoReconnect.log("[AutoFarm] [Chay Sau Vao Map] " + string11 + " -> DUNG lai va BAT Tu Dong Danh de treo!");
                                 isWalkingToEndOfMap = false;
                                 hasAutoEnabledThisSession = true;
-                                Gdx.app.postRunnable(new Runnable(this){
-                                    final /* synthetic */ 49 this$0;
+                                Gdx.app.postRunnable(new Runnable(){
                                     {
-                                        this.this$0 = var1_1;
                                     }
 
                                     public void run() {
@@ -5568,17 +5592,21 @@ public class AutoReconnect {
                                     String string12 = string;
                                     if (l2 - lastWpPacketTime >= 800L) {
                                         lastWpPacketTime = l2;
-                                        AutoReconnect.log("[AutoFarm] [Waypoint] Da toi gan cong: [" + (String)object + " - ID=" + n2 + "] (dist=" + String.format("%.2f", Float.valueOf(f11)) + "m) -> Gui lenh qua cong ngay!");
+                                        AutoReconnect.log("[AutoFarm] [Waypoint] Da toi gan cong: [" + (String)object + " - ID=" + n2 + "] (dist=" + String.format("%.2f", Float.valueOf(f11)) + "m) -> Chuyen MOVE_PORTAL & Gui lenh qua cong!");
+                                        final long portalCmdId = AutoReconnect.newMovementCommand(MOVE_PORTAL);
                                         Gdx.app.postRunnable(new Runnable(){
                                             final /* synthetic */ int val$wpId;
-                                            final /* synthetic */ 49 this$0;
+                                            final /* synthetic */ long val$cmdId;
                                             {
-                                                this.this$0 = var1_1;
                                                 this.val$wpId = n;
+                                                this.val$cmdId = portalCmdId;
                                             }
 
                                             public void run() {
                                                 try {
+                                                    if (!AutoReconnect.isMovementCommandValid(this.val$cmdId, MOVE_PORTAL)) {
+                                                        return;
+                                                    }
                                                     gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752 = gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
                                                     if (gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752 != null) {
                                                         gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN752.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(this.val$wpId);
@@ -5590,35 +5618,43 @@ public class AutoReconnect {
                                             }
                                         });
                                     }
-                                    terrainStuckCount = 0;
-                                    jumpObstacleCount = 0;
-                                    samePositionStuckCycles = 0;
-                                    lastStuckPositionX = -999.0f;
-                                    lastMovementDetectedTime = l2;
-                                    lastProgressCheckTime = l2;
                                     if (bl19) {
+                                        terrainStuckCount = 0;
+                                        jumpObstacleCount = 0;
+                                        samePositionStuckCycles = 0;
+                                        lastStuckPositionX = -999.0f;
+                                        lastMovementDetectedTime = l2;
+                                        lastProgressCheckTime = l2;
                                         lastNavigatedTime = l2;
                                         continue;
                                     }
-                                    if (string12 != null) {
+                                    if (string12 != null && movementMode != MOVE_PORTAL) {
                                         f = ((Vector2)string12).x < f9 ? -1.0f : 1.0f;
+                                        final long gateCmdId = AutoReconnect.newMovementCommand(MOVE_NORMAL);
                                         Gdx.app.postRunnable(new Runnable(){
                                             final /* synthetic */ com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player;
                                             final /* synthetic */ float val$pDir;
-                                            final /* synthetic */ 49 this$0;
+                                            final /* synthetic */ long val$cmdId;
                                             {
-                                                this.this$0 = var1_1;
                                                 this.val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
                                                 this.val$pDir = f;
+                                                this.val$cmdId = gateCmdId;
                                             }
 
                                             public void run() {
                                                 try {
-                                                    Method method;
-                                                    Body body;
-                                                    com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 = this.val$player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
-                                                    if (gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null && (body = (Body)(method = gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75", new Class[0])).invoke(gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75, new Object[0])) != null) {
+                                                    if (!AutoReconnect.isMovementCommandValid(this.val$cmdId, MOVE_NORMAL)) {
+                                                        return;
+                                                    }
+                                                    Body body = AutoReconnect.getPlayerBody(this.val$player);
+                                                    if (body != null) {
+                                                        Vector2 p = body.getPosition();
+                                                        Vector2 v = body.getLinearVelocity();
+                                                        AutoReconnect.log("[MoveDebug] NEAR_GATE_WRITE cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + this.val$pDir);
                                                         body.setLinearVelocity(this.val$pDir * 3.0f, 0.0f);
+                                                        Vector2 pAfter = body.getPosition();
+                                                        Vector2 vAfter = body.getLinearVelocity();
+                                                        AutoReconnect.log("[MoveDebug] NEAR_GATE_AFTER cmdId=" + this.val$cmdId + " posAfter=(" + String.format("%.2f,%.2f", pAfter.x, pAfter.y) + ") velAfter=(" + String.format("%.2f,%.2f", vAfter.x, vAfter.y) + ")");
                                                     }
                                                 }
                                                 catch (Throwable throwable) {
@@ -5636,13 +5672,28 @@ public class AutoReconnect {
                                 if (lastProgressCheckTime == 0L) {
                                     lastProgressCheckTime = l2;
                                     lastProgressCheckX = f9;
+                                    lastProgressCheckY = f10;
+                                    lastTargetDistance = f11;
                                     terrainStuckCount = 0;
                                     jumpObstacleCount = 0;
                                 } else if (l2 - lastProgressCheckTime >= 2000L) {
-                                    float f12 = Math.abs(f9 - lastProgressCheckX);
+                                    float dx = f9 - lastProgressCheckX;
+                                    float dy = f10 - lastProgressCheckY;
+                                    float progress = (float)Math.hypot(dx, dy);
+                                    float distanceProgress = lastTargetDistance - f11;
                                     lastProgressCheckTime = l2;
                                     lastProgressCheckX = f9;
-                                    if (f12 < 0.4f) {
+                                    lastProgressCheckY = f10;
+                                    lastTargetDistance = f11;
+
+                                    if (progress >= 0.4f || distanceProgress >= 0.3f) {
+                                        terrainStuckCount = 0;
+                                        jumpObstacleCount = 0;
+                                        if (lastStuckPositionX > -900.0f && Math.abs(f9 - lastStuckPositionX) >= 2.0f) {
+                                            samePositionStuckCycles = 0;
+                                            lastStuckPositionX = -999.0f;
+                                        }
+                                    } else {
                                         if (++terrainStuckCount >= 2) {
                                             terrainStuckCount = 0;
                                             if (!(lastStuckPositionX > -900.0f) || !(Math.abs(f9 - lastStuckPositionX) < 1.2f)) {
@@ -5651,7 +5702,7 @@ public class AutoReconnect {
                                             }
                                             if (++jumpObstacleCount <= 3) {
                                                 f = string != null && ((Vector2)string).x < f9 ? -1.0f : 1.0f;
-                                                AutoReconnect.log("[AutoFarm] Phat hien ket dia hinh tai [" + string3 + "] (pos=" + String.format("%.1f", Float.valueOf(f9)) + ", dist=" + String.format("%.1f", Float.valueOf(f11)) + "m, nhay lan " + jumpObstacleCount + "/3, chu ky=" + samePositionStuckCycles + ", dir=" + (f > 0.0f ? "Phai" : "Trai") + ") -> Nhay vuot dia hinh!");
+                                                AutoReconnect.log("[AutoFarm] Phat hien ket dia hinh 2D tai [" + string3 + "] (pos=" + String.format("%.1f,%.1f", Float.valueOf(f9), Float.valueOf(f10)) + ", dist=" + String.format("%.1f", Float.valueOf(f11)) + "m, progress2D=" + String.format("%.2f", Float.valueOf(progress)) + "m, distProg=" + String.format("%.2f", Float.valueOf(distanceProgress)) + "m, nhay lan " + jumpObstacleCount + "/3, chu ky=" + samePositionStuckCycles + ", dir=" + (f > 0.0f ? "Phai" : "Trai") + ") -> Nhay vuot dia hinh!");
                                                 AutoReconnect.doJump(girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75, (Vector2)string, f, jumpObstacleCount, samePositionStuckCycles);
                                                 lastMovementDetectedTime = l2 + 2500L;
                                                 lastProgressCheckTime = l2 + 2000L;
@@ -5671,49 +5722,45 @@ public class AutoReconnect {
                                             f = string != null && ((Vector2)string).x < f9 ? -1.0f : 1.0f;
                                             float f13 = samePositionStuckCycles == 1 ? 12.0f : 15.0f;
                                             AutoReconnect.log("[AutoFarm] Da nhay 3 lan chua qua vat can tai [" + string3 + "] (pos=" + String.format("%.1f", Float.valueOf(f9)) + ", chu ky=" + samePositionStuckCycles + ") -> Phase Step phong van toc manh " + f13 + "m/s huong ve dich!");
+                                            final long phaseCmdId = AutoReconnect.newMovementCommand(MOVE_PHASE_STEP);
                                             Gdx.app.postRunnable(new Runnable(){
                                                 final /* synthetic */ com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player;
                                                 final /* synthetic */ float val$fDir;
                                                 final /* synthetic */ float val$dashSpeed;
-                                                final /* synthetic */ com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 val$targetWp;
-                                                final /* synthetic */ 49 this$0;
+                                                final /* synthetic */ long val$cmdId;
                                                 {
-                                                    this.this$0 = var1_1;
                                                     this.val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
                                                     this.val$fDir = f;
-                                                    this.val$dashSpeed = f2;
-                                                    this.val$targetWp = gIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
+                                                    this.val$dashSpeed = f13;
+                                                    this.val$cmdId = phaseCmdId;
                                                 }
 
                                                 public void run() {
                                                     try {
-                                                        Object object;
-                                                        Object object2;
-                                                        com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 = this.val$player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
-                                                        if (gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null && (object2 = (Body)((Method)(object = gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75", new Class[0]))).invoke(gIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75, new Object[0])) != null) {
-                                                            object2.setLinearVelocity(this.val$fDir * this.val$dashSpeed, 22.0f);
+                                                        if (!AutoReconnect.isMovementCommandValid(this.val$cmdId, MOVE_PHASE_STEP)) {
+                                                            AutoReconnect.log("[MoveDebug] PhaseStep bo qua vi stale command (cmdId=" + this.val$cmdId + ", activeCmdId=" + movementCommandId.get() + ", mode=" + movementMode + ")");
+                                                            return;
                                                         }
-                                                        if ((object = this.val$player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75) != null && this.val$targetWp != null) {
-                                                            object2 = object.getClass().getDeclaredMethod("GIRLkun75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75", com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.class);
-                                                            ((Method)object2).setAccessible(true);
-                                                            ((Method)object2).invoke(object, this.val$targetWp);
+                                                        Body body = AutoReconnect.getPlayerBody(this.val$player);
+                                                        if (body != null) {
+                                                            Vector2 p = body.getPosition();
+                                                            Vector2 v = body.getLinearVelocity();
+                                                            AutoReconnect.log("[MoveDebug] PHASE_STEP_WRITE cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + this.val$fDir + " speed=" + this.val$dashSpeed);
+                                                            body.setLinearVelocity(this.val$fDir * this.val$dashSpeed, 22.0f);
+                                                            Vector2 pAfter = body.getPosition();
+                                                            Vector2 vAfter = body.getLinearVelocity();
+                                                            AutoReconnect.log("[MoveDebug] PHASE_STEP_AFTER cmdId=" + this.val$cmdId + " posAfter=(" + String.format("%.2f,%.2f", pAfter.x, pAfter.y) + ") velAfter=(" + String.format("%.2f,%.2f", vAfter.x, vAfter.y) + ")");
                                                         }
+                                                        // TUYET DOI KHONG GOI MOVEMENT CONTROLLER TAI DAY DE TRANH BI OVERRIDE
                                                     }
                                                     catch (Throwable throwable) {
-                                                        // empty catch block
+                                                        AutoReconnect.log("[MoveDebug] PhaseStep error: " + throwable.getMessage());
                                                     }
                                                 }
                                             });
                                             lastNavigatedTime = l2 + 1500L;
                                             lastMovementDetectedTime = l2 + 1500L;
                                             lastProgressCheckTime = l2 + 2000L;
-                                        }
-                                    } else {
-                                        terrainStuckCount = 0;
-                                        jumpObstacleCount = 0;
-                                        if (lastStuckPositionX > -900.0f && Math.abs(f9 - lastStuckPositionX) >= 2.0f) {
-                                            samePositionStuckCycles = 0;
-                                            lastStuckPositionX = -999.0f;
                                         }
                                     }
                                 }
@@ -5728,28 +5775,33 @@ public class AutoReconnect {
                                 lastNavigatedTime = l2;
                                 lastMovementDetectedTime = l2;
                                 AutoReconnect.log("[AutoFarm] Dang o [" + string3 + "] (pos=" + String.format("%.1f,%.1f", Float.valueOf(f9), Float.valueOf(f10)) + "). Di chuyen toi Waypoint [" + (String)object + "] (dist=" + String.format("%.1f", Float.valueOf(f11)) + "m)...");
+                                final long moveCmdId = AutoReconnect.newMovementCommand(MOVE_NORMAL);
                                 Gdx.app.postRunnable(new Runnable(){
                                     final /* synthetic */ com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 val$targetWp;
                                     final /* synthetic */ com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 val$player;
                                     final /* synthetic */ String val$wpName;
-                                    final /* synthetic */ 49 this$0;
+                                    final /* synthetic */ long val$cmdId;
                                     {
-                                        this.this$0 = var1_1;
                                         this.val$targetWp = gIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
                                         this.val$player = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
                                         this.val$wpName = string;
+                                        this.val$cmdId = moveCmdId;
                                     }
 
                                     public void run() {
                                         try {
+                                            if (!AutoReconnect.isMovementCommandValid(this.val$cmdId, MOVE_NORMAL)) {
+                                                AutoReconnect.log("[MoveDebug] Normal Waypoint bo qua vi stale command (cmdId=" + this.val$cmdId + ", activeCmdId=" + movementCommandId.get() + ", mode=" + movementMode + ")");
+                                                return;
+                                            }
                                             Vector2 vector2 = this.val$targetWp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
                                             if (vector2 != null && this.val$player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 != null) {
-                                                Class<?> clazz = Class.forName("com.a.c.f.a.b.e.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75");
+                                                Class<?> clazz = Class.forName("com.a.c.f.a.b.e.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHohohohEHeHEGIrlKuN75");
                                                 Constructor<?> constructor = clazz.getDeclaredConstructors()[0];
                                                 constructor.setAccessible(true);
-                                                ? obj = constructor.newInstance(this.val$targetWp);
+                                                Object obj = constructor.newInstance(this.val$targetWp);
                                                 this.val$player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(vector2.x, vector2.y, (GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75)obj);
-                                                AutoReconnect.log("[AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: " + this.val$wpName);
+                                                AutoReconnect.log("[AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: " + this.val$wpName + " (cmdId=" + this.val$cmdId + ")");
                                             }
                                         }
                                         catch (Throwable throwable) {
@@ -5892,10 +5944,8 @@ public class AutoReconnect {
                     }
                     AutoReconnect.log("[AutoReconnect] Ket noi thanh cong! Chuan bi dang nhap sau 1.5 giay...");
                     Thread.sleep(1500L);
-                    Gdx.app.postRunnable(new Runnable(this){
-                        final /* synthetic */ 50 this$0;
+                    Gdx.app.postRunnable(new Runnable(){
                         {
-                            this.this$0 = var1_1;
                         }
 
                         public void run() {
