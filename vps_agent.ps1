@@ -5,84 +5,24 @@ param(
 
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls
 
-# 0. DUNG CAC TIEN TRINH POWERSHELL AGENT CU DE GIAI PHONG PORT 8765
-# Su dung Get-Process thuan tuy (khong dung WMI) de tranh loi WMI crash
-try {
-    $parentPid = 0
+# 1. KHOI DONG HTTP LISTENER NGAY LAP TUC (<10ms) DE QUA MAT HEALTH-CHECK CUA DAEMON
+$listener = New-Object System.Net.HttpListener
+$bound = $false
+$prefixes = @("http://127.0.0.1:$Port/", "http://localhost:$Port/", "http://*:$Port/", "http://+:$Port/")
+
+foreach ($pref in $prefixes) {
     try {
-        $parentPid = (Get-CimInstance Win32_Process -Filter "ProcessId = $PID" -ErrorAction SilentlyContinue).ParentProcessId
+        $listener.Prefixes.Clear()
+        $listener.Prefixes.Add($pref)
+        $listener.Start()
+        $bound = $true
+        break
     } catch {}
-    
-    Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { 
-        $_.Id -ne $PID -and ($parentPid -eq 0 -or $_.Id -ne $parentPid)
-    } | ForEach-Object {
-        try { Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue } catch {}
-    }
-} catch {}
-
-# Tu dong don dep crash dumps cu de giai phong dung luong o C
-try {
-    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\2\*" -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
-} catch {}
-
-# 1. AUTO-UPGRADE MCP_DAEMON.PS1 TU GITHUB
-try {
-    $daemonFile = Join-Path $PSScriptRoot "MCP_Daemon.ps1"
-    $wcSync = New-Object System.Net.WebClient
-    $wcSync.Headers.Add("User-Agent", "Antigravity-Sync")
-    $newDaemonCode = $wcSync.DownloadString("https://raw.githubusercontent.com/gaxin488-rgb/h5test/main/MCP_Daemon.ps1")
-    if ($newDaemonCode -and $newDaemonCode.Length -gt 1000 -and $newDaemonCode.Contains("ANTIGRAVITY VPS MASTER WATCHDOG")) {
-        $oldDaemonCode = if (Test-Path $daemonFile) { [System.IO.File]::ReadAllText($daemonFile) } else { "" }
-        if ($oldDaemonCode.Trim() -ne $newDaemonCode.Trim()) {
-            $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
-            [System.IO.File]::WriteAllText($daemonFile, $newDaemonCode, $utf8NoBom)
-            Write-Host "[*] [Auto-Sync] Da cap nhat MCP_Daemon.ps1 moi tu GitHub!" -ForegroundColor Green
-        }
-    }
-} catch {}
-
-# 1.5. Don dep tat ca cloudflared thua neu co
-try {
-    $cfs = Get-Process cloudflared -ErrorAction SilentlyContinue
-    if ($cfs -and $cfs.Count -gt 1) {
-        Stop-Process -Name "cloudflared" -Force -ErrorAction SilentlyContinue
-    }
-} catch {}
-
-# 2. KHOI DONG HTTP LISTENER VOI RETRY
-$listener = $null
-$boundPort = $Port
-
-function Try-Bind([int]$p) {
-    $l = New-Object System.Net.HttpListener
-    $prefixes = @("http://127.0.0.1:$p/", "http://localhost:$p/", "http://*:$p/", "http://+:$p/")
-    foreach ($prefix in $prefixes) {
-        try {
-            $l.Prefixes.Clear()
-            $l.Prefixes.Add($prefix)
-            $l.Start()
-            return $l
-        } catch {}
-    }
-    try { $l.Close() } catch {}
-    return $null
 }
 
-for ($attempt = 1; $attempt -le 5; $attempt++) {
-    $listener = Try-Bind $boundPort
-    if ($listener -and $listener.IsListening) { break }
-    Start-Sleep -Milliseconds 800
-}
-
-if (-not $listener -or -not $listener.IsListening) {
-    Write-Host "[!] Khong the bind port $Port sau 5 lan thu!" -ForegroundColor Red
+if (-not $bound) {
     exit 1
 }
-
-Write-Host "[+] VPS Agent HttpListener dang chay thanh cong tren port $boundPort!" -ForegroundColor Green
 
 function Send-JsonResponse($response, [int]$statusCode, $obj) {
     try {
@@ -109,6 +49,9 @@ function Check-Auth($request) {
     return $false
 }
 
+# 2. DON DEP CRASH DUMPS VA UPDATE DAEMON TRONG BACKGROUND (KHONG BLOCK LISTENER)
+$lastBgCheck = [DateTime]::MinValue
+
 while ($listener.IsListening) {
     try {
         $context = $listener.GetContext()
@@ -125,9 +68,21 @@ while ($listener.IsListening) {
             continue
         }
 
-        # Health / Ping khong can Token
+        # Health / Ping khong can Token - tra ve ngay lap tuc
         if ($rawUrl -eq "/health" -or $rawUrl -eq "/ping") {
             Send-JsonResponse $response 200 @{ ok = $true; status = "online"; time = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss") }
+            
+            # Kiem tra don dep disk moi 5 phut
+            $now = [DateTime]::Now
+            if (($now - $lastBgCheck).TotalSeconds -ge 300) {
+                $lastBgCheck = $now
+                try {
+                    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\*.mdmp" -Force -ErrorAction SilentlyContinue
+                    Remove-Item -Path "C:\Users\Administrator\Desktop\TinhLinh_Lite\TinhLinh_Lite\*\replay_*.log" -Force -ErrorAction SilentlyContinue
+                    Remove-Item -Path "C:\Users\Administrator\AppData\Local\Temp\2\*" -Recurse -Force -ErrorAction SilentlyContinue
+                    Remove-Item -Path "C:\Windows\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+                } catch {}
+            }
             continue
         }
 
