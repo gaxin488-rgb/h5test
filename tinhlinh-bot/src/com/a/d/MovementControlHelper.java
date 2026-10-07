@@ -29,14 +29,7 @@ public class MovementControlHelper {
 
     public static boolean isExternalMovementControlActive() {
         int mode = AutoReconnect.movementMode;
-        if (mode == MOVE_JUMP || mode == MOVE_PHASE_STEP) {
-            long now = System.currentTimeMillis();
-            if (now < externalControlUntilMs) {
-                return true;
-            }
-            AutoReconnect.movementMode = MOVE_NORMAL;
-        }
-        return false;
+        return mode == MOVE_JUMP || mode == MOVE_PHASE_STEP;
     }
 
     public static long newMovementCommand(int mode) {
@@ -46,11 +39,6 @@ public class MovementControlHelper {
                 return AutoReconnect.movementCommandId.get();
             }
         }
-        if (mode == MOVE_JUMP) {
-            externalControlUntilMs = System.currentTimeMillis() + 650L;
-        } else if (mode == MOVE_PHASE_STEP) {
-            externalControlUntilMs = System.currentTimeMillis() + 900L;
-        }
         AutoReconnect.movementMode = mode;
         return AutoReconnect.movementCommandId.incrementAndGet();
     }
@@ -59,11 +47,71 @@ public class MovementControlHelper {
         return AutoReconnect.movementCommandId.get() == commandId && AutoReconnect.movementMode == mode;
     }
 
+    public static void sendMovementState(boolean isMoving) {
+        try {
+            Class<?> netClientClass = Class.forName("com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
+            Method getNetClient = netClientClass.getDeclaredMethod("GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75", new Class[0]);
+            Object netClient = getNetClient.invoke(null, new Object[0]);
+            if (netClient != null) {
+                Method sendMoveMethod = netClientClass.getDeclaredMethod("gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75", new Class[]{boolean.class});
+                sendMoveMethod.setAccessible(true);
+                sendMoveMethod.invoke(netClient, new Object[]{Boolean.valueOf(isMoving)});
+            }
+        } catch (Throwable t) {
+            log("[MoveDebug] sendMovementState error: " + t.getMessage());
+        }
+    }
+
+    public static void syncPlayerPositionAndPacket(Object playerObj, Vector2 pos, boolean isMoving) {
+        if (playerObj == null || pos == null) return;
+        try {
+            // 1. Update Player internal position Vector2 & transform
+            Method setPosMethod = null;
+            Class<?> pClass = playerObj.getClass();
+            while (pClass != null && setPosMethod == null) {
+                try {
+                    setPosMethod = pClass.getDeclaredMethod("GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75", new Class[]{float.class, float.class});
+                } catch (NoSuchMethodException e) {
+                    pClass = pClass.getSuperclass();
+                }
+            }
+            if (setPosMethod != null) {
+                setPosMethod.setAccessible(true);
+                setPosMethod.invoke(playerObj, new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)});
+            }
+
+            // Direct in-place update of Player internal Vector2
+            try {
+                Method getPosMethod = playerObj.getClass().getMethod("gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
+                Vector2 pVec = (Vector2) getPosMethod.invoke(playerObj);
+                if (pVec != null) {
+                    pVec.set(pos.x, pos.y);
+                }
+            } catch (Throwable ignored) {}
+
+            // 2. Sync to Server via NetworkClient
+            Class<?> netClientClass = Class.forName("com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
+            Method getNetClient = netClientClass.getDeclaredMethod("GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75", new Class[0]);
+            Object netClient = getNetClient.invoke(null, new Object[0]);
+            if (netClient != null) {
+                Method sendPosMethod = netClientClass.getDeclaredMethod("GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75", new Class[]{float.class, float.class});
+                sendPosMethod.setAccessible(true);
+                sendPosMethod.invoke(netClient, new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)});
+
+                Method sendMoveMethod = netClientClass.getDeclaredMethod("gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75", new Class[]{boolean.class});
+                sendMoveMethod.setAccessible(true);
+                sendMoveMethod.invoke(netClient, new Object[]{Boolean.valueOf(isMoving)});
+            }
+        } catch (Throwable t) {
+            log("[MoveDebug] syncPlayerPositionAndPacket error: " + t.getMessage());
+        }
+    }
+
     public static void scheduleJumpSample(final long cmdId, final Object playerObj) {
         Thread t = new Thread(new Runnable() {
             public void run() {
                 try {
-                    Thread.sleep(650L);
+                    Thread.sleep(250L);
                 } catch (InterruptedException ignored) {}
 
                 if (AutoReconnect.movementCommandId.get() != cmdId) {
@@ -80,15 +128,16 @@ public class MovementControlHelper {
                             if (b != null) {
                                 Vector2 pos = b.getPosition();
                                 Vector2 vel = b.getLinearVelocity();
+                                syncPlayerPositionAndPacket(playerObj, pos, false);
                                 log("[MoveDebug] JUMP_SAMPLE cmdId=" + cmdId 
                                     + " pos=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)}) 
                                     + ") vel=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(vel.x), Float.valueOf(vel.y)}) 
-                                    + ") -> End Jump Control Window (650ms), Return Navigator");
+                                    + ") -> Synced Player & Server Anchor (250ms), Return Navigator");
                             }
                         } catch (Throwable t) {
                             log("[MoveDebug] JUMP_SAMPLE error: " + t.getMessage());
                         } finally {
-                            if (AutoReconnect.movementCommandId.get() == cmdId) {
+                            if (AutoReconnect.movementCommandId.get() == cmdId && AutoReconnect.movementMode == MOVE_JUMP) {
                                 AutoReconnect.movementMode = MOVE_NORMAL;
                             }
                         }
@@ -104,7 +153,7 @@ public class MovementControlHelper {
         Thread t = new Thread(new Runnable() {
             public void run() {
                 try {
-                    Thread.sleep(900L);
+                    Thread.sleep(300L);
                 } catch (InterruptedException ignored) {}
 
                 if (AutoReconnect.movementCommandId.get() != cmdId) {
@@ -121,15 +170,16 @@ public class MovementControlHelper {
                             if (b != null) {
                                 Vector2 pos = b.getPosition();
                                 Vector2 vel = b.getLinearVelocity();
+                                syncPlayerPositionAndPacket(playerObj, pos, false);
                                 log("[MoveDebug] PHASE_STEP_SAMPLE cmdId=" + cmdId 
                                     + " pos=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)}) 
                                     + ") vel=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(vel.x), Float.valueOf(vel.y)}) 
-                                    + ") -> End Phase Step Control Window (900ms), Return Navigator");
+                                    + ") -> Synced Player & Server Anchor (300ms), Return Navigator");
                             }
                         } catch (Throwable t) {
                             log("[MoveDebug] PHASE_STEP_SAMPLE error: " + t.getMessage());
                         } finally {
-                            if (AutoReconnect.movementCommandId.get() == cmdId) {
+                            if (AutoReconnect.movementCommandId.get() == cmdId && AutoReconnect.movementMode == MOVE_PHASE_STEP) {
                                 AutoReconnect.movementMode = MOVE_NORMAL;
                             }
                         }

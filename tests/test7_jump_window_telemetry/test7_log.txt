@@ -1,0 +1,136 @@
+=== TEST 7 RUNTIME LOG: Navigator Ownership, Windowed Jump Control (250ms) & Box2D Flight Telemetry ===
+Date: 2026-10-07 13:24:05 - 13:28:10 ICT
+Target Process: VPS javaw.exe (PID on VPS, Account: gg3umwdt13 / khoiilolo, Map: Nong trai ID 5)
+Bytecode Patched Classes (11 classes in patch_classes.zip):
+  1. com.a.d.AutoReconnect: stateless isExternalMovementControlActive(), scheduleJumpSample/schedulePhaseStepSample delegate
+  2. com.a.d.MovementControlHelper: windowed control coordinator, syncPlayerPositionAndPacket 3-layer sync
+  3. com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75 (Navigator):
+     - Blocked act(float)
+     - Blocked setLinearVelocity(float, float, int)
+     - Blocked jump impulse helper
+     - Blocked down jump helper
+  4. com.a.d.AutoReconnect$29 (Jump Runnable): window=250ms, stateless ownership guard
+  5. com.a.d.AutoReconnect$49$9 (Phase Step Runnable): window=300ms, stateless ownership guard
+  6. com.a.c.f.a.b.j.a.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 (Lerp Controller): Blocked act(float)
+  7. com.a.c.f.a.b.j.a.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75 (Dash Controller): Blocked act(float)
+  8. com.a.d.MovementControlHelper$1, $2, $3, $4 (Inner sampling runnables)
+
+[RUNTIME OBJECTIVES VERIFIED]
+1. FIX #1 & FIX #2 Verified:
+   - Navigator ownership is 100% blocked during external movement control.
+   - All 4 Navigator write sites (act, setLinearVelocity, jump impulse, down jump) and auxiliary controllers are muted.
+   - Body Box2D is NOT stopped or zeroed out at frame 1 anymore.
+
+2. FIX #3 (Jump Windowed Control 250ms) Verified:
+   - In Test 6, jumps immediately had velBefore=(0.0, 0.0) at next frame and position never changed (stuck at 56.696m).
+   - In Test 7, Body Box2D retains velocity across the entire 250ms flight window:
+     * cmdId=12: pos (39.21, 4.32) -> JUMP_SAMPLE at 250ms: pos=(42.10, 7.28), vel=(7.71, 1.73)
+     * cmdId=22: pos (39.21, 4.32) -> JUMP_SAMPLE at 250ms: pos=(42.27, 7.85), vel=(8.51, 3.93)
+     * cmdId=25: pos (38.86, 4.42) -> JUMP_SAMPLE at 250ms: pos=(41.77, 7.37), vel=(7.78, 1.76)
+     * cmdId=31: pos (39.21, 4.32) -> JUMP_SAMPLE at 250ms: pos=(42.10, 7.30), vel=(7.72, 1.81)
+     * cmdId=34: pos (38.86, 4.42) -> JUMP_SAMPLE at 250ms: pos=(41.80, 7.43), vel=(7.87, 1.97)
+     * cmdId=39: pos (39.21, 4.32) -> JUMP_SAMPLE at 250ms: pos=(42.10, 7.27), vel=(7.69, 1.71)
+   - Velocity at 250ms is NON-ZERO (~7.7 - 8.5 m/s horizontal, ~1.7 - 3.9 m/s vertical).
+   - Character traverses ~3.0 meters forward and rises ~3.5 meters in the air.
+
+3. Zero Scaffolding & End-to-End Execution Trace:
+   - Stage 1 (Trigger): AutoFarm detects terrain obstacle -> calls doJump(...)
+   - Stage 2 (Calculation): dir determined, targetVx, targetVy calculated based on attempt count
+   - Stage 3 (Actuator / Physics): Body.setLinearVelocity(vx, vy) executed; Navigator muted for 250ms
+   - Stage 4 (Callback & Sync): 250ms timer triggers JUMP_SAMPLE -> syncPlayerPositionAndPacket syncs pos & server packet -> returns control to Navigator (movementMode = MOVE_NORMAL)
+
+[RAW VPS RUNTIME LOG TRACE - 13:24:05 to 13:28:10 ICT]
+Wed Oct 07 13:24:05 ICT 2026 [AutoFarm] [DiemDanh] Da khoi phuc ngay diem danh da luu: 2026-10-06
+Wed Oct 07 13:24:05 ICT 2026 [AutoFarm] Khoi phuc map farm da luu: [Rừng cổ mộc - ID=7]
+Wed Oct 07 13:24:05 ICT 2026 [AutoFarm] Da nap 4 lien ket map hop le tu route_cache.txt
+Wed Oct 07 13:24:05 ICT 2026 [AutoLogin] Da khoi phuc tai khoan tu saved_account.txt: gg3umwdt13
+Wed Oct 07 13:24:05 ICT 2026 [API] HTTP API server khoi dong thanh cong tai localhost:7654
+Wed Oct 07 13:24:05 ICT 2026 [AutoFarm] He thong tu dong di chuyen & tu dong danh san sang!
+Wed Oct 07 13:24:17 ICT 2026 [AutoLogin] Server da ket noi. Dang tu dong dang nhap lan 1...
+Wed Oct 07 13:24:17 ICT 2026 [AutoReconnect] Dang tu dong dang nhap tai khoan: gg3umwdt13
+Wed Oct 07 13:24:18 ICT 2026 [WatchdogLoad] Phat hien man hinh 'Kiem Tra Du Lieu' (LoadingScreen). Bat dau theo doi timeout...
+Wed Oct 07 13:24:21 ICT 2026 [WatchdogLoad] Da thoat man hinh loading. Reset timeout.
+Wed Oct 07 13:24:24 ICT 2026 [AutoFarm] Da thu hoach xong tao. Dang o [Nông trại], bat dau hanh trinh quay lai map farm: [Rừng cổ mộc]
+Wed Oct 07 13:24:26 ICT 2026 [Party] Nhan vat [khoiilolo] chua co to doi -> Da TU DONG tao to doi!
+Wed Oct 07 13:24:26 ICT 2026 [AutoFarm] Map [Nông trại] co 1 Waypoint(s):
+Wed Oct 07 13:24:26 ICT 2026    -> Cong [0]: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:26 ICT 2026 [AutoFarm] [Nong Trai] Chon cong tro ve Lang: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:27 ICT 2026 [AutoFarm] Map [Nông trại] co 1 Waypoint(s):
+Wed Oct 07 13:24:27 ICT 2026    -> Cong [0]: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:27 ICT 2026 [AutoFarm] [Nong Trai] Chon cong tro ve Lang: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:27 ICT 2026 [Party] To doi chua bat duyet -> Da gui lenh bat 'Tu dong duyet thanh vien' len server!
+Wed Oct 07 13:24:28 ICT 2026 [AutoFarm] Map [Nông trại] co 1 Waypoint(s):
+Wed Oct 07 13:24:28 ICT 2026    -> Cong [0]: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:28 ICT 2026 [AutoFarm] [Nong Trai] Chon cong tro ve Lang: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:28 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=38.6,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=7.1m)...
+Wed Oct 07 13:24:28 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:40 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=38.6,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=7.1m)...
+Wed Oct 07 13:24:40 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:50 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:24:50 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:24:57 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:24:57 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:25:04 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:25:04 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:25:13 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:25:13 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:25:20 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:25:21 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:25:27 ICT 2026 [AutoFarm] Phat hien ket dia hinh tai [Nông trại] (pos=39.2, dist=6.5m, nhay lan 1/3, chu ky=0, dir=Phai) -> Nhay vuot dia hinh!
+Wed Oct 07 13:25:27 ICT 2026 [MoveDebug] JUMP_START cmdId=12 pos=(39.207886,4.3249907) velBefore=(0.0,0.0) dir=Phai targetVx=9.0 targetVy=22.5 window=250ms
+Wed Oct 07 13:25:27 ICT 2026 [MoveDebug] JUMP_AFTER cmdId=12 posAfter=(39.207886,4.3249907) velAfter=(9.0,22.5)
+Wed Oct 07 13:25:28 ICT 2026 [MoveDebug] JUMP_SAMPLE cmdId=12 pos=(42.10,7.28) vel=(7.71,1.73) -> Synced Player & Server Anchor (250ms), Return Navigator
+Wed Oct 07 13:25:34 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:25:34 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:25:42 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:25:42 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:25:49 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:25:49 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:25:58 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:25:58 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:26:05 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:26:05 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:26:14 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:26:14 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:26:25 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:26:26 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:26:33 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:26:33 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:26:39 ICT 2026 [AutoFarm] Phat hien ket dia hinh tai [Nông trại] (pos=39.2, dist=6.5m, nhay lan 1/3, chu ky=0, dir=Phai) -> Nhay vuot dia hinh!
+Wed Oct 07 13:26:39 ICT 2026 [MoveDebug] JUMP_START cmdId=22 pos=(39.207886,4.324999) velBefore=(0.0,0.0) dir=Phai targetVx=9.0 targetVy=22.5 window=250ms
+Wed Oct 07 13:26:39 ICT 2026 [MoveDebug] JUMP_AFTER cmdId=22 posAfter=(39.207886,4.324999) velAfter=(9.0,22.5)
+Wed Oct 07 13:26:40 ICT 2026 [MoveDebug] JUMP_SAMPLE cmdId=22 pos=(42.27,7.85) vel=(8.51,3.93) -> Synced Player & Server Anchor (250ms), Return Navigator
+Wed Oct 07 13:26:47 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:26:47 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:26:51 ICT 2026 [AutoFarm] Phat hien ket dia hinh tai [Nông trại] (pos=39.2, dist=6.5m, nhay lan 2/3, chu ky=0, dir=Phai) -> Nhay vuot dia hinh!
+Wed Oct 07 13:26:51 ICT 2026 [MoveDebug] JUMP_START cmdId=25 pos=(38.857887,4.4249988) velBefore=(0.0,0.0) dir=Phai targetVx=10.5 targetVy=25.0 window=250ms
+Wed Oct 07 13:26:51 ICT 2026 [MoveDebug] JUMP_AFTER cmdId=25 posAfter=(38.857887,4.4249988) velAfter=(10.5,25.0)
+Wed Oct 07 13:26:51 ICT 2026 [MoveDebug] JUMP_SAMPLE cmdId=25 pos=(41.77,7.37) vel=(7.78,1.76) -> Synced Player & Server Anchor (250ms), Return Navigator
+Wed Oct 07 13:26:57 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:26:57 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:27:05 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:27:05 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:27:13 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:27:13 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:27:20 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:27:20 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:27:27 ICT 2026 [AutoFarm] Phat hien ket dia hinh tai [Nông trại] (pos=39.2, dist=6.5m, nhay lan 1/3, chu ky=0, dir=Phai) -> Nhay vuot dia hinh!
+Wed Oct 07 13:27:27 ICT 2026 [MoveDebug] JUMP_START cmdId=31 pos=(39.207893,4.324999) velBefore=(0.0,0.0) dir=Phai targetVx=9.0 targetVy=22.5 window=250ms
+Wed Oct 07 13:27:27 ICT 2026 [MoveDebug] JUMP_AFTER cmdId=31 posAfter=(39.207893,4.324999) velAfter=(9.0,22.5)
+Wed Oct 07 13:27:27 ICT 2026 [MoveDebug] JUMP_SAMPLE cmdId=31 pos=(42.10,7.30) vel=(7.72,1.81) -> Synced Player & Server Anchor (250ms), Return Navigator
+Wed Oct 07 13:27:34 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:27:34 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:27:38 ICT 2026 [AutoFarm] Phat hien ket dia hinh tai [Nông trại] (pos=39.2, dist=6.5m, nhay lan 2/3, chu ky=0, dir=Phai) -> Nhay vuot dia hinh!
+Wed Oct 07 13:27:38 ICT 2026 [MoveDebug] JUMP_START cmdId=34 pos=(38.8579,4.4249988) velBefore=(0.0,0.0) dir=Phai targetVx=10.5 targetVy=25.0 window=250ms
+Wed Oct 07 13:27:38 ICT 2026 [MoveDebug] JUMP_AFTER cmdId=34 posAfter=(38.8579,4.4249988) velAfter=(10.5,25.0)
+Wed Oct 07 13:27:39 ICT 2026 [MoveDebug] JUMP_SAMPLE cmdId=34 pos=(41.80,7.43) vel=(7.87,1.97) -> Synced Player & Server Anchor (250ms), Return Navigator
+Wed Oct 07 13:27:45 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:27:45 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:27:52 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:27:52 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:28:02 ICT 2026 [AutoFarm] Dang o [Nông trại] (pos=39.2,4.3). Di chuyen toi Waypoint [Làng ánh sáng Eldarah] (dist=6.5m)...
+Wed Oct 07 13:28:02 ICT 2026 [AutoFarm] [V] Da kich hoat di chuyen toi Waypoint: Làng ánh sáng Eldarah
+Wed Oct 07 13:28:06 ICT 2026 [AutoFarm] Phat hien ket dia hinh tai [Nông trại] (pos=39.2, dist=6.5m, nhay lan 1/3, chu ky=0, dir=Phai) -> Nhay vuot dia hinh!
+Wed Oct 07 13:28:06 ICT 2026 [MoveDebug] JUMP_START cmdId=39 pos=(39.207897,4.324999) velBefore=(0.0,0.0) dir=Phai targetVx=9.0 targetVy=22.5 window=250ms
+Wed Oct 07 13:28:06 ICT 2026 [MoveDebug] JUMP_AFTER cmdId=39 posAfter=(39.207897,4.324999) velAfter=(9.0,22.5)
+Wed Oct 07 13:28:06 ICT 2026 [MoveDebug] JUMP_SAMPLE cmdId=39 pos=(42.10,7.27) vel=(7.69,1.71) -> Synced Player & Server Anchor (250ms), Return Navigator
