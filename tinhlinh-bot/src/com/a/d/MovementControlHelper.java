@@ -47,6 +47,29 @@ public class MovementControlHelper {
         return AutoReconnect.movementCommandId.get() == commandId && AutoReconnect.movementMode == mode;
     }
 
+    public static void logMovementSources(Object playerObj) {
+        if (playerObj == null) {
+            log("[MoveSync] player=null");
+            return;
+        }
+        try {
+            Method getPosMethod = playerObj.getClass().getMethod("gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
+            Vector2 logical = (Vector2) getPosMethod.invoke(playerObj);
+            Body body = AutoReconnect.getPlayerBody(playerObj);
+            Vector2 bodyPos = body != null ? body.getPosition() : null;
+            Vector2 bodyVel = body != null ? body.getLinearVelocity() : null;
+            log("[MoveSync] logical=(" 
+                + (logical != null ? String.format("%.2f,%.2f", Float.valueOf(logical.x), Float.valueOf(logical.y)) : "NaN,NaN") 
+                + ") body=(" 
+                + (bodyPos != null ? String.format("%.2f,%.2f", Float.valueOf(bodyPos.x), Float.valueOf(bodyPos.y)) : "NaN,NaN") 
+                + ") vel=(" 
+                + (bodyVel != null ? String.format("%.2f,%.2f", Float.valueOf(bodyVel.x), Float.valueOf(bodyVel.y)) : "NaN,NaN") 
+                + ")");
+        } catch (Throwable t) {
+            log("[MoveSync] ERROR: " + t.getMessage());
+        }
+    }
+
     public static void sendMovementState(boolean isMoving) {
         try {
             Class<?> netClientClass = Class.forName("com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
@@ -128,7 +151,20 @@ public class MovementControlHelper {
                             if (b != null) {
                                 Vector2 pos = b.getPosition();
                                 Vector2 vel = b.getLinearVelocity();
-                                syncPlayerPositionAndPacket(playerObj, pos, false);
+                                syncPlayerPositionAndPacket(playerObj, new Vector2(pos), false);
+
+                                Vector2 verify = null;
+                                try {
+                                    Method getPosMethod = playerObj.getClass().getMethod("gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
+                                    Object verifyObj = getPosMethod.invoke(playerObj);
+                                    if (verifyObj instanceof Vector2) {
+                                        verify = (Vector2) verifyObj;
+                                    }
+                                } catch (Throwable ignored) {}
+
+                                log("[MoveSync] AFTER_SYNC body=(" + String.format("%.2f,%.2f", Float.valueOf(pos.x), Float.valueOf(pos.y)) + ") "
+                                    + "logical=(" + (verify != null ? String.format("%.2f,%.2f", Float.valueOf(verify.x), Float.valueOf(verify.y)) : "NaN,NaN") + ")");
+
                                 log("[MoveDebug] JUMP_SAMPLE cmdId=" + cmdId 
                                     + " pos=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)}) 
                                     + ") vel=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(vel.x), Float.valueOf(vel.y)}) 
@@ -170,7 +206,20 @@ public class MovementControlHelper {
                             if (b != null) {
                                 Vector2 pos = b.getPosition();
                                 Vector2 vel = b.getLinearVelocity();
-                                syncPlayerPositionAndPacket(playerObj, pos, false);
+                                syncPlayerPositionAndPacket(playerObj, new Vector2(pos), false);
+
+                                Vector2 verify = null;
+                                try {
+                                    Method getPosMethod = playerObj.getClass().getMethod("gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
+                                    Object verifyObj = getPosMethod.invoke(playerObj);
+                                    if (verifyObj instanceof Vector2) {
+                                        verify = (Vector2) verifyObj;
+                                    }
+                                } catch (Throwable ignored) {}
+
+                                log("[MoveSync] AFTER_SYNC body=(" + String.format("%.2f,%.2f", Float.valueOf(pos.x), Float.valueOf(pos.y)) + ") "
+                                    + "logical=(" + (verify != null ? String.format("%.2f,%.2f", Float.valueOf(verify.x), Float.valueOf(verify.y)) : "NaN,NaN") + ")");
+
                                 log("[MoveDebug] PHASE_STEP_SAMPLE cmdId=" + cmdId 
                                     + " pos=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)}) 
                                     + ") vel=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(vel.x), Float.valueOf(vel.y)}) 
@@ -189,5 +238,42 @@ public class MovementControlHelper {
         }, "PhaseStep-Sample-Thread");
         t.setDaemon(true);
         t.start();
+    }
+
+    public static void logMovementSources(Object player) {
+        try {
+            if (player == null) {
+                log("[MoveSync] player=null");
+                return;
+            }
+
+            Vector2 logical = null;
+            try {
+                Method getPosMethod = player.getClass().getMethod("gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75");
+                Object obj = getPosMethod.invoke(player);
+                if (obj instanceof Vector2) {
+                    logical = (Vector2) obj;
+                }
+            } catch (Throwable ignored) {}
+
+            Body body = AutoReconnect.getPlayerBody(player);
+            Vector2 bodyPos = body != null ? body.getPosition() : null;
+            Vector2 bodyVel = body != null ? body.getLinearVelocity() : null;
+
+            log(
+                "[MoveSync] "
+                + "logical=("
+                + (logical != null ? String.format("%.2f,%.2f", Float.valueOf(logical.x), Float.valueOf(logical.y)) : "NaN,NaN")
+                + ") "
+                + "body=("
+                + (bodyPos != null ? String.format("%.2f,%.2f", Float.valueOf(bodyPos.x), Float.valueOf(bodyPos.y)) : "NaN,NaN")
+                + ") "
+                + "vel=("
+                + (bodyVel != null ? String.format("%.2f,%.2f", Float.valueOf(bodyVel.x), Float.valueOf(bodyVel.y)) : "NaN,NaN")
+                + ")"
+            );
+        } catch (Throwable t) {
+            log("[MoveSync] ERROR: " + t);
+        }
     }
 }

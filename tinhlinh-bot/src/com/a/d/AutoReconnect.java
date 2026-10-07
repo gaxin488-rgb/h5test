@@ -304,10 +304,38 @@ public class AutoReconnect {
                 Method method = bodyObj.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75", new Class[0]);
                 return (Body) method.invoke(bodyObj, new Object[0]);
             }
-        }
-        catch (Throwable ignored) {
+        } catch (Throwable ignored) {
         }
         return null;
+    }
+
+    public static void logMovementSources(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        try {
+            if (player == null) {
+                AutoReconnect.log("[MoveSync] player=null");
+                return;
+            }
+
+            Vector2 logical = player.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+            Body body = AutoReconnect.getPlayerBody(player);
+            Vector2 bodyPos = body != null ? body.getPosition() : null;
+            Vector2 bodyVel = body != null ? body.getLinearVelocity() : null;
+
+            AutoReconnect.log(
+                "[MoveSync] "
+                + "logical=("
+                + (logical != null ? String.format("%.2f,%.2f", Float.valueOf(logical.x), Float.valueOf(logical.y)) : "NaN,NaN")
+                + ") "
+                + "body=("
+                + (bodyPos != null ? String.format("%.2f,%.2f", Float.valueOf(bodyPos.x), Float.valueOf(bodyPos.y)) : "NaN,NaN")
+                + ") "
+                + "vel=("
+                + (bodyVel != null ? String.format("%.2f,%.2f", Float.valueOf(bodyVel.x), Float.valueOf(bodyVel.y)) : "NaN,NaN")
+                + ")"
+            );
+        } catch (Throwable t) {
+            AutoReconnect.log("[MoveSync] ERROR: " + t);
+        }
     }
     public static volatile long periodicBagEatIntervalMs = 1800000L;
     public static volatile int minTheLucTrigger = 50;
@@ -4142,10 +4170,6 @@ public class AutoReconnect {
                         }
                         Vector2 p = body.getPosition();
                         Vector2 v = body.getLinearVelocity();
-                        if (this.val$jumpAttempt >= 2) {
-                            body.setTransform(p.x - f * 0.35f, p.y + 0.1f, body.getAngle());
-                            p = body.getPosition();
-                        }
                         AutoReconnect.log("[MoveDebug] JUMP_START cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + (f > 0.0f ? "Phai" : "Trai") + " targetVx=" + String.format("%.1f", f2) + " targetVy=" + String.format("%.1f", f3) + " window=250ms");
                         com.a.d.MovementControlHelper.sendMovementState(true);
                         body.setLinearVelocity(f2, f3);
@@ -5578,6 +5602,7 @@ public class AutoReconnect {
                                 float f9 = 0.0f;
                                 float f10 = 0.0f;
                                 try {
+                                    AutoReconnect.logMovementSources(girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75);
                                     vector2 = girlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
                                     if (vector2 != null) {
                                         f9 = vector2.x;
