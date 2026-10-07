@@ -47,9 +47,9 @@ public class MovementControlHelper {
             }
         }
         if (mode == MOVE_JUMP) {
-            externalControlUntilMs = System.currentTimeMillis() + 250L;
+            externalControlUntilMs = System.currentTimeMillis() + 650L;
         } else if (mode == MOVE_PHASE_STEP) {
-            externalControlUntilMs = System.currentTimeMillis() + 450L;
+            externalControlUntilMs = System.currentTimeMillis() + 900L;
         }
         AutoReconnect.movementMode = mode;
         return AutoReconnect.movementCommandId.incrementAndGet();
@@ -63,7 +63,7 @@ public class MovementControlHelper {
         Thread t = new Thread(new Runnable() {
             public void run() {
                 try {
-                    Thread.sleep(250L);
+                    Thread.sleep(650L);
                 } catch (InterruptedException ignored) {}
 
                 if (AutoReconnect.movementCommandId.get() != cmdId) {
@@ -83,7 +83,7 @@ public class MovementControlHelper {
                                 log("[MoveDebug] JUMP_SAMPLE cmdId=" + cmdId 
                                     + " pos=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)}) 
                                     + ") vel=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(vel.x), Float.valueOf(vel.y)}) 
-                                    + ") -> End Jump Control Window, Return Navigator");
+                                    + ") -> End Jump Control Window (650ms), Return Navigator");
                             }
                         } catch (Throwable t) {
                             log("[MoveDebug] JUMP_SAMPLE error: " + t.getMessage());
@@ -104,7 +104,7 @@ public class MovementControlHelper {
         Thread t = new Thread(new Runnable() {
             public void run() {
                 try {
-                    Thread.sleep(450L);
+                    Thread.sleep(900L);
                 } catch (InterruptedException ignored) {}
 
                 if (AutoReconnect.movementCommandId.get() != cmdId) {
@@ -124,7 +124,7 @@ public class MovementControlHelper {
                                 log("[MoveDebug] PHASE_STEP_SAMPLE cmdId=" + cmdId 
                                     + " pos=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(pos.x), Float.valueOf(pos.y)}) 
                                     + ") vel=(" + String.format("%.2f,%.2f", new Object[]{Float.valueOf(vel.x), Float.valueOf(vel.y)}) 
-                                    + ") -> End Phase Step Control Window, Return Navigator");
+                                    + ") -> End Phase Step Control Window (900ms), Return Navigator");
                             }
                         } catch (Throwable t) {
                             log("[MoveDebug] PHASE_STEP_SAMPLE error: " + t.getMessage());

@@ -4224,7 +4224,7 @@ public class AutoReconnect {
                         }
                         Vector2 p = body.getPosition();
                         Vector2 v = body.getLinearVelocity();
-                        AutoReconnect.log("[MoveDebug] JUMP_START cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + (f > 0.0f ? "Phai" : "Trai") + " targetVx=" + String.format("%.1f", f2) + " targetVy=" + String.format("%.1f", f3) + " window=250ms");
+                        AutoReconnect.log("[MoveDebug] JUMP_START cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + (f > 0.0f ? "Phai" : "Trai") + " targetVx=" + String.format("%.1f", f2) + " targetVy=" + String.format("%.1f", f3) + " window=650ms");
                         body.setLinearVelocity(f2, f3);
                         Vector2 pAfter = body.getPosition();
                         Vector2 vAfter = body.getLinearVelocity();
@@ -5686,7 +5686,7 @@ public class AutoReconnect {
                                     // empty catch block
                                 }
                                 boolean bl22 = bl19 = bl21 || f11 <= 1.2f;
-                                if (bl19 || f11 <= 15.0f) {
+                                if (bl19 || f11 <= 1.5f) {
                                     n2 = vector2.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
                                     String string12 = string;
                                     if (l2 - lastWpPacketTime >= 800L) {
@@ -5727,7 +5727,7 @@ public class AutoReconnect {
                                         lastNavigatedTime = l2;
                                         continue;
                                     }
-                                    if (string12 != null && movementMode != MOVE_PORTAL) {
+                                    if (string12 != null && movementMode != MOVE_PORTAL && !AutoReconnect.isExternalMovementControlActive()) {
                                         f = ((Vector2)string12).x < f9 ? -1.0f : 1.0f;
                                         final long gateCmdId = AutoReconnect.newMovementCommand(MOVE_NORMAL);
                                         Gdx.app.postRunnable(new Runnable(){
@@ -5819,7 +5819,7 @@ public class AutoReconnect {
                                                 continue;
                                             }
                                             f = string != null && ((Vector2)string).x < f9 ? -1.0f : 1.0f;
-                                            float f13 = samePositionStuckCycles == 1 ? 12.0f : 15.0f;
+                                            float f13 = samePositionStuckCycles == 1 ? 14.0f : 18.0f;
                                             AutoReconnect.log("[AutoFarm] Da nhay 3 lan chua qua vat can tai [" + string3 + "] (pos=" + String.format("%.1f", Float.valueOf(f9)) + ", chu ky=" + samePositionStuckCycles + ") -> Phase Step phong van toc manh " + f13 + "m/s huong ve dich!");
                                             final long phaseCmdId = AutoReconnect.newMovementCommand(MOVE_PHASE_STEP);
                                             Gdx.app.postRunnable(new Runnable(){
@@ -5844,8 +5844,8 @@ public class AutoReconnect {
                                                         if (body != null) {
                                                             Vector2 p = body.getPosition();
                                                             Vector2 v = body.getLinearVelocity();
-                                                            AutoReconnect.log("[MoveDebug] PHASE_STEP_START cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + this.val$fDir + " speed=" + this.val$dashSpeed + " window=450ms");
-                                                            body.setLinearVelocity(this.val$fDir * this.val$dashSpeed, 22.0f);
+                                                            AutoReconnect.log("[MoveDebug] PHASE_STEP_START cmdId=" + this.val$cmdId + " pos=(" + String.format("%.2f,%.2f", p.x, p.y) + ") velBefore=(" + String.format("%.2f,%.2f", v.x, v.y) + ") dir=" + this.val$fDir + " speed=" + this.val$dashSpeed + " window=900ms");
+                                                            body.setLinearVelocity(this.val$fDir * this.val$dashSpeed, 25.0f);
                                                             Vector2 pAfter = body.getPosition();
                                                             Vector2 vAfter = body.getLinearVelocity();
                                                             AutoReconnect.log("[MoveDebug] PHASE_STEP_AFTER cmdId=" + this.val$cmdId + " posAfter=(" + String.format("%.2f,%.2f", pAfter.x, pAfter.y) + ") velAfter=(" + String.format("%.2f,%.2f", vAfter.x, vAfter.y) + ")");
