@@ -104,6 +104,31 @@ function Exec-Cmd([string]$cmd, [int]$timeout = 30) {
     }
 }
 
+function Read-TunnelOutput {
+    foreach ($stream in @("stdout", "stderr")) {
+        $readTask = if ($stream -eq "stdout") { $script:CloudflaredStdoutTask } else { $script:CloudflaredStderrTask }
+        while ($readTask -and $readTask.IsCompleted) {
+            $line = $null
+            try { $line = $readTask.Result } catch {}
+            if ($line -and $line -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
+                $global:LatestTunnelUrl = $Matches[1]
+            }
+            if ($script:CloudflaredProcess -and -not $script:CloudflaredProcess.HasExited) {
+                try {
+                    $readTask = if ($stream -eq "stdout") {
+                        $script:CloudflaredProcess.StandardOutput.ReadLineAsync()
+                    } else {
+                        $script:CloudflaredProcess.StandardError.ReadLineAsync()
+                    }
+                } catch { $readTask = $null }
+            } else {
+                $readTask = $null
+            }
+        }
+        if ($stream -eq "stdout") { $script:CloudflaredStdoutTask = $readTask } else { $script:CloudflaredStderrTask = $readTask }
+    }
+}
+
 function Sync-TunnelUrl([string]$url) {
     if (-not $GithubToken) {
         Write-Log "GitHub URL sync skipped: TINHLINH_GITHUB_TOKEN is not configured."
@@ -172,14 +197,6 @@ function Start-TunnelProcess {
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 300
     try {
-        if ($script:CloudflaredEventPrefix) {
-            foreach ($suffix in @("stdout", "stderr")) {
-                $source = "$script:CloudflaredEventPrefix.$suffix"
-                Unregister-Event -SourceIdentifier $source -ErrorAction SilentlyContinue
-                Get-Job -Name $source -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
-            }
-        }
-
         $psi = New-Object Diagnostics.ProcessStartInfo
         $psi.FileName = $CloudflaredPath
         $psi.Arguments = "tunnel --no-autoupdate --url http://127.0.0.1:$Port --http-host-header localhost"
@@ -192,29 +209,16 @@ function Start-TunnelProcess {
         $proc = New-Object Diagnostics.Process
         $proc.StartInfo = $psi
 
-        $script:CloudflaredEventPrefix = "TinhLinhCloudflared_$PID"
-        $stdoutSource = "$script:CloudflaredEventPrefix.stdout"
-        $stderrSource = "$script:CloudflaredEventPrefix.stderr"
-        Register-ObjectEvent -InputObject $proc -EventName OutputDataReceived -SourceIdentifier $stdoutSource -Action {
-            if ($EventArgs.Data -and $EventArgs.Data -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
-                $global:LatestTunnelUrl = $Matches[1]
-            }
-        } | Out-Null
-
-        Register-ObjectEvent -InputObject $proc -EventName ErrorDataReceived -SourceIdentifier $stderrSource -Action {
-            if ($EventArgs.Data -and $EventArgs.Data -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
-                $global:LatestTunnelUrl = $Matches[1]
-            }
-        } | Out-Null
-
         $global:LatestTunnelUrl = ""
         $null = $proc.Start()
-        $proc.BeginOutputReadLine()
-        $proc.BeginErrorReadLine()
+        $script:CloudflaredProcess = $proc
+        $script:CloudflaredStdoutTask = $proc.StandardOutput.ReadLineAsync()
+        $script:CloudflaredStderrTask = $proc.StandardError.ReadLineAsync()
         Write-Log "Cloudflare Tunnel launched in RAM (PID $($proc.Id))."
 
         # Cho toi da 15 giay de bat URL ban dau
         for ($i = 0; $i -lt 30; $i++) {
+            Read-TunnelOutput
             if ($global:LatestTunnelUrl) { break }
             Start-Sleep -Milliseconds 500
         }
@@ -250,6 +254,8 @@ Write-Log "Entering main 24/7 loop (Zero disk logs, Auto-Updater enabled)..."
 
 while ($listener.IsListening) {
     try {
+        Read-TunnelOutput
+
         # A. Tu dong hoi sinh Cloudflare Tunnel neu bi ngat
         if (-not $cfProcess -or $cfProcess.HasExited) {
             Write-Log "Cloudflare exited or missing; auto-recovering..."
