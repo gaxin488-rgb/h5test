@@ -10,6 +10,24 @@ param(
 $ErrorActionPreference = "SilentlyContinue"
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
+function Invoke-BoundedProcess {
+    param(
+        [string]$FilePath,
+        [string[]]$Arguments,
+        [int]$TimeoutSeconds = 10
+    )
+    try {
+        $p = Start-Process -FilePath $FilePath -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+        if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
+            try { $p.Kill() } catch {}
+            return $false
+        }
+        return ($p.ExitCode -eq 0)
+    } catch {
+        return $false
+    }
+}
+
 Write-Host "`n========================================================" -ForegroundColor Cyan
 Write-Host "   CAI DAT TINHLINH VPS AGENT 24/7 (ZERO DISK LOGS)" -ForegroundColor Cyan
 Write-Host "========================================================`n" -ForegroundColor Cyan
@@ -57,9 +75,9 @@ try {
 } catch {}
 
 # E. Gioi han Shadow Storage & don dep ban dau
-& vssadmin.exe resize shadowstorage /for=c: /on=c: /maxsize=400mb *>$null
-& vssadmin.exe delete shadows /all /quiet *>$null
-Clear-RecycleBin -Force -ErrorAction SilentlyContinue
+[void](Invoke-BoundedProcess -FilePath "vssadmin.exe" -Arguments @("resize", "shadowstorage", "/for=c:", "/on=c:", "/maxsize=400mb"))
+[void](Invoke-BoundedProcess -FilePath "vssadmin.exe" -Arguments @("delete", "shadows", "/all", "/quiet"))
+if (Get-Command Clear-RecycleBin -ErrorAction SilentlyContinue) { Clear-RecycleBin -Force -ErrorAction SilentlyContinue }
 Remove-Item "$env:TEMP\*", "C:\Windows\Temp\*", "C:\Windows\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
 
 # 2. Khoi tao thu muc C:\TinhLinh & don dep file rac cu
