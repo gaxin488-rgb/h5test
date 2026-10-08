@@ -9,20 +9,23 @@ import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Graphics;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Window;
+import com.badlogic.gdx.math.Vector2;
 import org.lwjgl.glfw.GLFW;
 
 /**
  * TinhLinhBot - Core Automation Engine for Tinh Linh Game.
  * Feature 1: Auto Login, Auto Reconnect & Watchdog Lifecycle.
+ * Feature 2: Map & Location Telemetry (getCurrentMapName, getCurrentMapId, getCurrentZone, getPlayerPosition).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.0.0-Feature1-AutoLogin";
+    private static final String VERSION = "1.1.0-Feature2-MapTelemetry";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -35,6 +38,11 @@ public final class TinhLinhBot {
     private static volatile long lastLoginAttemptTime = 0L;
     private static volatile long loadingScreenStartTime = 0L;
     private static volatile long lastGuardCheckTime = 0L;
+
+    private static volatile int lastKnownMapId = -1;
+    private static volatile String lastKnownMapName = "";
+    private static volatile int lastKnownZone = -1;
+    private static volatile long lastMapLogTime = 0L;
 
     private static volatile String savedUsername = null;
     private static volatile String savedPassword = null;
@@ -211,6 +219,143 @@ public final class TinhLinhBot {
                     }
                 }
             } catch (Throwable ignored) {
+            }
+        }
+
+        // --- 6. Giam sat Vi tri & Map hien tai (Location Telemetry) ---
+        checkLocationTelemetry(now);
+    }
+
+    // =========================================================================
+    // MAP & CHARACTER LOCATION TELEMETRY
+    // =========================================================================
+
+    /**
+     * Tra ve ten Map hien tai ma nhan vat dang dung (vi du: "Làng", "Rừng cổ mộc",...).
+     * Neu chua vao the gioi game hoac khong xac dinh, tra ve chuoi rong "".
+     */
+    public static String getCurrentMapName() {
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return "";
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world == null) return "";
+            com.a.c.f.a.b.e.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 map =
+                    world.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75;
+            if (map != null && map.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return map.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.trim();
+            }
+        } catch (Throwable ignored) {
+        }
+        return "";
+    }
+
+    /**
+     * Tra ve ID cua Map hien tai (vi du: 0 = Lang, 7 = Rung co moc, 5 = Vach nui,...).
+     * Neu chua vao game hoac khong xac dinh, tra ve -1.
+     */
+    public static int getCurrentMapId() {
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return -1;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world == null) return -1;
+            com.a.c.f.a.b.e.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 map =
+                    world.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75;
+            if (map != null) {
+                return map.a_();
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
+    /**
+     * Tra ve Khu vuc (Zone) hien tai cua nhan vat (1..15).
+     * Neu chua vao game hoac khong xac dinh, tra ve -1.
+     */
+    public static int getCurrentZone() {
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return -1;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world == null) return -1;
+            com.a.c.f.a.b.e.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 map =
+                    world.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75;
+            if (map != null) {
+                return map.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1;
+    }
+
+    /**
+     * Tra ve toa do Vector2 (X, Y) cua nhan vat tren ban do hien tai.
+     * Neu chua vao game hoac player null, tra ve null.
+     */
+    public static Vector2 getPlayerPosition() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null) {
+                return player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * Kiem tra xem nhan vat co dang bi kiet suc (HP = 0) hay khong.
+     */
+    public static boolean isPlayerExhausted() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null) {
+                return player.gIrLkun75nEKiLliiliiLiWhATDOYouWAntHeReHiHihIhaHahAHoHohOHEHEheGIrlKUN75();
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /**
+     * Giam sat va log vi tri Map, Khu vuc va toa do nhan vat dinh ky hoac khi chuyen map.
+     */
+    private static void checkLocationTelemetry(long now) {
+        String mapName = getCurrentMapName();
+        if (mapName == null || mapName.trim().isEmpty()) {
+            return;
+        }
+
+        int mapId = getCurrentMapId();
+        int zone = getCurrentZone();
+        Vector2 pos = getPlayerPosition();
+        boolean exhausted = isPlayerExhausted();
+
+        boolean mapChanged = (mapId != lastKnownMapId) || (zone != lastKnownZone) || (!mapName.equals(lastKnownMapName));
+        boolean periodicLog = (now - lastMapLogTime >= 10000L); // Dinh ky moi 10 giay
+
+        if (mapChanged || periodicLog) {
+            lastKnownMapId = mapId;
+            lastKnownMapName = mapName;
+            lastKnownZone = zone;
+            lastMapLogTime = now;
+
+            String posStr = (pos != null) ? String.format(Locale.ROOT, "(X=%.1f, Y=%.1f)", pos.x, pos.y) : "(X=?, Y=?)";
+            String statusStr = exhausted ? "[KIET SUC/HP=0]" : "[BINH THUONG]";
+            if (mapChanged) {
+                log("[AutoFarm-Map] CHUYEN MAP -> Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
+            } else {
+                log("[AutoFarm-Map] Dang o Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
             }
         }
     }
