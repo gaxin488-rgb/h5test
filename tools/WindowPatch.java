@@ -24,6 +24,8 @@ public final class WindowPatch {
             "com/badlogic/gdx/backends/lwjgl3/Lwjgl3WindowConfiguration";
     private static final String APPLICATION_CONFIGURATION_OWNER =
             "com/badlogic/gdx/backends/lwjgl3/Lwjgl3ApplicationConfiguration";
+    private static final String APPLICATION_OWNER =
+            "com/badlogic/gdx/backends/lwjgl3/Lwjgl3Application";
     private static final String GL_PROFILER_OWNER =
             "com/badlogic/gdx/graphics/profiling/GLProfiler";
 
@@ -120,8 +122,6 @@ public final class WindowPatch {
                         setSystemProperty("sun.java2d.opengl", "false");
                         setSystemProperty("sun.java2d.d3d", "false");
                         setSystemProperty("sun.java2d.noddraw", "true");
-                        super.visitMethodInsn(Opcodes.INVOKESTATIC, "com/a/d/AutoReconnect",
-                                "startWatcher", "()V", false);
                     }
 
                     private void setSystemProperty(String key, String value) {
@@ -169,6 +169,13 @@ public final class WindowPatch {
                             windowedCalls[0]++;
                         }
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
+                        if (APPLICATION_OWNER.equals(owner)
+                                && "<init>".equals(methodName)
+                                && "(Lcom/badlogic/gdx/ApplicationListener;Lcom/badlogic/gdx/backends/lwjgl3/Lwjgl3ApplicationConfiguration;)V"
+                                .equals(methodDescriptor)) {
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "com/a/d/AutoReconnect",
+                                    "startWatcher", "()V", false);
+                        }
                     }
 
                 };
