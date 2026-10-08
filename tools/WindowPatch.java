@@ -91,6 +91,7 @@ public final class WindowPatch {
                         }
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
                     }
+
                 };
             }
         };
@@ -119,6 +120,8 @@ public final class WindowPatch {
                         setSystemProperty("sun.java2d.opengl", "false");
                         setSystemProperty("sun.java2d.d3d", "false");
                         setSystemProperty("sun.java2d.noddraw", "true");
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, "com/a/d/AutoReconnect",
+                                "startWatcher", "()V", false);
                     }
 
                     private void setSystemProperty(String key, String value) {
@@ -156,7 +159,8 @@ public final class WindowPatch {
                                     "setMaxNetThreads", "(I)V", false);
                             return;
                         }
-                        if (WINDOW_CONFIGURATION_OWNER.equals(owner)
+                        if ((WINDOW_CONFIGURATION_OWNER.equals(owner)
+                                || APPLICATION_CONFIGURATION_OWNER.equals(owner))
                                 && "setWindowedMode".equals(methodName)
                                 && "(II)V".equals(methodDescriptor)) {
                             super.visitInsn(Opcodes.POP2);
@@ -166,6 +170,7 @@ public final class WindowPatch {
                         }
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
                     }
+
                 };
             }
         };
