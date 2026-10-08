@@ -281,7 +281,7 @@ while ($listener.IsListening) {
         Read-TunnelOutput
 
         # A. Tu dong hoi sinh Cloudflare Tunnel neu bi ngat
-        if (-not $cfProcess -or $cfProcess.HasExited) {
+        if ((-not $cfProcess -or $cfProcess.HasExited) -and (Get-Date) -ge $script:NextTunnelStart) {
             Write-Log "Cloudflare exited or missing; auto-recovering..."
             $cfProcess = Start-TunnelProcess
         }
