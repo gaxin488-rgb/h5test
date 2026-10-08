@@ -43,8 +43,14 @@ if %JAVA_MAJOR% LSS 17 (
     exit /b 1
 )
 
+set "OPENGL_OPT="
+if exist "%~dp0opengl32.dll" (
+    echo [i] Phat hien OpenGL Mesa: %~dp0opengl32.dll
+    set "OPENGL_OPT=-Dorg.lwjgl.opengl.libname=%~dp0opengl32.dll"
+)
+
 echo [i] Java %JAVA_VERSION%: %JAVA_BIN%
-"%JAVA_BIN%" -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
+"%JAVA_BIN%" -Xms32m -Xmx256m %OPENGL_OPT% -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [!] Tien trinh game da dung voi ma thoat: %ERRORLEVEL%
