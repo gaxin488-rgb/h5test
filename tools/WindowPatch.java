@@ -158,6 +158,10 @@ public final class WindowPatch {
                         }
                         setSystemProperty("org.lwjgl.opengl.libname", "opengl32");
                         setSystemProperty("org.lwjgl.glfw.libname", "glfw");
+                        setSystemProperty("org.lwjgl.util.Debug", "false");
+                        setSystemProperty("org.lwjgl.util.DebugLoader", "false");
+                        setSystemProperty("org.lwjgl.system.stackSize", "64");
+                        setSystemProperty("java.awt.headless", "false");
                         setSystemProperty("sun.java2d.opengl", "false");
                         setSystemProperty("sun.java2d.d3d", "false");
                         setSystemProperty("sun.java2d.noddraw", "true");
@@ -206,6 +210,12 @@ public final class WindowPatch {
                             super.visitIntInsn(Opcodes.SIPUSH, width);
                             super.visitIntInsn(Opcodes.SIPUSH, height);
                             windowedCalls[0]++;
+                        }
+                        if (WINDOW_CONFIGURATION_OWNER.equals(owner)
+                                && "useVsync".equals(methodName)
+                                && "(Z)V".equals(methodDescriptor)) {
+                            super.visitInsn(Opcodes.POP);
+                            super.visitInsn(Opcodes.ICONST_0);
                         }
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
                     }
