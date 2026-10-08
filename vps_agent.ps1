@@ -172,6 +172,14 @@ function Start-TunnelProcess {
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 300
     try {
+        if ($script:CloudflaredEventPrefix) {
+            foreach ($suffix in @("stdout", "stderr")) {
+                $source = "$script:CloudflaredEventPrefix.$suffix"
+                Unregister-Event -SourceIdentifier $source -ErrorAction SilentlyContinue
+                Get-Job -Name $source -ErrorAction SilentlyContinue | Remove-Job -Force -ErrorAction SilentlyContinue
+            }
+        }
+
         $psi = New-Object Diagnostics.ProcessStartInfo
         $psi.FileName = $CloudflaredPath
         $psi.Arguments = "tunnel --no-autoupdate --url http://127.0.0.1:$Port --http-host-header localhost"
@@ -184,25 +192,20 @@ function Start-TunnelProcess {
         $proc = New-Object Diagnostics.Process
         $proc.StartInfo = $psi
 
-        $proc.add_OutputDataReceived({
-            param($sender, $event)
-            if ($event.Data) {
-                $match = [regex]::Match($event.Data, "https://[a-zA-Z0-9-]+\.trycloudflare\.com")
-                if ($match.Success) {
-                    $global:LatestTunnelUrl = $match.Value
-                }
+        $script:CloudflaredEventPrefix = "TinhLinhCloudflared_$PID"
+        $stdoutSource = "$script:CloudflaredEventPrefix.stdout"
+        $stderrSource = "$script:CloudflaredEventPrefix.stderr"
+        Register-ObjectEvent -InputObject $proc -EventName OutputDataReceived -SourceIdentifier $stdoutSource -Action {
+            if ($EventArgs.Data -and $EventArgs.Data -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
+                $global:LatestTunnelUrl = $Matches[1]
             }
-        })
+        } | Out-Null
 
-        $proc.add_ErrorDataReceived({
-            param($sender, $event)
-            if ($event.Data) {
-                $match = [regex]::Match($event.Data, "https://[a-zA-Z0-9-]+\.trycloudflare\.com")
-                if ($match.Success) {
-                    $global:LatestTunnelUrl = $match.Value
-                }
+        Register-ObjectEvent -InputObject $proc -EventName ErrorDataReceived -SourceIdentifier $stderrSource -Action {
+            if ($EventArgs.Data -and $EventArgs.Data -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
+                $global:LatestTunnelUrl = $Matches[1]
             }
-        })
+        } | Out-Null
 
         $global:LatestTunnelUrl = ""
         $null = $proc.Start()
