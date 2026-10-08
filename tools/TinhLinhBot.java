@@ -34,6 +34,7 @@ public final class TinhLinhBot {
     private static volatile long gameStartTime = 0L;
     private static volatile long lastLoginAttemptTime = 0L;
     private static volatile long loadingScreenStartTime = 0L;
+    private static volatile long lastGuardCheckTime = 0L;
 
     private static volatile String savedUsername = null;
     private static volatile String savedPassword = null;
@@ -88,6 +89,9 @@ public final class TinhLinhBot {
     }
 
     private static void tick() {
+        // --- 0. Kiem tra Memory & Storage Guard dinh ky ---
+        runGuards();
+
         // --- 1. Kiem tra dong cua so GLFW ---
         if (Gdx.graphics instanceof Lwjgl3Graphics) {
             Lwjgl3Window window = ((Lwjgl3Graphics) Gdx.graphics).getWindow();
@@ -410,15 +414,116 @@ public final class TinhLinhBot {
         }
     }
 
-    private static void rotateLog(File file) {
+    private static void runGuards() {
+        long now = System.currentTimeMillis();
+        if (now - lastGuardCheckTime < 8000L) {
+            return;
+        }
+        lastGuardCheckTime = now;
+
+        // 1. Memory Guard (Heap RAM)
+        long freeMem = Runtime.getRuntime().freeMemory();
+        long totalMem = Runtime.getRuntime().totalMemory();
+        long maxMem = Runtime.getRuntime().maxMemory();
+        long usedMem = totalMem - freeMem;
+        if (maxMem > 0 && usedMem > (maxMem * 85 / 100)) {
+            long usedMb = usedMem / (1024L * 1024L);
+            long maxMb = maxMem / (1024L * 1024L);
+            log("[MemoryGuard] Heap usage cao: " + usedMb + "MB / " + maxMb + "MB (>85%). Goi System.gc() thu hoi bo nho...");
+            System.gc();
+        }
+
+        // 2. Storage Guard (O dia & File log)
+        File root = new File(".");
+        long usableBytes = root.getUsableSpace();
+        long usableMb = usableBytes / (1024L * 1024L);
+        File logFile = new File("autofarm_log.txt");
+
+        if (usableMb < 1024L || (logFile.exists() && logFile.length() > MAX_LOG_FILE_BYTES)) {
+            log("[StorageGuard] Kiem tra dung luong: Trong=" + usableMb + "MB, Log=" + (logFile.length() / 1024L) + "KB. Kich hoat don dep...");
+            if (logFile.exists() && logFile.length() > (500 * 1024)) {
+                rotateLog(logFile);
+            }
+            cleanTempFiles();
+            System.gc();
+        }
+
+        // 3. Stress Test Triggers (Kiem thu mo phong crash / tran RAM / spam log)
+        File testCrash = new File("test_trigger_crash.txt");
+        if (testCrash.exists()) {
+            testCrash.delete();
+            log("[StressTest] Nhan lenh test_trigger_crash.txt! Mo phong crash tien trinh voi ma thoat 137...");
+            System.exit(137);
+        }
+
+        File testOom = new File("test_trigger_oom.txt");
+        if (testOom.exists()) {
+            testOom.delete();
+            log("[StressTest] Nhan lenh test_trigger_oom.txt! Mo phong tran RAM OutOfMemoryError...");
+            java.util.List<byte[]> leak = new java.util.ArrayList<>();
+            while (true) {
+                leak.add(new byte[10 * 1024 * 1024]); // 10MB allocations until OOM
+            }
+        }
+
+        File testSpamLog = new File("test_spam_log.txt");
+        if (testSpamLog.exists()) {
+            testSpamLog.delete();
+            log("[StressTest] Nhan lenh test_spam_log.txt! Mo phong ghi tran log 10MB...");
+            try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(logFile, true), StandardCharsets.UTF_8)) {
+                for (int i = 0; i < 50000; i++) {
+                    writer.write("[SPAM_TEST_LINE_" + i + "] Du lieu log rac gia lap de thu nghiem bo tu don dep Storage Guard\r\n");
+                }
+            } catch (Throwable ignored) {
+            }
+            log("[StressTest] Da ghi xong spam log. Dung luong file: " + (logFile.length() / 1024L) + "KB. Kich hoat Storage Guard cat tia ngay...");
+            rotateLog(logFile);
+            log("[StressTest] Ket qua sau cat tia: " + (logFile.length() / 1024L) + "KB.");
+        }
+    }
+
+    private static void cleanTempFiles() {
         try {
-            java.util.List<String> lines = new java.util.ArrayList<>(2000);
-            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    lines.add(line);
+            String tmpDir = System.getProperty("java.io.tmpdir");
+            if (tmpDir == null) return;
+            File dir = new File(tmpDir);
+            File[] files = dir.listFiles();
+            if (files == null) return;
+            long now = System.currentTimeMillis();
+            for (File f : files) {
+                if (f.isFile() && f.getName().startsWith("tinhlinh-") && (now - f.lastModified() > 60_000L)) {
+                    f.delete();
                 }
             }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void rotateLog(File file) {
+        try {
+            if (!file.exists() || !file.isFile()) return;
+            long length = file.length();
+            java.util.List<String> lines = new java.util.ArrayList<>(2000);
+
+            if (length > 10L * 1024L * 1024L) {
+                // Tối ưu đọc file lớn: Chỉ đọc phần đuôi 500KB cuối cùng
+                try (java.io.RandomAccessFile raf = new java.io.RandomAccessFile(file, "r")) {
+                    long seekPos = Math.max(0L, length - (500L * 1024L));
+                    raf.seek(seekPos);
+                    String line;
+                    while ((line = raf.readLine()) != null) {
+                        lines.add(new String(line.getBytes(StandardCharsets.ISO_8859_1), StandardCharsets.UTF_8));
+                    }
+                }
+            } else {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        lines.add(line);
+                    }
+                }
+            }
+
             int keepCount = Math.min(lines.size(), 1500);
             java.util.List<String> keepLines = lines.subList(lines.size() - keepCount, lines.size());
             try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(file, false), StandardCharsets.UTF_8)) {
@@ -426,6 +531,7 @@ public final class TinhLinhBot {
                     writer.write(l + "\r\n");
                 }
             }
+            log("[StorageGuard] Da cat tia thanh cong autofarm_log.txt: giu lai " + keepLines.size() + " dong (Dung luong con: " + (file.length() / 1024L) + "KB).");
         } catch (Throwable ignored) {
         }
     }

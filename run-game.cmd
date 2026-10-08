@@ -1,8 +1,10 @@
 @echo off
 setlocal EnableExtensions
-title Tinh Linh (Bản Gốc - Baseline)
+title Tinh Linh (Auto Login & Watchdog 24/7)
+cd /d "%~dp0"
+
 echo ========================================================
-echo   KHOI CHAY GAME TINH LINH (BAN GOC - BASELINE)
+echo   KHOI CHAY GAME TINH LINH (AUTO LOGIN & WATCHDOG 24/7)
 echo ========================================================
 
 set "JAVA_BIN="
@@ -48,9 +50,46 @@ set "MESA_LOADER_DRIVER_OVERRIDE=llvmpipe"
 set "GALLIUM_DRIVER=llvmpipe"
 
 echo [i] Java %JAVA_VERSION%: %JAVA_BIN%
-"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo [!] Tien trinh game da dung voi ma thoat: %ERRORLEVEL%
-    pause
+echo [i] Watchdog san sang. De tat, tao file tat_tu_khoi_dong.txt hoac bam Ctrl+C.
+
+set /a RESTART_COUNT=0
+
+:watchdog_loop
+set /a RESTART_COUNT+=1
+echo.
+echo ========================================================
+echo  [WATCHDOG] Phien chay #%RESTART_COUNT% - %DATE% %TIME%
+echo ========================================================
+
+rem --- Storage & Capacity Guard: Cat tia log neu > 3MB truoc khi khoi chay ---
+if exist "%~dp0autofarm_log.txt" (
+    powershell.exe -NoProfile -Command "if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force; Write-Host '[StorageGuard] Da cat tia autofarm_log.txt ve 1500 dong (<3MB).' -ForegroundColor Yellow } }"
 )
+
+rem --- Don dep thu muc temp neu o C: duoi 1500MB ---
+powershell.exe -NoProfile -Command "$freeMB = [math]::Round(((Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -like '*C:*' }).Free / 1MB), 0); if ($freeMB -lt 1500) { Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Remove-Item -Path \"$env:TEMP\tinhlinh*\" -Force -ErrorAction SilentlyContinue; Write-Host ('[StorageGuard] Canh bao dung luong o C: con {0}MB -> Da don dep temp va RecycleBin.' -f $freeMB) -ForegroundColor Yellow }"
+
+rem --- Khoi chay game ---
+"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
+set "EXIT_CODE=%ERRORLEVEL%"
+
+echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%.
+
+rem --- Kiem tra neu nguoi dung muon tat han ---
+if exist "%~dp0tat_tu_khoi_dong.txt" (
+    echo [WATCHDOG] Phat hien file tat_tu_khoi_dong.txt -> Dung han Watchdog.
+    pause
+    exit /b 0
+)
+if exist "%~dp0stop_game.txt" (
+    echo [WATCHDOG] Phat hien file stop_game.txt -> Dung han Watchdog.
+    pause
+    exit /b 0
+)
+
+rem --- Post-Crash Emergency Storage Cleanup ---
+powershell.exe -NoProfile -Command "if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force } }; [GC]::Collect()"
+
+echo [WATCHDOG] Tu dong khoi dong lai game sau 3 giay...
+timeout /t 3 /nobreak >nul
+goto watchdog_loop
