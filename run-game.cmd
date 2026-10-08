@@ -7,6 +7,8 @@ echo ========================================================
 
 set "JAVA_BIN="
 if exist "%~dp0jre\bin\java.exe" set "JAVA_BIN=%~dp0jre\bin\java.exe"
+if not defined JAVA_BIN if exist "C:\TLKN\jre\bin\java.exe" set "JAVA_BIN=C:\TLKN\jre\bin\java.exe"
+if not defined JAVA_BIN if exist "D:\TLKN\jre\bin\java.exe" set "JAVA_BIN=D:\TLKN\jre\bin\java.exe"
 if not defined JAVA_BIN if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" set "JAVA_BIN=%JAVA_HOME%\bin\java.exe"
 if not defined JAVA_BIN (
     where java >nul 2>&1
