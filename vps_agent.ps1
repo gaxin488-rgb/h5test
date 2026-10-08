@@ -21,6 +21,8 @@ if (-not $GithubToken) { $GithubToken = [Environment]::GetEnvironmentVariable("T
 
 $global:LatestTunnelUrl = ""
 $script:TunnelProbeFailures = 0
+$script:TunnelLaunchFailures = 0
+$script:NextTunnelStart = [DateTime]::MinValue
 $script:AgentMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList @($false, "Global\TinhLinhAgent8765")
 try {
     if (-not $script:AgentMutex.WaitOne(0)) { exit 0 }
@@ -104,7 +106,7 @@ function Exec-Cmd([string]$cmd, [int]$timeout = 30) {
     }
 }
 
-function Read-TunnelOutput {
+function Read-TunnelOutput([switch]$ShowDiagnostics) {
     foreach ($stream in @("stdout", "stderr")) {
         $readTask = if ($stream -eq "stdout") { $script:CloudflaredStdoutTask } else { $script:CloudflaredStderrTask }
         while ($readTask -and $readTask.IsCompleted) {
@@ -112,6 +114,9 @@ function Read-TunnelOutput {
             try { $line = $readTask.Result } catch {}
             if ($line -and $line -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
                 $global:LatestTunnelUrl = $Matches[1]
+            }
+            if ($ShowDiagnostics -and $line -and $stream -eq "stderr") {
+                Write-Log "cloudflared stderr: $line"
             }
             if ($script:CloudflaredProcess -and -not $script:CloudflaredProcess.HasExited) {
                 try {
@@ -189,6 +194,9 @@ function Update-AgentFromGithub {
 }
 
 function Start-TunnelProcess {
+    if ((Get-Date) -lt $script:NextTunnelStart) {
+        return $null
+    }
     if (-not (Test-Path $CloudflaredPath)) {
         Write-Log "WARNING: cloudflared.exe not found at $CloudflaredPath"
         return $null
@@ -220,14 +228,30 @@ function Start-TunnelProcess {
         for ($i = 0; $i -lt 30; $i++) {
             Read-TunnelOutput
             if ($global:LatestTunnelUrl) { break }
+            if ($proc.HasExited) { break }
             Start-Sleep -Milliseconds 500
         }
+        if ($proc.HasExited) {
+            Read-TunnelOutput -ShowDiagnostics
+            $script:TunnelLaunchFailures++
+            $power = [math]::Min($script:TunnelLaunchFailures - 1, 6)
+            $backoff = [math]::Min(900, [int](15 * [math]::Pow(2, $power)))
+            $script:NextTunnelStart = (Get-Date).AddSeconds($backoff)
+            Write-Log "cloudflared exited during startup (code $($proc.ExitCode)); retry in ${backoff}s."
+            return $null
+        }
         if ($global:LatestTunnelUrl) {
+            $script:TunnelLaunchFailures = 0
+            $script:NextTunnelStart = [DateTime]::MinValue
             Write-Log "Tunnel URL detected on launch: $global:LatestTunnelUrl"
             Sync-TunnelUrl $global:LatestTunnelUrl
         }
         return $proc
     } catch {
+        $script:TunnelLaunchFailures++
+        $power = [math]::Min($script:TunnelLaunchFailures - 1, 6)
+        $backoff = [math]::Min(900, [int](15 * [math]::Pow(2, $power)))
+        $script:NextTunnelStart = (Get-Date).AddSeconds($backoff)
         Write-Log "Failed to start cloudflared: $($_.Exception.Message)"
         return $null
     }
@@ -378,7 +402,8 @@ while ($listener.IsListening) {
                     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
                     $global:LatestTunnelUrl = ""
                     $script:TunnelProbeFailures = 0
-                    $cfProcess = Start-TunnelProcess
+                    $script:NextTunnelStart = (Get-Date).AddSeconds(15)
+                    $cfProcess = $null
                 }
             }
         }
