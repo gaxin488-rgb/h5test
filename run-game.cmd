@@ -43,6 +43,10 @@ if %JAVA_MAJOR% LSS 17 (
     exit /b 1
 )
 
+set "LIBGL_ALWAYS_SOFTWARE=1"
+set "MESA_LOADER_DRIVER_OVERRIDE=llvmpipe"
+set "GALLIUM_DRIVER=llvmpipe"
+
 echo [i] Java %JAVA_VERSION%: %JAVA_BIN%
 "%JAVA_BIN%" -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
 if %ERRORLEVEL% NEQ 0 (
