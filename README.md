@@ -37,3 +37,12 @@ java -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar TinhLinh.jar
 C:\TinhLinh\jre\bin\java.exe -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar C:\TinhLinh\TinhLinh-260x160.jar
 ```
 - `opengl32.dll` là thư viện Windows, không nhúng vào JAR. JAR đã chứa native LWJGL x64; VPS cần giữ OpenGL system DLL và chạy bằng JRE 17.
+
+### Theo dõi lỗi JAR:
+
+Wrapper ghi stdout/stderr, mã thoát, thời gian chạy, RAM đỉnh và Windows Application Error. Log được lọc dữ liệu nhạy cảm trước khi commit GitHub:
+```powershell
+pwsh -File .\jar-error-watch.ps1 -Label tab-01
+```
+
+Profile Local 1 GB dùng `-Xmx64m`; kiểm thử thực tế phù hợp tối đa 2 tab đồng thời.
