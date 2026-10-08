@@ -127,6 +127,11 @@ public final class FreshExhaustion {
         watcher.start();
     }
 
+    /** Called by the atlas patch when a requested region is absent. */
+    public static void recordAtlasFallback() {
+        log("ATLAS_FALLBACK first_loaded_region=true");
+    }
+
     private static void runLoop(RuntimeState state) {
         while (true) {
             try {

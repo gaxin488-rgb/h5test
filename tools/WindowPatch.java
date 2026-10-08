@@ -34,16 +34,26 @@ public final class WindowPatch {
             "com/a/b/a/a/GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.class";
     private static final String ATLAS_LOADER_OWNER =
             "com/a/b/a/a/GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75";
-    private static final String ATLAS_LOADER_METHOD =
-            "GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75";
-    private static final String ATLAS_LOADER_DESCRIPTOR =
-            "(Ljava/lang/String;Ljava/lang/String;Lcom/a/b/a/a/gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;)V";
     private static final String ATLAS_FIELD =
             "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75";
     private static final String TEXTURE_ATLAS_OWNER = "com/badlogic/gdx/graphics/g2d/TextureAtlas";
     private static final String ATLAS_REGION_OWNER =
             "com/badlogic/gdx/graphics/g2d/TextureAtlas$AtlasRegion";
     private static final String ARRAY_OWNER = "com/badlogic/gdx/utils/Array";
+
+    private static final class ResilientClassWriter extends ClassWriter {
+        private ResilientClassWriter(ClassReader reader) {
+            super(reader, ClassWriter.COMPUTE_FRAMES);
+        }
+
+        @Override
+        protected String getCommonSuperClass(String firstType, String secondType) {
+            if (firstType.equals(secondType)) {
+                return firstType;
+            }
+            return "java/lang/Object";
+        }
+    }
 
     private static final class PatchResult {
         private final byte[] bytes;
@@ -209,15 +219,12 @@ public final class WindowPatch {
 
     private static byte[] patchAtlasLoader(byte[] original, final int[] fallbackCalls) {
         ClassReader reader = new ClassReader(original);
-        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
+        ClassWriter writer = new ResilientClassWriter(reader);
         ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor,
                                               String signature, String[] exceptions) {
                 MethodVisitor next = super.visitMethod(access, name, descriptor, signature, exceptions);
-                if (!ATLAS_LOADER_METHOD.equals(name) || !ATLAS_LOADER_DESCRIPTOR.equals(descriptor)) {
-                    return next;
-                }
                 return new MethodVisitor(Opcodes.ASM8, next) {
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String methodName,
@@ -225,8 +232,10 @@ public final class WindowPatch {
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
                         if (!TEXTURE_ATLAS_OWNER.equals(owner)
                                 || !"findRegion".equals(methodName)
-                                || !"(Ljava/lang/String;)Lcom/badlogic/gdx/graphics/g2d/TextureAtlas$AtlasRegion;"
-                                .equals(methodDescriptor)) {
+                                || (!("(Ljava/lang/String;)Lcom/badlogic/gdx/graphics/g2d/TextureAtlas$AtlasRegion;"
+                                .equals(methodDescriptor)
+                                || "(Ljava/lang/String;I)Lcom/badlogic/gdx/graphics/g2d/TextureAtlas$AtlasRegion;"
+                                .equals(methodDescriptor)))) {
                             return;
                         }
 
@@ -242,6 +251,8 @@ public final class WindowPatch {
                         super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, ARRAY_OWNER, "first",
                                 "()Ljava/lang/Object;", false);
                         super.visitTypeInsn(Opcodes.CHECKCAST, ATLAS_REGION_OWNER);
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, "FreshExhaustion", "recordAtlasFallback",
+                                "()V", false);
                         super.visitLabel(hasRegion);
                         fallbackCalls[0]++;
                     }
