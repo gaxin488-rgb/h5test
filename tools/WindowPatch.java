@@ -220,15 +220,20 @@ public final class WindowPatch {
                 }
                 return new MethodVisitor(Opcodes.ASM8, next) {
                     @Override
-                    public void visitJumpInsn(int opcode, Label label) {
-                        if (opcode != Opcodes.IFNONNULL || fallbackCalls[0] > 0) {
-                            super.visitJumpInsn(opcode, label);
+                    public void visitMethodInsn(int opcode, String owner, String methodName,
+                                                String methodDescriptor, boolean isInterface) {
+                        super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
+                        if (!TEXTURE_ATLAS_OWNER.equals(owner)
+                                || !"findRegion".equals(methodName)
+                                || !"(Ljava/lang/String;)Lcom/badlogic/gdx/graphics/g2d/TextureAtlas$AtlasRegion;"
+                                .equals(methodDescriptor)) {
                             return;
                         }
 
-                        super.visitJumpInsn(opcode, label);
-                        super.visitVarInsn(Opcodes.ALOAD, 4);
-                        super.visitVarInsn(Opcodes.ILOAD, 5);
+                        Label hasRegion = new Label();
+                        super.visitInsn(Opcodes.DUP);
+                        super.visitJumpInsn(Opcodes.IFNONNULL, hasRegion);
+                        super.visitInsn(Opcodes.POP);
                         super.visitVarInsn(Opcodes.ALOAD, 0);
                         super.visitFieldInsn(Opcodes.GETFIELD, ATLAS_LOADER_OWNER, ATLAS_FIELD,
                                 "Lcom/badlogic/gdx/graphics/g2d/TextureAtlas;");
@@ -237,8 +242,7 @@ public final class WindowPatch {
                         super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, ARRAY_OWNER, "first",
                                 "()Ljava/lang/Object;", false);
                         super.visitTypeInsn(Opcodes.CHECKCAST, ATLAS_REGION_OWNER);
-                        super.visitInsn(Opcodes.AASTORE);
-                        super.visitJumpInsn(Opcodes.GOTO, label);
+                        super.visitLabel(hasRegion);
                         fallbackCalls[0]++;
                     }
                 };
