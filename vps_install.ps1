@@ -14,6 +14,15 @@ Write-Host "`n========================================================" -Foregro
 Write-Host "   CAI DAT TINHLINH VPS AGENT 24/7 (ZERO DISK LOGS)" -ForegroundColor Cyan
 Write-Host "========================================================`n" -ForegroundColor Cyan
 
+# 0. Khac phuc su co Mang & DNS tren VPS (Set DNS Google & Cloudflare)
+Write-Host "[0/5] Sua loi DNS va thiet lap DNS 8.8.8.8, 1.1.1.1..." -ForegroundColor Yellow
+try {
+    Get-NetAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Up' } | ForEach-Object {
+        Set-DnsClientServerAddress -InterfaceIndex $_.ifIndex -ServerAddresses ('8.8.8.8', '1.1.1.1', '8.8.4.4') -ErrorAction SilentlyContinue
+    }
+    & ipconfig.exe /flushdns *>$null
+} catch {}
+
 # 1. Day-Zero OS Hardening (Thu hoi 2-3GB cho o C:)
 Write-Host "[1/5] Toi uu hoa he dieu hanh cho o dia 15GB..." -ForegroundColor Yellow
 
