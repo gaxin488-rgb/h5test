@@ -4,6 +4,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Enumeration;
+import java.util.List;
+import java.util.stream.Collectors;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -26,22 +28,26 @@ public final class WindowPatch {
             "com/badlogic/gdx/backends/lwjgl3/Lwjgl3ApplicationConfiguration";
     private static final String GL_PROFILER_OWNER =
             "com/badlogic/gdx/graphics/profiling/GLProfiler";
+    private static final String FRESH_EXHAUSTION_ENTRY = "FreshExhaustion.class";
 
     private static final class PatchResult {
         private final byte[] bytes;
         private final int windowedCalls;
         private final int fullscreenCalls;
+        private final int freshHookCalls;
 
-        private PatchResult(byte[] bytes, int windowedCalls, int fullscreenCalls) {
+        private PatchResult(byte[] bytes, int windowedCalls, int fullscreenCalls, int freshHookCalls) {
             this.bytes = bytes;
             this.windowedCalls = windowedCalls;
             this.fullscreenCalls = fullscreenCalls;
+            this.freshHookCalls = freshHookCalls;
         }
     }
 
     private static PatchResult patchGame(byte[] original, final int width, final int height) {
         final int[] windowedCalls = {0};
         final int[] fullscreenCalls = {0};
+        final int[] freshHookCalls = {0};
         ClassReader reader = new ClassReader(original);
         ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
         ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
@@ -92,11 +98,21 @@ public final class WindowPatch {
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
                     }
 
+                    @Override
+                    public void visitCode() {
+                        super.visitCode();
+                        if ("create".equals(name) && "()V".equals(descriptor)) {
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "FreshExhaustion", "startWatcher",
+                                    "()V", false);
+                            freshHookCalls[0]++;
+                        }
+                    }
+
                 };
             }
         };
         reader.accept(visitor, 0);
-        return new PatchResult(writer.toByteArray(), windowedCalls[0], fullscreenCalls[0]);
+        return new PatchResult(writer.toByteArray(), windowedCalls[0], fullscreenCalls[0], freshHookCalls[0]);
     }
 
     private static byte[] patchLauncher(byte[] original, final int[] windowedCalls,
@@ -177,14 +193,16 @@ public final class WindowPatch {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 4) {
-            throw new IllegalArgumentException("Usage: WindowPatch <input.jar> <output.jar> <width> <height>");
+        if (args.length != 5) {
+            throw new IllegalArgumentException(
+                    "Usage: WindowPatch <input.jar> <output.jar> <width> <height> <FreshExhaustion.class>");
         }
 
         Path input = Paths.get(args[0]);
         Path output = Paths.get(args[1]);
         int width = Integer.parseInt(args[2]);
         int height = Integer.parseInt(args[3]);
+        Path freshClass = Paths.get(args[4]);
         if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
             throw new IllegalArgumentException("Window dimensions must be between 1 and 4096 pixels");
         }
@@ -192,6 +210,7 @@ public final class WindowPatch {
 
         int windowedCalls = 0;
         int fullscreenCalls = 0;
+        int freshHookCalls = 0;
         int[] launcherWindowedCalls = {0};
         try (JarFile source = new JarFile(input.toFile())) {
             Manifest manifest = source.getManifest();
@@ -212,6 +231,7 @@ public final class WindowPatch {
                             bytes = result.bytes;
                             windowedCalls = result.windowedCalls;
                             fullscreenCalls = result.fullscreenCalls;
+                            freshHookCalls = result.freshHookCalls;
                         }
                     } else if (LAUNCHER_ENTRY.equals(entry.getName())) {
                         try (InputStream in = source.getInputStream(entry)) {
@@ -228,19 +248,39 @@ public final class WindowPatch {
                     target.write(bytes);
                     target.closeEntry();
                 }
+
+                List<Path> freshClasses;
+                try (java.util.stream.Stream<Path> files = Files.list(freshClass.getParent())) {
+                    freshClasses = files
+                            .filter(path -> path.getFileName().toString().startsWith("FreshExhaustion"))
+                            .filter(path -> path.getFileName().toString().endsWith(".class"))
+                            .sorted()
+                            .collect(Collectors.toList());
+                }
+                for (Path freshClassFile : freshClasses) {
+                    String entryName = freshClassFile.getFileName().toString();
+                    JarEntry freshEntry = new JarEntry(entryName);
+                    freshEntry.setTime(System.currentTimeMillis());
+                    target.putNextEntry(freshEntry);
+                    target.write(Files.readAllBytes(freshClassFile));
+                    target.closeEntry();
+                }
             }
         }
 
-        if (windowedCalls == 0 || fullscreenCalls == 0 || launcherWindowedCalls[0] == 0) {
+        if (windowedCalls == 0 || fullscreenCalls == 0 || launcherWindowedCalls[0] == 0
+                || freshHookCalls == 0) {
             Files.deleteIfExists(output);
             throw new IllegalStateException("Window patch incomplete: launcherSetWindowedMode="
                     + launcherWindowedCalls[0] + ", gameSetWindowedMode=" + windowedCalls
-                    + ", gameSetFullscreenMode=" + fullscreenCalls);
+                    + ", gameSetFullscreenMode=" + fullscreenCalls + ", freshExhaustionHooks="
+                    + freshHookCalls);
         }
         System.out.println("Window size: " + width + "x" + height);
         System.out.println("Patched launcher setWindowedMode calls: " + launcherWindowedCalls[0]);
         System.out.println("Patched setWindowedMode calls: " + windowedCalls);
         System.out.println("Blocked setFullscreenMode calls: " + fullscreenCalls);
+        System.out.println("Injected FreshExhaustion hooks: " + freshHookCalls);
         System.out.println("Output: " + output.toAbsolutePath());
     }
 }

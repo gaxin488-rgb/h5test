@@ -32,13 +32,16 @@ New-Item -ItemType Directory -Path $classes -Force | Out-Null
 
 try {
     & $javac '--add-exports' 'java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' `
-        '-encoding' 'UTF-8' '-d' $classes (Join-Path $PSScriptRoot 'tools\WindowPatch.java')
+        '-encoding' 'UTF-8' '-d' $classes `
+        (Join-Path $PSScriptRoot 'tools\WindowPatch.java') `
+        (Join-Path $PSScriptRoot 'tools\FreshExhaustion.java')
     if ($LASTEXITCODE -ne 0) {
         throw 'WindowPatch compilation failed.'
     }
 
     & $java '--add-exports' 'java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' `
-        '-cp' $classes 'WindowPatch' $SourceJar $OutputJar $WindowWidth $WindowHeight
+        '-cp' $classes 'WindowPatch' $SourceJar $OutputJar $WindowWidth $WindowHeight `
+        (Join-Path $classes 'FreshExhaustion.class')
     if ($LASTEXITCODE -ne 0) {
         throw 'Local baseline window patch failed.'
     }
@@ -58,6 +61,10 @@ try {
     $oldEntries = @($names | Where-Object { $_ -match '(^|/)AutoReconnect(Base)?(\$[^/]*)?\.class$' })
     if ($oldEntries.Count -gt 0) {
         throw ('Old AutoReconnect classes found in clean output: ' + ($oldEntries -join ', '))
+    }
+
+    if ($names -notcontains 'FreshExhaustion.class') {
+        throw 'FreshExhaustion.class missing from clean output.'
     }
 
     Write-Output ("Built clean local baseline: {0} ({1:N0} bytes)" -f $OutputJar, $outputSize)
