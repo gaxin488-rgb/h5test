@@ -29,12 +29,16 @@ Write-Host "[1/5] Toi uu hoa he dieu hanh cho o dia 15GB..." -ForegroundColor Ye
 # A. Tat Hibernation (thu hoi hiberfil.sys 1GB - 2GB)
 & powercfg.exe -h off *>$null
 
-# B. Toi uu Pagefile 1536MB - 3072MB (chong tran commit memory/OOM native cho Java & Agent)
+# B. Toi uu Pagefile 1536MB - 3072MB (Registry + WMI chong tran commit memory)
 try {
     Set-CimInstance -Query "Select * from Win32_ComputerSystem" -Property @{AutomaticManagedPagefile=$False} -ErrorAction SilentlyContinue
-    $pf = Get-CimInstance Win32_PageFileSetting -ErrorAction SilentlyContinue
-    if ($pf) { $pf | Remove-CimInstance -ErrorAction SilentlyContinue }
-    New-CimInstance -ClassName Win32_PageFileSetting -Property @{Name="C:\pagefile.sys"; InitialSize=1536; MaximumSize=3072} -ErrorAction SilentlyContinue | Out-Null
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'PagingFiles' -Value @('C:\pagefile.sys 1536 3072') -Type MultiString -Force -ErrorAction SilentlyContinue
+    $class = [wmiclass]"Win32_PageFileSetting"
+    $pf = $class.CreateInstance()
+    $pf.Name = "C:\pagefile.sys"
+    $pf.InitialSize = 1536
+    $pf.MaximumSize = 3072
+    $null = $pf.Put()
 } catch {}
 
 # C. Vo hieu hoa Windows Update ngam & WER Crash Dumps
@@ -97,8 +101,15 @@ $bootRun = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidde
 & schtasks.exe /Create /TN "TinhLinhAgent_Boot" /TR "$bootRun" /SC ONSTART /RU "SYSTEM" /RL HIGHEST /F *>$null
 
 # Task 2: Watchdog tu dong khoi dong lai MCP khi mat ket noi (kiem tra ping moi 1 phut)
-$watchdogRun = 'powershell.exe -w hidden -c \"try { $r = (Invoke-WebRequest -Uri http://127.0.0.1:8765/ping -TimeoutSec 3 -UseBasicParsing).StatusCode; if ($r -ne 200) { throw } } catch { Stop-Process -Name cloudflared -Force -ea 0; Get-CimInstance Win32_Process -Filter \"\"CommandLine like ''%vps_agent.ps1%''\"\" -ea 0 | Stop-Process -Force -ea 0; Start-Process powershell \"\"-nop -w hidden -f C:\TinhLinh\vps_agent.ps1\"\" -WorkingDirectory C:\TinhLinh }\"'
-& schtasks.exe /Create /TN "TinhLinhAgent_Watchdog" /TR $watchdogRun /SC MINUTE /MO 1 /RU "SYSTEM" /RL HIGHEST /F *>$null
+# Luu y: schtasks.exe tren Windows Server 2012 R2 gioi han /TR toi da 261 ky tu, can ghi script ra file
+$watchdogDest = Join-Path $dir "vps_watchdog.ps1"
+$watchdogScript = @'
+try { if ((Invoke-WebRequest -Uri http://127.0.0.1:8765/ping -TimeoutSec 3 -UseBasicParsing).StatusCode -ne 200) { throw } } catch { Stop-Process -Name cloudflared -Force -ea 0; Get-CimInstance Win32_Process -ea 0 | Where-Object { $_.CommandLine -like "*vps_agent.ps1*" } | Stop-Process -Force -ea 0; Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\TinhLinh\vps_agent.ps1" -WorkingDirectory C:\TinhLinh }
+'@
+[IO.File]::WriteAllText($watchdogDest, $watchdogScript, [Text.Encoding]::UTF8)
+
+$watchdogRun = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdogDest`""
+& schtasks.exe /Create /TN "TinhLinhAgent_Watchdog" /TR "$watchdogRun" /SC MINUTE /MO 1 /RU "SYSTEM" /RL HIGHEST /F *>$null
 
 # 5. Khoi dong Agent ngay lap tuc
 Write-Host "[5/5] Khoi chay Agent..." -ForegroundColor Yellow
