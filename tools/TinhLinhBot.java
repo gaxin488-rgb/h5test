@@ -370,11 +370,39 @@ public final class TinhLinhBot {
         return null;
     }
 
+    public static long getPlayerHp() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null && player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GirLKun75NekiiiIIIIiIiwHATDoYoUWANtHERehihIhIHAHAhAHOhOhoHEhehegIrlKUN75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1L;
+    }
+
+    public static long getPlayerMaxHp() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null && player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NeKLiiIlIiliLWhAtDOyouWanthErehihIHiHaHAhahoHOhoHEhehEGIRlKUN75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return -1L;
+    }
+
     /**
      * Kiem tra xem nhan vat co dang bi kiet suc (HP = 0) hay khong.
      */
     public static boolean isPlayerExhausted() {
         try {
+            long curHp = getPlayerHp();
+            if (curHp >= 0) {
+                return curHp <= 0;
+            }
             com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
                     com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
             if (player != null) {
@@ -412,56 +440,54 @@ public final class TinhLinhBot {
     }
 
     /**
-     * Kiem tra xem popup/dialog kiet suc (hoi sinh / ve lang) co dang hien thi tren man hinh hay khong.
-     * Ho tro ca 2 lop bao ve:
-     * 1. Kiem tra thuoc tinh Entity Player (HP <= 0).
-     * 2. Quet cay UI Scene2D DialogManager va Stage tim hop thoai mo co chua van ban kiet suc/ve lang/hoi sinh.
+     * Tim hop thoai kiet suc thuc su dang mo tren man hinh.
+     * Hop thoai kiet suc phai nam trong DialogManager va co chu 'kiet suc'.
+     * Neu player dang HP <= 0, hop thoai co 've lang' / 'hoi sinh' trong dialogManager cung duoc chap nhan.
      */
-    public static boolean isExhaustionDialogVisible() {
-        if (isPlayerExhausted()) {
-            return true;
-        }
-
+    public static Actor getVisibleExhaustionDialog() {
         try {
             com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
                     com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-            if (game == null) return false;
+            if (game == null) return null;
             com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
                     game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
-            if (world == null) return false;
+            if (world == null) return null;
 
             com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 uiOverlay =
                     world.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
-            if (uiOverlay == null) return false;
+            if (uiOverlay == null) return null;
 
             com.a.c.f.e.a.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 dialogManager =
                     uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-            if (dialogManager != null) {
-                SnapshotArray<Actor> children = dialogManager.getChildren();
-                if (children != null && children.size > 0) {
-                    for (int i = 0; i < children.size; i++) {
-                        Actor child = children.get(i);
-                        if (child != null && child.isVisible() && containsExhaustionText(child)) {
-                            return true;
-                        }
-                    }
-                }
-            }
+            if (dialogManager == null) return null;
 
-            if (dialogManager != null && dialogManager.getStage() != null) {
-                com.badlogic.gdx.utils.Array<Actor> stageActors = dialogManager.getStage().getActors();
-                if (stageActors != null) {
-                    for (int i = 0; i < stageActors.size; i++) {
-                        Actor sa = stageActors.get(i);
-                        if (sa != null && sa.isVisible() && containsExhaustionText(sa)) {
-                            return true;
-                        }
+            SnapshotArray<Actor> children = dialogManager.getChildren();
+            if (children == null || children.size == 0) return null;
+
+            boolean dead = isPlayerExhausted();
+
+            for (int i = 0; i < children.size; i++) {
+                Actor child = children.get(i);
+                if (child != null && child.isVisible() && child.getColor().a > 0.1f) {
+                    String norm = normalizeText(getActorText(child));
+                    if (norm.contains("kiệt sức") || norm.contains("kiet suc")) {
+                        return child;
+                    }
+                    if (dead && (norm.contains("về làng") || norm.contains("ve lang") || norm.contains("hồi sinh") || norm.contains("hoi sinh"))) {
+                        return child;
                     }
                 }
             }
         } catch (Throwable ignored) {
         }
-        return false;
+        return null;
+    }
+
+    /**
+     * Kiem tra xem popup/dialog kiet suc (hoi sinh / ve lang) co dang hien thi tren man hinh hay khong.
+     */
+    public static boolean isExhaustionDialogVisible() {
+        return getVisibleExhaustionDialog() != null;
     }
 
     private static String normalizeText(String raw) {
@@ -475,9 +501,7 @@ public final class TinhLinhBot {
         if (actor == null) return false;
         String text = normalizeText(getActorText(actor));
         if (text.isEmpty()) return false;
-        return text.contains("kiệt sức") || text.contains("kiet suc")
-                || text.contains("về làng") || text.contains("ve lang")
-                || text.contains("hồi sinh") || text.contains("hoi sinh");
+        return text.contains("kiệt sức") || text.contains("kiet suc");
     }
 
     /**
@@ -589,64 +613,21 @@ public final class TinhLinhBot {
 
     /**
      * Tu dong tim va kich hoat lua chon 'Ve Lang' khi popup kiet suc dang hien thi.
-     * Ho tro moi loai Actor Scene2D: TextraButton, TextButton, Button, TextraLabel, Label, Table row.
-     * Ho tro tinh toan toa do Stage chuan xac tuyet doi qua localToStageCoordinates.
-     * Ho tro Fallback chon nut thu 3 (Rightmost / ben phai nhat) tren hop thoai kiet suc.
-     * @return true neu da tim thay va gui su kien click thanh cong vao nut Ve Lang, false neu khong co popup.
+     * Chi hoat dong tren hop thoai kiet suc thuc su trong DialogManager (tranh bam nham menu HUD).
      */
     public static synchronized boolean autoSelectReturnToVillage() {
         try {
-            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
-                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-            if (game == null) return false;
-            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
-                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
-            if (world == null) return false;
-
-            com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 uiOverlay =
-                    world.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
-            if (uiOverlay == null) return false;
-
-            com.a.c.f.e.a.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 dialogManager =
-                    uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-
-            List<Actor> candidateContainers = new ArrayList<>();
-            if (dialogManager != null) {
-                SnapshotArray<Actor> dialogs = dialogManager.getChildren();
-                if (dialogs != null) {
-                    for (int i = 0; i < dialogs.size; i++) {
-                        Actor d = dialogs.get(i);
-                        if (d != null && d.isVisible()) {
-                            candidateContainers.add(d);
-                        }
-                    }
-                }
+            Actor exhaustionDialog = getVisibleExhaustionDialog();
+            if (exhaustionDialog == null) {
+                return false;
             }
 
-            Stage stage = (dialogManager != null) ? dialogManager.getStage() : null;
-            if (stage == null && Gdx.input.getInputProcessor() instanceof Stage) {
-                stage = (Stage) Gdx.input.getInputProcessor();
-            }
-            if (stage != null) {
-                com.badlogic.gdx.utils.Array<Actor> stageActors = stage.getActors();
-                if (stageActors != null) {
-                    for (int i = 0; i < stageActors.size; i++) {
-                        Actor sa = stageActors.get(i);
-                        if (sa != null && sa.isVisible() && !candidateContainers.contains(sa)) {
-                            candidateContainers.add(sa);
-                        }
-                    }
-                }
-            }
-
-            for (Actor container : candidateContainers) {
-                Actor targetButton = findVillageButton(container);
-                if (targetButton != null) {
-                    String btnText = getActorText(targetButton);
-                    log("[AutoFarm-Exhaustion] Tim thay nut Ve Lang: [" + (btnText.isEmpty() ? targetButton.getClass().getSimpleName() : btnText) + "] tren popup. Dang thuc hien click...");
-                    Gdx.app.postRunnable(() -> clickActor(targetButton));
-                    return true;
-                }
+            Actor targetButton = findVillageButton(exhaustionDialog);
+            if (targetButton != null) {
+                String btnText = getActorText(targetButton);
+                log("[AutoFarm-Exhaustion] Tim thay nut Ve Lang: [" + (btnText.isEmpty() ? targetButton.getClass().getSimpleName() : btnText) + "] tren popup kiet suc. Dang thuc hien click...");
+                Gdx.app.postRunnable(() -> clickActor(targetButton));
+                return true;
             }
         } catch (Throwable t) {
             log("[AutoFarm-Exhaustion] Loi trong autoSelectReturnToVillage: " + t.getMessage());
@@ -666,29 +647,27 @@ public final class TinhLinhBot {
             return directBtn;
         }
 
-        // 2. Neu popup la hop thoai kiet suc hoac nhan vat dang kiet suc:
-        // Tim tat ca cac nut tren popup. Tren giao dien Tinh Linh (3 nut: [Hoi sinh ngoc] [Hoi sinh mien phi] [Ve lang]),
+        // 2. Neu popup chua tim thay text truc tiep (do icon hoac font ma hoa):
+        // Lay tat ca cac nut tren popup kiet suc.
+        // Tren giao dien kiet suc Tinh Linh (3 nut: [Hoi sinh ngoc] [Hoi sinh mien phi] [Ve lang]),
         // nut Ve Lang luon nam o vi tri CUOI CUNG (ben phai nhat).
-        if (containsExhaustionText(root) || isPlayerExhausted()) {
-            List<Actor> buttons = new ArrayList<>();
-            findAllButtons(root, buttons);
-            if (!buttons.isEmpty()) {
-                // Sap xep theo toa do X tren Stage tu trai sang phai
-                buttons.sort((a, b) -> {
-                    try {
-                        float xa = a.localToStageCoordinates(new Vector2(0, 0)).x;
-                        float xb = b.localToStageCoordinates(new Vector2(0, 0)).x;
-                        return Float.compare(xa, xb);
-                    } catch (Throwable t) {
-                        return Float.compare(a.getX(), b.getX());
-                    }
-                });
-                Actor rightmostButton = buttons.get(buttons.size() - 1);
-                String txt = getActorText(rightmostButton);
-                log("[AutoFarm-Exhaustion] Tim thay " + buttons.size() + " nut tren popup kiet suc. Chon nut ben phai nhat (Ve Lang): [" +
-                        (txt.isEmpty() ? rightmostButton.getClass().getSimpleName() : txt) + "]");
-                return rightmostButton;
-            }
+        List<Actor> buttons = new ArrayList<>();
+        findAllButtons(root, buttons);
+        if (!buttons.isEmpty()) {
+            buttons.sort((a, b) -> {
+                try {
+                    float xa = a.localToStageCoordinates(new Vector2(0, 0)).x;
+                    float xb = b.localToStageCoordinates(new Vector2(0, 0)).x;
+                    return Float.compare(xa, xb);
+                } catch (Throwable t) {
+                    return Float.compare(a.getX(), b.getX());
+                }
+            });
+            Actor rightmostButton = buttons.get(buttons.size() - 1);
+            String txt = getActorText(rightmostButton);
+            log("[AutoFarm-Exhaustion] Chon nut ben phai nhat (Ve Lang) tren popup: [" +
+                    (txt.isEmpty() ? rightmostButton.getClass().getSimpleName() : txt) + "]");
+            return rightmostButton;
         }
 
         return null;
@@ -916,19 +895,25 @@ public final class TinhLinhBot {
         int mapId = getCurrentMapId();
         int zone = getCurrentZone();
         Vector2 pos = getPlayerPosition();
-        boolean exhausted = isPlayerExhausted() || isExhaustionDialogVisible();
+        boolean dead = isPlayerExhausted();
+        boolean hasDialog = isExhaustionDialogVisible();
+        boolean exhausted = dead || hasDialog;
 
         // 1. Theo doi va tu dong luu toa do khi phat hien kiet suc (rising-edge trigger)
         if (exhausted && !previousExhausted) {
-            log("[AutoFarm-Exhaustion] PHAT HIEN POPUP/TRANG THAI KIET SUC! Tu dong luu toa do tran danh...");
+            log("[AutoFarm-Exhaustion] PHAT HIEN TRANG THAI KIET SUC! Tu dong luu toa do tran danh...");
             saveExhaustionCoordinate();
-            log("[AutoFarm-Exhaustion] Tu dong chon menu [Ve Lang] tren popup...");
-            autoSelectReturnToVillage();
+            if (hasDialog) {
+                log("[AutoFarm-Exhaustion] Tu dong chon menu [Ve Lang] tren popup...");
+                autoSelectReturnToVillage();
+            }
         } else if (exhausted) {
             // Neu van con kiet suc va popup chua dong, thu chon lai menu Ve Lang moi 2.4s (3 ticks)
             if (now - lastVillageSelectAttemptTime >= 2400L) {
                 lastVillageSelectAttemptTime = now;
-                autoSelectReturnToVillage();
+                if (hasDialog) {
+                    autoSelectReturnToVillage();
+                }
             }
         } else if (!exhausted && previousExhausted) {
             log("[AutoFarm-Exhaustion] Nhan vat da ve lang / thoat trang thai kiet suc.");
@@ -946,7 +931,10 @@ public final class TinhLinhBot {
             lastMapLogTime = now;
 
             String posStr = (pos != null) ? String.format(Locale.ROOT, "(X=%.1f, Y=%.1f)", pos.x, pos.y) : "(X=?, Y=?)";
-            String statusStr = exhausted ? "[KIET SUC/HP=0]" : "[BINH THUONG]";
+            long curHp = getPlayerHp();
+            long maxHp = getPlayerMaxHp();
+            String hpStr = (curHp >= 0 && maxHp > 0) ? String.format(Locale.ROOT, " [HP: %d/%d]", curHp, maxHp) : "";
+            String statusStr = exhausted ? ("[KIET SUC" + hpStr + "]") : ("[BINH THUONG" + hpStr + "]");
             if (mapChanged) {
                 log("[AutoFarm-Map] CHUYEN MAP -> Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
             } else {
