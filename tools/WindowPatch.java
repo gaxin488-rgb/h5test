@@ -43,7 +43,7 @@ public final class WindowPatch {
         final int[] windowedCalls = {0};
         final int[] fullscreenCalls = {0};
         ClassReader reader = new ClassReader(original);
-        ClassWriter writer = new ClassWriter(reader, 0);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
         ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor,
@@ -86,6 +86,7 @@ public final class WindowPatch {
                         if (GL_PROFILER_OWNER.equals(owner)
                                 && ("enable".equals(methodName) || "reset".equals(methodName))
                                 && "()V".equals(methodDescriptor)) {
+                            super.visitInsn(Opcodes.POP);
                             return;
                         }
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
@@ -100,7 +101,7 @@ public final class WindowPatch {
     private static byte[] patchLauncher(byte[] original, final int[] windowedCalls,
                                         final int width, final int height) {
         ClassReader reader = new ClassReader(original);
-        ClassWriter writer = new ClassWriter(reader, 0);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_MAXS);
         ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor,
@@ -110,6 +111,9 @@ public final class WindowPatch {
                     @Override
                     public void visitCode() {
                         super.visitCode();
+                        if (!"main".equals(name) || !"([Ljava/lang/String;)V".equals(descriptor)) {
+                            return;
+                        }
                         setSystemProperty("org.lwjgl.opengl.libname", "opengl32");
                         setSystemProperty("org.lwjgl.glfw.libname", "glfw");
                         setSystemProperty("sun.java2d.opengl", "false");
@@ -127,7 +131,8 @@ public final class WindowPatch {
 
                     @Override
                     public void visitIntInsn(int opcode, int operand) {
-                        if ((opcode == Opcodes.BIPUSH || opcode == Opcodes.SIPUSH) && operand == 120) {
+                        if ("main".equals(name) && "([Ljava/lang/String;)V".equals(descriptor)
+                                && (opcode == Opcodes.BIPUSH || opcode == Opcodes.SIPUSH) && operand == 120) {
                             super.visitIntInsn(opcode, 15);
                             return;
                         }
