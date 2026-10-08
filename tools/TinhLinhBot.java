@@ -11,6 +11,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -50,7 +51,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 5: Auto Apple Harvest & Collection Automation (handleAppleHarvest, triggerHarvestApple, moveToWaypoint, getCurrentMapWaypoints).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.4.0-Feature5-AppleHarvest";
+    private static final String VERSION = "1.4.1-Feature5-AppleHarvest-Robust";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -512,6 +513,12 @@ public final class TinhLinhBot {
         if (raw == null) return "";
         // Loai bo cac the dinh dang mau/font nhu [#E0A050] hoac {COLOR=RED} trong TextraLabel / LibGDX
         String s = raw.replaceAll("\\[[^\\]]*\\]", " ").replaceAll("\\{[^\\}]*\\}", " ");
+        // Loai bo dau tieng Viet (accent/diacritics)
+        s = Normalizer.normalize(s, Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "")
+                .replace("đ", "d")
+                .replace("Đ", "D")
+                .replace('?', ' ');
         return s.trim().toLowerCase(Locale.ROOT);
     }
 
@@ -704,12 +711,10 @@ public final class TinhLinhBot {
     private static void findAllButtons(Actor actor, List<Actor> list, Actor root) {
         if (actor == null) return;
         if (actor != root && isClickable(actor) && actor.isVisible()) {
-            if (actor instanceof Button || !(actor instanceof Group) || ((Group) actor).getChildren().size == 0) {
-                if (!list.contains(actor)) {
-                    list.add(actor);
-                }
-                return;
+            if (!list.contains(actor)) {
+                list.add(actor);
             }
+            return;
         }
         if (actor instanceof Group) {
             Group group = (Group) actor;
@@ -972,11 +977,19 @@ public final class TinhLinhBot {
         isAppleHarvesting = false;
         appleHarvestStep = 0;
         appleEnterNongTraiTime = 0L;
+        int curMapId = getCurrentMapId();
         String curMap = getCurrentMapName();
-        if (normalizeText(curMap).contains("nong trai")) {
+        String normMap = normalizeText(curMap);
+        boolean isFarm = (curMapId == 5) || (normMap.contains("nong") && normMap.contains("trai")) || normMap.contains("nong");
+        boolean isVillage = (curMapId == 2 || curMapId == 0) || normMap.contains("lang") || normMap.contains("eldarah");
+
+        if (isFarm) {
             return handleAppleHarvest();
-        } else if (normalizeText(curMap).contains("lang")) {
+        } else if (isVillage) {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 farmWp = findWaypointByName("nong trai");
+            if (farmWp == null) {
+                farmWp = findWaypointByName("nong");
+            }
             if (farmWp != null) {
                 return moveToWaypoint(farmWp);
             }
@@ -992,25 +1005,31 @@ public final class TinhLinhBot {
             return;
         }
 
+        int mapId = getCurrentMapId();
         String mapName = getCurrentMapName();
-        if (mapName == null || mapName.trim().isEmpty()) {
-            return;
-        }
         String normMap = normalizeText(mapName);
 
+        boolean isVillage = (mapId == 2 || mapId == 0) || normMap.contains("lang") || normMap.contains("eldarah");
+        boolean isFarm = (mapId == 5) || (normMap.contains("nong") && normMap.contains("trai")) || normMap.contains("nong");
+
         // 1. Truong hop dang o Lang va chua thu hoach tao -> Di vao cong Nong trai
-        if (normMap.contains("lang") && !hasHarvestedApple) {
+        if (isVillage && !hasHarvestedApple) {
             if (now - lastWaypointMoveTime >= 3500L) {
                 lastWaypointMoveTime = now;
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 farmWp = findWaypointByName("nong trai");
+                if (farmWp == null) {
+                    farmWp = findWaypointByName("nong");
+                }
                 if (farmWp != null) {
-                    log("[AutoFarm-Apple] Nhan vat dang o Lang va chua thu hoach tao -> Di chuyen vao cong Nong trai...");
+                    log("[AutoFarm-Apple] Nhan vat dang o Lang va chua thu hoach tao -> Di chuyen vao cong Nong trai [" + getWaypointName(farmWp) + "]...");
                     moveToWaypoint(farmWp);
+                } else {
+                    log("[AutoFarm-Apple] Dang o Lang nhung khong tim thay Waypoint Nong trai.");
                 }
             }
         }
         // 2. Truong hop dang o Nong trai
-        else if (normMap.contains("nong trai")) {
+        else if (isFarm) {
             if (!hasHarvestedApple) {
                 handleAppleHarvest();
             } else {
@@ -1021,8 +1040,14 @@ public final class TinhLinhBot {
                     if (villageWp == null) {
                         villageWp = findWaypointByName("ve lang");
                     }
+                    if (villageWp == null) {
+                        Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+                        if (wps != null && wps.size == 1) {
+                            villageWp = wps.get(0);
+                        }
+                    }
                     if (villageWp != null) {
-                        log("[AutoFarm-Apple] Da thu hoach xong tao. Dang o Nong trai -> Di chuyen ra cong ve lai Lang...");
+                        log("[AutoFarm-Apple] Da thu hoach xong tao. Dang o Nong trai -> Di chuyen ra cong ve lai Lang [" + getWaypointName(villageWp) + "]...");
                         moveToWaypoint(villageWp);
                     }
                 }
@@ -1043,8 +1068,11 @@ public final class TinhLinhBot {
             return false;
         }
 
+        int mapId = getCurrentMapId();
         String mapName = getCurrentMapName();
-        if (mapName == null || !normalizeText(mapName).contains("nong trai")) {
+        String normMap = normalizeText(mapName);
+        boolean isFarm = (mapId == 5) || (normMap.contains("nong") && normMap.contains("trai")) || normMap.contains("nong");
+        if (!isFarm) {
             return false;
         }
 
@@ -1419,17 +1447,29 @@ public final class TinhLinhBot {
             resultType = 1; // Cay tao
             log("[AutoFarm-Apple] Phat hien nut [Cay Tao] tai vi tri " + treeMenuIdx + " ('" + getActorText(buttons.get(treeMenuIdx)) + "')");
         } else if (step == 3) {
-            long elapsed = System.currentTimeMillis() - appleHarvestStartTime;
-            if (elapsed > 1200L) {
-                log("[AutoFarm-Apple] Khong thay nut [Thu hoach] (cay chua chin hoac da thu hoach). Chuan bi dong dialog...");
-                chosenIdx = (closeIdx != -1) ? closeIdx : (buttons.size() - 1);
-                resultType = 3; // Dong menu
+            if (buttons.size() == 1) {
+                chosenIdx = 0;
+                resultType = 2; // Thu hoach
+                log("[AutoFarm-Apple] Menu con chi co 1 nut duy nhat -> Chon nut index 0 de thu hoach ('" + getActorText(buttons.get(0)) + "')");
+            } else {
+                long elapsed = System.currentTimeMillis() - appleHarvestStartTime;
+                if (elapsed > 1200L) {
+                    log("[AutoFarm-Apple] Khong thay nut [Thu hoach] (cay chua chin hoac da thu hoach). Chuan bi dong dialog...");
+                    chosenIdx = (closeIdx != -1) ? closeIdx : (buttons.size() - 1);
+                    resultType = 3; // Dong menu
+                }
             }
         } else if (step == 2) {
-            long elapsed = System.currentTimeMillis() - appleHarvestStartTime;
-            if (elapsed > 3000L) {
-                chosenIdx = (closeIdx != -1) ? closeIdx : 0;
-                resultType = (closeIdx != -1) ? 3 : 1;
+            if (buttons.size() == 1) {
+                chosenIdx = 0;
+                resultType = 1; // Cay tao
+                log("[AutoFarm-Apple] Menu cay chi co 1 nut duy nhat -> Click nut 0 de mo menu thu hoach ('" + getActorText(buttons.get(0)) + "')");
+            } else {
+                long elapsed = System.currentTimeMillis() - appleHarvestStartTime;
+                if (elapsed > 1500L) {
+                    chosenIdx = (closeIdx != -1) ? closeIdx : 0;
+                    resultType = (closeIdx != -1) ? 3 : 1;
+                }
             }
         }
 
@@ -1576,16 +1616,20 @@ public final class TinhLinhBot {
             return null;
         }
 
+        StringBuilder allWp = new StringBuilder();
         for (int i = 0; i < waypoints.size; i++) {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
             if (wp != null) {
                 String wpName = getWaypointName(wp);
                 String wpNorm = normalizeText(wpName);
-                if (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm)) {
+                if (allWp.length() > 0) allWp.append(", ");
+                allWp.append("[").append(wpName).append("]");
+                if (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm) || (targetNorm.contains("nong") && wpNorm.contains("nong"))) {
                     return wp;
                 }
             }
         }
+        log("[Waypoint] Khong tim thay cong khop voi '" + targetKeyword + "'. Cac cong tren map (" + waypoints.size + "): " + allWp);
         return null;
     }
 
