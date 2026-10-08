@@ -30,3 +30,10 @@ d:\tinhlinh\
 ```cmd
 java -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar TinhLinh.jar
 ```
+
+### VPS:
+- VPS dùng JRE bundled Java 17; không dùng `java` mặc định Java 8:
+```cmd
+C:\TinhLinh\jre\bin\java.exe -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar C:\TinhLinh\TinhLinh-260x160.jar
+```
+- `opengl32.dll` là thư viện Windows, không nhúng vào JAR. JAR đã chứa native LWJGL x64; VPS cần giữ OpenGL system DLL và chạy bằng JRE 17.

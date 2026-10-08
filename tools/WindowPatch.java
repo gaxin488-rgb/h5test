@@ -42,13 +42,13 @@ public final class WindowPatch {
         ClassWriter writer = new ClassWriter(reader, 0);
         ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
             @Override
-            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
-                                              String[] exceptions) {
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                              String signature, String[] exceptions) {
                 MethodVisitor next = super.visitMethod(access, name, descriptor, signature, exceptions);
                 return new MethodVisitor(Opcodes.ASM8, next) {
                     @Override
-                    public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor,
-                                                boolean isInterface) {
+                    public void visitMethodInsn(int opcode, String owner, String methodName,
+                                                String methodDescriptor, boolean isInterface) {
                         if (opcode == Opcodes.INVOKEINTERFACE
                                 && GRAPHICS_OWNER.equals(owner)
                                 && "setWindowedMode".equals(methodName)
@@ -84,13 +84,13 @@ public final class WindowPatch {
         ClassWriter writer = new ClassWriter(reader, 0);
         ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
             @Override
-            public MethodVisitor visitMethod(int access, String name, String descriptor, String signature,
-                                              String[] exceptions) {
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                              String signature, String[] exceptions) {
                 MethodVisitor next = super.visitMethod(access, name, descriptor, signature, exceptions);
                 return new MethodVisitor(Opcodes.ASM8, next) {
                     @Override
-                    public void visitMethodInsn(int opcode, String owner, String methodName, String methodDescriptor,
-                                                boolean isInterface) {
+                    public void visitMethodInsn(int opcode, String owner, String methodName,
+                                                String methodDescriptor, boolean isInterface) {
                         if (WINDOW_CONFIGURATION_OWNER.equals(owner)
                                 && "setWindowedMode".equals(methodName)
                                 && "(II)V".equals(methodDescriptor)) {
@@ -139,13 +139,12 @@ public final class WindowPatch {
                     }
                     byte[] bytes;
                     if (GAME_ENTRY.equals(entry.getName())) {
-                        PatchResult result;
                         try (InputStream in = source.getInputStream(entry)) {
-                            result = patchGame(in.readAllBytes(), width, height);
+                            PatchResult result = patchGame(in.readAllBytes(), width, height);
+                            bytes = result.bytes;
+                            windowedCalls = result.windowedCalls;
+                            fullscreenCalls = result.fullscreenCalls;
                         }
-                        bytes = result.bytes;
-                        windowedCalls = result.windowedCalls;
-                        fullscreenCalls = result.fullscreenCalls;
                     } else if (LAUNCHER_ENTRY.equals(entry.getName())) {
                         try (InputStream in = source.getInputStream(entry)) {
                             bytes = patchLauncher(in.readAllBytes(), launcherWindowedCalls, width, height);
