@@ -26,7 +26,8 @@ d:\tinhlinh\
 - Java Runtime Environment (JRE) hoặc JDK 17 trở lên (64-bit).
 
 ### Khởi chạy:
-- Nhấp đúp vào `run-game.cmd` hoặc chạy qua dòng lệnh:
+- Nhấp đúp vào `run-game.cmd`. Launcher tự chọn Java theo thứ tự: `jre\bin\java.exe` cạnh game, `JAVA_HOME`, rồi `PATH`.
+- Chạy trực tiếp qua dòng lệnh khi đã cấu hình Java 17+:
 ```cmd
 java -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar TinhLinh.jar
 ```
