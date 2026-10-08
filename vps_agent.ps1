@@ -16,9 +16,15 @@ $ErrorActionPreference = "SilentlyContinue"
 $Dir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 if (-not $Dir) { $Dir = "C:\TinhLinh" }
 $CloudflaredPath = Join-Path $Dir "cloudflared.exe"
-$GithubToken = "github_pat_11B6FLSJI0pB8rOOwXa2Td_" + "x2yeqkqFfOmSyXhVn4KcMSqlgWdLpHSVphrSAfyrHcxISYKBJXWvThzt35H"
+$GithubToken = [Environment]::GetEnvironmentVariable("TINHLINH_GITHUB_TOKEN", "Machine")
+if (-not $GithubToken) { $GithubToken = [Environment]::GetEnvironmentVariable("TINHLINH_GITHUB_TOKEN", "Process") }
 
 $global:LatestTunnelUrl = ""
+$script:TunnelProbeFailures = 0
+$script:AgentMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList @($false, "Global\TinhLinhAgent8765")
+try {
+    if (-not $script:AgentMutex.WaitOne(0)) { exit 0 }
+} catch [System.Threading.AbandonedMutexException] {}
 
 function Write-Log([string]$msg) {
     Write-Host "[$((Get-Date).ToString('HH:mm:ss'))] $msg"
@@ -66,8 +72,9 @@ function Optimize-MemoryAndPagefile {
 function Exec-Cmd([string]$cmd, [int]$timeout = 30) {
     try {
         $psi = New-Object Diagnostics.ProcessStartInfo
-        $psi.FileName = "cmd.exe"
-        $psi.Arguments = "/c $cmd"
+        $psi.FileName = "powershell.exe"
+        $encodedCommand = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($cmd))
+        $psi.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand $encodedCommand"
         $psi.RedirectStandardOutput = $true
         $psi.RedirectStandardError = $true
         $psi.UseShellExecute = $false
@@ -98,6 +105,10 @@ function Exec-Cmd([string]$cmd, [int]$timeout = 30) {
 }
 
 function Sync-TunnelUrl([string]$url) {
+    if (-not $GithubToken) {
+        Write-Log "GitHub URL sync skipped: TINHLINH_GITHUB_TOKEN is not configured."
+        return
+    }
     Write-Log "Syncing Tunnel URL to GitHub: $url"
     try {
         $apiUrl = "https://api.github.com/repos/$Repo/contents/vps_tunnel_url.txt"
@@ -133,8 +144,7 @@ function Update-AgentFromGithub {
         $wc.Headers.Add("User-Agent", "TinhLinh-Agent-AutoUpdater")
         $newCode = $wc.DownloadString($rawUrl)
         if ($newCode -and $newCode.Contains("# TINHLINH VPS AGENT") -and ($newCode.Length -gt 2000)) {
-            $curPath = $MyInvocation.MyCommand.Definition
-            if (-not $curPath) { $curPath = Join-Path $Dir "vps_agent.ps1" }
+            $curPath = Join-Path $Dir "vps_agent.ps1"
             $curCode = if (Test-Path $curPath) { [IO.File]::ReadAllText($curPath, [Text.Encoding]::UTF8) } else { "" }
             if ($newCode.Trim() -ne $curCode.Trim()) {
                 Write-Log "Phat hien ban cap nhat moi tren GitHub! Dang tu dong cap nhat..."
@@ -162,12 +172,9 @@ function Start-TunnelProcess {
     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 300
     try {
-        Unregister-Event -SourceIdentifier "cf_stdout" -ErrorAction SilentlyContinue
-        Unregister-Event -SourceIdentifier "cf_stderr" -ErrorAction SilentlyContinue
-
         $psi = New-Object Diagnostics.ProcessStartInfo
         $psi.FileName = $CloudflaredPath
-        $psi.Arguments = "tunnel --no-autoupdate --url http://127.0.0.1:$Port"
+        $psi.Arguments = "tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$Port --http-host-header localhost"
         $psi.WorkingDirectory = $Dir
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
@@ -177,18 +184,27 @@ function Start-TunnelProcess {
         $proc = New-Object Diagnostics.Process
         $proc.StartInfo = $psi
 
-        Register-ObjectEvent -InputObject $proc -EventName OutputDataReceived -SourceIdentifier "cf_stdout" -Action {
-            if ($EventArgs.Data -and $EventArgs.Data -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
-                $global:LatestTunnelUrl = $Matches[1]
+        $proc.add_OutputDataReceived({
+            param($sender, $event)
+            if ($event.Data) {
+                $match = [regex]::Match($event.Data, "https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+                if ($match.Success) {
+                    $global:LatestTunnelUrl = $match.Value
+                }
             }
-        } | Out-Null
+        })
 
-        Register-ObjectEvent -InputObject $proc -EventName ErrorDataReceived -SourceIdentifier "cf_stderr" -Action {
-            if ($EventArgs.Data -and $EventArgs.Data -match "(https://[a-zA-Z0-9-]+\.trycloudflare\.com)") {
-                $global:LatestTunnelUrl = $Matches[1]
+        $proc.add_ErrorDataReceived({
+            param($sender, $event)
+            if ($event.Data) {
+                $match = [regex]::Match($event.Data, "https://[a-zA-Z0-9-]+\.trycloudflare\.com")
+                if ($match.Success) {
+                    $global:LatestTunnelUrl = $match.Value
+                }
             }
-        } | Out-Null
+        })
 
+        $global:LatestTunnelUrl = ""
         $null = $proc.Start()
         $proc.BeginOutputReadLine()
         $proc.BeginErrorReadLine()
@@ -268,7 +284,12 @@ while ($listener.IsListening) {
                 } elseif ($path -eq "/exec") {
                     $b = Get-Body $req
                     $timeout = if ($b.timeout) { [int]$b.timeout } else { 30 }
-                    Send-Response $res 200 (Exec-Cmd ([string]$b.cmd) $timeout)
+                    if ($b.shell -and ([string]$b.shell).ToLowerInvariant() -eq "cmd") {
+                        $cmdResult = Exec-Cmd ("cmd.exe /d /s /c `"" + ([string]$b.cmd).Replace('"', '""') + "`"") $timeout
+                    } else {
+                        $cmdResult = Exec-Cmd ([string]$b.cmd) $timeout
+                    }
+                    Send-Response $res 200 $cmdResult
                 } elseif ($path -eq "/read_file") {
                     $filePath = $req.QueryString["path"]
                     if ($filePath -and (Test-Path -LiteralPath $filePath)) {
@@ -337,13 +358,19 @@ while ($listener.IsListening) {
             $lastTunnelProbe = $now
             try {
                 $probeRes = (Invoke-WebRequest -Uri "$global:LatestTunnelUrl/ping" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).StatusCode
-                if ($probeRes -ne 200) { throw }
+                if ($probeRes -ne 200) { throw "Unexpected tunnel status: $probeRes" }
+                $script:TunnelProbeFailures = 0
             } catch {
-                Write-Log "Phat hien Cloudflare Tunnel ngat ket noi (Error 530/1033). Dang tu dong hoi phuc..."
-                try { $cfProcess.Kill() } catch {}
-                Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-                $global:LatestTunnelUrl = ""
-                $cfProcess = Start-TunnelProcess
+                $script:TunnelProbeFailures++
+                Write-Log "Cloudflare probe failed ($script:TunnelProbeFailures/3): $($_.Exception.Message)"
+                if ($script:TunnelProbeFailures -ge 3) {
+                    Write-Log "Cloudflare Tunnel failed three consecutive probes. Restarting tunnel..."
+                    try { $cfProcess.Kill() } catch {}
+                    Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                    $global:LatestTunnelUrl = ""
+                    $script:TunnelProbeFailures = 0
+                    $cfProcess = Start-TunnelProcess
+                }
             }
         }
 
@@ -365,7 +392,7 @@ while ($listener.IsListening) {
 
             # 3. Don sach bat ky file log/trung gian (*.log, *.tmp, *.cmd) tai C:\TinhLinh (khong xoa game jar, script bat hay account)
             Get-ChildItem -Path $Dir -File -ErrorAction SilentlyContinue |
-                Where-Object { ($_.Extension -in @(".log", ".tmp") -or $_.Name -in @("vps_watchdog.cmd", "agent.log", "tunnel.log")) -and ($_.Name -notlike "autofarm_log*.txt") } |
+                Where-Object { ($_.Extension -in @(".log", ".tmp") -or $_.Name -in @("vps_watchdog.cmd", "vps_watchdog.ps1", "agent.log", "tunnel.log")) -and ($_.Name -notlike "autofarm_log*.txt") } |
                 Remove-Item -Force -ErrorAction SilentlyContinue
 
             # 4. Kiem tra dung luong o C:

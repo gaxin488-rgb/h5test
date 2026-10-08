@@ -29,15 +29,15 @@ Write-Host "[1/5] Toi uu hoa he dieu hanh cho o dia 15GB..." -ForegroundColor Ye
 # A. Tat Hibernation (thu hoi hiberfil.sys 1GB - 2GB)
 & powercfg.exe -h off *>$null
 
-# B. Toi uu Pagefile 1536MB - 3072MB (Registry + WMI chong tran commit memory)
+# B. Co dinh Pagefile 512MB - 1024MB (giu dung luong cho VPS 15GB)
 try {
     Set-CimInstance -Query "Select * from Win32_ComputerSystem" -Property @{AutomaticManagedPagefile=$False} -ErrorAction SilentlyContinue
-    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'PagingFiles' -Value @('C:\pagefile.sys 1536 3072') -Type MultiString -Force -ErrorAction SilentlyContinue
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'PagingFiles' -Value @('C:\pagefile.sys 512 1024') -Type MultiString -Force -ErrorAction SilentlyContinue
     $class = [wmiclass]"Win32_PageFileSetting"
     $pf = $class.CreateInstance()
     $pf.Name = "C:\pagefile.sys"
-    $pf.InitialSize = 1536
-    $pf.MaximumSize = 3072
+    $pf.InitialSize = 512
+    $pf.MaximumSize = 1024
     $null = $pf.Put()
 } catch {}
 
@@ -67,8 +67,8 @@ Write-Host "[2/5] Khoi tao thu muc C:\TinhLinh & don dep log cu..." -ForegroundC
 $dir = "C:\TinhLinh"
 if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
 
-# Xoa sach bat ky file trung gian/log cu nao tren dia VPS (agent.log, tunnel.log, vps_watchdog.cmd,...)
-Remove-Item (Join-Path $dir "*.log"), (Join-Path $dir "*.tmp"), (Join-Path $dir "*.cmd") -Force -ErrorAction SilentlyContinue
+# Xoa sach file trung gian/log cu tren VPS
+Remove-Item (Join-Path $dir "*.log"), (Join-Path $dir "*.tmp"), (Join-Path $dir "*.cmd"), (Join-Path $dir "vps_watchdog.ps1") -Force -ErrorAction SilentlyContinue
 
 # 3. Tai cac file can thiet tu GitHub (Chi gom vps_agent.ps1 & cloudflared.exe)
 Write-Host "[3/5] Tai ma nguon truc tiep tu GitHub..." -ForegroundColor Yellow
@@ -86,8 +86,8 @@ if (-not (Test-Path $cfDest)) {
     $wc.DownloadFile("https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe", $cfDest)
 }
 
-# 4. Dang ky Task Scheduler (Boot + Watchdog 24/7)
-Write-Host "[4/5] Dang ky 2 Task Scheduler (Boot & Watchdog 24/7)..." -ForegroundColor Yellow
+# 4. Dang ky 1 Task Scheduler (Agent tu khoi phuc moi phut neu bi dung)
+Write-Host "[4/5] Dang ky 1 Task Scheduler (Agent 24/7)..." -ForegroundColor Yellow
 foreach ($t in @("TinhLinhAgent", "TinhLinhAgent_Boot", "TinhLinhAgent_Watchdog", "TinhLinhMCP_Boot", "TinhLinhMCP_Logon", "TinhLinhMCP_Watchdog", "Antigravity_MCP_Daemon")) {
     & schtasks.exe /Delete /TN $t /F *>$null
 }
@@ -96,20 +96,9 @@ foreach ($t in @("TinhLinhAgent", "TinhLinhAgent_Boot", "TinhLinhAgent_Watchdog"
 Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*vps_agent.ps1*" } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
-# Task 1: Chay khi khoi dong he thong
-$bootRun = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$agentDest`""
-& schtasks.exe /Create /TN "TinhLinhAgent_Boot" /TR "$bootRun" /SC ONSTART /RU "SYSTEM" /RL HIGHEST /F *>$null
-
-# Task 2: Watchdog tu dong khoi dong lai MCP khi mat ket noi (kiem tra ping moi 1 phut)
-# Luu y: schtasks.exe tren Windows Server 2012 R2 gioi han /TR toi da 261 ky tu, can ghi script ra file
-$watchdogDest = Join-Path $dir "vps_watchdog.ps1"
-$watchdogScript = @'
-try { if ((Invoke-WebRequest -Uri http://127.0.0.1:8765/ping -TimeoutSec 3 -UseBasicParsing).StatusCode -ne 200) { throw } } catch { Stop-Process -Name cloudflared -Force -ea 0; Get-CimInstance Win32_Process -ea 0 | Where-Object { $_.CommandLine -like "*vps_agent.ps1*" } | Stop-Process -Force -ea 0; Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\TinhLinh\vps_agent.ps1" -WorkingDirectory C:\TinhLinh }
-'@
-[IO.File]::WriteAllText($watchdogDest, $watchdogScript, [Text.Encoding]::UTF8)
-
-$watchdogRun = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$watchdogDest`""
-& schtasks.exe /Create /TN "TinhLinhAgent_Watchdog" /TR "$watchdogRun" /SC MINUTE /MO 1 /RU "SYSTEM" /RL HIGHEST /F *>$null
+# Một task duy nhất. Mutex trong vps_agent.ps1 chặn instance trùng.
+$agentRun = "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$agentDest`""
+& schtasks.exe /Create /TN "TinhLinhAgent" /TR "$agentRun" /SC MINUTE /MO 1 /RU "SYSTEM" /RL HIGHEST /F *>$null
 
 # 5. Khoi dong Agent ngay lap tuc
 Write-Host "[5/5] Khoi chay Agent..." -ForegroundColor Yellow

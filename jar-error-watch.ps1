@@ -72,7 +72,7 @@ function Start-JarWithErrorWatch {
         throw 'HeapMb must be between 48 and 512.'
     }
 
-    $runId = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $runId = Get-Date -Format 'yyyyMMdd-HHmmss-fff'
     $rawDir = Join-Path $env:TEMP 'tinhlinh-jar-watch'
     $diagnosticDir = Join-Path $PSScriptRoot 'diagnostics\jar'
     New-Item -ItemType Directory -Path $rawDir -Force | Out-Null
@@ -80,12 +80,16 @@ function Start-JarWithErrorWatch {
 
     $rawStdout = Join-Path $rawDir ("{0}-{1}.stdout" -f $RunLabel, $runId)
     $rawStderr = Join-Path $rawDir ("{0}-{1}.stderr" -f $RunLabel, $runId)
+    $crashFilePattern = Join-Path $rawDir ("hs_err_{0}_{1}_%p.log" -f $RunLabel, $runId)
     $diagnosticPath = Join-Path $diagnosticDir ("jar-{0}-{1}.log" -f $RunLabel, $runId)
     $start = Get-Date
     $process = $null
+    $childPids = @()
     $exitCode = $null
     $maxWorkingSetMb = 0
     $failure = $null
+    $checkpoint = Join-Path $rawDir ("{0}-{1}.started" -f $RunLabel, $runId)
+    Set-Content -LiteralPath $checkpoint -Value ("started: {0:o}`njar: {1}" -f $start, ([IO.Path]::GetFileName($TargetJar))) -Encoding UTF8
 
     try {
         $javaArgs = @(
@@ -94,6 +98,7 @@ function Start-JarWithErrorWatch {
             '-XX:+UseSerialGC',
             '-XX:MaxMetaspaceSize=64m',
             '-XX:ReservedCodeCacheSize=32m',
+            ("-XX:ErrorFile={0}" -f $crashFilePattern),
             '-Dfile.encoding=UTF-8',
             '-jar',
             $TargetJar
@@ -104,9 +109,11 @@ function Start-JarWithErrorWatch {
             -RedirectStandardError $rawStderr `
             -PassThru
 
+        $rootPid = $process.Id
         while (-not $process.HasExited) {
             $process.Refresh()
             $children = @(Get-CimInstance Win32_Process -Filter ("ParentProcessId={0}" -f $process.Id) -ErrorAction SilentlyContinue)
+            $childPids = @($children.ProcessId)
             $trackedIds = @($process.Id) + @($children.ProcessId)
             $workingSet = @(Get-Process -Id $trackedIds -ErrorAction SilentlyContinue | Measure-Object -Property WorkingSet64 -Sum).Sum
             if ($workingSet) {
@@ -115,7 +122,7 @@ function Start-JarWithErrorWatch {
                     $maxWorkingSetMb = $currentMb
                 }
             }
-            Start-Sleep -Seconds 2
+            Start-Sleep -Milliseconds 250
         }
         $process.Refresh()
         $exitCode = $process.ExitCode
@@ -125,6 +132,7 @@ function Start-JarWithErrorWatch {
         $end = Get-Date
         $stdout = if (Test-Path -LiteralPath $rawStdout) { Get-Content -LiteralPath $rawStdout -Raw -ErrorAction SilentlyContinue } else { '' }
         $stderr = if (Test-Path -LiteralPath $rawStderr) { Get-Content -LiteralPath $rawStderr -Raw -ErrorAction SilentlyContinue } else { '' }
+        $fatalFiles = @(Get-ChildItem -LiteralPath $rawDir -Filter ("hs_err_{0}_{1}_*.log" -f $RunLabel, $runId) -File -ErrorAction SilentlyContinue)
         $events = @()
         try {
             $events = @(Get-WinEvent -FilterHashtable @{ LogName = 'Application'; StartTime = $start } -ErrorAction SilentlyContinue |
@@ -142,8 +150,12 @@ function Start-JarWithErrorWatch {
         $report.Add(('ended: {0:o}' -f $end))
         $report.Add(('duration_seconds: {0:N1}' -f ($end - $start).TotalSeconds))
         $report.Add(('exit_code: {0}' -f $exitCode))
+        $report.Add(('root_pid: {0}' -f $rootPid))
+        $report.Add(('child_pids: {0}' -f (($childPids -join ',') -replace '^$', 'none')))
         $report.Add(('max_working_set_mb: {0}' -f $maxWorkingSetMb))
-        $report.Add(('java_version: {0}' -f ((& $RuntimePath -version 2>&1) -join ' ')))
+        $javaVersion = 'unavailable'
+        try { $javaVersion = ((& $RuntimePath -version 2>&1) -join ' ') } catch {}
+        $report.Add(('java_version: {0}' -f $javaVersion))
         if ($failure) {
             $report.Add("`n[WATCHER ERROR]")
             $report.Add((ConvertTo-SafeLog $failure))
@@ -152,6 +164,11 @@ function Start-JarWithErrorWatch {
         $report.Add((ConvertTo-SafeLog $stdout))
         $report.Add("`n[STDERR]")
         $report.Add((ConvertTo-SafeLog $stderr))
+        $report.Add("`n[JVM FATAL ERROR FILES]")
+        foreach ($fatalFile in $fatalFiles) {
+            $report.Add(('FILE: {0}' -f $fatalFile.Name))
+            $report.Add((ConvertTo-SafeLog (Get-Content -LiteralPath $fatalFile.FullName -Raw -ErrorAction SilentlyContinue)))
+        }
         $report.Add("`n[WINDOWS APPLICATION EVENTS]")
         foreach ($event in $events) {
             $report.Add(('{0:o} {1} {2}: {3}' -f $event.TimeCreated, $event.ProviderName, $event.Id, (ConvertTo-SafeLog $event.Message)))
@@ -166,7 +183,11 @@ function Start-JarWithErrorWatch {
                 Write-Error $_
             }
         }
-        Remove-Item -LiteralPath $rawStdout, $rawStderr -Force -ErrorAction SilentlyContinue
+        $cleanupPaths = @($rawStdout, $rawStderr, $checkpoint)
+        if ($fatalFiles.Count -gt 0) {
+            $cleanupPaths += @($fatalFiles.FullName)
+        }
+        Remove-Item -LiteralPath $cleanupPaths -Force -ErrorAction SilentlyContinue
         Write-Output ("Diagnostic log: {0}" -f $diagnosticPath)
     }
 }
