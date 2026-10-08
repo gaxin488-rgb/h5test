@@ -33,8 +33,6 @@ public final class FreshExhaustion {
             "gIrLkun75nEKiLliiliiLiWhATDOYouWAntHeReHiHihIhaHahAHoHohOHEHEheGIrlKUN75";
     private static final String PLAYER_POSITION_FIELD =
             "gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75";
-    private static final String PLAYER_CONTROLLER_FIELD =
-            "GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75";
     private static final String GAME_FIELD =
             "GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75";
     private static final String SCREEN_GETTER =
@@ -51,6 +49,7 @@ public final class FreshExhaustion {
     private static final float ARRIVAL_RADIUS = 1.5f;
 
     private static final AtomicBoolean STARTED = new AtomicBoolean();
+    private static volatile String LAST_SNAPSHOT_ERROR;
     private static final Path STATE_FILE = Paths.get(
             System.getProperty("user.dir", "."), "tinhlinh-exhaustion-state.properties");
     private static final Path LOG_FILE = Paths.get(
@@ -289,7 +288,12 @@ public final class FreshExhaustion {
             float y = ((Number) getField(position, "y")).floatValue();
             boolean exhausted = (Boolean) invoke(player, EXHAUSTION_CHECK);
             return new Snapshot(player, map, mapId, mapName, x, y, exhausted);
-        } catch (Throwable ignored) {
+        } catch (Throwable error) {
+            String detail = compact(error);
+            if (!detail.equals(LAST_SNAPSHOT_ERROR)) {
+                LAST_SNAPSHOT_ERROR = detail;
+                log("SNAPSHOT_ERROR " + detail);
+            }
             return null;
         }
     }
@@ -375,8 +379,7 @@ public final class FreshExhaustion {
     private static void postMove(Object player, float x, float y) {
         post(() -> {
             try {
-                Object controller = getField(player, PLAYER_CONTROLLER_FIELD);
-                invoke(controller, MOVE_METHOD, new Class<?>[]{float.class, float.class}, x, y);
+                invoke(player, MOVE_METHOD, new Class<?>[]{float.class, float.class}, x, y);
             } catch (Throwable error) {
                 log("MOVE_COMMAND_ERROR " + compact(error));
             }
