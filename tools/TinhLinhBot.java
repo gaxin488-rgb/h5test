@@ -6,11 +6,14 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -24,12 +27,16 @@ import com.badlogic.gdx.scenes.scene2d.Actor;
 import com.badlogic.gdx.scenes.scene2d.EventListener;
 import com.badlogic.gdx.scenes.scene2d.Group;
 import com.badlogic.gdx.scenes.scene2d.InputEvent;
+import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Button;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
+import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.utils.Pools;
 import com.badlogic.gdx.utils.SnapshotArray;
+import com.github.tommyettinger.textra.TextraButton;
+import com.github.tommyettinger.textra.TextraLabel;
 import org.lwjgl.glfw.GLFW;
 
 /**
@@ -408,7 +415,7 @@ public final class TinhLinhBot {
      * Kiem tra xem popup/dialog kiet suc (hoi sinh / ve lang) co dang hien thi tren man hinh hay khong.
      * Ho tro ca 2 lop bao ve:
      * 1. Kiem tra thuoc tinh Entity Player (HP <= 0).
-     * 2. Quet cay UI Scene2D DialogManager tim hop thoai mo co chua van ban kiet suc/ve lang/hoi sinh.
+     * 2. Quet cay UI Scene2D DialogManager va Stage tim hop thoai mo co chua van ban kiet suc/ve lang/hoi sinh.
      */
     public static boolean isExhaustionDialogVisible() {
         if (isPlayerExhausted()) {
@@ -434,10 +441,20 @@ public final class TinhLinhBot {
                 if (children != null && children.size > 0) {
                     for (int i = 0; i < children.size; i++) {
                         Actor child = children.get(i);
-                        if (child != null && child.isVisible()) {
-                            if (containsExhaustionText(child)) {
-                                return true;
-                            }
+                        if (child != null && child.isVisible() && containsExhaustionText(child)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            if (dialogManager != null && dialogManager.getStage() != null) {
+                com.badlogic.gdx.utils.Array<Actor> stageActors = dialogManager.getStage().getActors();
+                if (stageActors != null) {
+                    for (int i = 0; i < stageActors.size; i++) {
+                        Actor sa = stageActors.get(i);
+                        if (sa != null && sa.isVisible() && containsExhaustionText(sa)) {
+                            return true;
                         }
                     }
                 }
@@ -447,29 +464,20 @@ public final class TinhLinhBot {
         return false;
     }
 
+    private static String normalizeText(String raw) {
+        if (raw == null) return "";
+        // Loai bo cac the dinh dang mau/font nhu [#E0A050] hoac {COLOR=RED} trong TextraLabel / LibGDX
+        String s = raw.replaceAll("\\[[^\\]]*\\]", " ").replaceAll("\\{[^\\}]*\\}", " ");
+        return s.trim().toLowerCase(Locale.ROOT);
+    }
+
     private static boolean containsExhaustionText(Actor actor) {
         if (actor == null) return false;
-        if (actor instanceof Label) {
-            CharSequence text = ((Label) actor).getText();
-            if (text != null) {
-                String s = text.toString().toLowerCase(Locale.ROOT);
-                if (s.contains("kiệt sức") || s.contains("kiet suc") || s.contains("về làng") || s.contains("ve lang") || s.contains("hồi sinh") || s.contains("hoi sinh")) {
-                    return true;
-                }
-            }
-        }
-        if (actor instanceof Group) {
-            Group group = (Group) actor;
-            SnapshotArray<Actor> kids = group.getChildren();
-            if (kids != null) {
-                for (int i = 0; i < kids.size; i++) {
-                    if (containsExhaustionText(kids.get(i))) {
-                        return true;
-                    }
-                }
-            }
-        }
-        return false;
+        String text = normalizeText(getActorText(actor));
+        if (text.isEmpty()) return false;
+        return text.contains("kiệt sức") || text.contains("kiet suc")
+                || text.contains("về làng") || text.contains("ve lang")
+                || text.contains("hồi sinh") || text.contains("hoi sinh");
     }
 
     /**
@@ -581,8 +589,10 @@ public final class TinhLinhBot {
 
     /**
      * Tu dong tim va kich hoat lua chon 'Ve Lang' khi popup kiet suc dang hien thi.
-     * Ho tro moi loai Actor Scene2D: Button, TextButton, Label, Table row hoac ClickListener.
-     * @return true neu da tim thay va gui su kien click thanh cong vao menu Ve Lang, false neu khong co popup.
+     * Ho tro moi loai Actor Scene2D: TextraButton, TextButton, Button, TextraLabel, Label, Table row.
+     * Ho tro tinh toan toa do Stage chuan xac tuyet doi qua localToStageCoordinates.
+     * Ho tro Fallback chon nut thu 3 (Rightmost / ben phai nhat) tren hop thoai kiet suc.
+     * @return true neu da tim thay va gui su kien click thanh cong vao nut Ve Lang, false neu khong co popup.
      */
     public static synchronized boolean autoSelectReturnToVillage() {
         try {
@@ -599,21 +609,43 @@ public final class TinhLinhBot {
 
             com.a.c.f.e.a.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 dialogManager =
                     uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-            if (dialogManager == null) return false;
 
-            SnapshotArray<Actor> dialogs = dialogManager.getChildren();
-            if (dialogs == null || dialogs.size == 0) return false;
-
-            for (int i = 0; i < dialogs.size; i++) {
-                Actor dialog = dialogs.get(i);
-                if (dialog != null && dialog.isVisible()) {
-                    Actor targetButton = findVillageButton(dialog);
-                    if (targetButton != null) {
-                        String btnText = getActorText(targetButton);
-                        log("[AutoFarm-Exhaustion] Tim thay nut Ve Lang: [" + (btnText.isEmpty() ? targetButton.getClass().getSimpleName() : btnText) + "] tren popup. Dang thuc hien click...");
-                        Gdx.app.postRunnable(() -> clickActor(targetButton));
-                        return true;
+            List<Actor> candidateContainers = new ArrayList<>();
+            if (dialogManager != null) {
+                SnapshotArray<Actor> dialogs = dialogManager.getChildren();
+                if (dialogs != null) {
+                    for (int i = 0; i < dialogs.size; i++) {
+                        Actor d = dialogs.get(i);
+                        if (d != null && d.isVisible()) {
+                            candidateContainers.add(d);
+                        }
                     }
+                }
+            }
+
+            Stage stage = (dialogManager != null) ? dialogManager.getStage() : null;
+            if (stage == null && Gdx.input.getInputProcessor() instanceof Stage) {
+                stage = (Stage) Gdx.input.getInputProcessor();
+            }
+            if (stage != null) {
+                com.badlogic.gdx.utils.Array<Actor> stageActors = stage.getActors();
+                if (stageActors != null) {
+                    for (int i = 0; i < stageActors.size; i++) {
+                        Actor sa = stageActors.get(i);
+                        if (sa != null && sa.isVisible() && !candidateContainers.contains(sa)) {
+                            candidateContainers.add(sa);
+                        }
+                    }
+                }
+            }
+
+            for (Actor container : candidateContainers) {
+                Actor targetButton = findVillageButton(container);
+                if (targetButton != null) {
+                    String btnText = getActorText(targetButton);
+                    log("[AutoFarm-Exhaustion] Tim thay nut Ve Lang: [" + (btnText.isEmpty() ? targetButton.getClass().getSimpleName() : btnText) + "] tren popup. Dang thuc hien click...");
+                    Gdx.app.postRunnable(() -> clickActor(targetButton));
+                    return true;
                 }
             }
         } catch (Throwable t) {
@@ -626,29 +658,36 @@ public final class TinhLinhBot {
         if (root == null) return null;
 
         // 1. Uu tien tuyet doi: Nut hoac text chua truc tiep chu 've lang' / 'về làng' / 've thanh' / 'về thành'
-        Actor directBtn = searchActorMatching(root, text -> {
-            String s = text.toLowerCase(Locale.ROOT);
+        Actor directBtn = searchClickableMatching(root, text -> {
+            String s = normalizeText(text);
             return s.contains("về làng") || s.contains("ve lang") || s.contains("về thành") || s.contains("ve thanh");
         });
         if (directBtn != null) {
             return directBtn;
         }
 
-        // 2. Neu popup la hop thoai kiet suc, tim nut 'dong y' / 'xac nhan' / 'ok' / 'hoi sinh'
-        if (containsExhaustionText(root)) {
-            Actor confirmBtn = searchActorMatching(root, text -> {
-                String s = text.toLowerCase(Locale.ROOT).trim();
-                return s.equals("đồng ý") || s.equals("dong y") || s.equals("xác nhận") || s.equals("xac nhan")
-                        || s.equals("ok") || s.contains("về") || s.contains("hoi sinh") || s.contains("hồi sinh");
-            });
-            if (confirmBtn != null) {
-                return confirmBtn;
-            }
-
-            // 3. Neu khong co text cu the nhung la Button trong popup kiet suc: lay nut dau tien
-            Actor firstButton = searchFirstButton(root);
-            if (firstButton != null) {
-                return firstButton;
+        // 2. Neu popup la hop thoai kiet suc hoac nhan vat dang kiet suc:
+        // Tim tat ca cac nut tren popup. Tren giao dien Tinh Linh (3 nut: [Hoi sinh ngoc] [Hoi sinh mien phi] [Ve lang]),
+        // nut Ve Lang luon nam o vi tri CUOI CUNG (ben phai nhat).
+        if (containsExhaustionText(root) || isPlayerExhausted()) {
+            List<Actor> buttons = new ArrayList<>();
+            findAllButtons(root, buttons);
+            if (!buttons.isEmpty()) {
+                // Sap xep theo toa do X tren Stage tu trai sang phai
+                buttons.sort((a, b) -> {
+                    try {
+                        float xa = a.localToStageCoordinates(new Vector2(0, 0)).x;
+                        float xb = b.localToStageCoordinates(new Vector2(0, 0)).x;
+                        return Float.compare(xa, xb);
+                    } catch (Throwable t) {
+                        return Float.compare(a.getX(), b.getX());
+                    }
+                });
+                Actor rightmostButton = buttons.get(buttons.size() - 1);
+                String txt = getActorText(rightmostButton);
+                log("[AutoFarm-Exhaustion] Tim thay " + buttons.size() + " nut tren popup kiet suc. Chon nut ben phai nhat (Ve Lang): [" +
+                        (txt.isEmpty() ? rightmostButton.getClass().getSimpleName() : txt) + "]");
+                return rightmostButton;
             }
         }
 
@@ -659,25 +698,12 @@ public final class TinhLinhBot {
         boolean matches(String text);
     }
 
-    private static Actor searchActorMatching(Actor actor, TextMatcher matcher) {
+    private static Actor searchClickableMatching(Actor actor, TextMatcher matcher) {
         if (actor == null) return null;
 
-        if (actor instanceof Label) {
-            CharSequence text = ((Label) actor).getText();
-            if (text != null && matcher.matches(text.toString())) {
-                // Neu Label nam trong Button, tra ve Button cha
-                if (actor.getParent() != null && actor.getParent() instanceof Button) {
-                    return actor.getParent();
-                }
-                return actor;
-            }
-        }
-
-        if (actor instanceof Button) {
-            String text = getActorText(actor);
-            if (!text.isEmpty() && matcher.matches(text)) {
-                return actor;
-            }
+        String direct = getDirectActorText(actor);
+        if (!direct.isEmpty() && matcher.matches(direct)) {
+            return findClickableParent(actor);
         }
 
         if (actor instanceof Group) {
@@ -685,7 +711,7 @@ public final class TinhLinhBot {
             SnapshotArray<Actor> children = group.getChildren();
             if (children != null) {
                 for (int i = 0; i < children.size; i++) {
-                    Actor found = searchActorMatching(children.get(i), matcher);
+                    Actor found = searchClickableMatching(children.get(i), matcher);
                     if (found != null) {
                         return found;
                     }
@@ -696,43 +722,121 @@ public final class TinhLinhBot {
         return null;
     }
 
-    private static Actor searchFirstButton(Actor actor) {
-        if (actor == null) return null;
-        if (actor instanceof Button && actor.isVisible()) {
-            return actor;
+    private static void findAllButtons(Actor actor, List<Actor> list) {
+        if (actor == null) return;
+        if (isClickable(actor) && actor.isVisible()) {
+            if (!list.contains(actor)) {
+                list.add(actor);
+            }
+            return;
         }
         if (actor instanceof Group) {
             Group group = (Group) actor;
             SnapshotArray<Actor> children = group.getChildren();
             if (children != null) {
                 for (int i = 0; i < children.size; i++) {
-                    Actor found = searchFirstButton(children.get(i));
-                    if (found != null) {
-                        return found;
-                    }
+                    findAllButtons(children.get(i), list);
                 }
             }
         }
-        return null;
+    }
+
+    private static boolean isClickable(Actor actor) {
+        if (actor == null) return false;
+        if (actor instanceof Button) return true;
+        if (actor instanceof TextraButton) return true;
+        if (actor.getListeners() != null) {
+            SnapshotArray<EventListener> listeners = new SnapshotArray<>(actor.getListeners());
+            for (int i = 0; i < listeners.size; i++) {
+                EventListener l = listeners.get(i);
+                if (l instanceof ClickListener || l instanceof ChangeListener) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private static Actor findClickableParent(Actor actor) {
+        Actor cur = actor;
+        while (cur != null) {
+            if (isClickable(cur)) {
+                return cur;
+            }
+            cur = cur.getParent();
+        }
+        return actor;
+    }
+
+    private static String getDirectActorText(Actor actor) {
+        if (actor == null) return "";
+        if (actor instanceof Label) {
+            CharSequence cs = ((Label) actor).getText();
+            if (cs != null) return cs.toString();
+        }
+        if (actor instanceof TextButton) {
+            CharSequence cs = ((TextButton) actor).getText();
+            if (cs != null) return cs.toString();
+        }
+        if (actor instanceof TextraLabel) {
+            String s = ((TextraLabel) actor).storedText;
+            if (s != null && !s.isEmpty()) return s;
+            return actor.toString();
+        }
+        if (actor instanceof TextraButton) {
+            String s = ((TextraButton) actor).getText();
+            if (s != null && !s.isEmpty()) return s;
+            TextraLabel lbl = ((TextraButton) actor).getTextraLabel();
+            if (lbl != null && lbl.storedText != null) return lbl.storedText;
+        }
+        try {
+            Method m = actor.getClass().getMethod("getText");
+            Object res = m.invoke(actor);
+            if (res != null) return res.toString();
+        } catch (Throwable ignored) {
+        }
+        try {
+            Field f = actor.getClass().getField("storedText");
+            Object res = f.get(actor);
+            if (res != null) return res.toString();
+        } catch (Throwable ignored) {
+        }
+        return "";
     }
 
     private static String getActorText(Actor actor) {
         if (actor == null) return "";
-        if (actor instanceof Label) {
-            CharSequence cs = ((Label) actor).getText();
-            return (cs != null) ? cs.toString() : "";
+        StringBuilder sb = new StringBuilder();
+        collectActorText(actor, sb);
+        return sb.toString().trim();
+    }
+
+    private static void collectActorText(Actor actor, StringBuilder sb) {
+        if (actor == null) return;
+        String direct = getDirectActorText(actor);
+        if (!direct.isEmpty()) {
+            sb.append(direct).append(" ");
         }
         if (actor instanceof Group) {
             Group g = (Group) actor;
             SnapshotArray<Actor> kids = g.getChildren();
             if (kids != null) {
                 for (int i = 0; i < kids.size; i++) {
-                    String t = getActorText(kids.get(i));
-                    if (!t.isEmpty()) return t;
+                    collectActorText(kids.get(i), sb);
                 }
             }
         }
-        return "";
+    }
+
+    private static void triggerClickListeners(Actor a, float x, float y) {
+        if (a == null || a.getListeners() == null) return;
+        SnapshotArray<EventListener> listeners = new SnapshotArray<>(a.getListeners());
+        for (int i = 0; i < listeners.size; i++) {
+            EventListener l = listeners.get(i);
+            if (l instanceof ClickListener) {
+                ((ClickListener) l).clicked(new InputEvent(), x, y);
+            }
+        }
     }
 
     private static void clickActor(Actor actor) {
@@ -740,19 +844,20 @@ public final class TinhLinhBot {
         try {
             float centerX = actor.getWidth() / 2f;
             float centerY = actor.getHeight() / 2f;
+            if (centerX <= 0) centerX = 15f;
+            if (centerY <= 0) centerY = 10f;
 
-            // 1. Phuc vu ca ClickListener
-            if (actor.getListeners() != null) {
-                SnapshotArray<EventListener> listeners = new SnapshotArray<>(actor.getListeners());
-                for (int i = 0; i < listeners.size; i++) {
-                    EventListener l = listeners.get(i);
-                    if (l instanceof ClickListener) {
-                        ((ClickListener) l).clicked(new InputEvent(), centerX, centerY);
-                    }
-                }
+            Vector2 stageCoords = actor.localToStageCoordinates(new Vector2(centerX, centerY));
+            Stage stage = actor.getStage();
+
+            // 1. Phuc vu ClickListener truc tiep tren Actor va clickable parent
+            triggerClickListeners(actor, centerX, centerY);
+            if (actor.getParent() != null && isClickable(actor.getParent())) {
+                Vector2 parentCenter = new Vector2(actor.getParent().getWidth() / 2f, actor.getParent().getHeight() / 2f);
+                triggerClickListeners(actor.getParent(), parentCenter.x, parentCenter.y);
             }
 
-            // 2. Neu la Button
+            // 2. Neu la Button: goi ClickListener cua Button va toggle()
             if (actor instanceof Button) {
                 Button btn = (Button) actor;
                 if (btn.getClickListener() != null) {
@@ -761,21 +866,25 @@ public final class TinhLinhBot {
                 btn.toggle();
             }
 
-            // 3. Gui InputEvent TouchDown va TouchUp
+            // 3. Gui InputEvent TouchDown va TouchUp voi toa do Stage chuan xac
             InputEvent downEvent = new InputEvent();
             downEvent.setType(InputEvent.Type.touchDown);
-            downEvent.setStage(actor.getStage());
+            downEvent.setStage(stage);
             downEvent.setTarget(actor);
-            downEvent.setStageX(actor.getX() + centerX);
-            downEvent.setStageY(actor.getY() + centerY);
+            downEvent.setStageX(stageCoords.x);
+            downEvent.setStageY(stageCoords.y);
+            downEvent.setPointer(0);
+            downEvent.setButton(0);
             actor.fire(downEvent);
 
             InputEvent upEvent = new InputEvent();
             upEvent.setType(InputEvent.Type.touchUp);
-            upEvent.setStage(actor.getStage());
+            upEvent.setStage(stage);
             upEvent.setTarget(actor);
-            upEvent.setStageX(actor.getX() + centerX);
-            upEvent.setStageY(actor.getY() + centerY);
+            upEvent.setStageX(stageCoords.x);
+            upEvent.setStageY(stageCoords.y);
+            upEvent.setPointer(0);
+            upEvent.setButton(0);
             actor.fire(upEvent);
 
             // 4. ChangeEvent
@@ -786,7 +895,9 @@ public final class TinhLinhBot {
             } catch (Throwable ignored) {
             }
 
-            log("[AutoFarm-Exhaustion] Da kich hoat click thanh cong vao Actor: [" + actor.getClass().getSimpleName() + "].");
+            log("[AutoFarm-Exhaustion] Da kich hoat click thanh cong vao Actor: [" + actor.getClass().getSimpleName() +
+                    "] tai Stage coords (X=" + String.format(Locale.ROOT, "%.1f", stageCoords.x) +
+                    ", Y=" + String.format(Locale.ROOT, "%.1f", stageCoords.y) + ").");
         } catch (Throwable t) {
             log("[AutoFarm-Exhaustion] Loi khi kich hoat click actor: " + t.getMessage());
         }
