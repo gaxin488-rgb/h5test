@@ -22,6 +22,10 @@ public final class WindowPatch {
     private static final String GRAPHICS_OWNER = "com/badlogic/gdx/Graphics";
     private static final String WINDOW_CONFIGURATION_OWNER =
             "com/badlogic/gdx/backends/lwjgl3/Lwjgl3WindowConfiguration";
+    private static final String APPLICATION_CONFIGURATION_OWNER =
+            "com/badlogic/gdx/backends/lwjgl3/Lwjgl3ApplicationConfiguration";
+    private static final String GL_PROFILER_OWNER =
+            "com/badlogic/gdx/graphics/profiling/GLProfiler";
 
     private static final class PatchResult {
         private final byte[] bytes;
@@ -69,6 +73,21 @@ public final class WindowPatch {
                             fullscreenCalls[0]++;
                             return;
                         }
+                        if (opcode == Opcodes.INVOKEINTERFACE
+                                && GRAPHICS_OWNER.equals(owner)
+                                && "setVSync".equals(methodName)
+                                && "(Z)V".equals(methodDescriptor)) {
+                            // Disable the game's later VSync request so the 15 FPS cap is effective.
+                            super.visitInsn(Opcodes.POP);
+                            super.visitInsn(Opcodes.ICONST_0);
+                            super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
+                            return;
+                        }
+                        if (GL_PROFILER_OWNER.equals(owner)
+                                && ("enable".equals(methodName) || "reset".equals(methodName))
+                                && "()V".equals(methodDescriptor)) {
+                            return;
+                        }
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
                     }
                 };
@@ -89,8 +108,49 @@ public final class WindowPatch {
                 MethodVisitor next = super.visitMethod(access, name, descriptor, signature, exceptions);
                 return new MethodVisitor(Opcodes.ASM8, next) {
                     @Override
+                    public void visitCode() {
+                        super.visitCode();
+                        setSystemProperty("org.lwjgl.opengl.libname", "opengl32");
+                        setSystemProperty("org.lwjgl.glfw.libname", "glfw");
+                        setSystemProperty("sun.java2d.opengl", "false");
+                        setSystemProperty("sun.java2d.d3d", "false");
+                        setSystemProperty("sun.java2d.noddraw", "true");
+                    }
+
+                    private void setSystemProperty(String key, String value) {
+                        super.visitLdcInsn(key);
+                        super.visitLdcInsn(value);
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/System", "setProperty",
+                                "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", false);
+                        super.visitInsn(Opcodes.POP);
+                    }
+
+                    @Override
+                    public void visitIntInsn(int opcode, int operand) {
+                        if ((opcode == Opcodes.BIPUSH || opcode == Opcodes.SIPUSH) && operand == 120) {
+                            super.visitIntInsn(opcode, 15);
+                            return;
+                        }
+                        super.visitIntInsn(opcode, operand);
+                    }
+
+                    @Override
                     public void visitMethodInsn(int opcode, String owner, String methodName,
                                                 String methodDescriptor, boolean isInterface) {
+                        if (APPLICATION_CONFIGURATION_OWNER.equals(owner)
+                                && "<init>".equals(methodName)
+                                && "()V".equals(methodDescriptor)) {
+                            super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
+                            super.visitInsn(Opcodes.DUP);
+                            super.visitInsn(Opcodes.ICONST_1);
+                            super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, APPLICATION_CONFIGURATION_OWNER,
+                                    "disableAudio", "(Z)V", false);
+                            super.visitInsn(Opcodes.DUP);
+                            super.visitInsn(Opcodes.ICONST_1);
+                            super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, APPLICATION_CONFIGURATION_OWNER,
+                                    "setMaxNetThreads", "(I)V", false);
+                            return;
+                        }
                         if (WINDOW_CONFIGURATION_OWNER.equals(owner)
                                 && "setWindowedMode".equals(methodName)
                                 && "(II)V".equals(methodDescriptor)) {

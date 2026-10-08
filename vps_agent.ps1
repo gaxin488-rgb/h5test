@@ -174,7 +174,7 @@ function Start-TunnelProcess {
     try {
         $psi = New-Object Diagnostics.ProcessStartInfo
         $psi.FileName = $CloudflaredPath
-        $psi.Arguments = "tunnel --no-autoupdate --protocol http2 --url http://127.0.0.1:$Port --http-host-header localhost"
+        $psi.Arguments = "tunnel --no-autoupdate --url http://127.0.0.1:$Port --http-host-header localhost"
         $psi.WorkingDirectory = $Dir
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
