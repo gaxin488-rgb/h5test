@@ -638,83 +638,61 @@ public final class TinhLinhBot {
     private static Actor findVillageButton(Actor root) {
         if (root == null) return null;
 
-        // 1. Uu tien tuyet doi: Nut hoac text chua truc tiep chu 've lang' / 'về làng' / 've thanh' / 'về thành'
-        Actor directBtn = searchClickableMatching(root, text -> {
-            String s = normalizeText(text);
-            return s.contains("về làng") || s.contains("ve lang") || s.contains("về thành") || s.contains("ve thanh");
-        });
-        if (directBtn != null) {
-            return directBtn;
-        }
-
-        // 2. Neu popup chua tim thay text truc tiep (do icon hoac font ma hoa):
-        // Lay tat ca cac nut tren popup kiet suc.
-        // Tren giao dien kiet suc Tinh Linh (3 nut: [Hoi sinh ngoc] [Hoi sinh mien phi] [Ve lang]),
-        // nut Ve Lang luon nam o vi tri CUOI CUNG (ben phai nhat).
+        // 1. Tim tat ca cac NUT (Button / TextraButton / Clickable) tren hop thoai
         List<Actor> buttons = new ArrayList<>();
-        findAllButtons(root, buttons);
-        if (!buttons.isEmpty()) {
-            buttons.sort((a, b) -> {
-                try {
-                    float xa = a.localToStageCoordinates(new Vector2(0, 0)).x;
-                    float xb = b.localToStageCoordinates(new Vector2(0, 0)).x;
-                    return Float.compare(xa, xb);
-                } catch (Throwable t) {
-                    return Float.compare(a.getX(), b.getX());
-                }
-            });
-            Actor rightmostButton = buttons.get(buttons.size() - 1);
-            String txt = getActorText(rightmostButton);
-            log("[AutoFarm-Exhaustion] Chon nut ben phai nhat (Ve Lang) tren popup: [" +
-                    (txt.isEmpty() ? rightmostButton.getClass().getSimpleName() : txt) + "]");
-            return rightmostButton;
+        findAllButtons(root, buttons, root);
+
+        if (buttons.isEmpty()) {
+            return null;
         }
 
-        return null;
-    }
-
-    private interface TextMatcher {
-        boolean matches(String text);
-    }
-
-    private static Actor searchClickableMatching(Actor actor, TextMatcher matcher) {
-        if (actor == null) return null;
-
-        String direct = getDirectActorText(actor);
-        if (!direct.isEmpty() && matcher.matches(direct)) {
-            return findClickableParent(actor);
-        }
-
-        if (actor instanceof Group) {
-            Group group = (Group) actor;
-            SnapshotArray<Actor> children = group.getChildren();
-            if (children != null) {
-                for (int i = 0; i < children.size; i++) {
-                    Actor found = searchClickableMatching(children.get(i), matcher);
-                    if (found != null) {
-                        return found;
-                    }
+        // 2. Uu tien 1: Duyet qua cac NUT, tim nut co text chua 've lang' / 'về làng' / 've thanh' / 'về thành'
+        for (Actor btn : buttons) {
+            String norm = normalizeText(getActorText(btn));
+            if (!norm.isEmpty() && norm.length() <= 20) {
+                if (norm.contains("về làng") || norm.contains("ve lang") || norm.contains("về thành") || norm.contains("ve thanh") || norm.equals("về") || norm.equals("ve")) {
+                    log("[AutoFarm-Exhaustion] Tim thay nut Ve Lang theo text: [" + norm + "] tren popup.");
+                    return btn;
                 }
             }
         }
 
-        return null;
+        // 3. Uu tien 2: Tren hop thoai kiet suc Tinh Linh (layout 3 nut: [Hoi sinh ngoc] [Hoi sinh mien phi] [Ve lang]),
+        // nut Ve Lang luon la nut CUOI CUNG (ngoai cung ben phai).
+        // Sap xep cac nut theo toa do X Stage tu trai sang phai
+        buttons.sort((a, b) -> {
+            try {
+                float xa = a.localToStageCoordinates(new Vector2(0, 0)).x;
+                float xb = b.localToStageCoordinates(new Vector2(0, 0)).x;
+                return Float.compare(xa, xb);
+            } catch (Throwable t) {
+                return Float.compare(a.getX(), b.getX());
+            }
+        });
+
+        Actor rightmostButton = buttons.get(buttons.size() - 1);
+        String txt = getActorText(rightmostButton);
+        log("[AutoFarm-Exhaustion] Chon nut ben phai nhat (Ve Lang) trong " + buttons.size() + " nut tren popup: [" +
+                (txt.isEmpty() ? rightmostButton.getClass().getSimpleName() : txt) + "]");
+        return rightmostButton;
     }
 
-    private static void findAllButtons(Actor actor, List<Actor> list) {
+    private static void findAllButtons(Actor actor, List<Actor> list, Actor root) {
         if (actor == null) return;
-        if (isClickable(actor) && actor.isVisible()) {
-            if (!list.contains(actor)) {
-                list.add(actor);
+        if (actor != root && isClickable(actor) && actor.isVisible()) {
+            if (actor instanceof Button || !(actor instanceof Group) || ((Group) actor).getChildren().size == 0) {
+                if (!list.contains(actor)) {
+                    list.add(actor);
+                }
+                return;
             }
-            return;
         }
         if (actor instanceof Group) {
             Group group = (Group) actor;
             SnapshotArray<Actor> children = group.getChildren();
             if (children != null) {
                 for (int i = 0; i < children.size; i++) {
-                    findAllButtons(children.get(i), list);
+                    findAllButtons(children.get(i), list, root);
                 }
             }
         }
@@ -723,28 +701,18 @@ public final class TinhLinhBot {
     private static boolean isClickable(Actor actor) {
         if (actor == null) return false;
         if (actor instanceof Button) return true;
+        if (actor instanceof TextButton) return true;
         if (actor instanceof TextraButton) return true;
         if (actor.getListeners() != null) {
             SnapshotArray<EventListener> listeners = new SnapshotArray<>(actor.getListeners());
             for (int i = 0; i < listeners.size; i++) {
                 EventListener l = listeners.get(i);
-                if (l instanceof ClickListener || l instanceof ChangeListener) {
+                if (l instanceof ClickListener) {
                     return true;
                 }
             }
         }
         return false;
-    }
-
-    private static Actor findClickableParent(Actor actor) {
-        Actor cur = actor;
-        while (cur != null) {
-            if (isClickable(cur)) {
-                return cur;
-            }
-            cur = cur.getParent();
-        }
-        return actor;
     }
 
     private static String getDirectActorText(Actor actor) {
