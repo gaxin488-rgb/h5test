@@ -2,7 +2,9 @@ import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -10,6 +12,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.badlogic.gdx.Gdx;
@@ -17,15 +20,20 @@ import com.badlogic.gdx.Screen;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Graphics;
 import com.badlogic.gdx.backends.lwjgl3.Lwjgl3Window;
 import com.badlogic.gdx.math.Vector2;
+import com.badlogic.gdx.scenes.scene2d.Actor;
+import com.badlogic.gdx.scenes.scene2d.Group;
+import com.badlogic.gdx.scenes.scene2d.ui.Label;
+import com.badlogic.gdx.utils.SnapshotArray;
 import org.lwjgl.glfw.GLFW;
 
 /**
  * TinhLinhBot - Core Automation Engine for Tinh Linh Game.
  * Feature 1: Auto Login, Auto Reconnect & Watchdog Lifecycle.
  * Feature 2: Map & Location Telemetry (getCurrentMapName, getCurrentMapId, getCurrentZone, getPlayerPosition).
+ * Feature 3: Exhaustion Coordinate Saving & State Persistence (saveExhaustionCoordinate, isExhaustionDialogVisible).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.1.0-Feature2-MapTelemetry";
+    private static final String VERSION = "1.2.0-Feature3-ExhaustionCoord";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -43,6 +51,12 @@ public final class TinhLinhBot {
     private static volatile String lastKnownMapName = "";
     private static volatile int lastKnownZone = -1;
     private static volatile long lastMapLogTime = 0L;
+
+    private static volatile SavedCoordinate lastSavedExhaustionCoord = null;
+    private static volatile boolean previousExhausted = false;
+    private static final String EXHAUSTION_STATE_FILE = "tinhlinh-exhaustion-state.properties";
+    private static final String EXHAUSTION_COORD_FILE = "saved_exhaustion_coord.txt";
+    private static final String LAST_FARM_MAP_FILE = "last_farm_map.txt";
 
     private static volatile String savedUsername = null;
     private static volatile String savedPassword = null;
@@ -328,7 +342,209 @@ public final class TinhLinhBot {
     }
 
     /**
+     * Cau truc du lieu luu tru toa do kiet suc cua nhan vat.
+     */
+    public static final class SavedCoordinate {
+        public final int mapId;
+        public final String mapName;
+        public final int zone;
+        public final float x;
+        public final float y;
+        public final long savedAt;
+
+        public SavedCoordinate(int mapId, String mapName, int zone, float x, float y, long savedAt) {
+            this.mapId = mapId;
+            this.mapName = (mapName != null) ? mapName : "";
+            this.zone = zone;
+            this.x = x;
+            this.y = y;
+            this.savedAt = savedAt;
+        }
+
+        @Override
+        public String toString() {
+            return String.format(Locale.ROOT, "Map [%s - ID: %d, Khu: %d] tai (X=%.1f, Y=%.1f)", mapName, mapId, zone, x, y);
+        }
+    }
+
+    /**
+     * Kiem tra xem popup/dialog kiet suc (hoi sinh / ve lang) co dang hien thi tren man hinh hay khong.
+     * Ho tro ca 2 lop bao ve:
+     * 1. Kiem tra thuoc tinh Entity Player (HP <= 0).
+     * 2. Quet cay UI Scene2D DialogManager tim hop thoai mo co chua van ban kiet suc/ve lang/hoi sinh.
+     */
+    public static boolean isExhaustionDialogVisible() {
+        if (isPlayerExhausted()) {
+            return true;
+        }
+
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return false;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world == null) return false;
+
+            com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 uiOverlay =
+                    world.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+            if (uiOverlay == null) return false;
+
+            com.a.c.f.e.a.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 dialogManager =
+                    uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (dialogManager != null) {
+                SnapshotArray<Actor> children = dialogManager.getChildren();
+                if (children != null && children.size > 0) {
+                    for (int i = 0; i < children.size; i++) {
+                        Actor child = children.get(i);
+                        if (child != null && child.isVisible()) {
+                            if (containsExhaustionText(child)) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    private static boolean containsExhaustionText(Actor actor) {
+        if (actor == null) return false;
+        if (actor instanceof Label) {
+            CharSequence text = ((Label) actor).getText();
+            if (text != null) {
+                String s = text.toString().toLowerCase(Locale.ROOT);
+                if (s.contains("kiệt sức") || s.contains("kiet suc") || s.contains("về làng") || s.contains("ve lang") || s.contains("hồi sinh") || s.contains("hoi sinh")) {
+                    return true;
+                }
+            }
+        }
+        if (actor instanceof Group) {
+            Group group = (Group) actor;
+            SnapshotArray<Actor> kids = group.getChildren();
+            if (kids != null) {
+                for (int i = 0; i < kids.size; i++) {
+                    if (containsExhaustionText(kids.get(i))) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Ham luu toa do nhan vat khi hien popup kiet suc.
+     * Ghi nhan: Map ID, Ten Map, Khu vuc, Toa do X, Y va Thoi diem kiet suc.
+     * Luu vao RAM va dong bo ngay lap tuc xuong dia:
+     * - tinhlinh-exhaustion-state.properties
+     * - saved_exhaustion_coord.txt
+     * - last_farm_map.txt
+     */
+    public static synchronized SavedCoordinate saveExhaustionCoordinate() {
+        int mapId = getCurrentMapId();
+        String mapName = getCurrentMapName();
+        int zone = getCurrentZone();
+        Vector2 pos = getPlayerPosition();
+
+        // Fallback ve lastKnown neu map hien tai dang bi rong trong luc chuyen canh
+        if ((mapName == null || mapName.trim().isEmpty()) && lastKnownMapName != null && !lastKnownMapName.trim().isEmpty()) {
+            mapName = lastKnownMapName;
+            mapId = lastKnownMapId;
+            zone = lastKnownZone;
+        }
+
+        float x = (pos != null) ? pos.x : 0.0f;
+        float y = (pos != null) ? pos.y : 0.0f;
+        long now = System.currentTimeMillis();
+
+        SavedCoordinate coord = new SavedCoordinate(mapId, mapName, zone, x, y, now);
+        lastSavedExhaustionCoord = coord;
+
+        persistExhaustionState(coord);
+
+        log("[AutoFarm-Exhaustion] >>> DA LUU TOA DO KIET SUC THANH CONG <<<");
+        log("[AutoFarm-Exhaustion] Toa do: " + coord + " luc " + DATE_FORMAT.format(new Date(now)));
+        log("[AutoFarm-Exhaustion] Cac file da cap nhat: " + EXHAUSTION_STATE_FILE + ", " + EXHAUSTION_COORD_FILE + ", " + LAST_FARM_MAP_FILE);
+
+        return coord;
+    }
+
+    /**
+     * Tra ve toa do kiet suc da luu (tu RAM hoac nap tu file).
+     */
+    public static SavedCoordinate getSavedExhaustionCoordinate() {
+        if (lastSavedExhaustionCoord != null) {
+            return lastSavedExhaustionCoord;
+        }
+        lastSavedExhaustionCoord = loadSavedExhaustionCoordinate();
+        return lastSavedExhaustionCoord;
+    }
+
+    private static void persistExhaustionState(SavedCoordinate coord) {
+        if (coord == null) return;
+        try {
+            // 1. Luu file properties day du
+            Properties props = new Properties();
+            props.setProperty("mapId", Integer.toString(coord.mapId));
+            props.setProperty("mapName", coord.mapName);
+            props.setProperty("zone", Integer.toString(coord.zone));
+            props.setProperty("x", String.format(Locale.ROOT, "%.2f", coord.x));
+            props.setProperty("y", String.format(Locale.ROOT, "%.2f", coord.y));
+            props.setProperty("savedAt", Long.toString(coord.savedAt));
+            props.setProperty("savedTime", DATE_FORMAT.format(new Date(coord.savedAt)));
+
+            File propFile = new File(EXHAUSTION_STATE_FILE);
+            try (OutputStream os = new FileOutputStream(propFile, false)) {
+                props.store(os, "Tinh Linh Exhaustion State & Saved Coordinate");
+            }
+
+            // 2. Luu file text gon nhe saved_exhaustion_coord.txt (mapId:mapName:zone:x:y)
+            File txtFile = new File(EXHAUSTION_COORD_FILE);
+            try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(txtFile, false), StandardCharsets.UTF_8)) {
+                writer.write(coord.mapId + ":" + coord.mapName + ":" + coord.zone + ":"
+                        + String.format(Locale.ROOT, "%.2f", coord.x) + ":"
+                        + String.format(Locale.ROOT, "%.2f", coord.y) + "\r\n");
+            }
+
+            // 3. Luu last_farm_map.txt neu day la map chien dau
+            if (coord.mapId > 0 && coord.mapName != null && !coord.mapName.isEmpty()
+                    && !coord.mapName.contains("Làng") && !coord.mapName.contains("Nông trại")) {
+                File farmMapFile = new File(LAST_FARM_MAP_FILE);
+                try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(farmMapFile, false), StandardCharsets.UTF_8)) {
+                    writer.write(coord.mapId + ":" + coord.mapName + "\r\n");
+                }
+            }
+        } catch (Throwable t) {
+            log("[AutoFarm-Exhaustion] Loi khi ghi file trang thai kiet suc: " + t.getMessage());
+        }
+    }
+
+    private static SavedCoordinate loadSavedExhaustionCoordinate() {
+        File propFile = new File(EXHAUSTION_STATE_FILE);
+        if (!propFile.exists() || !propFile.isFile()) {
+            return null;
+        }
+        try (InputStream is = new FileInputStream(propFile)) {
+            Properties props = new Properties();
+            props.load(is);
+            int mapId = Integer.parseInt(props.getProperty("mapId", "-1"));
+            String mapName = props.getProperty("mapName", "");
+            int zone = Integer.parseInt(props.getProperty("zone", "-1"));
+            float x = Float.parseFloat(props.getProperty("x", "0.0"));
+            float y = Float.parseFloat(props.getProperty("y", "0.0"));
+            long savedAt = Long.parseLong(props.getProperty("savedAt", "0"));
+            return new SavedCoordinate(mapId, mapName, zone, x, y, savedAt);
+        } catch (Throwable ignored) {
+            return null;
+        }
+    }
+
+    /**
      * Giam sat va log vi tri Map, Khu vuc va toa do nhan vat dinh ky hoac khi chuyen map.
+     * Tu dong phat hien trang thai kiet suc / hien popup kiet suc de goi saveExhaustionCoordinate().
      */
     private static void checkLocationTelemetry(long now) {
         String mapName = getCurrentMapName();
@@ -339,8 +555,18 @@ public final class TinhLinhBot {
         int mapId = getCurrentMapId();
         int zone = getCurrentZone();
         Vector2 pos = getPlayerPosition();
-        boolean exhausted = isPlayerExhausted();
+        boolean exhausted = isPlayerExhausted() || isExhaustionDialogVisible();
 
+        // 1. Theo doi va tu dong luu toa do khi phat hien kiet suc (rising-edge trigger)
+        if (exhausted && !previousExhausted) {
+            log("[AutoFarm-Exhaustion] PHAT HIEN POPUP/TRANG THAI KIET SUC! Tu dong luu toa do tran danh...");
+            saveExhaustionCoordinate();
+        } else if (!exhausted && previousExhausted) {
+            log("[AutoFarm-Exhaustion] Nhan vat da hoi sinh / thoat trang thai kiet suc.");
+        }
+        previousExhausted = exhausted;
+
+        // 2. Theo doi chuyen Map & dinh ky 10s
         boolean mapChanged = (mapId != lastKnownMapId) || (zone != lastKnownZone) || (!mapName.equals(lastKnownMapName));
         boolean periodicLog = (now - lastMapLogTime >= 10000L); // Dinh ky moi 10 giay
 
@@ -624,6 +850,14 @@ public final class TinhLinhBot {
             log("[StressTest] Da ghi xong spam log. Dung luong file: " + (logFile.length() / 1024L) + "KB. Kich hoat Storage Guard cat tia ngay...");
             rotateLog(logFile);
             log("[StressTest] Ket qua sau cat tia: " + (logFile.length() / 1024L) + "KB.");
+        }
+
+        // 4. Diagnostic Trigger: Kiem thu luu toa do kiet suc
+        File testExhaustion = new File("test_trigger_exhaustion.txt");
+        if (testExhaustion.exists()) {
+            testExhaustion.delete();
+            log("[Diagnostic] Nhan lenh test_trigger_exhaustion.txt! Kich hoat luu toa do kiet suc ngay lap tuc...");
+            saveExhaustionCoordinate();
         }
     }
 
