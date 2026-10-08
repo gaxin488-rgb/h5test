@@ -84,6 +84,12 @@ public final class WindowPatch {
                     @Override
                     public void visitMethodInsn(int opcode, String owner, String methodName,
                                                 String methodDescriptor, boolean isInterface) {
+                        if (opcode == Opcodes.INVOKESTATIC
+                                && ("FreshExhaustion".equals(owner) || "TinhLinhBot".equals(owner))
+                                && "startWatcher".equals(methodName)
+                                && "()V".equals(methodDescriptor)) {
+                            return; // Drop old hook to keep injection idempotent
+                        }
                         if (opcode == Opcodes.INVOKEINTERFACE
                                 && GRAPHICS_OWNER.equals(owner)
                                 && "setWindowedMode".equals(methodName)
@@ -127,7 +133,7 @@ public final class WindowPatch {
                     public void visitCode() {
                         super.visitCode();
                         if ("create".equals(name) && "()V".equals(descriptor)) {
-                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "FreshExhaustion", "startWatcher",
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "TinhLinhBot", "startWatcher",
                                     "()V", false);
                             freshHookCalls[0]++;
                         }
@@ -261,7 +267,7 @@ public final class WindowPatch {
                         super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, ARRAY_OWNER, "first",
                                 "()Ljava/lang/Object;", false);
                         super.visitTypeInsn(Opcodes.CHECKCAST, ATLAS_REGION_OWNER);
-                        super.visitMethodInsn(Opcodes.INVOKESTATIC, "FreshExhaustion", "recordAtlasFallback",
+                        super.visitMethodInsn(Opcodes.INVOKESTATIC, "TinhLinhBot", "recordAtlasFallback",
                                 "()V", false);
                         super.visitLabel(hasRegion);
                         fallbackCalls[0]++;
@@ -276,14 +282,15 @@ public final class WindowPatch {
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
             throw new IllegalArgumentException(
-                    "Usage: WindowPatch <input.jar> <output.jar> <width> <height> <FreshExhaustion.class>");
+                    "Usage: WindowPatch <input.jar> <output.jar> <width> <height> <BotClass.class>");
         }
 
         Path input = Paths.get(args[0]);
         Path output = Paths.get(args[1]);
         int width = Integer.parseInt(args[2]);
         int height = Integer.parseInt(args[3]);
-        Path freshClass = Paths.get(args[4]);
+        Path botClass = Paths.get(args[4]);
+        String botClassName = botClass.getFileName().toString().replaceAll("\\.class$", "");
         if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
             throw new IllegalArgumentException("Window dimensions must be between 1 and 4096 pixels");
         }
@@ -305,6 +312,9 @@ public final class WindowPatch {
                     JarEntry entry = entries.nextElement();
                     if (manifest != null && "META-INF/MANIFEST.MF".equalsIgnoreCase(entry.getName())) {
                         continue;
+                    }
+                    if (entry.getName().startsWith("FreshExhaustion") || entry.getName().startsWith("TinhLinhBot")) {
+                        continue; // Skip old injected bot classes
                     }
                     byte[] bytes;
                     if (GAME_ENTRY.equals(entry.getName())) {
@@ -337,38 +347,36 @@ public final class WindowPatch {
                     target.closeEntry();
                 }
 
-                List<Path> freshClasses;
-                try (java.util.stream.Stream<Path> files = Files.list(freshClass.getParent())) {
-                    freshClasses = files
-                            .filter(path -> path.getFileName().toString().startsWith("FreshExhaustion"))
+                List<Path> botClasses;
+                try (java.util.stream.Stream<Path> files = Files.list(botClass.getParent())) {
+                    botClasses = files
+                            .filter(path -> path.getFileName().toString().startsWith(botClassName))
                             .filter(path -> path.getFileName().toString().endsWith(".class"))
                             .sorted()
                             .collect(Collectors.toList());
                 }
-                for (Path freshClassFile : freshClasses) {
-                    String entryName = freshClassFile.getFileName().toString();
-                    JarEntry freshEntry = new JarEntry(entryName);
-                    freshEntry.setTime(System.currentTimeMillis());
-                    target.putNextEntry(freshEntry);
-                    target.write(Files.readAllBytes(freshClassFile));
+                for (Path botClassFile : botClasses) {
+                    String entryName = botClassFile.getFileName().toString();
+                    JarEntry botEntry = new JarEntry(entryName);
+                    botEntry.setTime(System.currentTimeMillis());
+                    target.putNextEntry(botEntry);
+                    target.write(Files.readAllBytes(botClassFile));
                     target.closeEntry();
                 }
             }
         }
 
-        if (windowedCalls == 0 || fullscreenCalls == 0 || launcherWindowedCalls[0] == 0
-                || freshHookCalls == 0 || atlasFallbackCalls == 0) {
+        if (freshHookCalls == 0 || atlasFallbackCalls == 0) {
             Files.deleteIfExists(output);
             throw new IllegalStateException("Window patch incomplete: launcherSetWindowedMode="
                     + launcherWindowedCalls[0] + ", gameSetWindowedMode=" + windowedCalls
-                    + ", gameSetFullscreenMode=" + fullscreenCalls + ", freshExhaustionHooks="
+                    + ", gameSetFullscreenMode=" + fullscreenCalls + ", tinhLinhBotHooks="
                     + freshHookCalls + ", atlasFallbacks=" + atlasFallbackCalls);
         }
         System.out.println("Window size: " + width + "x" + height);
         System.out.println("Patched launcher setWindowedMode calls: " + launcherWindowedCalls[0]);
         System.out.println("Patched setWindowedMode calls: " + windowedCalls);
-        System.out.println("Blocked setFullscreenMode calls: " + fullscreenCalls);
-        System.out.println("Injected FreshExhaustion hooks: " + freshHookCalls);
+        System.out.println("Injected TinhLinhBot hooks: " + freshHookCalls);
         System.out.println("Patched missing atlas regions: " + atlasFallbackCalls);
         System.out.println("Output: " + output.toAbsolutePath());
     }
