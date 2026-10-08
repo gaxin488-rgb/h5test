@@ -401,7 +401,7 @@ while ($listener.IsListening) {
 
             # 3. Don sach bat ky file log/trung gian (*.log, *.tmp, *.cmd) tai C:\TinhLinh (khong xoa game jar, script bat hay account)
             Get-ChildItem -Path $Dir -File -ErrorAction SilentlyContinue |
-                Where-Object { ($_.Extension -in @(".log", ".tmp") -or $_.Name -in @("vps_watchdog.cmd", "vps_watchdog.ps1", "agent.log", "tunnel.log")) -and ($_.Name -notlike "autofarm_log*.txt") } |
+                Where-Object { ($_.Extension -in @(".log", ".tmp", ".dmp", ".mdmp") -or $_.Name -in @("vps_watchdog.cmd", "vps_watchdog.ps1", "agent.log", "tunnel.log")) -and ($_.Name -notlike "autofarm_log*.txt") } |
                 Remove-Item -Force -ErrorAction SilentlyContinue
 
             # 4. Kiem tra dung luong o C:
