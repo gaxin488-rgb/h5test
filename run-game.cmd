@@ -48,7 +48,7 @@ set "MESA_LOADER_DRIVER_OVERRIDE=llvmpipe"
 set "GALLIUM_DRIVER=llvmpipe"
 
 echo [i] Java %JAVA_VERSION%: %JAVA_BIN%
-"%JAVA_BIN%" -Xms32m -Xmx256m -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
+"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [!] Tien trinh game da dung voi ma thoat: %ERRORLEVEL%
