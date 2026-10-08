@@ -26,7 +26,10 @@ $script:TunnelLaunchFailures = 0
 $script:NextTunnelStart = [DateTime]::MinValue
 $script:AgentMutex = New-Object -TypeName System.Threading.Mutex -ArgumentList @($false, "Global\TinhLinhAgent8765")
 try {
-    if (-not $script:AgentMutex.WaitOne(0)) { exit 0 }
+    if (-not $script:AgentMutex.WaitOne(5000)) { 
+        Write-Host "Another agent instance is running. Exiting."
+        exit 0 
+    }
 } catch [System.Threading.AbandonedMutexException] {}
 
 function Write-Log([string]$msg) {
@@ -183,8 +186,9 @@ function Update-AgentFromGithub {
                 Write-Log "Khoi dong lai Agent voi ban moi..."
                 Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
                 try { if ($global:listener) { $global:listener.Stop(); $global:listener.Close() } } catch {}
+                try { $script:AgentMutex.ReleaseMutex(); $script:AgentMutex.Dispose() } catch {}
                 Start-Process powershell.exe -ArgumentList "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$curPath`"" -WorkingDirectory $Dir
-                exit
+                exit 0
             } else {
                 Write-Log "Agent dang o phien ban moi nhat."
             }
@@ -208,7 +212,7 @@ function Start-TunnelProcess {
     try {
         $psi = New-Object Diagnostics.ProcessStartInfo
         $psi.FileName = $CloudflaredPath
-        $psi.Arguments = "tunnel --protocol http2 --no-autoupdate --url http://127.0.0.1:$Port --http-host-header localhost"
+        $psi.Arguments = "tunnel --no-autoupdate --url http://127.0.0.1:$Port --http-host-header localhost"
         $psi.WorkingDirectory = $Dir
         $psi.UseShellExecute = $false
         $psi.CreateNoWindow = $true
@@ -391,14 +395,14 @@ while ($listener.IsListening) {
         if ($global:LatestTunnelUrl -and (($now - $lastTunnelProbe).TotalSeconds -ge 60)) {
             $lastTunnelProbe = $now
             try {
-                $probeRes = (Invoke-WebRequest -Uri "$global:LatestTunnelUrl/ping" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).StatusCode
+                $probeRes = (Invoke-WebRequest -Uri "$global:LatestTunnelUrl/ping" -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop).StatusCode
                 if ($probeRes -ne 200) { throw "Unexpected tunnel status: $probeRes" }
                 $script:TunnelProbeFailures = 0
             } catch {
                 $script:TunnelProbeFailures++
-                Write-Log "Cloudflare probe failed ($script:TunnelProbeFailures/3): $($_.Exception.Message)"
-                if ($script:TunnelProbeFailures -ge 3) {
-                    Write-Log "Cloudflare Tunnel failed three consecutive probes. Restarting tunnel..."
+                Write-Log "Cloudflare probe notice ($script:TunnelProbeFailures/10): $($_.Exception.Message)"
+                if ($script:TunnelProbeFailures -ge 10) {
+                    Write-Log "Cloudflare Tunnel failed 10 consecutive probes. Restarting tunnel..."
                     try { $cfProcess.Kill() } catch {}
                     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
                     $global:LatestTunnelUrl = ""
