@@ -327,7 +327,36 @@ public final class TinhLinhBot {
             com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
                     com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
             if (player != null) {
-                return player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75;
+                // 1. Toa do truc tiep tu GameObject (Box2D / World Position)
+                Vector2 pos = player.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                if (pos != null && (pos.x != 0.0f || pos.y != 0.0f)) {
+                    return pos;
+                }
+
+                // 2. Fallback sang Center Position
+                Vector2 centerPos = player.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75();
+                if (centerPos != null && (centerPos.x != 0.0f || centerPos.y != 0.0f)) {
+                    return centerPos;
+                }
+
+                // 3. Fallback sang Box2D Body Position
+                try {
+                    com.a.a.b.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75 comp =
+                            player.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75();
+                    if (comp != null) {
+                        com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 physComp =
+                                comp.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75();
+                        if (physComp != null) {
+                            com.badlogic.gdx.physics.box2d.Body body = physComp.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
+                            if (body != null) {
+                                return body.getPosition();
+                            }
+                        }
+                    }
+                } catch (Throwable ignored) {
+                }
+
+                return pos;
             }
         } catch (Throwable ignored) {
         }
