@@ -6,6 +6,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -33,6 +34,7 @@ import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
+import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Pools;
 import com.badlogic.gdx.utils.SnapshotArray;
 import com.github.tommyettinger.textra.TextraButton;
@@ -45,9 +47,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 2: Map & Location Telemetry (getCurrentMapName, getCurrentMapId, getCurrentZone, getPlayerPosition).
  * Feature 3: Exhaustion Coordinate Saving & State Persistence (saveExhaustionCoordinate, isExhaustionDialogVisible).
  * Feature 4: Auto Select Return to Village Menu upon Exhaustion (autoSelectReturnToVillage).
+ * Feature 5: Auto Apple Harvest & Collection Automation (handleAppleHarvest, triggerHarvestApple, moveToWaypoint, getCurrentMapWaypoints).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.3.0-Feature4-AutoVillage";
+    private static final String VERSION = "1.4.0-Feature5-AppleHarvest";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -72,6 +75,18 @@ public final class TinhLinhBot {
     private static final String EXHAUSTION_STATE_FILE = "tinhlinh-exhaustion-state.properties";
     private static final String EXHAUSTION_COORD_FILE = "saved_exhaustion_coord.txt";
     private static final String LAST_FARM_MAP_FILE = "last_farm_map.txt";
+
+    // Feature 5: Tu dong Hai Tao & Thu Hoach (Apple Harvest & Farm Portal Automation)
+    private static volatile boolean isAutoAppleHarvestEnabled = true;
+    private static volatile boolean hasHarvestedApple = false;
+    private static volatile boolean isAppleHarvesting = false;
+    private static volatile int appleHarvestStep = 0;
+    private static volatile long appleHarvestStartTime = 0L;
+    private static volatile long appleEnterNongTraiTime = 0L;
+    private static volatile int currentHarvestTreeId = -1;
+    private static volatile int currentHarvestTreeTypeId = -1;
+    private static volatile long lastMenuClickTime = 0L;
+    private static volatile long lastWaypointMoveTime = 0L;
 
     private static volatile String savedUsername = null;
     private static volatile String savedPassword = null;
@@ -253,6 +268,9 @@ public final class TinhLinhBot {
 
         // --- 6. Giam sat Vi tri & Map hien tai (Location Telemetry) ---
         checkLocationTelemetry(now);
+
+        // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
+        handleAppleAndFarmNavigation(now);
     }
 
     // =========================================================================
@@ -533,6 +551,12 @@ public final class TinhLinhBot {
         lastSavedExhaustionCoord = coord;
 
         persistExhaustionState(coord);
+
+        // Reset trang thai hai tao de khi hoi sinh ve lang se tu dong qua Nong trai thu hoach
+        hasHarvestedApple = false;
+        isAppleHarvesting = false;
+        appleHarvestStep = 0;
+        appleEnterNongTraiTime = 0L;
 
         log("[AutoFarm-Exhaustion] >>> DA LUU TOA DO KIET SUC THANH CONG <<<");
         log("[AutoFarm-Exhaustion] Toa do: " + coord + " luc " + DATE_FORMAT.format(new Date(now)));
@@ -911,6 +935,794 @@ public final class TinhLinhBot {
         }
     }
 
+    // =========================================================================
+    // FEATURE 5: TU DONG HAI TAO & THU HOACH (APPLE HARVEST & FARM PORTAL)
+    // =========================================================================
+
+    public static boolean isAutoAppleHarvestEnabled() {
+        if (new File("tat_auto_hai_tao.txt").exists() || new File("no_auto_apple.txt").exists()) {
+            return false;
+        }
+        return isAutoAppleHarvestEnabled;
+    }
+
+    public static void setAutoAppleHarvestEnabled(boolean enabled) {
+        isAutoAppleHarvestEnabled = enabled;
+        log("[AutoFarm-Apple] Auto Apple Harvest da chuyen thanh: " + enabled);
+    }
+
+    public static boolean hasHarvestedApple() {
+        return hasHarvestedApple;
+    }
+
+    public static void setHasHarvestedApple(boolean harvested) {
+        hasHarvestedApple = harvested;
+    }
+
+    public static boolean isAppleHarvesting() {
+        return isAppleHarvesting;
+    }
+
+    /**
+     * Kich hoat quy trinh hai tao thu cong / reset co thu hoach tao de bot bat dau chu trinh hai tao ngay.
+     */
+    public static synchronized boolean triggerHarvestApple() {
+        log("[AutoFarm-Apple] Kich hoat lenh triggerHarvestApple -> San sang thu hoach!");
+        hasHarvestedApple = false;
+        isAppleHarvesting = false;
+        appleHarvestStep = 0;
+        appleEnterNongTraiTime = 0L;
+        String curMap = getCurrentMapName();
+        if (normalizeText(curMap).contains("nong trai")) {
+            return handleAppleHarvest();
+        } else if (normalizeText(curMap).contains("lang")) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 farmWp = findWaypointByName("nong trai");
+            if (farmWp != null) {
+                return moveToWaypoint(farmWp);
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Dieu khien di chuyen va thu hoach tao giua Lang va Nong trai theo tung chu ky tick.
+     */
+    private static void handleAppleAndFarmNavigation(long now) {
+        if (!isAutoAppleHarvestEnabled()) {
+            return;
+        }
+
+        String mapName = getCurrentMapName();
+        if (mapName == null || mapName.trim().isEmpty()) {
+            return;
+        }
+        String normMap = normalizeText(mapName);
+
+        // 1. Truong hop dang o Lang va chua thu hoach tao -> Di vao cong Nong trai
+        if (normMap.contains("lang") && !hasHarvestedApple) {
+            if (now - lastWaypointMoveTime >= 3500L) {
+                lastWaypointMoveTime = now;
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 farmWp = findWaypointByName("nong trai");
+                if (farmWp != null) {
+                    log("[AutoFarm-Apple] Nhan vat dang o Lang va chua thu hoach tao -> Di chuyen vao cong Nong trai...");
+                    moveToWaypoint(farmWp);
+                }
+            }
+        }
+        // 2. Truong hop dang o Nong trai
+        else if (normMap.contains("nong trai")) {
+            if (!hasHarvestedApple) {
+                handleAppleHarvest();
+            } else {
+                // Da thu hoach xong tao ma van con trong Nong trai -> di chuyen ra cong ve lai Lang
+                if (now - lastWaypointMoveTime >= 3500L) {
+                    lastWaypointMoveTime = now;
+                    com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 villageWp = findWaypointByName("lang");
+                    if (villageWp == null) {
+                        villageWp = findWaypointByName("ve lang");
+                    }
+                    if (villageWp != null) {
+                        log("[AutoFarm-Apple] Da thu hoach xong tao. Dang o Nong trai -> Di chuyen ra cong ve lai Lang...");
+                        moveToWaypoint(villageWp);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Quy trinh State Machine 5 buoc thu hoach Cay Tao tai Nong Trai:
+     * - Buoc 0: Tim cay, luu ID & toa do, di chuyen tiep can.
+     * - Buoc 1: Kiem tra tiep can (khoang cach <= 40px hoac timeout 1.2s), dung van toc, gui packet tuong tac cay.
+     * - Buoc 2: Phat hien dialog/menu, click lua chon 'Cay tao' (chuyen buoc 3) hoac click 'Thu hoach' (chuyen buoc 4).
+     * - Buoc 3: Cho menu con xuat hien, click lua chon 'Thu hoach', gui packet lua chon.
+     * - Buoc 4: Cho server dong bo, dong toan bo dialog, danh dau hoan tat.
+     */
+    public static boolean handleAppleHarvest() {
+        if (hasHarvestedApple) {
+            return false;
+        }
+
+        String mapName = getCurrentMapName();
+        if (mapName == null || !normalizeText(mapName).contains("nong trai")) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+        if (appleEnterNongTraiTime == 0L) {
+            appleEnterNongTraiTime = now;
+        }
+
+        // Cho it nhat 500ms sau khi vao map de load entity
+        if (now - appleEnterNongTraiTime < 500L) {
+            return true;
+        }
+
+        com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+        if (player == null) {
+            return false;
+        }
+
+        // Quet tim Cay Tao tren map nong trai
+        int treeId = -1;
+        int treeTypeId = -1;
+        Vector2 treePos = null;
+        String treeName = "";
+
+        // 1. Quet tu mang HEntity (gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75)
+        Array<com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> hArray = null;
+        try {
+            hArray = com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75;
+        } catch (Throwable ignored) {
+        }
+
+        if (hArray != null && hArray.size > 0) {
+            for (int i = 0; i < hArray.size; i++) {
+                com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 e = hArray.get(i);
+                if (e != null) {
+                    String rawName = getEntityHName(e);
+                    String norm = normalizeText(rawName);
+                    if (norm.contains("tao") || norm.contains("cay") || hArray.size == 1) {
+                        treeId = e.a_();
+                        treeTypeId = getEntityHTypeId(e);
+                        treePos = e.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                        treeName = rawName;
+                        break;
+                    }
+                }
+            }
+            if (treeId < 0 && hArray.get(0) != null) {
+                com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 e = hArray.get(0);
+                treeId = e.a_();
+                treeTypeId = getEntityHTypeId(e);
+                treePos = e.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                treeName = getEntityHName(e);
+            }
+        }
+
+        // 2. Quet tu mang Tree/Monster (GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75)
+        if (treeId < 0) {
+            Array<com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> treeArray = null;
+            try {
+                treeArray = com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75;
+            } catch (Throwable ignored) {
+            }
+            if (treeArray != null && treeArray.size > 0) {
+                for (int i = 0; i < treeArray.size; i++) {
+                    com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 t = treeArray.get(i);
+                    if (t != null) {
+                        String rawName = getTreeName(t);
+                        String norm = normalizeText(rawName);
+                        if (norm.contains("tao") || treeArray.size == 1) {
+                            treeId = t.a_();
+                            treeTypeId = getTreeTypeId(t);
+                            treePos = t.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                            treeName = rawName;
+                            break;
+                        }
+                    }
+                }
+                if (treeId < 0 && treeArray.get(0) != null) {
+                    com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 t = treeArray.get(0);
+                    treeId = t.a_();
+                    treeTypeId = getTreeTypeId(t);
+                    treePos = t.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                    treeName = getTreeName(t);
+                }
+            }
+        }
+
+        // 3. Quet tu mang NPC (GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75)
+        if (treeId < 0) {
+            Array<com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> npcArray = null;
+            try {
+                npcArray = com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75;
+            } catch (Throwable ignored) {
+            }
+            if (npcArray != null && npcArray.size > 0) {
+                for (int i = 0; i < npcArray.size; i++) {
+                    com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 n = npcArray.get(i);
+                    if (n != null) {
+                        String rawName = getNPCName(n);
+                        String norm = normalizeText(rawName);
+                        if (norm.contains("tao") || norm.contains("cay") || npcArray.size == 1) {
+                            treeId = n.a_();
+                            treeTypeId = getNPCTypeId(n);
+                            treePos = n.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                            treeName = rawName;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Neu van khong tim thay cay sau 3.5s
+        if (treeId < 0) {
+            if (now - appleEnterNongTraiTime < 3500L) {
+                return true;
+            }
+            log("[AutoFarm-Apple] Khong tim thay thong tin Cay Tao tai nong trai -> Bo qua thu hoach.");
+            hasHarvestedApple = true;
+            isAppleHarvesting = false;
+            appleHarvestStep = 0;
+            appleEnterNongTraiTime = 0L;
+            return false;
+        }
+
+        final int finalTreeId = treeId;
+        final int finalTreeTypeId = treeTypeId;
+        final Vector2 finalTreePos = treePos;
+        final String finalTreeName = (treeName != null && !treeName.isEmpty()) ? treeName : "Cay Tao";
+
+        // --- BUOC 0: Phat hien cay va khoi dong tiep can ---
+        if (appleHarvestStep == 0) {
+            appleHarvestStep = 1;
+            isAppleHarvesting = true;
+            appleHarvestStartTime = now;
+            currentHarvestTreeId = finalTreeId;
+            currentHarvestTreeTypeId = finalTreeTypeId;
+            log("[AutoFarm-Apple] Phat hien [" + finalTreeName + "] (ID=" + finalTreeId + ", Type=" + finalTreeTypeId + ") tai nong trai. Dang tiep can de thu hoach...");
+
+            if (finalTreePos != null) {
+                Gdx.app.postRunnable(() -> {
+                    try {
+                        if (player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 != null) {
+                            player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(
+                                    finalTreePos.x, finalTreePos.y, null
+                            );
+                        }
+                    } catch (Throwable t) {
+                        log("[AutoFarm-Apple] Loi di chuyen den Cay Tao: " + t.getMessage());
+                    }
+                });
+            }
+            return true;
+        }
+
+        // --- BUOC 1: Kiem tra da tiep can va gui goi tin tuong tac ---
+        if (appleHarvestStep == 1) {
+            long stepElapsed = now - appleHarvestStartTime;
+            float dist = 999f;
+            Vector2 playerPos = getPlayerPosition();
+            if (playerPos != null && finalTreePos != null) {
+                dist = playerPos.dst(finalTreePos);
+            }
+
+            if (dist > 40f && stepElapsed < 1200L) {
+                return true; // Tiep tuc di chuyen
+            }
+
+            appleHarvestStep = 2;
+            appleHarvestStartTime = now;
+            log("[AutoFarm-Apple] Da tiep can Cay Tao (khoang cach=" + (int) dist + "px). Dang gui goi tin tuong tac cay len server...");
+
+            Gdx.app.postRunnable(() -> {
+                try {
+                    if (player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 != null) {
+                        player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(false);
+                    }
+                    stopPlayerVelocity(player);
+
+                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 sender =
+                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                    if (sender != null) {
+                        sender.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(finalTreeId, finalTreeTypeId);
+                        log("[AutoFarm-Apple] Da gui packet tuong tac Cay Tao (ID=" + finalTreeId + ", Type=" + finalTreeTypeId + ")!");
+                    }
+                } catch (Throwable t) {
+                    log("[AutoFarm-Apple] Loi gui goi tin tuong tac cay: " + t.getMessage());
+                }
+            });
+            return true;
+        }
+
+        // --- BUOC 2: Click menu lua chon 'Cay tao' / 'Thu hoach' ---
+        if (appleHarvestStep == 2) {
+            long stepElapsed = now - appleHarvestStartTime;
+            Gdx.app.postRunnable(() -> {
+                int res = tryClickHarvestMenu(2);
+                if (res == 2) {
+                    appleHarvestStep = 4;
+                    appleHarvestStartTime = System.currentTimeMillis();
+                    log("[AutoFarm-Apple] [V] Da click nut 'Thu hoach'! Chuyen sang buoc hoan tat...");
+                } else if (res == 1) {
+                    appleHarvestStep = 3;
+                    appleHarvestStartTime = System.currentTimeMillis();
+                    lastMenuClickTime = System.currentTimeMillis();
+                    log("[AutoFarm-Apple] [V] Da click lua chon: 'Cay tao'! Dang cho menu con 'Thu hoach' xuat hien...");
+                } else if (res == 3) {
+                    appleHarvestStep = 4;
+                    appleHarvestStartTime = System.currentTimeMillis();
+                    log("[AutoFarm-Apple] Da dong menu. Chuyen sang buoc hoan tat...");
+                } else if (stepElapsed > 1500L && stepElapsed < 2200L) {
+                    try {
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 sender =
+                                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                        if (sender != null && currentHarvestTreeId > 0) {
+                            sender.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(currentHarvestTreeId, currentHarvestTreeTypeId);
+                            log("[AutoFarm-Apple] Gui lai packet tuong tac Cay Tao...");
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                }
+            });
+
+            if (stepElapsed > 4000L) {
+                log("[AutoFarm-Apple] Timeout cho doi menu cay tao buoc 2 -> Bo qua.");
+                appleHarvestStep = 0;
+                isAppleHarvesting = false;
+                hasHarvestedApple = true;
+                appleEnterNongTraiTime = 0L;
+                return false;
+            }
+            return true;
+        }
+
+        // --- BUOC 3: Click lua chon 'Thu hoach' trong menu con ---
+        if (appleHarvestStep == 3) {
+            long stepElapsed = now - appleHarvestStartTime;
+            if (now - lastMenuClickTime < 300L) {
+                return true;
+            }
+
+            Gdx.app.postRunnable(() -> {
+                int res = tryClickHarvestMenu(3);
+                if (res == 2 || res == 3) {
+                    appleHarvestStep = 4;
+                    appleHarvestStartTime = System.currentTimeMillis();
+                    log("[AutoFarm-Apple] [V] Da thuc hien xong menu thu hoach. Chuyen sang buoc hoan tat...");
+                }
+            });
+
+            if (stepElapsed > 3500L) {
+                log("[AutoFarm-Apple] Timeout cho doi menu thu hoach buoc 3 -> Bo qua.");
+                appleHarvestStep = 0;
+                isAppleHarvesting = false;
+                hasHarvestedApple = true;
+                appleEnterNongTraiTime = 0L;
+                return false;
+            }
+            return true;
+        }
+
+        // --- BUOC 4: Cho dong dialog va hoan tat ---
+        if (appleHarvestStep == 4) {
+            if (now - appleHarvestStartTime < 1500L) {
+                return true;
+            }
+
+            Gdx.app.postRunnable(TinhLinhBot::closeAllHarvestDialogs);
+
+            appleHarvestStep = 0;
+            isAppleHarvesting = false;
+            hasHarvestedApple = true;
+            appleEnterNongTraiTime = 0L;
+            lastMenuClickTime = 0L;
+            log("[AutoFarm-Apple] >>> HOAN TAT THU HOACH CAY TAO THANH CONG! <<<");
+            return false;
+        }
+
+        return false;
+    }
+
+    public static int tryClickHarvestMenu(int step) {
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return 0;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world == null) return 0;
+            com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 uiOverlay =
+                    world.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+            if (uiOverlay == null) return 0;
+
+            // 1. Quet tren dialogManager
+            if (uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
+                SnapshotArray<Actor> children = uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.getChildren();
+                if (children != null) {
+                    for (int i = 0; i < children.size; i++) {
+                        Actor child = children.get(i);
+                        if (child != null && child.isVisible()) {
+                            int res = findAndClickHarvestOption(child, step);
+                            if (res != 0) return res;
+                        }
+                    }
+                }
+            }
+
+            // 2. Quet cac dialog component khac tren uiOverlay qua reflection
+            for (Method m : uiOverlay.getClass().getMethods()) {
+                if (m.getParameterCount() == 1 && m.getParameterTypes()[0] == Class.class) {
+                    try {
+                        String[] dialogClasses = {
+                                "com.a.c.f.a.b.k.giRLkuN75nekLiIiIIlILLwHATdoYOUwAnTHERehIhIhIHAHahAHOhOhOHehEHEgIRlKun75",
+                                "com.a.c.f.a.b.k.GIrlKun75neKlIilILliIIwHaTdoyOuwaNtherEHiHIhiHAHAHAHOhohOHehEHEGIRLkun75"
+                        };
+                        for (String dClassName : dialogClasses) {
+                            try {
+                                Class<?> dClass = Class.forName(dClassName);
+                                Actor dActor = (Actor) m.invoke(uiOverlay, dClass);
+                                if (dActor != null && dActor.isVisible()) {
+                                    int res = findAndClickHarvestOption(dActor, step);
+                                    if (res != 0) return res;
+                                }
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    } catch (Throwable ignored) {
+                    }
+                    break;
+                }
+            }
+        } catch (Throwable t) {
+            log("[AutoFarm-Apple] Loi trong tryClickHarvestMenu: " + t.getMessage());
+        }
+        return 0;
+    }
+
+    public static int findAndClickHarvestOption(Actor root, int step) {
+        if (root == null) return 0;
+        List<Actor> buttons = new ArrayList<>();
+        findAllButtons(root, buttons, root);
+        if (buttons.isEmpty()) return 0;
+
+        int harvestIdx = -1;
+        int treeMenuIdx = -1;
+        int closeIdx = -1;
+
+        for (int i = 0; i < buttons.size(); i++) {
+            Actor btn = buttons.get(i);
+            String norm = normalizeText(getActorText(btn));
+            if (norm.contains("thu hoach") || norm.contains("hai") || (norm.contains("thu") && !norm.contains("thuong") && !norm.contains("thue"))) {
+                harvestIdx = i;
+            }
+            if (norm.contains("cay tao") || norm.contains("tao") || norm.contains("nong trai")) {
+                treeMenuIdx = i;
+            }
+            if (norm.contains("dong") || norm.contains("thoat") || norm.contains("huy") || norm.contains("ve lang")) {
+                closeIdx = i;
+            }
+        }
+
+        int chosenIdx = -1;
+        int resultType = 0;
+
+        if (harvestIdx != -1) {
+            chosenIdx = harvestIdx;
+            resultType = 2; // Thu hoach
+            log("[AutoFarm-Apple] Phat hien nut [Thu Hoach] tai vi tri " + harvestIdx + " ('" + getActorText(buttons.get(harvestIdx)) + "')");
+        } else if (step == 2 && treeMenuIdx != -1) {
+            chosenIdx = treeMenuIdx;
+            resultType = 1; // Cay tao
+            log("[AutoFarm-Apple] Phat hien nut [Cay Tao] tai vi tri " + treeMenuIdx + " ('" + getActorText(buttons.get(treeMenuIdx)) + "')");
+        } else if (step == 3) {
+            long elapsed = System.currentTimeMillis() - appleHarvestStartTime;
+            if (elapsed > 1200L) {
+                log("[AutoFarm-Apple] Khong thay nut [Thu hoach] (cay chua chin hoac da thu hoach). Chuan bi dong dialog...");
+                chosenIdx = (closeIdx != -1) ? closeIdx : (buttons.size() - 1);
+                resultType = 3; // Dong menu
+            }
+        } else if (step == 2) {
+            long elapsed = System.currentTimeMillis() - appleHarvestStartTime;
+            if (elapsed > 3000L) {
+                chosenIdx = (closeIdx != -1) ? closeIdx : 0;
+                resultType = (closeIdx != -1) ? 3 : 1;
+            }
+        }
+
+        if (chosenIdx < 0 || chosenIdx >= buttons.size()) {
+            return 0;
+        }
+
+        Actor targetBtn = buttons.get(chosenIdx);
+        log("[AutoFarm-Apple] Dang thuc hien click lua chon index " + chosenIdx + ": [" + getActorText(targetBtn) + "] (Ket qua=" + resultType + ")...");
+        clickActor(targetBtn);
+
+        // Gui packet truc tiep fallback
+        try {
+            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 sender =
+                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+            if (sender != null && currentHarvestTreeId > 0) {
+                sender.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(0, currentHarvestTreeId, chosenIdx);
+                log("[AutoFarm-Apple] Da gui packet menu truc tiep (p1=0, treeId=" + currentHarvestTreeId + ", idx=" + chosenIdx + ")");
+            }
+        } catch (Throwable t) {
+            log("[AutoFarm-Apple] Loi gui packet menu truc tiep: " + t.getMessage());
+        }
+
+        if (resultType == 2 || resultType == 3) {
+            try {
+                Method closeMethod = root.getClass().getMethod("GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75");
+                closeMethod.invoke(root);
+            } catch (Throwable ignored) {
+            }
+        }
+
+        return resultType;
+    }
+
+    private static void closeAllHarvestDialogs() {
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world == null) return;
+            com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 uiOverlay =
+                    world.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+            if (uiOverlay == null) return;
+
+            if (uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
+                SnapshotArray<Actor> children = uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.getChildren();
+                if (children != null) {
+                    for (int i = 0; i < children.size; i++) {
+                        Actor child = children.get(i);
+                        if (child != null && child.isVisible()) {
+                            try {
+                                Method closeMethod = child.getClass().getMethod("GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75");
+                                closeMethod.invoke(child);
+                            } catch (Throwable ignored) {
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static void stopPlayerVelocity(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        if (player == null) return;
+        try {
+            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
+                    player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+            if (phys != null) {
+                Method m = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
+                com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) m.invoke(phys);
+                if (body != null) {
+                    body.setLinearVelocity(0f, 0f);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Tra ve danh sach tat ca cac cong Waypoint tren map hien tai.
+     */
+    public static Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> getCurrentMapWaypoints() {
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return null;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world == null) return null;
+            com.a.c.f.a.b.e.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 map =
+                    world.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75;
+            if (map != null) {
+                return map.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return null;
+    }
+
+    /**
+     * Doc ten cua mot cong Waypoint thong qua reflection cac truong String.
+     */
+    public static String getWaypointName(com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp) {
+        if (wp == null) return "";
+        try {
+            for (Field f : wp.getClass().getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers()) || f.getType() != String.class) continue;
+                f.setAccessible(true);
+                Object obj = f.get(wp);
+                if (obj != null) {
+                    String s = obj.toString().trim();
+                    if (!s.isEmpty()) return s;
+                }
+            }
+            if (wp.getClass().getSuperclass() != null) {
+                for (Field f : wp.getClass().getSuperclass().getDeclaredFields()) {
+                    if (Modifier.isStatic(f.getModifiers()) || f.getType() != String.class) continue;
+                    f.setAccessible(true);
+                    Object obj = f.get(wp);
+                    if (obj != null) {
+                        String s = obj.toString().trim();
+                        if (!s.isEmpty()) return s;
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return "";
+    }
+
+    /**
+     * Tim cong Waypoint tren map hien tai khop voi tu khoa (vi du: "nong trai", "lang",...).
+     */
+    public static com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 findWaypointByName(String targetKeyword) {
+        if (targetKeyword == null || targetKeyword.trim().isEmpty()) {
+            return null;
+        }
+        String targetNorm = normalizeText(targetKeyword);
+        Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> waypoints = getCurrentMapWaypoints();
+        if (waypoints == null || waypoints.size == 0) {
+            return null;
+        }
+
+        for (int i = 0; i < waypoints.size; i++) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+            if (wp != null) {
+                String wpName = getWaypointName(wp);
+                String wpNorm = normalizeText(wpName);
+                if (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm)) {
+                    return wp;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Di chuyen nhan vat den cong Waypoint va kich hoat chuyen map thong qua Waypoint Wrapper callback.
+     */
+    public static boolean moveToWaypoint(com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 waypoint) {
+        if (waypoint == null) {
+            return false;
+        }
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player == null || player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 == null) {
+                return false;
+            }
+
+            Vector2 wpPos = waypoint.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+            if (wpPos == null) {
+                return false;
+            }
+
+            final Vector2 targetPos = wpPos;
+            final com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 targetWp = waypoint;
+            String wpName = getWaypointName(targetWp);
+
+            Gdx.app.postRunnable(() -> {
+                try {
+                    Class<?> clazz = Class.forName("com.a.c.f.a.b.e.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75");
+                    Constructor<?> constructor = clazz.getDeclaredConstructors()[0];
+                    constructor.setAccessible(true);
+                    Object wpTrigger = constructor.newInstance(targetWp);
+                    Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
+                    Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+                    Method moveMethod = controller.getClass().getMethod(
+                            "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                            float.class, float.class, callbackClass
+                    );
+                    moveMethod.invoke(controller, targetPos.x, targetPos.y, wpTrigger);
+                    log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
+                } catch (Throwable t) {
+                    log("[Waypoint] Loi khi khoi tao di chuyen cong waypoint: " + t.getMessage());
+                }
+            });
+            return true;
+        } catch (Throwable t) {
+            log("[Waypoint] Loi trong moveToWaypoint: " + t.getMessage());
+            return false;
+        }
+    }
+
+    private static String getEntityHName(com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 e) {
+        if (e == null) return "Cay Tao";
+        try {
+            String s = e.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (s != null && !s.trim().isEmpty()) return s.trim();
+        } catch (Throwable ignored) {
+        }
+        return "Cay Tao";
+    }
+
+    private static int getEntityHTypeId(com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 e) {
+        try {
+            if (e != null && e.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                    && e.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return e.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    private static String getTreeName(com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 t) {
+        if (t == null) return "Cay Tao";
+        try {
+            if (t.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                    && t.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
+                String s = t.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                if (s != null && !s.trim().isEmpty()) return s.trim();
+            }
+        } catch (Throwable ignored) {
+        }
+        return "Cay Tao";
+    }
+
+    private static int getTreeTypeId(com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 t) {
+        try {
+            if (t != null && t.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                    && t.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
+                return t.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    private static String getNPCName(com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 n) {
+        if (n == null) return "NPC";
+        try {
+            Object obj = n.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+            if (obj != null) {
+                for (Field f : obj.getClass().getDeclaredFields()) {
+                    f.setAccessible(true);
+                    Object val = f.get(obj);
+                    if (val != null) {
+                        for (Field inner : val.getClass().getDeclaredFields()) {
+                            if (inner.getType() == String.class) {
+                                inner.setAccessible(true);
+                                String s = (String) inner.get(val);
+                                if (s != null && !s.trim().isEmpty()) {
+                                    return s.trim();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return "NPC";
+    }
+
+    private static int getNPCTypeId(com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 n) {
+        try {
+            if (n != null && n.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                    && n.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return n.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+            }
+        } catch (Throwable ignored) {
+        }
+        return 0;
+    }
+
+    // =========================================================================
+    // AUTO LOGIN ENGINE
+    // =========================================================================
+
     private static synchronized void doLogin() {
         if (!isAutoLoginEnabled()) {
             log("[AutoLogin] Auto Login dang bi tat -> Bo qua.");
@@ -1191,6 +2003,14 @@ public final class TinhLinhBot {
             log("[Diagnostic] Nhan lenh test_trigger_village.txt! Kich hoat autoSelectReturnToVillage ngay lap tuc...");
             boolean ok = autoSelectReturnToVillage();
             log("[Diagnostic] Ket qua autoSelectReturnToVillage: " + ok);
+        }
+
+        File testApple = new File("test_trigger_apple.txt");
+        if (testApple.exists()) {
+            testApple.delete();
+            log("[Diagnostic] Nhan lenh test_trigger_apple.txt! Kich hoat triggerHarvestApple ngay lap tuc...");
+            boolean ok = triggerHarvestApple();
+            log("[Diagnostic] Ket qua triggerHarvestApple: " + ok);
         }
     }
 
