@@ -14,6 +14,7 @@ import java.util.jar.Manifest;
 import jdk.internal.org.objectweb.asm.ClassReader;
 import jdk.internal.org.objectweb.asm.ClassVisitor;
 import jdk.internal.org.objectweb.asm.ClassWriter;
+import jdk.internal.org.objectweb.asm.Label;
 import jdk.internal.org.objectweb.asm.MethodVisitor;
 import jdk.internal.org.objectweb.asm.Opcodes;
 
@@ -29,6 +30,20 @@ public final class WindowPatch {
     private static final String GL_PROFILER_OWNER =
             "com/badlogic/gdx/graphics/profiling/GLProfiler";
     private static final String FRESH_EXHAUSTION_ENTRY = "FreshExhaustion.class";
+    private static final String ATLAS_LOADER_ENTRY =
+            "com/a/b/a/a/GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.class";
+    private static final String ATLAS_LOADER_OWNER =
+            "com/a/b/a/a/GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75";
+    private static final String ATLAS_LOADER_METHOD =
+            "GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75";
+    private static final String ATLAS_LOADER_DESCRIPTOR =
+            "(Ljava/lang/String;Ljava/lang/String;Lcom/a/b/a/a/gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;)V";
+    private static final String ATLAS_FIELD =
+            "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75";
+    private static final String TEXTURE_ATLAS_OWNER = "com/badlogic/gdx/graphics/g2d/TextureAtlas";
+    private static final String ATLAS_REGION_OWNER =
+            "com/badlogic/gdx/graphics/g2d/TextureAtlas$AtlasRegion";
+    private static final String ARRAY_OWNER = "com/badlogic/gdx/utils/Array";
 
     private static final class PatchResult {
         private final byte[] bytes;
@@ -192,6 +207,47 @@ public final class WindowPatch {
         return writer.toByteArray();
     }
 
+    private static byte[] patchAtlasLoader(byte[] original, final int[] fallbackCalls) {
+        ClassReader reader = new ClassReader(original);
+        ClassWriter writer = new ClassWriter(reader, ClassWriter.COMPUTE_FRAMES);
+        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                              String signature, String[] exceptions) {
+                MethodVisitor next = super.visitMethod(access, name, descriptor, signature, exceptions);
+                if (!ATLAS_LOADER_METHOD.equals(name) || !ATLAS_LOADER_DESCRIPTOR.equals(descriptor)) {
+                    return next;
+                }
+                return new MethodVisitor(Opcodes.ASM8, next) {
+                    @Override
+                    public void visitJumpInsn(int opcode, Label label) {
+                        if (opcode != Opcodes.IFNONNULL || fallbackCalls[0] > 0) {
+                            super.visitJumpInsn(opcode, label);
+                            return;
+                        }
+
+                        super.visitJumpInsn(opcode, label);
+                        super.visitVarInsn(Opcodes.ALOAD, 4);
+                        super.visitVarInsn(Opcodes.ILOAD, 5);
+                        super.visitVarInsn(Opcodes.ALOAD, 0);
+                        super.visitFieldInsn(Opcodes.GETFIELD, ATLAS_LOADER_OWNER, ATLAS_FIELD,
+                                "Lcom/badlogic/gdx/graphics/g2d/TextureAtlas;");
+                        super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, TEXTURE_ATLAS_OWNER, "getRegions",
+                                "()Lcom/badlogic/gdx/utils/Array;", false);
+                        super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, ARRAY_OWNER, "first",
+                                "()Ljava/lang/Object;", false);
+                        super.visitTypeInsn(Opcodes.CHECKCAST, ATLAS_REGION_OWNER);
+                        super.visitInsn(Opcodes.AASTORE);
+                        super.visitJumpInsn(Opcodes.GOTO, label);
+                        fallbackCalls[0]++;
+                    }
+                };
+            }
+        };
+        reader.accept(visitor, 0);
+        return writer.toByteArray();
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
             throw new IllegalArgumentException(
@@ -211,6 +267,7 @@ public final class WindowPatch {
         int windowedCalls = 0;
         int fullscreenCalls = 0;
         int freshHookCalls = 0;
+        int atlasFallbackCalls = 0;
         int[] launcherWindowedCalls = {0};
         try (JarFile source = new JarFile(input.toFile())) {
             Manifest manifest = source.getManifest();
@@ -236,6 +293,12 @@ public final class WindowPatch {
                     } else if (LAUNCHER_ENTRY.equals(entry.getName())) {
                         try (InputStream in = source.getInputStream(entry)) {
                             bytes = patchLauncher(in.readAllBytes(), launcherWindowedCalls, width, height);
+                        }
+                    } else if (ATLAS_LOADER_ENTRY.equals(entry.getName())) {
+                        try (InputStream in = source.getInputStream(entry)) {
+                            int[] calls = {0};
+                            bytes = patchAtlasLoader(in.readAllBytes(), calls);
+                            atlasFallbackCalls = calls[0];
                         }
                     } else {
                         try (InputStream in = source.getInputStream(entry)) {
@@ -269,18 +332,19 @@ public final class WindowPatch {
         }
 
         if (windowedCalls == 0 || fullscreenCalls == 0 || launcherWindowedCalls[0] == 0
-                || freshHookCalls == 0) {
+                || freshHookCalls == 0 || atlasFallbackCalls == 0) {
             Files.deleteIfExists(output);
             throw new IllegalStateException("Window patch incomplete: launcherSetWindowedMode="
                     + launcherWindowedCalls[0] + ", gameSetWindowedMode=" + windowedCalls
                     + ", gameSetFullscreenMode=" + fullscreenCalls + ", freshExhaustionHooks="
-                    + freshHookCalls);
+                    + freshHookCalls + ", atlasFallbacks=" + atlasFallbackCalls);
         }
         System.out.println("Window size: " + width + "x" + height);
         System.out.println("Patched launcher setWindowedMode calls: " + launcherWindowedCalls[0]);
         System.out.println("Patched setWindowedMode calls: " + windowedCalls);
         System.out.println("Blocked setFullscreenMode calls: " + fullscreenCalls);
         System.out.println("Injected FreshExhaustion hooks: " + freshHookCalls);
+        System.out.println("Patched missing atlas regions: " + atlasFallbackCalls);
         System.out.println("Output: " + output.toAbsolutePath());
     }
 }
