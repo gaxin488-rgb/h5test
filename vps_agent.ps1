@@ -158,6 +158,9 @@ function Start-TunnelProcess {
         Write-Log "WARNING: cloudflared.exe not found at $CloudflaredPath"
         return $null
     }
+    # Dam bao khong co cloudflared cu chay trung lap gay xung dot route 502/530
+    Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Milliseconds 300
     try {
         Unregister-Event -SourceIdentifier "cf_stdout" -ErrorAction SilentlyContinue
         Unregister-Event -SourceIdentifier "cf_stderr" -ErrorAction SilentlyContinue
@@ -221,6 +224,7 @@ $cfProcess = Start-TunnelProcess
 $task = $listener.GetContextAsync()
 $lastClean = [DateTime]::MinValue
 $lastUpdateCheck = Get-Date
+$lastTunnelProbe = [DateTime]::MinValue
 $lastTunnelUrl = ""
 
 Write-Log "Entering main 24/7 loop (Zero disk logs, Auto-Updater enabled)..."
@@ -326,8 +330,24 @@ while ($listener.IsListening) {
             Sync-TunnelUrl $lastTunnelUrl
         }
 
-        # D. Storage Guard 24/7 (Kiem tra va don dep dinh ky moi 60 giay)
         $now = Get-Date
+
+        # D. Kiem tra ket noi Cloudflare Tunnel ngoai mang dinh ky (Chong triet de loi 530 / 1033)
+        if ($global:LatestTunnelUrl -and (($now - $lastTunnelProbe).TotalSeconds -ge 60)) {
+            $lastTunnelProbe = $now
+            try {
+                $probeRes = (Invoke-WebRequest -Uri "$global:LatestTunnelUrl/ping" -TimeoutSec 5 -UseBasicParsing -ErrorAction Stop).StatusCode
+                if ($probeRes -ne 200) { throw }
+            } catch {
+                Write-Log "Phat hien Cloudflare Tunnel ngat ket noi (Error 530/1033). Dang tu dong hoi phuc..."
+                try { $cfProcess.Kill() } catch {}
+                Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+                $global:LatestTunnelUrl = ""
+                $cfProcess = Start-TunnelProcess
+            }
+        }
+
+        # E. Storage Guard 24/7 (Kiem tra va don dep dinh ky moi 60 giay)
         if (($now - $lastClean).TotalSeconds -ge 60) {
             $lastClean = $now
 
