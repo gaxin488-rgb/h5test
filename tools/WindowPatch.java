@@ -35,7 +35,7 @@ public final class WindowPatch {
         }
     }
 
-    private static PatchResult patchGame(byte[] original) {
+    private static PatchResult patchGame(byte[] original, final int width, final int height) {
         final int[] windowedCalls = {0};
         final int[] fullscreenCalls = {0};
         ClassReader reader = new ClassReader(original);
@@ -54,8 +54,8 @@ public final class WindowPatch {
                                 && "setWindowedMode".equals(methodName)
                                 && "(II)Z".equals(methodDescriptor)) {
                             super.visitInsn(Opcodes.POP2);
-                            super.visitIntInsn(Opcodes.SIPUSH, 360);
-                            super.visitIntInsn(Opcodes.SIPUSH, 480);
+                            super.visitIntInsn(Opcodes.SIPUSH, width);
+                            super.visitIntInsn(Opcodes.SIPUSH, height);
                             windowedCalls[0]++;
                             super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
                             return;
@@ -78,7 +78,8 @@ public final class WindowPatch {
         return new PatchResult(writer.toByteArray(), windowedCalls[0], fullscreenCalls[0]);
     }
 
-    private static byte[] patchLauncher(byte[] original, final int[] windowedCalls) {
+    private static byte[] patchLauncher(byte[] original, final int[] windowedCalls,
+                                        final int width, final int height) {
         ClassReader reader = new ClassReader(original);
         ClassWriter writer = new ClassWriter(reader, 0);
         ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
@@ -94,8 +95,8 @@ public final class WindowPatch {
                                 && "setWindowedMode".equals(methodName)
                                 && "(II)V".equals(methodDescriptor)) {
                             super.visitInsn(Opcodes.POP2);
-                            super.visitIntInsn(Opcodes.SIPUSH, 360);
-                            super.visitIntInsn(Opcodes.SIPUSH, 480);
+                            super.visitIntInsn(Opcodes.SIPUSH, width);
+                            super.visitIntInsn(Opcodes.SIPUSH, height);
                             windowedCalls[0]++;
                         }
                         super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
@@ -108,12 +109,17 @@ public final class WindowPatch {
     }
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 2) {
-            throw new IllegalArgumentException("Usage: WindowPatch <input.jar> <output.jar>");
+        if (args.length != 4) {
+            throw new IllegalArgumentException("Usage: WindowPatch <input.jar> <output.jar> <width> <height>");
         }
 
         Path input = Paths.get(args[0]);
         Path output = Paths.get(args[1]);
+        int width = Integer.parseInt(args[2]);
+        int height = Integer.parseInt(args[3]);
+        if (width <= 0 || height <= 0 || width > 4096 || height > 4096) {
+            throw new IllegalArgumentException("Window dimensions must be between 1 and 4096 pixels");
+        }
         Files.deleteIfExists(output);
 
         int windowedCalls = 0;
@@ -135,14 +141,14 @@ public final class WindowPatch {
                     if (GAME_ENTRY.equals(entry.getName())) {
                         PatchResult result;
                         try (InputStream in = source.getInputStream(entry)) {
-                            result = patchGame(in.readAllBytes());
+                            result = patchGame(in.readAllBytes(), width, height);
                         }
                         bytes = result.bytes;
                         windowedCalls = result.windowedCalls;
                         fullscreenCalls = result.fullscreenCalls;
                     } else if (LAUNCHER_ENTRY.equals(entry.getName())) {
                         try (InputStream in = source.getInputStream(entry)) {
-                            bytes = patchLauncher(in.readAllBytes(), launcherWindowedCalls);
+                            bytes = patchLauncher(in.readAllBytes(), launcherWindowedCalls, width, height);
                         }
                     } else {
                         try (InputStream in = source.getInputStream(entry)) {
@@ -164,6 +170,7 @@ public final class WindowPatch {
                     + launcherWindowedCalls[0] + ", gameSetWindowedMode=" + windowedCalls
                     + ", gameSetFullscreenMode=" + fullscreenCalls);
         }
+        System.out.println("Window size: " + width + "x" + height);
         System.out.println("Patched launcher setWindowedMode calls: " + launcherWindowedCalls[0]);
         System.out.println("Patched setWindowedMode calls: " + windowedCalls);
         System.out.println("Blocked setFullscreenMode calls: " + fullscreenCalls);

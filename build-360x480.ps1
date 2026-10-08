@@ -1,6 +1,8 @@
 param(
     [string]$SourceJar = (Join-Path $PSScriptRoot 'TinhLinh.jar'),
-    [string]$OutputJar = (Join-Path $PSScriptRoot 'TinhLinh-360x480.jar')
+    [string]$OutputJar = (Join-Path $PSScriptRoot 'TinhLinh-360x480.jar'),
+    [int]$WindowWidth = 360,
+    [int]$WindowHeight = 480
 )
 
 $ErrorActionPreference = 'Stop'
@@ -29,7 +31,7 @@ try {
     & $javac '--add-exports' 'java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' '-encoding' 'UTF-8' '-d' $classes (Join-Path $PSScriptRoot 'tools\WindowPatch.java')
     if ($LASTEXITCODE -ne 0) { throw 'WindowPatch compilation failed.' }
 
-    & $java '--add-exports' 'java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' '-cp' $classes 'WindowPatch' $SourceJar $OutputJar
+    & $java '--add-exports' 'java.base/jdk.internal.org.objectweb.asm=ALL-UNNAMED' '-cp' $classes 'WindowPatch' $SourceJar $OutputJar $WindowWidth $WindowHeight
     if ($LASTEXITCODE -ne 0) { throw 'JAR patch failed.' }
 
     $outputSize = (Get-Item -LiteralPath $OutputJar).Length
