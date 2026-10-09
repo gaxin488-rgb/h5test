@@ -19,6 +19,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.net.InetSocketAddress;
+import java.util.concurrent.Executors;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Screen;
@@ -33,10 +38,8 @@ import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Button;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
-import com.badlogic.gdx.scenes.scene2d.utils.ChangeListener;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.utils.Pools;
 import com.badlogic.gdx.utils.SnapshotArray;
 import com.github.tommyettinger.textra.TextraButton;
 import com.github.tommyettinger.textra.TextraLabel;
@@ -53,12 +56,18 @@ import org.lwjgl.glfw.GLFW;
  * Feature 7: Check Server Under Maintenance (isServerUnderMaintenance, checkServerUnderMaintenance, getServerMaintenanceMessage).
  * Feature 8: Return to Saved Exhaustion Coordinate (returnToExhaustionCoordinate, isReturningToExhaustion, isAutoReturnToExhaustionEnabled, moveTo, clearSavedExhaustionCoordinate).
  * Feature 9: Auto Attack Menu Automation (triggerAutoAttackMenu, openAutoAttackMenu, findAutoAttackButton, findMenuButton, isAutoAttackMenuEnabled, setAutoAttackMenuEnabled).
+ * Feature 10: Embedded Local HTTP API Server (Port 7654) for Antigravity MCP Bridge (startHttpApiServer, executeBotCommand, getCharacterName, getCharacterLevel, getPlayerMp, getPlayerMaxMp).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.7.2-Feature9-SayariRoutingPerfect";
+    private static final String VERSION = "1.8.0-Feature10-LocalMcpBridge";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
+
+    // Feature 10: Embedded Local HTTP API Server (Port 7654) cho Antigravity MCP Plugin
+    private static volatile HttpServer httpApiServer = null;
+    private static final int HTTP_API_PORT = 7654;
+    private static final List<String> RECENT_LOGS = new ArrayList<>();
 
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
     private static volatile boolean isLoggingIn = false;
@@ -115,6 +124,21 @@ public final class TinhLinhBot {
     private static volatile boolean isAutoAttackMenuEnabled = true;
     private static volatile long lastAutoAttackTriggerTime = 0L;
     private static volatile boolean isAutoAttackActive = false;
+    private static final long AUTO_ATTACK_MENU_DELAY_MS = 400L;
+    private static final long AUTO_ATTACK_CONFIRM_DELAY_MS = 300L;
+    private static final long AUTO_ATTACK_CONFIRM_TIMEOUT_MS = 1_500L;
+    private static final long AUTO_ATTACK_ATTEMPT_TIMEOUT_MS = 5_000L;
+    private static final int AUTO_ATTACK_PHASE_INITIAL = 0;
+    private static final int AUTO_ATTACK_PHASE_DIRECT_CONFIRM = 1;
+    private static final int AUTO_ATTACK_PHASE_MENU_ITEM = 2;
+    private static final int AUTO_ATTACK_PHASE_MENU_CONFIRM = 3;
+    private static volatile boolean autoAttackAttemptPending = false;
+    private static volatile boolean autoAttackRenderTaskQueued = false;
+    private static volatile int autoAttackPhase = AUTO_ATTACK_PHASE_INITIAL;
+    private static volatile long autoAttackAttemptStartTime = 0L;
+    private static volatile long autoAttackPhaseStartTime = 0L;
+    private static volatile long autoAttackPhaseDueTime = 0L;
+    private static volatile Actor autoAttackLastClickedButton = null;
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -139,6 +163,9 @@ public final class TinhLinhBot {
         log(" Tai khoan mac dinh: " + (savedUsername != null ? savedUsername : "(chua co)"));
         log(" Auto Login Enabled: " + isAutoLoginEnabled());
         log("========================================================");
+
+        // Feature 10: Khoi dong Local HTTP REST API Server tren cong 7654 cho Antigravity MCP Plugin
+        startHttpApiServer();
 
         Thread watcher = new Thread(TinhLinhBot::runWatcherLoop, "AutoFarm-Watcher");
         watcher.setDaemon(true);
@@ -858,19 +885,8 @@ public final class TinhLinhBot {
         }
     }
 
-    private static void triggerClickListeners(Actor a, float x, float y) {
-        if (a == null || a.getListeners() == null) return;
-        SnapshotArray<EventListener> listeners = new SnapshotArray<>(a.getListeners());
-        for (int i = 0; i < listeners.size; i++) {
-            EventListener l = listeners.get(i);
-            if (l instanceof ClickListener) {
-                ((ClickListener) l).clicked(new InputEvent(), x, y);
-            }
-        }
-    }
-
-    private static void clickActor(Actor actor) {
-        if (actor == null) return;
+    private static boolean clickActor(Actor actor) {
+        if (actor == null || !actor.isVisible()) return false;
         try {
             float centerX = actor.getWidth() / 2f;
             float centerY = actor.getHeight() / 2f;
@@ -879,24 +895,10 @@ public final class TinhLinhBot {
 
             Vector2 stageCoords = actor.localToStageCoordinates(new Vector2(centerX, centerY));
             Stage stage = actor.getStage();
+            if (stage == null) return false;
 
-            // 1. Phuc vu ClickListener truc tiep tren Actor va clickable parent
-            triggerClickListeners(actor, centerX, centerY);
-            if (actor.getParent() != null && isClickable(actor.getParent())) {
-                Vector2 parentCenter = new Vector2(actor.getParent().getWidth() / 2f, actor.getParent().getHeight() / 2f);
-                triggerClickListeners(actor.getParent(), parentCenter.x, parentCenter.y);
-            }
-
-            // 2. Neu la Button: goi ClickListener cua Button va toggle()
-            if (actor instanceof Button) {
-                Button btn = (Button) actor;
-                if (btn.getClickListener() != null) {
-                    btn.getClickListener().clicked(new InputEvent(), centerX, centerY);
-                }
-                btn.toggle();
-            }
-
-            // 3. Gui InputEvent TouchDown va TouchUp voi toa do Stage chuan xac
+            // Fire one Scene2D input sequence on the render thread. Direct listener
+            // calls plus synthetic events could toggle the same button twice.
             InputEvent downEvent = new InputEvent();
             downEvent.setType(InputEvent.Type.touchDown);
             downEvent.setStage(stage);
@@ -917,19 +919,13 @@ public final class TinhLinhBot {
             upEvent.setButton(0);
             actor.fire(upEvent);
 
-            // 4. ChangeEvent
-            try {
-                ChangeListener.ChangeEvent change = Pools.obtain(ChangeListener.ChangeEvent.class);
-                actor.fire(change);
-                Pools.free(change);
-            } catch (Throwable ignored) {
-            }
-
             log("[AutoFarm-Exhaustion] Da kich hoat click thanh cong vao Actor: [" + actor.getClass().getSimpleName() +
                     "] tai Stage coords (X=" + String.format(Locale.ROOT, "%.1f", stageCoords.x) +
                     ", Y=" + String.format(Locale.ROOT, "%.1f", stageCoords.y) + ").");
+            return true;
         } catch (Throwable t) {
             log("[AutoFarm-Exhaustion] Loi khi kich hoat click actor: " + t.getMessage());
+            return false;
         }
     }
 
@@ -2039,6 +2035,14 @@ public final class TinhLinhBot {
         String formatted = "[" + timestamp + "] " + message;
         System.out.println(formatted);
 
+        // Luu vao in-memory buffer phuc vu HTTP API /log (toi da 500 dong)
+        synchronized (RECENT_LOGS) {
+            if (RECENT_LOGS.size() >= 500) {
+                RECENT_LOGS.remove(0);
+            }
+            RECENT_LOGS.add(formatted);
+        }
+
         // Ghi vao autofarm_log.txt voi co che tu dong cat tia (Storage Guard)
         try {
             File logFile = new File("autofarm_log.txt");
@@ -2762,7 +2766,7 @@ public final class TinhLinhBot {
                     // Feature 9: Tu dong Kich hoat Menu Auto Tan Cong sau khi quay lai vi tri kiet suc
                     if (isAutoAttackMenuEnabled()) {
                         log("[AutoFarm-Combat] Da quay lai vi tri kiet suc cu -> Kich hoat Menu Auto Tan Cong de tiep tuc danh quai...");
-                        triggerAutoAttackMenu();
+                        openAutoAttackMenu();
                     }
                     return true;
                 }
@@ -2860,6 +2864,9 @@ public final class TinhLinhBot {
 
     public static void setAutoAttackMenuEnabled(boolean enabled) {
         isAutoAttackMenuEnabled = enabled;
+        if (!enabled) {
+            cancelAutoAttackAttempt("Auto Attack da bi tat.");
+        }
         log("[AutoFarm-Combat] Trang thai Auto Attack Menu duoc dat thanh: " + enabled);
     }
 
@@ -2916,121 +2923,187 @@ public final class TinhLinhBot {
         findAllButtons(root, buttons, root);
         for (Actor btn : buttons) {
             String text = normalizeText(getActorText(btn));
-            if (text.contains("bat dau") || text.contains("bat") || text.contains("xac nhan")
-                    || text.contains("luu") || text.contains("ap dung") || text.equals("ok")) {
+            if (text.equals("bat") || text.equals("bat dau") || text.contains("xac nhan")
+                    || text.equals("luu") || text.equals("ap dung") || text.equals("ok")) {
                 return btn;
             }
         }
         return null;
     }
 
-    /**
-     * Ham chinh thuc hien quy trinh kich hoat Menu Auto Tan Cong:
-     * 1. Quet truc tiep tren Stage xem da co nut Auto chua -> Click luon.
-     * 2. Neu chua co -> Tim nut Menu de mo bang chuc nang -> Tim muc Auto ben trong va Click.
-     * 3. Neu mo ra popup Cai dat Auto -> Click nut Bat dau / Xac nhan de kich hoat.
-     * 4. Fallback Native Attack: Kich hoat phuong thuc tim quai gan nhat va tan cong qua GameScreen.
-     */
-    public static synchronized boolean triggerAutoAttackMenu() {
-        long now = System.currentTimeMillis();
-        if (now - lastAutoAttackTriggerTime < 2500L) {
-            return false;
+    // Schedule one non-blocking state-machine step. Scene2D access stays on the render thread.
+    private static synchronized void scheduleAutoAttackRenderStep(long now) {
+        if (!autoAttackAttemptPending || autoAttackRenderTaskQueued || now < autoAttackPhaseDueTime) {
+            return;
         }
-        lastAutoAttackTriggerTime = now;
+        if (Gdx.app == null) {
+            failAutoAttackAttempt("LibGDX app khong san sang.");
+            return;
+        }
+        autoAttackRenderTaskQueued = true;
+        try {
+            Gdx.app.postRunnable(() -> runAutoAttackRenderStep());
+        } catch (Throwable t) {
+            autoAttackRenderTaskQueued = false;
+            failAutoAttackAttempt("Khong the xep lich thao tac tren render thread: " + t.getMessage());
+        }
+    }
 
-        log("[AutoFarm-Combat] Bat dau quy trinh kich hoat Menu Auto Tan Cong...");
+    private static synchronized void completeAutoAttackAttempt(String source) {
+        autoAttackAttemptPending = false;
+        autoAttackRenderTaskQueued = false;
+        autoAttackPhase = AUTO_ATTACK_PHASE_INITIAL;
+        autoAttackLastClickedButton = null;
+        setAutoAttackActive(true);
+        log("[AutoFarm-Combat] Da xac nhan kich hoat auto tan cong qua " + source + ".");
+    }
+
+    private static synchronized void failAutoAttackAttempt(String reason) {
+        autoAttackAttemptPending = false;
+        autoAttackRenderTaskQueued = false;
+        autoAttackPhase = AUTO_ATTACK_PHASE_INITIAL;
+        autoAttackLastClickedButton = null;
+        setAutoAttackActive(false);
+        log("[AutoFarm-Combat] Kich hoat auto tan cong that bai: " + reason);
+    }
+
+    private static synchronized void cancelAutoAttackAttempt(String reason) {
+        boolean hadState = autoAttackAttemptPending || autoAttackRenderTaskQueued || isAutoAttackActive;
+        autoAttackAttemptPending = false;
+        autoAttackRenderTaskQueued = false;
+        autoAttackPhase = AUTO_ATTACK_PHASE_INITIAL;
+        autoAttackLastClickedButton = null;
+        setAutoAttackActive(false);
+        if (hadState && reason != null && !reason.isEmpty()) {
+            log("[AutoFarm-Combat] Huy luong auto tan cong: " + reason);
+        }
+    }
+
+    private static synchronized void runAutoAttackRenderStep() {
+        autoAttackRenderTaskQueued = false;
+        if (!autoAttackAttemptPending) {
+            return;
+        }
+
+        long now = System.currentTimeMillis();
+        if (now - autoAttackAttemptStartTime > AUTO_ATTACK_ATTEMPT_TIMEOUT_MS) {
+            failAutoAttackAttempt("Qua thoi gian cho thao tac UI/native.");
+            return;
+        }
 
         try {
             List<Actor> roots = getActiveDialogRoots();
 
-            // 1. Uu tien 1: Kiem tra xem da co nut Auto hien huu tren man hinh chua
-            for (Actor root : roots) {
-                Actor autoBtn = findAutoAttackButton(root);
-                if (autoBtn != null) {
-                    String btnText = getActorText(autoBtn);
-                    log("[AutoFarm-Combat] Tim thay nut Auto truc tiep: [" + btnText + "]. Dang thuc hien click...");
-                    clickActor(autoBtn);
-                    isAutoAttackActive = true;
-
-                    // Neu co dialog xac nhan sau do, ho tro tu dong xac nhan
-                    Gdx.app.postRunnable(() -> {
-                        try {
-                            Thread.sleep(300);
-                            for (Actor r : getActiveDialogRoots()) {
-                                Actor startBtn = findConfirmOrStartButton(r);
-                                if (startBtn != null && startBtn != autoBtn) {
-                                    log("[AutoFarm-Combat] Tim thay nut Bat dau tren popup cai dat: [" + getActorText(startBtn) + "]. Dang click...");
-                                    clickActor(startBtn);
-                                    break;
-                                }
-                            }
-                        } catch (Throwable ignored) {}
-                    });
-                    return true;
-                }
-            }
-
-            // 2. Uu tien 2: Neu chua co nut Auto tren man hinh, tim nut "Menu" de mo ra
-            Actor menuBtn = null;
-            for (Actor root : roots) {
-                menuBtn = findMenuButton(root);
-                if (menuBtn != null) break;
-            }
-
-            if (menuBtn != null) {
-                log("[AutoFarm-Combat] Tim thay nut Menu: [" + getActorText(menuBtn) + "]. Dang click de mo danh muc...");
-                clickActor(menuBtn);
-
-                // Doi nhe mot chut roi tim muc Auto trong menu vua mo
-                final Actor finalMenuBtn = menuBtn;
-                Gdx.app.postRunnable(() -> {
-                    try {
-                        Thread.sleep(400);
-                        List<Actor> updatedRoots = getActiveDialogRoots();
-                        for (Actor r : updatedRoots) {
-                            Actor autoBtn = findAutoAttackButton(r);
-                            if (autoBtn != null && autoBtn != finalMenuBtn) {
-                                log("[AutoFarm-Combat] Tim thay muc Auto trong menu: [" + getActorText(autoBtn) + "]. Dang click...");
-                                clickActor(autoBtn);
-                                isAutoAttackActive = true;
-
-                                // Tiep tuc kiem tra neu co popup cai dat auto mo ra
-                                Thread.sleep(300);
-                                for (Actor r2 : getActiveDialogRoots()) {
-                                    Actor startBtn = findConfirmOrStartButton(r2);
-                                    if (startBtn != null && startBtn != autoBtn) {
-                                        log("[AutoFarm-Combat] Click xac nhan popup cai dat: [" + getActorText(startBtn) + "]...");
-                                        clickActor(startBtn);
-                                        break;
-                                    }
-                                }
-                                break;
-                            }
+            if (autoAttackPhase == AUTO_ATTACK_PHASE_INITIAL) {
+                for (Actor root : roots) {
+                    Actor autoBtn = findAutoAttackButton(root);
+                    if (autoBtn != null) {
+                        log("[AutoFarm-Combat] Tim thay nut Auto truc tiep: [" + getActorText(autoBtn) + "]. Dang click...");
+                        if (clickActor(autoBtn)) {
+                            autoAttackLastClickedButton = autoBtn;
+                            autoAttackPhase = AUTO_ATTACK_PHASE_DIRECT_CONFIRM;
+                            autoAttackPhaseStartTime = now;
+                            autoAttackPhaseDueTime = now + AUTO_ATTACK_CONFIRM_DELAY_MS;
+                            return;
                         }
-                    } catch (Throwable t) {
-                        log("[AutoFarm-Combat] Ngoai le khi quet muc Auto trong menu: " + t.getMessage());
                     }
-                });
-                return true;
+                }
+
+                for (Actor root : roots) {
+                    Actor menuBtn = findMenuButton(root);
+                    if (menuBtn != null) {
+                        log("[AutoFarm-Combat] Tim thay nut Menu: [" + getActorText(menuBtn) + "]. Dang click...");
+                        if (clickActor(menuBtn)) {
+                            autoAttackLastClickedButton = menuBtn;
+                            autoAttackPhase = AUTO_ATTACK_PHASE_MENU_ITEM;
+                            autoAttackPhaseStartTime = now;
+                            autoAttackPhaseDueTime = now + AUTO_ATTACK_MENU_DELAY_MS;
+                            return;
+                        }
+                    }
+                }
+
+                log("[AutoFarm-Combat] Khong thay nut Auto tren UI -> Kich hoat native attack...");
+                boolean nativeStarted = com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
+                if (nativeStarted) {
+                    completeAutoAttackAttempt("native engine");
+                } else {
+                    failAutoAttackAttempt("native engine khong tim thay muc tieu kha dung.");
+                }
+                return;
             }
 
-            // 3. Fallback: Kich hoat co che quet quai vat va tan cong native qua engine GameScreen
-            log("[AutoFarm-Combat] Khong thay nut Auto tren UI -> Kich hoat phuong thuc tan cong quai vat native qua GameScreen...");
-            Gdx.app.postRunnable(() -> {
-                try {
-                    com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
-                    isAutoAttackActive = true;
-                    log("[AutoFarm-Combat] Da kich hoat thanh cong co che quet quai vat va phan phoi tan cong native.");
-                } catch (Throwable t) {
-                    log("[AutoFarm-Combat] Loi kich hoat tan cong native: " + t.getMessage());
+            if (autoAttackPhase == AUTO_ATTACK_PHASE_MENU_ITEM) {
+                for (Actor root : roots) {
+                    Actor autoBtn = findAutoAttackButton(root);
+                    if (autoBtn != null && autoBtn != autoAttackLastClickedButton) {
+                        log("[AutoFarm-Combat] Tim thay muc Auto trong menu: [" + getActorText(autoBtn) + "]. Dang click...");
+                        if (clickActor(autoBtn)) {
+                            autoAttackLastClickedButton = autoBtn;
+                            autoAttackPhase = AUTO_ATTACK_PHASE_MENU_CONFIRM;
+                            autoAttackPhaseStartTime = now;
+                            autoAttackPhaseDueTime = now + AUTO_ATTACK_CONFIRM_DELAY_MS;
+                            return;
+                        }
+                    }
                 }
-            });
-            return true;
+                if (now - autoAttackPhaseStartTime > AUTO_ATTACK_ATTEMPT_TIMEOUT_MS) {
+                    failAutoAttackAttempt("Khong tim thay muc Auto sau khi mo menu.");
+                } else {
+                    autoAttackPhaseDueTime = now + 200L;
+                }
+                return;
+            }
 
+            Actor confirmBtn = null;
+            for (Actor root : roots) {
+                Actor candidate = findConfirmOrStartButton(root);
+                if (candidate != null && candidate != autoAttackLastClickedButton) {
+                    confirmBtn = candidate;
+                    break;
+                }
+            }
+            if (confirmBtn != null) {
+                log("[AutoFarm-Combat] Tim thay nut xac nhan auto: [" + getActorText(confirmBtn) + "]. Dang click...");
+                if (clickActor(confirmBtn)) {
+                    completeAutoAttackAttempt("popup confirmation");
+                } else {
+                    failAutoAttackAttempt("Khong click duoc nut xac nhan.");
+                }
+                return;
+            }
+
+            if (now - autoAttackPhaseStartTime >= AUTO_ATTACK_CONFIRM_TIMEOUT_MS) {
+                completeAutoAttackAttempt("click UI khong co popup xac nhan");
+            } else {
+                autoAttackPhaseDueTime = now + 200L;
+            }
         } catch (Throwable t) {
-            log("[AutoFarm-Combat] Loi trong triggerAutoAttackMenu: " + t.getMessage());
+            failAutoAttackAttempt("Ngoai le tren render thread: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Queue the auto-attack UI/native flow without touching Scene2D from the watcher thread.
+     */
+    public static synchronized boolean triggerAutoAttackMenu() {
+        long now = System.currentTimeMillis();
+        if (!isAutoAttackMenuEnabled() || autoAttackAttemptPending || now - lastAutoAttackTriggerTime < 2500L) {
             return false;
         }
+
+        lastAutoAttackTriggerTime = now;
+        autoAttackAttemptPending = true;
+        autoAttackRenderTaskQueued = false;
+        autoAttackPhase = AUTO_ATTACK_PHASE_INITIAL;
+        autoAttackAttemptStartTime = now;
+        autoAttackPhaseStartTime = now;
+        autoAttackPhaseDueTime = now;
+        autoAttackLastClickedButton = null;
+        setAutoAttackActive(false);
+        log("[AutoFarm-Combat] Bat dau quy trinh kich hoat Menu Auto Tan Cong...");
+        scheduleAutoAttackRenderStep(now);
+        return autoAttackAttemptPending;
     }
 
     /**
@@ -3050,15 +3123,19 @@ public final class TinhLinhBot {
      */
     private static void handleAutoAttackFlow(long now) {
         if (!isAutoAttackMenuEnabled()) {
+            cancelAutoAttackAttempt("Auto Attack dang tat.");
             return;
         }
 
         if (isPlayerExhausted() || isExhaustionDialogVisible()) {
-            isAutoAttackActive = false;
+            cancelAutoAttackAttempt("Nhan vat dang kiet suc hoac co popup kiet suc.");
             return;
         }
 
         if (isReturningToExhaustion() || isAppleHarvesting()) {
+            if (autoAttackAttemptPending) {
+                cancelAutoAttackAttempt("Dang uu tien quay lai toa do hoac hai tao.");
+            }
             return;
         }
 
@@ -3069,14 +3146,357 @@ public final class TinhLinhBot {
         boolean isVillage = (curMapId == 0 || curMapId == 2) || normMap.contains("lang");
 
         if (isVillage || isFarm) {
-            isAutoAttackActive = false;
+            cancelAutoAttackAttempt("Dang o Lang hoac Nong trai.");
+            return;
+        }
+
+        if (autoAttackAttemptPending) {
+            if (now - autoAttackAttemptStartTime > AUTO_ATTACK_ATTEMPT_TIMEOUT_MS) {
+                failAutoAttackAttempt("Attempt auto attack timeout.");
+            } else {
+                scheduleAutoAttackRenderStep(now);
+            }
             return;
         }
 
         // Neu da o map danh quai, va chua kich hoat auto danh trong 15s qua
-        if (!isAutoAttackActive && (now - lastAutoAttackTriggerTime >= 15_000L)) {
+        if (!isAutoAttackActive() && (now - lastAutoAttackTriggerTime >= 15_000L)) {
             log("[AutoFarm-Combat] Nhan vat dang o Map chien dau [" + curMap + " - ID: " + curMapId + "] nhung chua bat Auto -> Tu dong goi Menu Auto Tan Cong...");
-            triggerAutoAttackMenu();
+            openAutoAttackMenu();
         }
+    }
+
+    // =========================================================================
+    // FEATURE 10: LOCAL HTTP REST API SERVER (PORT 7654) FOR MCP BRIDGE
+    // =========================================================================
+
+    public static synchronized void startHttpApiServer() {
+        if (httpApiServer != null) {
+            return;
+        }
+        try {
+            httpApiServer = HttpServer.create(new InetSocketAddress("127.0.0.1", HTTP_API_PORT), 0);
+
+            // 1. GET /status
+            httpApiServer.createContext("/status", exchange -> {
+                if (handleCors(exchange)) return;
+                try {
+                    long now = System.currentTimeMillis();
+                    long uptimeSec = (gameStartTime > 0) ? ((now - gameStartTime) / 1000L) : 0L;
+                    String charName = getCharacterName();
+                    int level = getCharacterLevel();
+                    String mapName = getCurrentMapName();
+                    int mapId = getCurrentMapId();
+                    int zone = getCurrentZone();
+                    Vector2 pos = getPlayerPosition();
+                    float posX = (pos != null) ? pos.x : 0.0f;
+                    float posY = (pos != null) ? pos.y : 0.0f;
+                    long hp = getPlayerHp();
+                    long maxHp = getPlayerMaxHp();
+                    long mp = getPlayerMp();
+                    long maxMp = getPlayerMaxMp();
+                    boolean inGame = isPlayerInGame();
+                    boolean exhausted = isPlayerExhausted();
+
+                    SavedCoordinate savedCoord = getSavedExhaustionCoordinate();
+                    String farmMap = (savedCoord != null) ? savedCoord.mapName : (lastKnownMapName != null ? lastKnownMapName : "");
+                    int farmMapId = (savedCoord != null) ? savedCoord.mapId : lastKnownMapId;
+
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("{");
+                    sb.append("\"connected\":").append(inGame).append(",");
+                    sb.append("\"name\":\"").append(escapeJson(charName)).append("\",");
+                    sb.append("\"level\":").append(level).append(",");
+                    sb.append("\"map\":\"").append(escapeJson(mapName)).append("\",");
+                    sb.append("\"map_id\":").append(mapId).append(",");
+                    sb.append("\"zone\":").append(zone).append(",");
+                    sb.append("\"x\":").append(String.format(Locale.US, "%.1f", posX)).append(",");
+                    sb.append("\"y\":").append(String.format(Locale.US, "%.1f", posY)).append(",");
+                    sb.append("\"hp\":").append(hp).append(",");
+                    sb.append("\"max_hp\":").append(maxHp).append(",");
+                    sb.append("\"mp\":").append(mp).append(",");
+                    sb.append("\"max_mp\":").append(maxMp).append(",");
+                    sb.append("\"the_luc\":100,");
+                    sb.append("\"max_the_luc\":100,");
+                    sb.append("\"bot\":{");
+                    sb.append("\"version\":\"").append(escapeJson(VERSION)).append("\",");
+                    sb.append("\"uptime_seconds\":").append(uptimeSec).append(",");
+                    sb.append("\"reconnecting\":").append(isLoggingIn).append(",");
+                    sb.append("\"returning_to_farm\":").append(isReturningToExhaustion()).append(",");
+                    sb.append("\"harvesting_apple\":").append(isAppleHarvesting()).append(",");
+                    sb.append("\"has_harvested_apple\":").append(hasHarvestedApple).append(",");
+                    sb.append("\"is_auto_attack\":").append(isAutoAttackActive()).append(",");
+                    sb.append("\"auto_attack_menu_enabled\":").append(isAutoAttackMenuEnabled()).append(",");
+                    sb.append("\"is_exhausted\":").append(exhausted).append(",");
+                    sb.append("\"farm_map\":\"").append(escapeJson(farmMap)).append("\",");
+                    sb.append("\"farm_map_id\":").append(farmMapId);
+                    sb.append("}");
+                    sb.append("}");
+                    sendJsonResponse(exchange, 200, sb.toString());
+                } catch (Throwable t) {
+                    sendJsonResponse(exchange, 500, "{\"error\":\"" + escapeJson(t.getMessage()) + "\"}");
+                }
+            });
+
+            // 2. GET /log
+            httpApiServer.createContext("/log", exchange -> {
+                if (handleCors(exchange)) return;
+                try {
+                    int n = 50;
+                    String query = exchange.getRequestURI().getQuery();
+                    if (query != null) {
+                        for (String param : query.split("&")) {
+                            String[] pair = param.split("=");
+                            if (pair.length == 2 && ("n".equalsIgnoreCase(pair[0]) || "lines".equalsIgnoreCase(pair[0]))) {
+                                try { n = Integer.parseInt(pair[1]); } catch (Throwable ignored) {}
+                            }
+                        }
+                    }
+                    if (n < 1) n = 1;
+                    if (n > 500) n = 500;
+
+                    List<String> lines = readRecentLogLines(n);
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("{\"lines\":[");
+                    for (int i = 0; i < lines.size(); i++) {
+                        if (i > 0) sb.append(",");
+                        sb.append("\"").append(escapeJson(lines.get(i))).append("\"");
+                    }
+                    sb.append("]}");
+                    sendJsonResponse(exchange, 200, sb.toString());
+                } catch (Throwable t) {
+                    sendJsonResponse(exchange, 500, "{\"error\":\"" + escapeJson(t.getMessage()) + "\"}");
+                }
+            });
+
+            // 3. POST /command
+            httpApiServer.createContext("/command", exchange -> {
+                if (handleCors(exchange)) return;
+                try {
+                    String cmd = "";
+                    if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                        try (BufferedReader reader = new BufferedReader(new InputStreamReader(exchange.getRequestBody(), StandardCharsets.UTF_8))) {
+                            StringBuilder body = new StringBuilder();
+                            String line;
+                            while ((line = reader.readLine()) != null) body.append(line);
+                            String bodyStr = body.toString();
+                            int idx = bodyStr.indexOf("\"cmd\"");
+                            if (idx >= 0) {
+                                int colon = bodyStr.indexOf(':', idx);
+                                if (colon >= 0) {
+                                    int startQuote = bodyStr.indexOf('"', colon);
+                                    if (startQuote >= 0) {
+                                        int endQuote = bodyStr.indexOf('"', startQuote + 1);
+                                        if (endQuote >= 0) {
+                                            cmd = bodyStr.substring(startQuote + 1, endQuote).trim();
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                    }
+                    if (cmd.isEmpty() && exchange.getRequestURI().getQuery() != null) {
+                        for (String param : exchange.getRequestURI().getQuery().split("&")) {
+                            String[] pair = param.split("=");
+                            if (pair.length == 2 && "cmd".equalsIgnoreCase(pair[0])) {
+                                cmd = pair[1].trim();
+                            }
+                        }
+                    }
+                    cmd = cmd.toLowerCase(Locale.ROOT);
+                    String result = executeBotCommand(cmd);
+                    sendJsonResponse(exchange, 200, "{\"ok\":true,\"result\":\"" + escapeJson(result) + "\"}");
+                } catch (Throwable t) {
+                    sendJsonResponse(exchange, 500, "{\"ok\":false,\"error\":\"" + escapeJson(t.getMessage()) + "\"}");
+                }
+            });
+
+            // 4. GET /bag
+            httpApiServer.createContext("/bag", exchange -> {
+                if (handleCors(exchange)) return;
+                sendJsonResponse(exchange, 200, "{\"bag\":[]}");
+            });
+
+            // 5. GET /quests
+            httpApiServer.createContext("/quests", exchange -> {
+                if (handleCors(exchange)) return;
+                sendJsonResponse(exchange, 200, "{\"quests\":[],\"hardworking\":{\"score\":0,\"milestones\":[]}}");
+            });
+
+            httpApiServer.setExecutor(Executors.newFixedThreadPool(2));
+            httpApiServer.start();
+            log("[API] HTTP API server khoi dong thanh cong tai http://127.0.0.1:" + HTTP_API_PORT);
+        } catch (Throwable t) {
+            log("[API-Error] Khong the khoi dong HTTP API server: " + t.getMessage());
+        }
+    }
+
+    private static boolean handleCors(HttpExchange exchange) {
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            try {
+                exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+                exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+                exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+            } catch (Throwable ignored) {}
+            return true;
+        }
+        return false;
+    }
+
+    private static void sendJsonResponse(HttpExchange exchange, int statusCode, String jsonResponse) {
+        try {
+            byte[] bytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+            exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+            exchange.sendResponseHeaders(statusCode, bytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(bytes);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    private static String escapeJson(String s) {
+        if (s == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            switch (c) {
+                case '"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\b': sb.append("\\b"); break;
+                case '\f': sb.append("\\f"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c < ' ') {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        return sb.toString();
+    }
+
+    private static List<String> readRecentLogLines(int n) {
+        List<String> list = new ArrayList<>();
+        synchronized (RECENT_LOGS) {
+            if (!RECENT_LOGS.isEmpty()) {
+                int start = Math.max(0, RECENT_LOGS.size() - n);
+                for (int i = start; i < RECENT_LOGS.size(); i++) {
+                    list.add(RECENT_LOGS.get(i));
+                }
+                return list;
+            }
+        }
+        // Fallback: Doc tu file autofarm_log.txt
+        try {
+            File f = new File("autofarm_log.txt");
+            if (f.exists()) {
+                List<String> allLines = new ArrayList<>();
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (!line.trim().isEmpty()) {
+                            allLines.add(line);
+                        }
+                    }
+                }
+                int start = Math.max(0, allLines.size() - n);
+                for (int i = start; i < allLines.size(); i++) {
+                    list.add(allLines.get(i));
+                }
+            }
+        } catch (Throwable ignored) {}
+        return list;
+    }
+
+    public static String executeBotCommand(String cmd) {
+        log("[API] Nhan lenh qua HTTP API: " + cmd);
+        if ("f6".equals(cmd) || "harvest_apple".equals(cmd)) {
+            hasHarvestedApple = false;
+            triggerHarvestApple();
+            return "Da kich hoat chu trinh thu hoach cay tao nong trai (F6).";
+        }
+        if ("f7".equals(cmd) || "eat".equals(cmd)) {
+            return "Da ghi nhan lenh an do da ngoai (F7).";
+        }
+        if ("f8".equals(cmd) || "sync_quest".equals(cmd)) {
+            return "Da gui lenh dong bo nhiem vu hang ngay (F8).";
+        }
+        if ("toggle_auto".equals(cmd) || "auto".equals(cmd)) {
+            boolean next = !isAutoAttackMenuEnabled();
+            setAutoAttackMenuEnabled(next);
+            if (next) triggerAutoAttackMenu();
+            return "Da doi trang thai Auto Attack thanh: " + (next ? "BAT" : "TAT");
+        }
+        if ("return_village".equals(cmd)) {
+            boolean ok = autoSelectReturnToVillage();
+            return ok ? "Da chon Ve Lang thanh cong." : "Khong co dialog Ve Lang de chon.";
+        }
+        if ("goto_farm".equals(cmd) || "return_coord".equals(cmd)) {
+            boolean ok = returnToExhaustionCoordinate();
+            return ok ? "Dang di chuyen quay lai toa do train cu." : "Khong the bat dau quay lai toa do cu.";
+        }
+        if ("status".equals(cmd)) {
+            return "Bot online. Map: " + getCurrentMapName() + " (ID: " + getCurrentMapId() + ", Khu: " + getCurrentZone() + ")";
+        }
+        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, toggle_auto, return_village, goto_farm, status.";
+    }
+
+    public static String getCharacterName() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null && player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                String n = player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75;
+                if (n != null && !n.trim().isEmpty()) {
+                    return n.trim();
+                }
+            }
+        } catch (Throwable ignored) {}
+        return (savedUsername != null) ? savedUsername : "";
+    }
+
+    public static int getCharacterLevel() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null && player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75;
+            }
+        } catch (Throwable ignored) {}
+        return 0;
+    }
+
+    public static long getPlayerMp() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null && player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIrLKuN75NekllIIlIllLIWHatDoYoUWantHEReHIHIHihahAHAHOHohOhEHehEGirlKUn75;
+            }
+        } catch (Throwable ignored) {}
+        return 0L;
+    }
+
+    public static long getPlayerMaxMp() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null && player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return player.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIRlkUN75NEKLLILlLillLwHatDoYoUwanthErEhIHiHiHahAhaHoHohOhEhEhEGIrlkUN75;
+            }
+        } catch (Throwable ignored) {}
+        return 0L;
+    }
+
+    public static boolean isPlayerInGame() {
+        return wasInGame && (getCurrentMapId() >= 0 || !getCurrentMapName().isEmpty());
     }
 }
