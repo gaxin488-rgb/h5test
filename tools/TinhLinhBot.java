@@ -54,7 +54,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 8: Return to Saved Exhaustion Coordinate (returnToExhaustionCoordinate, isReturningToExhaustion, isAutoReturnToExhaustionEnabled, moveTo, clearSavedExhaustionCoordinate).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.6.0-Feature8-ReturnToExhaustion";
+    private static final String VERSION = "1.6.1-Feature8-AppleWaypointRouteGuard";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -1061,15 +1061,25 @@ public final class TinhLinhBot {
         if (isVillage && !hasHarvestedApple) {
             if (now - lastWaypointMoveTime >= 3500L) {
                 lastWaypointMoveTime = now;
-                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 farmWp = findWaypointByName("nong trai");
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 farmWp =
+                        findWaypointToTargetMap(mapId, mapName, 5, "Nông trại");
+                if (farmWp == null) {
+                    farmWp = findWaypointByName("nong trai");
+                }
                 if (farmWp == null) {
                     farmWp = findWaypointByName("nong");
+                }
+                if (farmWp == null) {
+                    farmWp = findWaypointByName("trai");
                 }
                 if (farmWp != null) {
                     log("[AutoFarm-Apple] Nhan vat dang o Lang va chua thu hoach tao -> Di chuyen vao cong Nong trai [" + getWaypointName(farmWp) + "]...");
                     moveToWaypoint(farmWp);
                 } else {
-                    log("[AutoFarm-Apple] Dang o Lang nhung khong tim thay Waypoint Nong trai.");
+                    Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+                    if (wps != null && wps.size > 0) {
+                        log("[AutoFarm-Apple] Dang o Lang nhung khong tim thay Waypoint Nong trai trong " + wps.size + " cong tren map.");
+                    }
                 }
             }
         }
@@ -1081,7 +1091,11 @@ public final class TinhLinhBot {
                 // Da thu hoach xong tao ma van con trong Nong trai -> di chuyen ra cong ve lai Lang
                 if (now - lastWaypointMoveTime >= 3500L) {
                     lastWaypointMoveTime = now;
-                    com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 villageWp = findWaypointByName("lang");
+                    com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 villageWp =
+                            findWaypointToTargetMap(mapId, mapName, 2, "Làng");
+                    if (villageWp == null) {
+                        villageWp = findWaypointByName("lang");
+                    }
                     if (villageWp == null) {
                         villageWp = findWaypointByName("ve lang");
                     }
@@ -1665,10 +1679,23 @@ public final class TinhLinhBot {
         for (int i = 0; i < waypoints.size; i++) {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
             if (wp != null) {
+                int targetId = wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                if ((targetNorm.contains("nong") || targetNorm.contains("trai")) && targetId == 5) {
+                    return wp;
+                }
+                if ((targetNorm.contains("lang") || targetNorm.contains("eldarah")) && (targetId == 2 || targetId == 0)) {
+                    return wp;
+                }
+                if (targetNorm.contains("thung lung") && targetId == 3) {
+                    return wp;
+                }
+                if (targetNorm.contains("thao nguyen") && targetId == 4) {
+                    return wp;
+                }
                 String wpName = getWaypointName(wp);
                 String wpNorm = normalizeText(wpName);
                 if (allWp.length() > 0) allWp.append(", ");
-                allWp.append("[").append(wpName).append("]");
+                allWp.append("[").append(wpName).append(" (ID:").append(targetId).append(")]");
                 if (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm) || (targetNorm.contains("nong") && wpNorm.contains("nong"))) {
                     return wp;
                 }
