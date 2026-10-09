@@ -57,9 +57,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 8: Return to Saved Exhaustion Coordinate (returnToExhaustionCoordinate, isReturningToExhaustion, isAutoReturnToExhaustionEnabled, moveTo, clearSavedExhaustionCoordinate).
  * Feature 9: Auto Attack Menu Automation (triggerAutoAttackMenu, openAutoAttackMenu, findAutoAttackButton, findMenuButton, isAutoAttackMenuEnabled, setAutoAttackMenuEnabled).
  * Feature 10: Embedded Local HTTP API Server (Port 7654) for Antigravity MCP Bridge (startHttpApiServer, executeBotCommand, getCharacterName, getCharacterLevel, getPlayerMp, getPlayerMaxMp).
+ * Feature 11: Post-Login Automation & Combat Dispatcher (handlePostLoginDispatch, isPostLoginDispatched, resetPostLoginDispatch).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.8.0-Feature10-LocalMcpBridge";
+    private static final String VERSION = "1.8.1-Feature11-PostLoginDispatch";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -72,6 +73,7 @@ public final class TinhLinhBot {
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
     private static volatile boolean isLoggingIn = false;
     private static volatile boolean wasInGame = false;
+    private static volatile boolean postLoginDispatched = false;
     private static volatile int loginAttempts = 0;
     private static volatile long gameStartTime = 0L;
     private static volatile long lastLoginAttemptTime = 0L;
@@ -253,6 +255,7 @@ public final class TinhLinhBot {
         // --- 4. Xu ly Auto Login & Ket Noi Mang khi chua vao game ---
         if (!isInGame) {
             wasInGame = false;
+            postLoginDispatched = false;
 
             if (!isAutoLoginEnabled()) {
                 return;
@@ -330,6 +333,17 @@ public final class TinhLinhBot {
                     }
                 }
             } catch (Throwable ignored) {
+            }
+        }
+
+        // --- 5.0. Feature 11: Post-Login Dispatch (Kich hoat Auto Tan Cong theo 2 truong hop sau dang nhap) ---
+        if (wasInGame && !postLoginDispatched) {
+            int curMapId = getCurrentMapId();
+            String curMap = getCurrentMapName();
+            Vector2 curPos = getPlayerPosition();
+            if (curMap != null && !curMap.trim().isEmpty() && curPos != null) {
+                postLoginDispatched = true;
+                handlePostLoginDispatch(curMapId, curMap, curPos);
             }
         }
 
@@ -705,22 +719,66 @@ public final class TinhLinhBot {
 
     private static SavedCoordinate loadSavedExhaustionCoordinate() {
         File propFile = new File(EXHAUSTION_STATE_FILE);
-        if (!propFile.exists() || !propFile.isFile()) {
-            return null;
+        if (propFile.exists() && propFile.isFile()) {
+            try (InputStream is = new FileInputStream(propFile)) {
+                Properties props = new Properties();
+                props.load(is);
+                int mapId = Integer.parseInt(props.getProperty("mapId", "-1"));
+                String mapName = props.getProperty("mapName", "");
+                int zone = Integer.parseInt(props.getProperty("zone", "-1"));
+                float x = Float.parseFloat(props.getProperty("x", "0.0"));
+                float y = Float.parseFloat(props.getProperty("y", "0.0"));
+                long savedAt = Long.parseLong(props.getProperty("savedAt", "0"));
+                if (mapId >= 0 || (mapName != null && !mapName.trim().isEmpty())) {
+                    return new SavedCoordinate(mapId, mapName, zone, x, y, savedAt);
+                }
+            } catch (Throwable ignored) {
+            }
         }
-        try (InputStream is = new FileInputStream(propFile)) {
-            Properties props = new Properties();
-            props.load(is);
-            int mapId = Integer.parseInt(props.getProperty("mapId", "-1"));
-            String mapName = props.getProperty("mapName", "");
-            int zone = Integer.parseInt(props.getProperty("zone", "-1"));
-            float x = Float.parseFloat(props.getProperty("x", "0.0"));
-            float y = Float.parseFloat(props.getProperty("y", "0.0"));
-            long savedAt = Long.parseLong(props.getProperty("savedAt", "0"));
-            return new SavedCoordinate(mapId, mapName, zone, x, y, savedAt);
-        } catch (Throwable ignored) {
-            return null;
+
+        // Fallback 1: Doc tu saved_exhaustion_coord.txt (format: mapId:mapName:zone:x:y)
+        File txtFile = new File(EXHAUSTION_COORD_FILE);
+        if (txtFile.exists() && txtFile.isFile()) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(txtFile), StandardCharsets.UTF_8))) {
+                String line = reader.readLine();
+                if (line != null && !line.trim().isEmpty()) {
+                    String[] parts = line.trim().split(":");
+                    if (parts.length >= 5) {
+                        int mapId = Integer.parseInt(parts[0].trim());
+                        String mapName = parts[1].trim();
+                        int zone = Integer.parseInt(parts[2].trim());
+                        float x = Float.parseFloat(parts[3].trim());
+                        float y = Float.parseFloat(parts[4].trim());
+                        return new SavedCoordinate(mapId, mapName, zone, x, y, txtFile.lastModified());
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
         }
+
+        return null;
+    }
+
+    /**
+     * Doc thong tin map train gan nhat tu last_farm_map.txt (neu co).
+     */
+    public static SavedCoordinate getLastFarmMap() {
+        File farmMapFile = new File(LAST_FARM_MAP_FILE);
+        if (farmMapFile.exists() && farmMapFile.isFile()) {
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(farmMapFile), StandardCharsets.UTF_8))) {
+                String line = reader.readLine();
+                if (line != null && !line.trim().isEmpty()) {
+                    String[] parts = line.trim().split(":");
+                    if (parts.length >= 2) {
+                        int mapId = Integer.parseInt(parts[0].trim());
+                        String mapName = parts[1].trim();
+                        return new SavedCoordinate(mapId, mapName, 0, 0.0f, 0.0f, farmMapFile.lastModified());
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+        return null;
     }
 
     /**
@@ -2501,6 +2559,7 @@ public final class TinhLinhBot {
     public static synchronized void clearSavedExhaustionCoordinate() {
         lastSavedExhaustionCoord = null;
         isReturningToExhaustion = false;
+        isAutoReturnToExhaustionEnabled = false;
         returnArrivalSamples = 0;
         returnStartTime = 0L;
         try {
@@ -2746,21 +2805,26 @@ public final class TinhLinhBot {
 
         // --- TRUONG HOP 1: Da toi dung Map kiet suc ---
         if (isSameMap(currentMapId, currentMapName, saved.mapId, saved.mapName)) {
-            float dx = saved.x - currentPos.x;
-            float dy = saved.y - currentPos.y;
-            float dist = (float) Math.sqrt(dx * dx + dy * dy);
+            boolean hasSpecificCoord = (saved.x > 0f || saved.y > 0f);
+            float dist = 0.0f;
+            if (hasSpecificCoord) {
+                float dx = saved.x - currentPos.x;
+                float dy = saved.y - currentPos.y;
+                dist = (float) Math.sqrt(dx * dx + dy * dy);
+            }
 
-            if (dist <= ARRIVAL_RADIUS) {
+            if (!hasSpecificCoord || dist <= ARRIVAL_RADIUS) {
                 returnArrivalSamples++;
-                if (returnArrivalSamples >= 2) {
+                if (returnArrivalSamples >= 2 || !hasSpecificCoord) {
                     com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
                             com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
                     stopPlayerVelocity(player);
                     isReturningToExhaustion = false;
                     returnArrivalSamples = 0;
                     returnStartTime = 0L;
-                    log(String.format(Locale.ROOT, "[AutoFarm-Return] >>> DA QUAY LAI TOA DO KIET SUC THANH CONG! <<< Map [%s - ID: %d] tai (X=%.1f, Y=%.1f) [Khoang cach den diem cu: %.1fm]",
-                            saved.mapName, saved.mapId, currentPos.x, currentPos.y, dist));
+                    String distMsg = hasSpecificCoord ? String.format(Locale.ROOT, " [Khoang cach den diem cu: %.1fm]", dist) : "";
+                    log(String.format(Locale.ROOT, "[AutoFarm-Return] >>> DA TOI MAP/TOA DO KIET SUC THANH CONG! <<< Map [%s - ID: %d] tai (X=%.1f, Y=%.1f)%s",
+                            saved.mapName, saved.mapId, currentPos.x, currentPos.y, distMsg));
                     clearSavedExhaustionCoordinate();
 
                     // Feature 9: Tu dong Kich hoat Menu Auto Tan Cong sau khi quay lai vi tri kiet suc
@@ -3167,6 +3231,106 @@ public final class TinhLinhBot {
     }
 
     // =========================================================================
+    // FEATURE 11: POST-LOGIN AUTOMATION & COMBAT DISPATCHER
+    // =========================================================================
+
+    public static boolean isPostLoginDispatched() {
+        return postLoginDispatched;
+    }
+
+    public static void resetPostLoginDispatch() {
+        postLoginDispatched = false;
+        log("[AutoLogin-Dispatch] Da reset trang thai Post-Login Dispatch.");
+    }
+
+    /**
+     * Xu ly phan luong tu dong ngay sau khi Auto Login thanh cong vao the gioi game:
+     * - TRUONG HOP 1: Nhan vat dung dung o Map vi tri kiet suc duoc luu truoc do (hoac dung map train)
+     *                 -> Kich hoat Auto Tan Cong (triggerAutoAttackMenu()).
+     * - TRUONG HOP 2: Nhan vat khong dung Map kiet suc (dang o Lang, Nong trai hoac map khac)
+     *                 -> Tu dong chay lai Map kiet suc (returnToExhaustionCoordinate()),
+     *                    va khi den noi se tu dong bat Auto Tan Cong.
+     */
+    public static synchronized void handlePostLoginDispatch(int curMapId, String curMap, Vector2 curPos) {
+        log(String.format(Locale.ROOT,
+                "[AutoLogin-Dispatch] Kiem tra vi tri nhan vat sau khi dang nhap: Map [%s - ID: %d] tai (X=%.1f, Y=%.1f)...",
+                curMap, curMapId, curPos != null ? curPos.x : 0f, curPos != null ? curPos.y : 0f));
+
+        SavedCoordinate saved = getSavedExhaustionCoordinate();
+        if (saved == null) {
+            saved = getLastFarmMap();
+        }
+
+        boolean isTargetMap = false;
+        if (saved != null) {
+            isTargetMap = isSameMap(curMapId, curMap, saved.mapId, saved.mapName);
+        } else {
+            // Neu chua co toa do luu, kiem tra neu dang o mot map chien dau ngoai lang
+            String norm = normalizeText(curMap);
+            boolean isVillage = (curMapId == 0 || curMapId == 2) || norm.contains("lang") || norm.contains("eldarah");
+            boolean isFarm = (curMapId == 5) || norm.contains("nong");
+            if (!isVillage && !isFarm && curMapId > 2) {
+                isTargetMap = true;
+            }
+        }
+
+        if (isTargetMap) {
+            // =====================================================================
+            // TRUONG HOP 1: DUNG MAP KIET SUC / BAI TRAIN
+            // =====================================================================
+            log(String.format(Locale.ROOT,
+                    "[AutoLogin-Dispatch] >>> TRUONG HOP 1: Nhan vat dung dung Map kiem/kiet suc da luu [%s - ID: %d] <<<",
+                    curMap, curMapId));
+
+            // Neu co toa do cu the (x > 0, y > 0) va nhan vat dang dung cach xa vi tri do
+            if (saved != null && (saved.x > 0f || saved.y > 0f) && curPos != null) {
+                float dx = saved.x - curPos.x;
+                float dy = saved.y - curPos.y;
+                float dist = (float) Math.sqrt(dx * dx + dy * dy);
+                if (dist > ARRIVAL_RADIUS) {
+                    log(String.format(Locale.ROOT,
+                            "[AutoLogin-Dispatch] Cach toa do cu %.1fm -> Di chuyen toi (X=%.1f, Y=%.1f) va bat dau tan cong...",
+                            dist, saved.x, saved.y));
+                    moveTo(saved.x, saved.y);
+                }
+            }
+
+            log("[AutoLogin-Dispatch] Kich hoat Auto Tan Cong ngay lap tuc...");
+            setAutoAttackMenuEnabled(true);
+            triggerAutoAttackMenu();
+        } else {
+            // =====================================================================
+            // TRUONG HOP 2: KHAC MAP KIET SUC (O LANG / NONG TRAI / MAP KHAC)
+            // =====================================================================
+            String targetMapInfo = (saved != null)
+                    ? String.format(Locale.ROOT, "[%s - ID: %d]", saved.mapName, saved.mapId)
+                    : "Chua xac dinh";
+            log(String.format(Locale.ROOT,
+                    "[AutoLogin-Dispatch] >>> TRUONG HOP 2: Nhan vat o Map [%s - ID: %d] (KHAC voi Map kiet suc %s) <<<",
+                    curMap, curMapId, targetMapInfo));
+
+            if (saved != null) {
+                lastSavedExhaustionCoord = saved;
+                log(String.format(Locale.ROOT,
+                        "[AutoLogin-Dispatch] Tien hanh chay lai Map kiet suc %s tai (X=%.1f, Y=%.1f)...",
+                        targetMapInfo, saved.x, saved.y));
+
+                // Dam bao co tu dong quay lai duoc bat
+                setAutoReturnToExhaustionEnabled(true);
+                setAutoAttackMenuEnabled(true);
+
+                // Danh dau da qua buoc thu hoach tao de khong bi chan khi dang o Lang/Nong trai sau login
+                hasHarvestedApple = true;
+
+                // Goi tien trinh chay lai map va toa do kiet suc
+                returnToExhaustionCoordinate();
+            } else {
+                log("[AutoLogin-Dispatch] Chua co du lieu Map kiet suc da luu. Bot se tiep tuc theo doi vi tri khi nhan vat di chuyen.");
+            }
+        }
+    }
+
+    // =========================================================================
     // FEATURE 10: LOCAL HTTP REST API SERVER (PORT 7654) FOR MCP BRIDGE
     // =========================================================================
 
@@ -3446,7 +3610,12 @@ public final class TinhLinhBot {
         if ("status".equals(cmd)) {
             return "Bot online. Map: " + getCurrentMapName() + " (ID: " + getCurrentMapId() + ", Khu: " + getCurrentZone() + ")";
         }
-        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, toggle_auto, return_village, goto_farm, status.";
+        if ("post_login".equals(cmd) || "dispatch".equals(cmd)) {
+            postLoginDispatched = false;
+            handlePostLoginDispatch(getCurrentMapId(), getCurrentMapName(), getPlayerPosition());
+            return "Da kich hoat lai quy trinh Post-Login Dispatch (Auto Attack / Quay lai map kiet suc).";
+        }
+        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, toggle_auto, return_village, goto_farm, post_login, dispatch, status.";
     }
 
     public static String getCharacterName() {
