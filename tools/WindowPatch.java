@@ -46,6 +46,12 @@ public final class WindowPatch {
             "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75";
     private static final String NAMETAG_RENDER_DESC =
             "(Lcom/a/a/c/GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;FF)V";
+    private static final String TREE_ENTITY_ENTRY =
+            "com/a/c/f/a/b/g/GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.class";
+    private static final String TREE_UPDATE_METHOD =
+            "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75";
+    private static final String TREE_UPDATE_DESC =
+            "(Lcom/a/c/f/a/b/GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;JJZ)V";
 
     private static final class ResilientClassWriter extends ClassWriter {
         private ResilientClassWriter(ClassReader reader) {
@@ -338,6 +344,51 @@ public final class WindowPatch {
         return writer.toByteArray();
     }
 
+    private static byte[] patchTreeEntity(byte[] original, final int[] patchedCalls) {
+        ClassReader reader = new ClassReader(original);
+        ClassWriter writer = new ResilientClassWriter(reader);
+        ClassVisitor visitor = new ClassVisitor(Opcodes.ASM8, writer) {
+            @Override
+            public MethodVisitor visitMethod(int access, String name, String descriptor,
+                                              String signature, String[] exceptions) {
+                MethodVisitor next = super.visitMethod(access, name, descriptor, signature, exceptions);
+                if (TREE_UPDATE_METHOD.equals(name) && TREE_UPDATE_DESC.equals(descriptor)) {
+                    patchedCalls[0]++;
+                    return new MethodVisitor(Opcodes.ASM8, next) {
+                        private final Label startLabel = new Label();
+                        private final Label endLabel = new Label();
+                        private final Label handlerLabel = new Label();
+                        private boolean codeStarted = false;
+
+                        @Override
+                        public void visitCode() {
+                            super.visitCode();
+                            codeStarted = true;
+                            super.visitTryCatchBlock(startLabel, endLabel, handlerLabel, "java/lang/Throwable");
+                            super.visitLabel(startLabel);
+                        }
+
+                        @Override
+                        public void visitInsn(int opcode) {
+                            if (opcode == Opcodes.RETURN && codeStarted) {
+                                super.visitLabel(endLabel);
+                                super.visitInsn(Opcodes.RETURN);
+                                super.visitLabel(handlerLabel);
+                                super.visitInsn(Opcodes.POP);
+                                super.visitInsn(Opcodes.RETURN);
+                                return;
+                            }
+                            super.visitInsn(opcode);
+                        }
+                    };
+                }
+                return next;
+            }
+        };
+        reader.accept(visitor, 0);
+        return writer.toByteArray();
+    }
+
     public static void main(String[] args) throws Exception {
         if (args.length != 5) {
             throw new IllegalArgumentException(
@@ -360,6 +411,7 @@ public final class WindowPatch {
         int freshHookCalls = 0;
         int atlasFallbackCalls = 0;
         int nameTagPatchCalls = 0;
+        int treePatchCalls = 0;
         int[] launcherWindowedCalls = {0};
         try (JarFile source = new JarFile(input.toFile())) {
             Manifest manifest = source.getManifest();
@@ -401,6 +453,12 @@ public final class WindowPatch {
                             bytes = patchNameTagRenderer(in.readAllBytes(), calls);
                             nameTagPatchCalls = calls[0];
                         }
+                    } else if (TREE_ENTITY_ENTRY.equals(entry.getName())) {
+                        try (InputStream in = source.getInputStream(entry)) {
+                            int[] calls = {0};
+                            bytes = patchTreeEntity(in.readAllBytes(), calls);
+                            treePatchCalls = calls[0];
+                        }
                     } else {
                         try (InputStream in = source.getInputStream(entry)) {
                             bytes = in.readAllBytes();
@@ -432,13 +490,14 @@ public final class WindowPatch {
             }
         }
 
-        if (freshHookCalls == 0 || atlasFallbackCalls == 0 || nameTagPatchCalls == 0) {
+        if (freshHookCalls == 0 || atlasFallbackCalls == 0 || nameTagPatchCalls == 0 || treePatchCalls == 0) {
             Files.deleteIfExists(output);
             throw new IllegalStateException("Window patch incomplete: launcherSetWindowedMode="
                     + launcherWindowedCalls[0] + ", gameSetWindowedMode=" + windowedCalls
                     + ", gameSetFullscreenMode=" + fullscreenCalls + ", tinhLinhBotHooks="
                     + freshHookCalls + ", atlasFallbacks=" + atlasFallbackCalls
-                    + ", nameTagPatchCalls=" + nameTagPatchCalls);
+                    + ", nameTagPatchCalls=" + nameTagPatchCalls
+                    + ", treePatchCalls=" + treePatchCalls);
         }
         System.out.println("Window size: " + width + "x" + height);
         System.out.println("Patched launcher setWindowedMode calls: " + launcherWindowedCalls[0]);
@@ -446,6 +505,7 @@ public final class WindowPatch {
         System.out.println("Injected TinhLinhBot hooks: " + freshHookCalls);
         System.out.println("Patched missing atlas regions: " + atlasFallbackCalls);
         System.out.println("Patched NameTag NPE crash guard: " + nameTagPatchCalls);
+        System.out.println("Patched Tree Entity NPE crash guard: " + treePatchCalls);
         System.out.println("Output: " + output.toAbsolutePath());
     }
 }
