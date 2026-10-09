@@ -52,9 +52,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 6: Check Version Update Requirement (isVersionUpdateRequired, checkVersionUpdateRequired, getVersionUpdateMessage).
  * Feature 7: Check Server Under Maintenance (isServerUnderMaintenance, checkServerUnderMaintenance, getServerMaintenanceMessage).
  * Feature 8: Return to Saved Exhaustion Coordinate (returnToExhaustionCoordinate, isReturningToExhaustion, isAutoReturnToExhaustionEnabled, moveTo, clearSavedExhaustionCoordinate).
+ * Feature 9: Auto Attack Menu Automation (triggerAutoAttackMenu, openAutoAttackMenu, findAutoAttackButton, findMenuButton, isAutoAttackMenuEnabled, setAutoAttackMenuEnabled).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.6.1-Feature8-AppleWaypointRouteGuard";
+    private static final String VERSION = "1.7.0-Feature9-AutoAttackMenu";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -109,6 +110,11 @@ public final class TinhLinhBot {
     private static volatile int returnArrivalSamples = 0;
     private static volatile long returnStartTime = 0L;
     private static final float ARRIVAL_RADIUS = 2.0f;
+
+    // Feature 9: Tu dong Kich hoat Menu Auto Tan Cong (Auto Attack Menu Automation)
+    private static volatile boolean isAutoAttackMenuEnabled = true;
+    private static volatile long lastAutoAttackTriggerTime = 0L;
+    private static volatile boolean isAutoAttackActive = false;
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -317,6 +323,9 @@ public final class TinhLinhBot {
 
         // --- 8. Tu dong Quay lai Toa do Kiet suc sau khi Hai Tao / Ve Lang ---
         handleReturnToExhaustionNavigation(now);
+
+        // --- 9. Tu dong Duy tri Menu Auto Tan Cong khi o bai train ---
+        handleAutoAttackFlow(now);
     }
 
     // =========================================================================
@@ -2689,6 +2698,12 @@ public final class TinhLinhBot {
                     log(String.format(Locale.ROOT, "[AutoFarm-Return] >>> DA QUAY LAI TOA DO KIET SUC THANH CONG! <<< Map [%s - ID: %d] tai (X=%.1f, Y=%.1f) [Khoang cach den diem cu: %.1fm]",
                             saved.mapName, saved.mapId, currentPos.x, currentPos.y, dist));
                     clearSavedExhaustionCoordinate();
+
+                    // Feature 9: Tu dong Kich hoat Menu Auto Tan Cong sau khi quay lai vi tri kiet suc
+                    if (isAutoAttackMenuEnabled()) {
+                        log("[AutoFarm-Combat] Da quay lai vi tri kiet suc cu -> Kich hoat Menu Auto Tan Cong de tiep tuc danh quai...");
+                        triggerAutoAttackMenu();
+                    }
                     return true;
                 }
             } else {
@@ -2773,5 +2788,235 @@ public final class TinhLinhBot {
 
         // Kich hoat quay lai toa do kiet suc
         returnToExhaustionCoordinate();
+    }
+
+    // =========================================================================
+    // FEATURE 9: MENU AUTO TAN CONG & CHIEN DAU (AUTO ATTACK MENU CONTROLLER)
+    // =========================================================================
+
+    public static boolean isAutoAttackMenuEnabled() {
+        return isAutoAttackMenuEnabled;
+    }
+
+    public static void setAutoAttackMenuEnabled(boolean enabled) {
+        isAutoAttackMenuEnabled = enabled;
+        log("[AutoFarm-Combat] Trang thai Auto Attack Menu duoc dat thanh: " + enabled);
+    }
+
+    public static boolean isAutoAttackActive() {
+        return isAutoAttackActive;
+    }
+
+    public static void setAutoAttackActive(boolean active) {
+        isAutoAttackActive = active;
+    }
+
+    /**
+     * Ham tim nut Auto Tan Cong tren cay Actor:
+     * Quet cac tu khoa: "auto", "tu dong", "tu danh", "tan cong", "chien dau", "danh quai".
+     */
+    public static Actor findAutoAttackButton(Actor root) {
+        if (root == null) return null;
+        List<Actor> buttons = new ArrayList<>();
+        findAllButtons(root, buttons, root);
+        for (Actor btn : buttons) {
+            String text = normalizeText(getActorText(btn));
+            if (text.contains("auto") || text.contains("tu dong") || text.contains("tu danh")
+                    || text.contains("tan cong") || text.contains("chien dau") || text.contains("danh quai")) {
+                return btn;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Ham tim nut Menu tren cay Actor:
+     * Quet cac tu khoa: "menu", "chuc nang", "tuy chon".
+     */
+    public static Actor findMenuButton(Actor root) {
+        if (root == null) return null;
+        List<Actor> buttons = new ArrayList<>();
+        findAllButtons(root, buttons, root);
+        for (Actor btn : buttons) {
+            String text = normalizeText(getActorText(btn));
+            if (text.equals("menu") || text.contains("chuc nang") || text.contains("tuy chon")) {
+                return btn;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Ham tim nut Xac nhan / Bat dau tren popup cai dat auto (neu co):
+     * Quet cac tu khoa: "bat dau", "bat", "xac nhan", "luu", "ap dung", "ok".
+     */
+    public static Actor findConfirmOrStartButton(Actor root) {
+        if (root == null) return null;
+        List<Actor> buttons = new ArrayList<>();
+        findAllButtons(root, buttons, root);
+        for (Actor btn : buttons) {
+            String text = normalizeText(getActorText(btn));
+            if (text.contains("bat dau") || text.contains("bat") || text.contains("xac nhan")
+                    || text.contains("luu") || text.contains("ap dung") || text.equals("ok")) {
+                return btn;
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Ham chinh thuc hien quy trinh kich hoat Menu Auto Tan Cong:
+     * 1. Quet truc tiep tren Stage xem da co nut Auto chua -> Click luon.
+     * 2. Neu chua co -> Tim nut Menu de mo bang chuc nang -> Tim muc Auto ben trong va Click.
+     * 3. Neu mo ra popup Cai dat Auto -> Click nut Bat dau / Xac nhan de kich hoat.
+     * 4. Fallback Native Attack: Kich hoat phuong thuc tim quai gan nhat va tan cong qua GameScreen.
+     */
+    public static synchronized boolean triggerAutoAttackMenu() {
+        long now = System.currentTimeMillis();
+        if (now - lastAutoAttackTriggerTime < 2500L) {
+            return false;
+        }
+        lastAutoAttackTriggerTime = now;
+
+        log("[AutoFarm-Combat] Bat dau quy trinh kich hoat Menu Auto Tan Cong...");
+
+        try {
+            List<Actor> roots = getActiveDialogRoots();
+
+            // 1. Uu tien 1: Kiem tra xem da co nut Auto hien huu tren man hinh chua
+            for (Actor root : roots) {
+                Actor autoBtn = findAutoAttackButton(root);
+                if (autoBtn != null) {
+                    String btnText = getActorText(autoBtn);
+                    log("[AutoFarm-Combat] Tim thay nut Auto truc tiep: [" + btnText + "]. Dang thuc hien click...");
+                    clickActor(autoBtn);
+                    isAutoAttackActive = true;
+
+                    // Neu co dialog xac nhan sau do, ho tro tu dong xac nhan
+                    Gdx.app.postRunnable(() -> {
+                        try {
+                            Thread.sleep(300);
+                            for (Actor r : getActiveDialogRoots()) {
+                                Actor startBtn = findConfirmOrStartButton(r);
+                                if (startBtn != null && startBtn != autoBtn) {
+                                    log("[AutoFarm-Combat] Tim thay nut Bat dau tren popup cai dat: [" + getActorText(startBtn) + "]. Dang click...");
+                                    clickActor(startBtn);
+                                    break;
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                    });
+                    return true;
+                }
+            }
+
+            // 2. Uu tien 2: Neu chua co nut Auto tren man hinh, tim nut "Menu" de mo ra
+            Actor menuBtn = null;
+            for (Actor root : roots) {
+                menuBtn = findMenuButton(root);
+                if (menuBtn != null) break;
+            }
+
+            if (menuBtn != null) {
+                log("[AutoFarm-Combat] Tim thay nut Menu: [" + getActorText(menuBtn) + "]. Dang click de mo danh muc...");
+                clickActor(menuBtn);
+
+                // Doi nhe mot chut roi tim muc Auto trong menu vua mo
+                final Actor finalMenuBtn = menuBtn;
+                Gdx.app.postRunnable(() -> {
+                    try {
+                        Thread.sleep(400);
+                        List<Actor> updatedRoots = getActiveDialogRoots();
+                        for (Actor r : updatedRoots) {
+                            Actor autoBtn = findAutoAttackButton(r);
+                            if (autoBtn != null && autoBtn != finalMenuBtn) {
+                                log("[AutoFarm-Combat] Tim thay muc Auto trong menu: [" + getActorText(autoBtn) + "]. Dang click...");
+                                clickActor(autoBtn);
+                                isAutoAttackActive = true;
+
+                                // Tiep tuc kiem tra neu co popup cai dat auto mo ra
+                                Thread.sleep(300);
+                                for (Actor r2 : getActiveDialogRoots()) {
+                                    Actor startBtn = findConfirmOrStartButton(r2);
+                                    if (startBtn != null && startBtn != autoBtn) {
+                                        log("[AutoFarm-Combat] Click xac nhan popup cai dat: [" + getActorText(startBtn) + "]...");
+                                        clickActor(startBtn);
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    } catch (Throwable t) {
+                        log("[AutoFarm-Combat] Ngoai le khi quet muc Auto trong menu: " + t.getMessage());
+                    }
+                });
+                return true;
+            }
+
+            // 3. Fallback: Kich hoat co che quet quai vat va tan cong native qua engine GameScreen
+            log("[AutoFarm-Combat] Khong thay nut Auto tren UI -> Kich hoat phuong thuc tan cong quai vat native qua GameScreen...");
+            Gdx.app.postRunnable(() -> {
+                try {
+                    com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
+                    isAutoAttackActive = true;
+                    log("[AutoFarm-Combat] Da kich hoat thanh cong co che quet quai vat va phan phoi tan cong native.");
+                } catch (Throwable t) {
+                    log("[AutoFarm-Combat] Loi kich hoat tan cong native: " + t.getMessage());
+                }
+            });
+            return true;
+
+        } catch (Throwable t) {
+            log("[AutoFarm-Combat] Loi trong triggerAutoAttackMenu: " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Ham ho tro mo Menu Auto Tan Cong de nguoi dung xem/tinh chinh thong so.
+     */
+    public static synchronized boolean openAutoAttackMenu() {
+        return triggerAutoAttackMenu();
+    }
+
+    /**
+     * Dieu phoi vong lap tu dong duy tri tan cong khi da o vi tri train quai:
+     * - Chi kich hoat khi:
+     *   1. Auto Attack Menu bat.
+     *   2. Nhan vat dang o Map train (khong phai Lang va khong phai Nong trai).
+     *   3. Nhan vat con song ($HP > 0$), khong co popup kiet suc.
+     *   4. Khong dang chay ve vi tri kiet suc va khong dang hai tao.
+     */
+    private static void handleAutoAttackFlow(long now) {
+        if (!isAutoAttackMenuEnabled()) {
+            return;
+        }
+
+        if (isPlayerExhausted() || isExhaustionDialogVisible()) {
+            isAutoAttackActive = false;
+            return;
+        }
+
+        if (isReturningToExhaustion() || isAppleHarvesting()) {
+            return;
+        }
+
+        int curMapId = getCurrentMapId();
+        String curMap = getCurrentMapName();
+        String normMap = normalizeText(curMap);
+        boolean isFarm = (curMapId == 5) || normMap.contains("nong");
+        boolean isVillage = (curMapId == 0 || curMapId == 2) || normMap.contains("lang");
+
+        if (isVillage || isFarm) {
+            isAutoAttackActive = false;
+            return;
+        }
+
+        // Neu da o map danh quai, va chua kich hoat auto danh trong 15s qua
+        if (!isAutoAttackActive && (now - lastAutoAttackTriggerTime >= 15_000L)) {
+            log("[AutoFarm-Combat] Nhan vat dang o Map chien dau [" + curMap + " - ID: " + curMapId + "] nhung chua bat Auto -> Tu dong goi Menu Auto Tan Cong...");
+            triggerAutoAttackMenu();
+        }
     }
 }
