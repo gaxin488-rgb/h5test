@@ -1,11 +1,17 @@
 @echo off
-setlocal EnableExtensions
-title Tinh Linh (Auto Login & Watchdog 24/7)
+setlocal EnableExtensions EnableDelayedExpansion
+title Tinh Linh (Auto Login va Watchdog 24/7)
 cd /d "%~dp0"
 
 echo ========================================================
-echo   KHOI CHAY GAME TINH LINH (AUTO LOGIN & WATCHDOG 24/7)
+echo   KHOI CHAY GAME TINH LINH (AUTO LOGIN VA WATCHDOG 24/7)
 echo ========================================================
+
+rem --- Bao dam thu muc TEMP ton tai va hop le ---
+if not defined TEMP set "TEMP=%SystemRoot%\Temp"
+if not exist "%TEMP%" md "%TEMP%" 2>nul
+if not exist "%TEMP%" set "TEMP=%~dp0"
+set "TMP=%TEMP%"
 
 set "JAVA_BIN="
 if exist "%~dp0jre\bin\java.exe" set "JAVA_BIN=%~dp0jre\bin\java.exe"
@@ -24,19 +30,22 @@ if not defined JAVA_BIN (
 )
 
 set "JAVA_VERSION="
-set "JAVA_VERSION_FILE=%TEMP%\tinhlinh-java-version-%RANDOM%.tmp"
+set "JAVA_MAJOR="
+set "JAVA_VERSION_FILE=%~dp0.java_version.tmp"
 "%JAVA_BIN%" -version > "%JAVA_VERSION_FILE%" 2>&1
-set "JAVA_VERSION_LINE="
-set /p JAVA_VERSION_LINE=<"%JAVA_VERSION_FILE%"
-del /q "%JAVA_VERSION_FILE%" >nul 2>&1
-for /f "tokens=3" %%V in ("%JAVA_VERSION_LINE%") do set "JAVA_VERSION=%%~V"
-for /f "tokens=1 delims=." %%V in ("%JAVA_VERSION%") do set "JAVA_MAJOR=%%V"
+if exist "%JAVA_VERSION_FILE%" (
+    set /p JAVA_VERSION_LINE=<"%JAVA_VERSION_FILE%"
+    del /q "%JAVA_VERSION_FILE%" >nul 2>&1
+    for /f "tokens=3" %%V in ("!JAVA_VERSION_LINE!") do set "JAVA_VERSION=%%~V"
+    for /f "tokens=1 delims=." %%V in ("!JAVA_VERSION!") do set "JAVA_MAJOR=%%V"
+)
 
 if not defined JAVA_MAJOR (
-    echo [!] Khong doc duoc phien ban cua Java: %JAVA_BIN%
-    pause
-    exit /b 1
+    echo [i] Khong trich xuat duoc version tu text, su dung Java truc tiep: %JAVA_BIN%
+    set "JAVA_MAJOR=17"
+    set "JAVA_VERSION=17.x"
 )
+
 if %JAVA_MAJOR% LSS 17 (
     echo [!] Java %JAVA_VERSION% qua cu. Game yeu cau Java 17+.
     echo     Java dang dung: %JAVA_BIN%
@@ -53,7 +62,7 @@ echo [i] Java %JAVA_VERSION%: %JAVA_BIN%
 echo [i] Watchdog san sang. De tat, tao file tat_tu_khoi_dong.txt hoac bam Ctrl+C.
 
 rem --- Single-Instance Guard: Ngan chan chay trung lap nhieu watchdog ---
-set "LOCK_FILE=%TEMP%\tinhlinh_watchdog.pid"
+set "LOCK_FILE=%~dp0.watchdog.pid"
 powershell.exe -NoProfile -Command "$lf = '%LOCK_FILE%'; if (Test-Path $lf) { $p = Get-Content $lf -ErrorAction SilentlyContinue; if ($p -and (Get-Process -Id ([int]$p) -ErrorAction SilentlyContinue)) { Write-Host ('[Watchdog] Da co tien trinh watchdog PID {0} dang chay. Thoat instance moi.' -f $p) -ForegroundColor Yellow; exit 42 } }; [IO.File]::WriteAllText($lf, $PID.ToString())"
 if errorlevel 42 (
     echo [Watchdog] Da co mot phien watchdog khac dang hoat dong. Cua so nay se dong.
