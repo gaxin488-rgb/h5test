@@ -51,9 +51,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 5: Auto Apple Harvest & Collection Automation (handleAppleHarvest, triggerHarvestApple, moveToWaypoint, getCurrentMapWaypoints).
  * Feature 6: Check Version Update Requirement (isVersionUpdateRequired, checkVersionUpdateRequired, getVersionUpdateMessage).
  * Feature 7: Check Server Under Maintenance (isServerUnderMaintenance, checkServerUnderMaintenance, getServerMaintenanceMessage).
+ * Feature 8: Return to Saved Exhaustion Coordinate (returnToExhaustionCoordinate, isReturningToExhaustion, isAutoReturnToExhaustionEnabled, moveTo, clearSavedExhaustionCoordinate).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.5.0-Feature67-MaintenanceAndUpdate";
+    private static final String VERSION = "1.6.0-Feature8-ReturnToExhaustion";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -100,6 +101,14 @@ public final class TinhLinhBot {
     private static volatile String lastDetectedMaintenanceMsg = "";
     private static volatile long lastDetectedMaintenanceTime = 0L;
     private static volatile long lastMaintenanceLogTime = 0L;
+
+    // Feature 8: Tu dong Quay lai Toa do Kiet suc sau khi Hai Tao / Ve Lang
+    private static volatile boolean isReturningToExhaustion = false;
+    private static volatile boolean isAutoReturnToExhaustionEnabled = true;
+    private static volatile long lastReturnActionTime = 0L;
+    private static volatile int returnArrivalSamples = 0;
+    private static volatile long returnStartTime = 0L;
+    private static final float ARRIVAL_RADIUS = 2.0f;
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -305,6 +314,9 @@ public final class TinhLinhBot {
 
         // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
         handleAppleAndFarmNavigation(now);
+
+        // --- 8. Tu dong Quay lai Toa do Kiet suc sau khi Hai Tao / Ve Lang ---
+        handleReturnToExhaustionNavigation(now);
     }
 
     // =========================================================================
@@ -2418,5 +2430,321 @@ public final class TinhLinhBot {
         } catch (Throwable ignored) {
         }
         return roots;
+    }
+
+    // =========================================================================
+    // FEATURE 8: TU DONG QUAY LAI TOA DO KIET SUC (RETURN TO EXHAUSTION COORD)
+    // =========================================================================
+
+    public static boolean isAutoReturnToExhaustionEnabled() {
+        if (new File("tat_auto_quay_lai.txt").exists() || new File("no_auto_return.txt").exists()) {
+            return false;
+        }
+        return isAutoReturnToExhaustionEnabled;
+    }
+
+    public static void setAutoReturnToExhaustionEnabled(boolean enabled) {
+        isAutoReturnToExhaustionEnabled = enabled;
+        log("[AutoFarm-Return] Auto Return to Exhaustion da chuyen thanh: " + enabled);
+    }
+
+    public static boolean isReturningToExhaustion() {
+        return isReturningToExhaustion;
+    }
+
+    public static synchronized void clearSavedExhaustionCoordinate() {
+        lastSavedExhaustionCoord = null;
+        isReturningToExhaustion = false;
+        returnArrivalSamples = 0;
+        returnStartTime = 0L;
+        try {
+            File propFile = new File(EXHAUSTION_STATE_FILE);
+            if (propFile.exists()) {
+                propFile.delete();
+            }
+            File txtFile = new File(EXHAUSTION_COORD_FILE);
+            if (txtFile.exists()) {
+                txtFile.delete();
+            }
+            log("[AutoFarm-Return] Da xoa trang thai va toa do kiet suc cu.");
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
+     * Dieu khien nhan vat di chuyen den mot toa do cu the (x, y) tren map hien tai.
+     * Su dung Movement Controller goc cua nhan vat trong game LibGDX.
+     */
+    public static boolean moveTo(float targetX, float targetY) {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player == null || player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 == null) {
+                return false;
+            }
+            Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
+            Gdx.app.postRunnable(() -> {
+                try {
+                    Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+                    Method moveMethod = controller.getClass().getMethod(
+                            "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                            float.class, float.class, callbackClass
+                    );
+                    moveMethod.invoke(controller, targetX, targetY, null);
+                } catch (Throwable t) {
+                    log("[Movement] Loi khi di chuyen toi (" + targetX + ", " + targetY + "): " + t.getMessage());
+                }
+            });
+            return true;
+        } catch (Throwable t) {
+            log("[Movement] Ngoai le trong moveTo: " + t.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Kiem tra hai map co phai la cung mot map khong (so sanh mapId hoac ten map chuan hoa).
+     */
+    private static boolean isSameMap(int id1, String name1, int id2, String name2) {
+        if (id1 > 0 && id2 > 0 && id1 == id2) return true;
+        if (name1 != null && name2 != null && !name1.trim().isEmpty() && !name2.trim().isEmpty()) {
+            String n1 = normalizeText(name1);
+            String n2 = normalizeText(name2);
+            return n1.equals(n2) || n1.contains(n2) || n2.contains(n1);
+        }
+        return false;
+    }
+
+    /**
+     * Xac dinh ID cua map tiep theo can di qua tu currentMapId de den duoc targetMapId (Map Routing Path).
+     */
+    private static int getNextHopMapId(int currentMapId, int targetMapId) {
+        if (currentMapId == targetMapId) return targetMapId;
+
+        int src = (currentMapId == 0) ? 2 : currentMapId;
+        int dst = (targetMapId == 0) ? 2 : targetMapId;
+
+        if (src == 5) {
+            return 2; // Tu Nong trai luon phai ve Lang truoc
+        }
+        if (src == 2) {
+            if (dst == 5) return 5;
+            return 3; // Cac map ngoai Lang deu di qua Map 3 truoc
+        }
+        if (src == 3) {
+            if (dst == 2 || dst == 5) return 2; // Ve Lang
+            if (dst >= 4) return 4;             // Di tiep ra Thao nguyen mach gio
+        }
+        if (src == 4) {
+            if (dst <= 3) return 3;             // Quay lai Thung lung co lau
+            if (dst > 4) return dst;            // Di map tiep theo
+        }
+
+        return targetMapId;
+    }
+
+    /**
+     * Tim cong Waypoint tren map hien tai de di tiep den targetMap.
+     */
+    public static com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 findWaypointToTargetMap(
+            int currentMapId, String currentMapName, int targetMapId, String targetMapName) {
+        Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> waypoints = getCurrentMapWaypoints();
+        if (waypoints == null || waypoints.size == 0) {
+            return null;
+        }
+
+        String targetNorm = normalizeText(targetMapName);
+
+        // 1. Uu tien 1: Tim cong truc tiep dan den targetMapId
+        for (int i = 0; i < waypoints.size; i++) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+            if (wp != null && wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == targetMapId) {
+                return wp;
+            }
+        }
+
+        // 2. Uu tien 2: Tim cong co ten khop voi targetMapName
+        if (!targetNorm.isEmpty()) {
+            for (int i = 0; i < waypoints.size; i++) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+                if (wp != null) {
+                    String wpNorm = normalizeText(getWaypointName(wp));
+                    if (!wpNorm.isEmpty() && (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm))) {
+                        return wp;
+                    }
+                }
+            }
+        }
+
+        // 3. Uu tien 3: Tim cong qua Routing Next-Hop (BFS)
+        int nextHopId = getNextHopMapId(currentMapId, targetMapId);
+        if (nextHopId != currentMapId) {
+            for (int i = 0; i < waypoints.size; i++) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+                if (wp != null) {
+                    if (wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == nextHopId) {
+                        return wp;
+                    }
+                    if (nextHopId == 2 && (wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == 0)) {
+                        return wp;
+                    }
+                }
+            }
+
+            // Tim theo tu khoa pho bien cua nextHopId
+            String hopKeyword = "";
+            if (nextHopId == 2 || nextHopId == 0) hopKeyword = "lang";
+            else if (nextHopId == 3) hopKeyword = "thung lung";
+            else if (nextHopId == 4) hopKeyword = "thao nguyen";
+            else if (nextHopId == 5) hopKeyword = "nong trai";
+
+            if (!hopKeyword.isEmpty()) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 hopWp = findWaypointByName(hopKeyword);
+                if (hopWp != null) return hopWp;
+            }
+        }
+
+        // Fallback: neu o Nong trai va chi co 1 cong -> luon la cong ve Lang
+        if (currentMapId == 5 && waypoints.size == 1) {
+            return waypoints.get(0);
+        }
+
+        return null;
+    }
+
+    /**
+     * Ham chinh thuc hien quy trinh quay lai toa do kiet suc da luu truoc do:
+     * - Neu dang o khac Map: Tim cong Waypoint va buoc vao chuyen map.
+     * - Neu da o cung Map: Chay truc tiep toi toa do (saved.x, saved.y).
+     * - Khi den dich: Dung nhan vat, xoa trang thai va log hoan tat.
+     */
+    public static synchronized boolean returnToExhaustionCoordinate() {
+        SavedCoordinate saved = getSavedExhaustionCoordinate();
+        if (saved == null) {
+            return false;
+        }
+
+        if (isPlayerExhausted() || isExhaustionDialogVisible()) {
+            return false;
+        }
+
+        int currentMapId = getCurrentMapId();
+        String currentMapName = getCurrentMapName();
+        Vector2 currentPos = getPlayerPosition();
+        if (currentMapId < 0 || currentPos == null) {
+            return false;
+        }
+
+        long now = System.currentTimeMillis();
+
+        // Anti-Stuck: Neu da di chuyen qua 180s ma khong den duoc
+        if (returnStartTime > 0L && (now - returnStartTime > 180_000L)) {
+            log("[AutoFarm-Return] CANH BAO: Qua 180s khong den duoc toa do kiet suc -> Reset chu trinh de chong ket!");
+            clearSavedExhaustionCoordinate();
+            return false;
+        }
+
+        // --- TRUONG HOP 1: Da toi dung Map kiet suc ---
+        if (isSameMap(currentMapId, currentMapName, saved.mapId, saved.mapName)) {
+            float dx = saved.x - currentPos.x;
+            float dy = saved.y - currentPos.y;
+            float dist = (float) Math.sqrt(dx * dx + dy * dy);
+
+            if (dist <= ARRIVAL_RADIUS) {
+                returnArrivalSamples++;
+                if (returnArrivalSamples >= 2) {
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+                    stopPlayerVelocity(player);
+                    isReturningToExhaustion = false;
+                    returnArrivalSamples = 0;
+                    returnStartTime = 0L;
+                    log(String.format(Locale.ROOT, "[AutoFarm-Return] >>> DA QUAY LAI TOA DO KIET SUC THANH CONG! <<< Map [%s - ID: %d] tai (X=%.1f, Y=%.1f) [Khoang cach den diem cu: %.1fm]",
+                            saved.mapName, saved.mapId, currentPos.x, currentPos.y, dist));
+                    clearSavedExhaustionCoordinate();
+                    return true;
+                }
+            } else {
+                returnArrivalSamples = 0;
+                if (now - lastReturnActionTime >= 2000L) {
+                    lastReturnActionTime = now;
+                    isReturningToExhaustion = true;
+                    if (returnStartTime == 0L) returnStartTime = now;
+                    log(String.format(Locale.ROOT, "[AutoFarm-Return] Dang chay toi toa do kiet suc (X=%.1f, Y=%.1f) tren Map [%s - ID: %d]. Khoang cach con: %.1fm...",
+                            saved.x, saved.y, saved.mapName, saved.mapId, dist));
+                    moveTo(saved.x, saved.y);
+                }
+            }
+            return true;
+        }
+
+        // --- TRUONG HOP 2: Dang o khac Map -> Tim cong de chuyen sang Map kiet suc ---
+        if (now - lastReturnActionTime >= 3500L) {
+            lastReturnActionTime = now;
+            isReturningToExhaustion = true;
+            if (returnStartTime == 0L) returnStartTime = now;
+
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 nextPortal =
+                    findWaypointToTargetMap(currentMapId, currentMapName, saved.mapId, saved.mapName);
+
+            if (nextPortal != null) {
+                String wpName = getWaypointName(nextPortal);
+                log(String.format(Locale.ROOT, "[AutoFarm-Return] Tim thay cong [%s] de di toi Map dich [%s - ID: %d]. Dang di chuyen vao cong...",
+                        wpName, saved.mapName, saved.mapId));
+                moveToWaypoint(nextPortal);
+                return true;
+            } else {
+                log(String.format(Locale.ROOT, "[AutoFarm-Return] Chua tim thay cong di toi Map [%s - ID: %d] tu Map hien tai [%s - ID: %d].",
+                        saved.mapName, saved.mapId, currentMapName, currentMapId));
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Vong lap tu dong dieu huong trong Game Loop:
+     * Chi kich hoat quay lai toa do kiet suc khi:
+     * 1. Auto return dang bat.
+     * 2. Co toa do kiet suc hop le trong bo nho.
+     * 3. Khong dang chet va khong co popup kiet suc.
+     * 4. Khong dang trong tien trinh hai tao (neu bat auto hai tao va dang o Lang / Nong trai chua hai tao xong -> de hai tao truoc).
+     */
+    private static void handleReturnToExhaustionNavigation(long now) {
+        if (!isAutoReturnToExhaustionEnabled()) {
+            return;
+        }
+
+        SavedCoordinate saved = getSavedExhaustionCoordinate();
+        if (saved == null) {
+            return;
+        }
+
+        if (isPlayerExhausted() || isExhaustionDialogVisible()) {
+            return;
+        }
+
+        if (isAppleHarvesting()) {
+            return;
+        }
+
+        int curMapId = getCurrentMapId();
+        String curMap = getCurrentMapName();
+        String normMap = normalizeText(curMap);
+        boolean isFarm = (curMapId == 5) || normMap.contains("nong");
+        boolean isVillage = (curMapId == 0 || curMapId == 2) || normMap.contains("lang");
+
+        // Neu tinh nang hai tao dang bat, va nhan vat dang o Lang chua hai tao -> uu tien de hai tao truoc
+        if (isAutoAppleHarvestEnabled() && isVillage && !hasHarvestedApple) {
+            return;
+        }
+
+        // Neu dang o Nong trai ma chua hai tao xong -> de hai tao truoc
+        if (isFarm && !hasHarvestedApple) {
+            return;
+        }
+
+        // Kich hoat quay lai toa do kiet suc
+        returnToExhaustionCoordinate();
     }
 }

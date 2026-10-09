@@ -313,6 +313,7 @@ public final class WindowPatch {
                         private final Label startLabel = new Label();
                         private final Label endLabel = new Label();
                         private final Label handlerLabel = new Label();
+                        private final Label exitLabel = new Label();
                         private boolean codeStarted = false;
 
                         @Override
@@ -326,14 +327,21 @@ public final class WindowPatch {
                         @Override
                         public void visitInsn(int opcode) {
                             if (opcode == Opcodes.RETURN && codeStarted) {
-                                super.visitLabel(endLabel);
-                                super.visitInsn(Opcodes.RETURN);
-                                super.visitLabel(handlerLabel);
-                                super.visitInsn(Opcodes.POP);
-                                super.visitInsn(Opcodes.RETURN);
+                                super.visitJumpInsn(Opcodes.GOTO, exitLabel);
                                 return;
                             }
                             super.visitInsn(opcode);
+                        }
+
+                        @Override
+                        public void visitMaxs(int maxStack, int maxLocals) {
+                            super.visitLabel(endLabel);
+                            super.visitLabel(exitLabel);
+                            super.visitInsn(Opcodes.RETURN);
+                            super.visitLabel(handlerLabel);
+                            super.visitInsn(Opcodes.POP);
+                            super.visitInsn(Opcodes.RETURN);
+                            super.visitMaxs(maxStack, maxLocals);
                         }
                     };
                 }
@@ -358,6 +366,7 @@ public final class WindowPatch {
                         private final Label startLabel = new Label();
                         private final Label endLabel = new Label();
                         private final Label handlerLabel = new Label();
+                        private final Label exitLabel = new Label();
                         private boolean codeStarted = false;
 
                         @Override
@@ -371,14 +380,21 @@ public final class WindowPatch {
                         @Override
                         public void visitInsn(int opcode) {
                             if (opcode == Opcodes.RETURN && codeStarted) {
-                                super.visitLabel(endLabel);
-                                super.visitInsn(Opcodes.RETURN);
-                                super.visitLabel(handlerLabel);
-                                super.visitInsn(Opcodes.POP);
-                                super.visitInsn(Opcodes.RETURN);
+                                super.visitJumpInsn(Opcodes.GOTO, exitLabel);
                                 return;
                             }
                             super.visitInsn(opcode);
+                        }
+
+                        @Override
+                        public void visitMaxs(int maxStack, int maxLocals) {
+                            super.visitLabel(endLabel);
+                            super.visitLabel(exitLabel);
+                            super.visitInsn(Opcodes.RETURN);
+                            super.visitLabel(handlerLabel);
+                            super.visitInsn(Opcodes.POP);
+                            super.visitInsn(Opcodes.RETURN);
+                            super.visitMaxs(maxStack, maxLocals);
                         }
                     };
                 }
