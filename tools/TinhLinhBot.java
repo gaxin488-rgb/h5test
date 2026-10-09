@@ -61,7 +61,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 12: Live Combat Engine & EXP Progression Tracking (findNearestLivingMonster, enableGameNativeAutoCombat, executeAttackOnTarget, getPlayerExp, getPlayerMaxExp, getPlayerExpPercent, getCombatDebugInfo).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.2-Feature12-MemoryAndPortalGuard";
+    private static final String VERSION = "1.9.3-Feature12-StickyTargeting";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -151,6 +151,13 @@ public final class TinhLinhBot {
     private static volatile long lastAttackLogTime = 0L;
     private static volatile long lastCombatScanTime = 0L;
     private static volatile long lastExpLogTime = 0L;
+
+    // Sticky Target Locking: Giu chat 1 quai danh den khi ha guc hoan toan
+    private static volatile com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 currentCombatTarget = null;
+    private static volatile int currentCombatTargetId = -1;
+    private static volatile long currentTargetLockTime = 0L;
+    private static volatile int lastTargetLoggedId = -1;
+    private static final long TARGET_LOCK_TIMEOUT_MS = 25_000L; // 25s timeout neu quai bi ket/khong danh duoc
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -1050,6 +1057,11 @@ public final class TinhLinhBot {
         } else if (!exhausted && previousExhausted) {
             log("[AutoFarm-Exhaustion] Nhan vat da ve lang / thoat trang thai kiet suc.");
         }
+        if (exhausted) {
+            currentCombatTarget = null;
+            currentCombatTargetId = -1;
+            lastTargetLoggedId = -1;
+        }
         previousExhausted = exhausted;
 
         // 2. Theo doi chuyen Map & dinh ky 10s
@@ -1068,6 +1080,9 @@ public final class TinhLinhBot {
             String hpStr = (curHp >= 0 && maxHp > 0) ? String.format(Locale.ROOT, " [HP: %d/%d]", curHp, maxHp) : "";
             String statusStr = exhausted ? ("[KIET SUC" + hpStr + "]") : ("[BINH THUONG" + hpStr + "]");
             if (mapChanged) {
+                currentCombatTarget = null;
+                currentCombatTargetId = -1;
+                lastTargetLoggedId = -1;
                 log("[AutoFarm-Map] CHUYEN MAP -> Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
             } else {
                 log("[AutoFarm-Map] Dang o Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
@@ -3322,7 +3337,7 @@ public final class TinhLinhBot {
         enableGameNativeAutoCombat();
 
         // --- 3. COMBAT SCAN & MONSTER ENGAGEMENT ENGINE ---
-        if (now - lastCombatScanTime < 600L) {
+        if (now - lastCombatScanTime < 350L) {
             return;
         }
         lastCombatScanTime = now;
@@ -3354,16 +3369,93 @@ public final class TinhLinhBot {
             }
         }
 
-        com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 nearestMonster = findNearestLivingMonster(pos);
+        // --- STICKY TARGETING ENGINE ---
+        // Kiem tra muc tieu dang danh co con hop le va song sot khong (Uu tien danh dut diem 1 mob)
+        com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 activeTarget = null;
+        if (currentCombatTarget != null) {
+            if (isMonsterDead(currentCombatTarget)) {
+                log(String.format(Locale.ROOT,
+                        "[AutoFarm-Combat] ⚔️ Quai muc tieu [%s - ID: %d] DA BI HA GUC! Dang chon muc tieu tiep theo...",
+                        getMonsterName(currentCombatTarget), currentCombatTargetId));
+                currentCombatTarget = null;
+                currentCombatTargetId = -1;
+            } else {
+                Vector2 curTargetPos = getMonsterPosition(currentCombatTarget);
+                if (curTargetPos == null) {
+                    currentCombatTarget = null;
+                    currentCombatTargetId = -1;
+                } else {
+                    float distToTarget = pos.dst(curTargetPos);
+                    if (now - currentTargetLockTime > TARGET_LOCK_TIMEOUT_MS) {
+                        log(String.format(Locale.ROOT,
+                                "[AutoFarm-Combat] ⏱️ Muc tieu [%s - ID: %d] qua 25s chua ha guc -> Reset de doi muc tieu khac...",
+                                getMonsterName(currentCombatTarget), currentCombatTargetId));
+                        currentCombatTarget = null;
+                        currentCombatTargetId = -1;
+                    } else if (distToTarget > 14.0f) {
+                        log(String.format(Locale.ROOT,
+                                "[AutoFarm-Combat] 🏃 Muc tieu [%s - ID: %d] di chuyen qua xa (%.1fm > 14m) -> Bo khoa de tim quai gan hon...",
+                                getMonsterName(currentCombatTarget), currentCombatTargetId, distToTarget));
+                        currentCombatTarget = null;
+                        currentCombatTargetId = -1;
+                    } else {
+                        // Kiem tra quai co bi day vao mep cong khong
+                        boolean targetNearPortal = false;
+                        if (currentWps != null) {
+                            for (int w = 0; w < currentWps.size; w++) {
+                                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = currentWps.get(w);
+                                if (wp != null) {
+                                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                                    if (wpPos != null && curTargetPos.dst(wpPos) < 3.2f) {
+                                        targetNearPortal = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if (targetNearPortal) {
+                            log(String.format(Locale.ROOT,
+                                    "[AutoFarm-Combat] 🚪 Muc tieu [%s - ID: %d] dung qua sat cong (< 3.2m) -> Bo qua de tranh hut vao cong...",
+                                    getMonsterName(currentCombatTarget), currentCombatTargetId));
+                            currentCombatTarget = null;
+                            currentCombatTargetId = -1;
+                        } else {
+                            // MUC TIEU HOP LE: Giu chat muc tieu nay!
+                            activeTarget = currentCombatTarget;
+                        }
+                    }
+                }
+            }
+        }
 
-        if (nearestMonster != null) {
-            Vector2 mPos = getMonsterPosition(nearestMonster);
+        // Neu chua co muc tieu hoac muc tieu cu da chet -> Tim quai moi
+        if (activeTarget == null) {
+            activeTarget = findNearestLivingMonster(pos);
+            if (activeTarget != null) {
+                currentCombatTarget = activeTarget;
+                currentCombatTargetId = activeTarget.a_();
+                currentTargetLockTime = now;
+            }
+        }
+
+        if (activeTarget != null) {
+            Vector2 mPos = getMonsterPosition(activeTarget);
             float dist = (mPos != null) ? pos.dst(mPos) : Float.MAX_VALUE;
-            String mName = getMonsterName(nearestMonster);
+            String mName = getMonsterName(activeTarget);
+            int mId = activeTarget.a_();
+
+            if (lastTargetLoggedId != mId) {
+                lastTargetLoggedId = mId;
+                long mHp = getMonsterHp(activeTarget);
+                long mMaxHp = getMonsterMaxHp(activeTarget);
+                log(String.format(Locale.ROOT,
+                        "[AutoFarm-Combat] 🎯 Khoa muc tieu: [%s - ID: %d] [HP: %d/%d] cach %.1fm -> Tap trung danh dut diem!",
+                        mName, mId, mHp, mMaxHp, dist));
+            }
 
             if (dist > 2.8f) {
-                // Nhan vat o ngoai tam danh -> Di chuyen ap sat quai vat
-                if (now - lastCombatMoveTime >= 1200L && mPos != null) {
+                // Nhan vat o ngoai tam danh -> Di chuyen ap sat muc tieu dang danh
+                if (now - lastCombatMoveTime >= 800L && mPos != null) {
                     lastCombatMoveTime = now;
                     float targetX = mPos.x;
                     float targetY = mPos.y;
@@ -3385,21 +3477,19 @@ public final class TinhLinhBot {
                         }
                     }
 
-                    log(String.format(Locale.ROOT, "[AutoFarm-Combat] Phat hien quai [%s] cach %.1fm -> Di chuyen toi (X=%.1f, Y=%.1f)...",
-                            mName, dist, targetX, targetY));
                     moveTo(targetX, targetY);
                 }
             } else {
                 // Trong tam danh (dist <= 2.8f):
-                // 1. Khoa muc tieu (Target Lock)
+                // 1. Khoa muc tieu vao entity cua game (Target Lock)
                 try {
-                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(nearestMonster);
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(activeTarget);
                 } catch (Throwable ignored) {}
 
-                // 2. Tung don danh / phan phoi skill
-                if (now - lastAttackExecuteTime >= 400L) {
+                // 2. Tung don danh / phan phoi skill vao DUNG activeTarget
+                if (now - lastAttackExecuteTime >= 350L) {
                     lastAttackExecuteTime = now;
-                    executeAttackOnTarget(nearestMonster);
+                    executeAttackOnTarget(activeTarget);
                 }
             }
         } else {
@@ -3428,6 +3518,9 @@ public final class TinhLinhBot {
 
     public static void resetPostLoginDispatch() {
         postLoginDispatched = false;
+        currentCombatTarget = null;
+        currentCombatTargetId = -1;
+        lastTargetLoggedId = -1;
         log("[AutoLogin-Dispatch] Da reset trang thai Post-Login Dispatch.");
     }
 
@@ -3927,6 +4020,49 @@ public final class TinhLinhBot {
         return 0L;
     }
 
+    /**
+     * Lay HP hien tai cua quai vat thong qua cau truc Monster Stats.
+     */
+    public static long getMonsterHp(com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m) {
+        if (m == null) return 0L;
+        try {
+            if (m.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return m.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
+            }
+        } catch (Throwable ignored) {}
+        return 0L;
+    }
+
+    /**
+     * Lay Max HP cua quai vat thong qua cau truc Monster Stats.
+     */
+    public static long getMonsterMaxHp(com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m) {
+        if (m == null) return 0L;
+        try {
+            if (m.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                return m.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75;
+            }
+        } catch (Throwable ignored) {}
+        return 0L;
+    }
+
+    /**
+     * Kiem tra quai vat da chet chua (ket hop ca isDead flag goc va luong HP <= 0).
+     */
+    public static boolean isMonsterDead(com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m) {
+        if (m == null) return true;
+        try {
+            if (m.gIrLkun75nEKiLliiliiLiWhATDOYouWAntHeReHiHihIhaHahAHoHohOHEHEheGIrlKUN75()) {
+                return true;
+            }
+            if (m.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                long hp = m.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
+                if (hp <= 0L) return true;
+            }
+        } catch (Throwable ignored) {}
+        return false;
+    }
+
     public static com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 findNearestLivingMonster(Vector2 playerPos) {
         try {
             com.badlogic.gdx.utils.Array<com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> monsters =
@@ -3936,10 +4072,11 @@ public final class TinhLinhBot {
             com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 best = null;
             float bestDist = Float.MAX_VALUE;
 
+            Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+
             for (int i = 0; i < monsters.size; i++) {
                 com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m = monsters.get(i);
-                if (m == null) continue;
-                if (m.gIrLkun75nEKiLliiliiLiWhATDOYouWAntHeReHiHihIhaHahAHoHohOHEHEheGIrlKUN75()) {
+                if (m == null || isMonsterDead(m)) {
                     continue; // Da chet
                 }
                 Vector2 mPos = getMonsterPosition(m);
@@ -3947,7 +4084,6 @@ public final class TinhLinhBot {
 
                 // Bo qua quai vat dung sat cong dich chuyen (< 3.2m) de khong bi vo tinh hut qua map khac
                 boolean nearPortal = false;
-                Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
                 if (wps != null) {
                     for (int w = 0; w < wps.size; w++) {
                         com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = wps.get(w);
@@ -3963,8 +4099,16 @@ public final class TinhLinhBot {
                 if (nearPortal) continue;
 
                 float d = (playerPos != null) ? playerPos.dst(mPos) : 0f;
-                if (d < bestDist) {
-                    bestDist = d;
+                // Uu tien quai da bi thuong trong pham vi 6.0m de ket lieu dut diem truoc (-3.0m khoang cach ao)
+                long hp = getMonsterHp(m);
+                long maxHp = getMonsterMaxHp(m);
+                float effectiveDist = d;
+                if (hp > 0 && maxHp > 0 && hp < maxHp && d <= 6.0f) {
+                    effectiveDist = Math.max(0.1f, d - 3.0f);
+                }
+
+                if (effectiveDist < bestDist) {
+                    bestDist = effectiveDist;
                     best = m;
                 }
             }
