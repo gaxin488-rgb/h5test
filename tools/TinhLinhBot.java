@@ -49,9 +49,11 @@ import org.lwjgl.glfw.GLFW;
  * Feature 3: Exhaustion Coordinate Saving & State Persistence (saveExhaustionCoordinate, isExhaustionDialogVisible).
  * Feature 4: Auto Select Return to Village Menu upon Exhaustion (autoSelectReturnToVillage).
  * Feature 5: Auto Apple Harvest & Collection Automation (handleAppleHarvest, triggerHarvestApple, moveToWaypoint, getCurrentMapWaypoints).
+ * Feature 6: Check Version Update Requirement (isVersionUpdateRequired, checkVersionUpdateRequired, getVersionUpdateMessage).
+ * Feature 7: Check Server Under Maintenance (isServerUnderMaintenance, checkServerUnderMaintenance, getServerMaintenanceMessage).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.4.1-Feature5-AppleHarvest-Robust";
+    private static final String VERSION = "1.5.0-Feature67-MaintenanceAndUpdate";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -91,6 +93,13 @@ public final class TinhLinhBot {
 
     private static volatile String savedUsername = null;
     private static volatile String savedPassword = null;
+
+    // Feature 6 & 7: Trang thai kiem tra Yeu cau Cap nhat Phien ban & Server Bao tri
+    private static volatile String lastDetectedVersionUpdateMsg = "";
+    private static volatile long lastDetectedVersionUpdateTime = 0L;
+    private static volatile String lastDetectedMaintenanceMsg = "";
+    private static volatile long lastDetectedMaintenanceTime = 0L;
+    private static volatile long lastMaintenanceLogTime = 0L;
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -239,6 +248,21 @@ public final class TinhLinhBot {
             }
 
             if (isLoginScreen) {
+                // Feature 6: Kiem tra Thong bao Cap Nhat Phien Ban
+                if (isVersionUpdateRequired()) {
+                    String msg = getVersionUpdateMessage();
+                    log("[ClientVersion] PHAT HIEN THONG BAO YEU CAU CAP NHAT PHIEN BAN: '" + msg + "' -> Tam dung Auto Login de cap nhat!");
+                    return;
+                }
+
+                // Feature 7: Kiem tra Thong bao May Chu Dang Bao Tri
+                if (isServerUnderMaintenance()) {
+                    String msg = getServerMaintenanceMessage();
+                    log("[ServerMaintenance] PHAT HIEN MAY CHU DANG BAO TRI: '" + msg + "' -> Tam dung dang nhap (se thu lai sau 60s)...");
+                    lastLoginAttemptTime = now + 60_000L;
+                    return;
+                }
+
                 loginAttempts++;
                 log("[AutoLogin] Server da ket noi. Dang thuc hien dang nhap lan " + loginAttempts + "...");
                 Gdx.app.postRunnable(TinhLinhBot::doLogin);
@@ -264,6 +288,15 @@ public final class TinhLinhBot {
                     }
                 }
             } catch (Throwable ignored) {
+            }
+        }
+
+        // --- 5.1. Giam sat Thong bao Bao Tri trong game ---
+        if (isServerUnderMaintenance()) {
+            if (now - lastMaintenanceLogTime > 60_000L) {
+                lastMaintenanceLogTime = now;
+                String msg = getServerMaintenanceMessage();
+                log("[ServerMaintenance] CANH BAO TRONG GAME: Phat hien thong bao bao tri may chu: '" + msg + "'");
             }
         }
 
@@ -2110,5 +2143,280 @@ public final class TinhLinhBot {
             log("[StorageGuard] Da cat tia thanh cong autofarm_log.txt: giu lai " + keepLines.size() + " dong (Dung luong con: " + (file.length() / 1024L) + "KB).");
         } catch (Throwable ignored) {
         }
+    }
+
+    // =========================================================================
+    // FEATURE 6: CHECK VERSION UPDATE REQUIREMENT
+    // FEATURE 7: CHECK SERVER UNDER MAINTENANCE
+    // =========================================================================
+
+    /**
+     * Feature 6: Kiem tra yeu cau cap nhat phien ban game.
+     * Quet toan bo Stage / Dialog / Toast tren man hinh (Login Screen va Game Screen).
+     * @return true neu phat hien yeu cau cap nhat phien ban, false neu khong co.
+     */
+    public static boolean isVersionUpdateRequired() {
+        try {
+            List<String> texts = new ArrayList<>();
+            scanAllScreenTexts(texts);
+            for (String t : texts) {
+                if (matchesVersionUpdatePattern(t)) {
+                    lastDetectedVersionUpdateMsg = t;
+                    lastDetectedVersionUpdateTime = System.currentTimeMillis();
+                    return true;
+                }
+            }
+            List<Actor> dialogs = getActiveDialogRoots();
+            for (Actor d : dialogs) {
+                String fullText = getActorText(d);
+                if (matchesVersionUpdatePattern(fullText)) {
+                    lastDetectedVersionUpdateMsg = fullText;
+                    lastDetectedVersionUpdateTime = System.currentTimeMillis();
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /**
+     * Alias method cho isVersionUpdateRequired().
+     */
+    public static boolean checkVersionUpdateRequired() {
+        return isVersionUpdateRequired();
+    }
+
+    /**
+     * Tra ve noi dung thong bao yeu cau cap nhat phien ban gan nhat (neu co).
+     */
+    public static String getVersionUpdateMessage() {
+        return lastDetectedVersionUpdateMsg;
+    }
+
+    /**
+     * Feature 7: Kiem tra may chu game co dang trong trang thai bao tri hay khong.
+     * Quet toan bo Stage / Dialog / Toast tren man hinh (Login Screen va Game Screen).
+     * @return true neu may chu dang bao tri, false neu hoat dong binh thuong.
+     */
+    public static boolean isServerUnderMaintenance() {
+        try {
+            List<String> texts = new ArrayList<>();
+            scanAllScreenTexts(texts);
+            for (String t : texts) {
+                if (matchesServerMaintenancePattern(t)) {
+                    lastDetectedMaintenanceMsg = t;
+                    lastDetectedMaintenanceTime = System.currentTimeMillis();
+                    return true;
+                }
+            }
+            List<Actor> dialogs = getActiveDialogRoots();
+            for (Actor d : dialogs) {
+                String fullText = getActorText(d);
+                if (matchesServerMaintenancePattern(fullText)) {
+                    lastDetectedMaintenanceMsg = fullText;
+                    lastDetectedMaintenanceTime = System.currentTimeMillis();
+                    return true;
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return false;
+    }
+
+    /**
+     * Alias method cho isServerUnderMaintenance().
+     */
+    public static boolean checkServerUnderMaintenance() {
+        return isServerUnderMaintenance();
+    }
+
+    /**
+     * Tra ve noi dung thong bao bao tri may chu gan nhat (neu co).
+     */
+    public static String getServerMaintenanceMessage() {
+        return lastDetectedMaintenanceMsg;
+    }
+
+    /**
+     * Reset cac thong bao cap nhat phien ban va bao tri da luu.
+     */
+    public static void resetVersionAndUpdateStatus() {
+        lastDetectedVersionUpdateMsg = "";
+        lastDetectedVersionUpdateTime = 0L;
+        lastDetectedMaintenanceMsg = "";
+        lastDetectedMaintenanceTime = 0L;
+    }
+
+    private static boolean matchesVersionUpdatePattern(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) return false;
+        String norm = normalizeText(rawText);
+        if (norm.isEmpty()) return false;
+
+        // Pattern 1: Chứa 'cap nhat' + ('phien ban' / 'ung dung' / 'game' / 'moi' / 'tai ve' / 'client')
+        if (norm.contains("cap nhat") && (norm.contains("phien ban") || norm.contains("ung dung") || norm.contains("game") || norm.contains("moi") || norm.contains("client") || norm.contains("tai ve"))) {
+            return true;
+        }
+        // Pattern 2: Chứa 'phien ban' + ('da cu' / 'khong phu hop' / 'khong hop le' / 'het han' / 'loi thoi' / 'moi nhat' / 'moi hon'))
+        if (norm.contains("phien ban") && (norm.contains("da cu") || norm.contains("khong phu hop") || norm.contains("khong hop le") || norm.contains("het han") || norm.contains("loi thoi") || norm.contains("moi nhat") || norm.contains("moi hon"))) {
+            return true;
+        }
+        // Pattern 3: Các cụm từ trực tiếp
+        if (norm.contains("yeu cau cap nhat")
+                || norm.contains("vui long cap nhat")
+                || norm.contains("tai phien ban moi")
+                || norm.contains("cai dat phien ban moi")
+                || norm.contains("update version")
+                || norm.contains("new version available")
+                || norm.contains("please update")
+                || norm.contains("client version out of date")) {
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean matchesServerMaintenancePattern(String rawText) {
+        if (rawText == null || rawText.trim().isEmpty()) return false;
+        String norm = normalizeText(rawText);
+        if (norm.isEmpty()) return false;
+
+        // Pattern 1: Cac cum tu bao tri may chu truc tiep
+        if (norm.contains("may chu dang bao tri")
+                || norm.contains("server dang bao tri")
+                || norm.contains("he thong dang bao tri")
+                || norm.contains("bao tri he thong")
+                || norm.contains("bao tri dinh ky")
+                || norm.contains("bao tri may chu")
+                || norm.contains("may chu bao tri")
+                || norm.contains("server bao tri")
+                || norm.contains("server maintenance")
+                || norm.contains("under maintenance")
+                || norm.contains("system maintenance")) {
+            return true;
+        }
+        // Pattern 2: Chua tu khoa 'bao tri' hoac 'maintenance'
+        if (norm.contains("bao tri") || norm.contains("maintenance")) {
+            return true;
+        }
+        return false;
+    }
+
+    private static void scanAllScreenTexts(List<String> outList) {
+        if (outList == null) return;
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return;
+            Screen screen = game.getScreen();
+            if (screen == null) return;
+
+            // 1. Quet Stage goc cua Screen
+            if (screen instanceof com.a.a.a.c.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75) {
+                Stage stage = ((com.a.a.a.c.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75) screen).GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75();
+                if (stage != null && stage.getRoot() != null) {
+                    collectAllActorTexts(stage.getRoot(), outList);
+                }
+            }
+
+            // 2. Neu o man hinh LoginScreen, quet them overlay dialog
+            if (screen instanceof com.a.c.f.c.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75) {
+                com.a.c.f.c.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 loginScreen =
+                        (com.a.c.f.c.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75) screen;
+                if (loginScreen.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
+                    collectAllActorTexts(loginScreen.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75, outList);
+                }
+            }
+
+            // 3. Neu o in-game World, quet DialogManager va UIOverlay
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world != null) {
+                com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 uiOverlay =
+                        world.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+                if (uiOverlay != null && uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
+                    SnapshotArray<Actor> dialogs = uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.getChildren();
+                    if (dialogs != null) {
+                        for (int i = 0; i < dialogs.size; i++) {
+                            collectAllActorTexts(dialogs.get(i), outList);
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static boolean isActorConsideredVisible(Actor actor) {
+        if (actor == null) return false;
+        if (!actor.isVisible()) return false;
+        try {
+            if (actor.getColor() != null && actor.getColor().a < 0.05f) {
+                return false;
+            }
+        } catch (Throwable ignored) {
+        }
+        return true;
+    }
+
+    private static void collectAllActorTexts(Actor actor, List<String> outList) {
+        if (actor == null || !isActorConsideredVisible(actor)) return;
+        try {
+            String text = getDirectActorText(actor);
+            if (text != null && !text.trim().isEmpty()) {
+                outList.add(text.trim());
+            }
+            if (actor instanceof Group) {
+                SnapshotArray<Actor> kids = ((Group) actor).getChildren();
+                if (kids != null) {
+                    for (int i = 0; i < kids.size; i++) {
+                        collectAllActorTexts(kids.get(i), outList);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static List<Actor> getActiveDialogRoots() {
+        List<Actor> roots = new ArrayList<>();
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return roots;
+            Screen screen = game.getScreen();
+            if (screen instanceof com.a.a.a.c.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75) {
+                Stage stage = ((com.a.a.a.c.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75) screen).GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75();
+                if (stage != null && stage.getRoot() != null) {
+                    SnapshotArray<Actor> stageKids = stage.getRoot().getChildren();
+                    if (stageKids != null) {
+                        for (int i = 0; i < stageKids.size; i++) {
+                            Actor child = stageKids.get(i);
+                            if (child != null && isActorConsideredVisible(child)) {
+                                roots.add(child);
+                            }
+                        }
+                    }
+                }
+            }
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 world =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (world != null) {
+                com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 uiOverlay =
+                    world.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+                if (uiOverlay != null && uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null) {
+                    SnapshotArray<Actor> dialogs = uiOverlay.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.getChildren();
+                    if (dialogs != null) {
+                        for (int i = 0; i < dialogs.size; i++) {
+                            Actor child = dialogs.get(i);
+                            if (child != null && isActorConsideredVisible(child)) {
+                                roots.add(child);
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+        return roots;
     }
 }
