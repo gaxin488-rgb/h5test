@@ -55,7 +55,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 9: Auto Attack Menu Automation (triggerAutoAttackMenu, openAutoAttackMenu, findAutoAttackButton, findMenuButton, isAutoAttackMenuEnabled, setAutoAttackMenuEnabled).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.7.0-Feature9-AutoAttackMenu";
+    private static final String VERSION = "1.7.1-Feature9-ForwardRoutingFix";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -2573,6 +2573,7 @@ public final class TinhLinhBot {
         }
         if (src == 4) {
             if (dst <= 3) return 3;             // Quay lai Thung lung co lau
+            if (dst == 7 || dst == 6) return 6; // Tu Thao nguyen mach gio thuong di qua Map 6 roi moi toi Rung co moc 7
             if (dst > 4) return dst;            // Di map tiep theo
         }
 
@@ -2633,6 +2634,8 @@ public final class TinhLinhBot {
             else if (nextHopId == 3) hopKeyword = "thung lung";
             else if (nextHopId == 4) hopKeyword = "thao nguyen";
             else if (nextHopId == 5) hopKeyword = "nong trai";
+            else if (nextHopId == 6) hopKeyword = "vach nui";
+            else if (nextHopId == 7) hopKeyword = "rung co moc";
 
             if (!hopKeyword.isEmpty()) {
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 hopWp = findWaypointByName(hopKeyword);
@@ -2640,10 +2643,58 @@ public final class TinhLinhBot {
             }
         }
 
+        // 4. Uu tien 4: Heuristic Tien Toi (Forward Routing) khi targetMapId > currentMapId
+        if (targetMapId > currentMapId) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestFwd = null;
+            for (int i = 0; i < waypoints.size; i++) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+                if (wp != null) {
+                    int tid = wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                    // Chon cong co targetId lon hon map hien tai de tien ve phia truoc
+                    if (tid > currentMapId) {
+                        return wp;
+                    }
+                    // Neu khong ro targetId, chon bat ky cong nao khong phai la quay ve Map cu
+                    if (tid != 2 && tid != 0 && tid != (currentMapId - 1) && tid != 5) {
+                        bestFwd = wp;
+                    }
+                }
+            }
+            if (bestFwd != null) {
+                return bestFwd;
+            }
+        }
+
+        // 5. Uu tien 5: Heuristic Lui Ve (Backward Routing) khi targetMapId < currentMapId
+        if (targetMapId < currentMapId) {
+            for (int i = 0; i < waypoints.size; i++) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+                if (wp != null) {
+                    int tid = wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                    if (tid < currentMapId && (tid == targetMapId || tid == 2 || tid == 0 || tid == (currentMapId - 1))) {
+                        return wp;
+                    }
+                }
+            }
+        }
+
         // Fallback: neu o Nong trai va chi co 1 cong -> luon la cong ve Lang
         if (currentMapId == 5 && waypoints.size == 1) {
             return waypoints.get(0);
         }
+
+        // In log chi tiet tat ca cac cong dang co tren map de theo doi
+        StringBuilder allWpLog = new StringBuilder();
+        for (int i = 0; i < waypoints.size; i++) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+            if (wp != null) {
+                if (allWpLog.length() > 0) allWpLog.append(", ");
+                allWpLog.append("[").append(getWaypointName(wp))
+                        .append(" (TargetID:").append(wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75).append(")]");
+            }
+        }
+        log(String.format(Locale.ROOT, "[Waypoint-Routing] Khong tim duoc cong toi Map [%s - ID: %d]. Danh sach %d cong tren Map [%s - ID: %d]: %s",
+                targetMapName, targetMapId, waypoints.size, currentMapName, currentMapId, allWpLog));
 
         return null;
     }
