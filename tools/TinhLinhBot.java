@@ -55,7 +55,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 9: Auto Attack Menu Automation (triggerAutoAttackMenu, openAutoAttackMenu, findAutoAttackButton, findMenuButton, isAutoAttackMenuEnabled, setAutoAttackMenuEnabled).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.7.1-Feature9-ForwardRoutingFix";
+    private static final String VERSION = "1.7.2-Feature9-SayariRoutingPerfect";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -1701,6 +1701,12 @@ public final class TinhLinhBot {
                 if (targetNorm.contains("thao nguyen") && targetId == 4) {
                     return wp;
                 }
+                if ((targetNorm.contains("doi ngan") || targetNorm.contains("sayari")) && (targetId == 6 || targetId == 1)) {
+                    return wp;
+                }
+                if (targetNorm.contains("rung co moc") && (targetId == 7 || targetId == 2)) {
+                    return wp;
+                }
                 String wpName = getWaypointName(wp);
                 String wpNorm = normalizeText(wpName);
                 if (allWp.length() > 0) allWp.append(", ");
@@ -2634,11 +2640,14 @@ public final class TinhLinhBot {
             else if (nextHopId == 3) hopKeyword = "thung lung";
             else if (nextHopId == 4) hopKeyword = "thao nguyen";
             else if (nextHopId == 5) hopKeyword = "nong trai";
-            else if (nextHopId == 6) hopKeyword = "vach nui";
+            else if (nextHopId == 6) hopKeyword = "doi ngan";
             else if (nextHopId == 7) hopKeyword = "rung co moc";
 
             if (!hopKeyword.isEmpty()) {
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 hopWp = findWaypointByName(hopKeyword);
+                if (hopWp == null && nextHopId == 6) {
+                    hopWp = findWaypointByName("sayari");
+                }
                 if (hopWp != null) return hopWp;
             }
         }
