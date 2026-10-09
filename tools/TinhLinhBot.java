@@ -61,7 +61,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 12: Live Combat Engine & EXP Progression Tracking (findNearestLivingMonster, enableGameNativeAutoCombat, executeAttackOnTarget, getPlayerExp, getPlayerMaxExp, getPlayerExpPercent, getCombatDebugInfo).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.0-Feature12-ActiveCombatAndExpTracking";
+    private static final String VERSION = "1.9.1-Feature12-ExtendedLoadingAndLoginTimeout";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -70,6 +70,7 @@ public final class TinhLinhBot {
     private static volatile HttpServer httpApiServer = null;
     private static final int HTTP_API_PORT = 7654;
     private static final List<String> RECENT_LOGS = new ArrayList<>();
+    private static volatile long lastHttpBindRetryTime = 0L;
 
     private static final AtomicBoolean STARTED = new AtomicBoolean(false);
     private static volatile boolean isLoggingIn = false;
@@ -236,9 +237,16 @@ public final class TinhLinhBot {
         boolean isLoadingScreen = screen instanceof com.a.c.f.b.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
         boolean isLoginScreen = screen instanceof com.a.c.f.c.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
         boolean isInGame = game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75() != null
-                && screen == game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+                && screen == game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75()
+                && getPlayerPosition() != null;
 
         long now = System.currentTimeMillis();
+
+        // Retry bind HTTP API server dinh ky moi 10s neu luc khoi dong bi trung cong
+        if (httpApiServer == null && now - lastHttpBindRetryTime >= 10_000L) {
+            lastHttpBindRetryTime = now;
+            startHttpApiServer();
+        }
 
         // --- 3. Watchdog man hinh Loading (Kiem tra du lieu) ---
         if (isLoadingScreen) {
@@ -257,8 +265,9 @@ public final class TinhLinhBot {
             }
             return;
         } else if (loadingScreenStartTime != 0L) {
-            log("[WatchdogLoad] Da thoat man hinh loading. Reset timeout.");
+            log("[WatchdogLoad] Da thoat man hinh loading. Reset timeout. Cho game nap nhan vat va map...");
             loadingScreenStartTime = 0L;
+            lastLoginAttemptTime = now; // Cho game co it nhat 25s nap the gioi truoc khi cho phep retry
         }
 
         // --- 4. Xu ly Auto Login & Ket Noi Mang khi chua vao game ---
@@ -270,11 +279,14 @@ public final class TinhLinhBot {
                 return;
             }
 
-            if (isLoggingIn || now - gameStartTime <= 3000L) {
+            // Cho it nhat 15s sau khi bat game de VPS load day du asset truoc khi bat dau login
+            if (isLoggingIn || now - gameStartTime <= 15_000L) {
                 return;
             }
 
-            long backoffInterval = (loginAttempts < 3) ? 8000L : 15000L;
+            // Tang thoi gian cho load man hinh them 15-20s:
+            // Lan 1 va 2 cho 25s (thay vi 8s cu). Tu lan 3 tro di cho 35s (thay vi 15s cu).
+            long backoffInterval = (loginAttempts < 3) ? 25_000L : 35_000L;
             if (now - lastLoginAttemptTime <= backoffInterval) {
                 return;
             }
@@ -318,7 +330,8 @@ public final class TinhLinhBot {
                 }
 
                 loginAttempts++;
-                log("[AutoLogin] Server da ket noi. Dang thuc hien dang nhap lan " + loginAttempts + "...");
+                log("[AutoLogin] Server da ket noi. Dang thuc hien dang nhap lan " + loginAttempts + "... (Cho toi da 25s nap the gioi)");
+                lastLoginAttemptTime = now;
                 Gdx.app.postRunnable(TinhLinhBot::doLogin);
             }
             return;
