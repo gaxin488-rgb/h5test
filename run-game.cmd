@@ -69,8 +69,8 @@ if exist "%~dp0autofarm_log.txt" (
 rem --- Don dep thu muc temp neu o C: duoi 1500MB ---
 powershell.exe -NoProfile -Command "$freeMB = [math]::Round(((Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -like '*C:*' }).Free / 1MB), 0); if ($freeMB -lt 1500) { Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Remove-Item -Path \"$env:TEMP\tinhlinh*\" -Force -ErrorAction SilentlyContinue; Write-Host ('[StorageGuard] Canh bao dung luong o C: con {0}MB -> Da don dep temp va RecycleBin.' -f $freeMB) -ForegroundColor Yellow }"
 
-rem --- Khoi chay game ---
-"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
+rem --- Khoi chay game (Chan triet de crash dump hs_err_*.mdmp de bao ve o C: 15GB) ---
+"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%.
