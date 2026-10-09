@@ -3236,16 +3236,18 @@ public final class TinhLinhBot {
             return;
         }
 
-        if (isReturningToExhaustion()) {
-            SavedCoordinate saved = getSavedExhaustionCoordinate();
-            if (saved != null && !isSameMap(curMapId, curMap, saved.mapId, saved.mapName)) {
-                if (autoAttackAttemptPending) {
-                    cancelAutoAttackAttempt("Dang tren duong chay toi map train.");
-                }
-                return;
-            } else {
-                isReturningToExhaustion = false;
+        // Neu dang o khac Map so voi Map train da chi dinh -> UU TIEN 100% DI CHUYEN QUA CONG, KHONG DANH QUAI
+        SavedCoordinate targetFarm = getSavedExhaustionCoordinate();
+        if (targetFarm == null) {
+            targetFarm = getLastFarmMap();
+        }
+        if (targetFarm != null && !isSameMap(curMapId, curMap, targetFarm.mapId, targetFarm.mapName)) {
+            if (autoAttackAttemptPending) {
+                cancelAutoAttackAttempt("Dang tren duong chay toi map train.");
             }
+            return;
+        } else {
+            isReturningToExhaustion = false;
         }
 
         // --- 1. THEO DOI & GHI NHAN EXP TANG TRUONG ---
