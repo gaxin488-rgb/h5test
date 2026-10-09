@@ -85,8 +85,27 @@ powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 
 rem --- Don dep thu muc temp neu o C: duoi 1500MB ---
 powershell.exe -NoProfile -Command "$freeMB = [math]::Round(((Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -like '*C:*' }).Free / 1MB), 0); if ($freeMB -lt 1500) { Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Remove-Item -Path \"$env:TEMP\tinhlinh*\", \"C:\Users\*\AppData\Local\Temp\pgame-sdk*\" -Recurse -Force -ErrorAction SilentlyContinue; Write-Host ('[StorageGuard] Canh bao dung luong o C: con {0}MB -> Da don dep temp va RecycleBin.' -f $freeMB) -ForegroundColor Yellow }"
 
+rem --- Auto CA Certificates Deployment (Fix SSL trustAnchors crash) ---
+if exist "%~dp0cacerts" (
+    if not exist "C:\TLKN\jre\lib\security\cacerts" (
+        if not exist "C:\TLKN\jre\lib\security" md "C:\TLKN\jre\lib\security" 2>nul
+        copy /y "%~dp0cacerts" "C:\TLKN\jre\lib\security\cacerts" >nul 2>&1
+    )
+    if exist "%~dp0jre\lib\security" if not exist "%~dp0jre\lib\security\cacerts" (
+        copy /y "%~dp0cacerts" "%~dp0jre\lib\security\cacerts" >nul 2>&1
+    )
+)
+set "SSL_FLAG="
+if exist "%~dp0cacerts" (
+    set "SSL_FLAG=-Djavax.net.ssl.trustStore=%~dp0cacerts"
+) else if exist "C:\TLKN\jre\lib\security\cacerts" (
+    set "SSL_FLAG=-Djavax.net.ssl.trustStore=C:\TLKN\jre\lib\security\cacerts"
+) else if exist "%~dp0jre\lib\security\cacerts" (
+    set "SSL_FLAG=-Djavax.net.ssl.trustStore=%~dp0jre\lib\security\cacerts"
+)
+
 rem --- Khoi chay game (Chan triet de crash dump hs_err_*.mdmp de bao ve o C: 15GB) ---
-"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 -jar "%~dp0TinhLinh.jar"
+"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%.

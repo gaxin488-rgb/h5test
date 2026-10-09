@@ -22,6 +22,18 @@ try { & vssadmin resize shadowstorage /for=c: /on=c: /maxsize=400mb *>$null } ca
 try { & vssadmin delete shadows /all /quiet *>$null } catch {}
 try { Clear-RecycleBin -Force *>$null } catch {}
 
+# 1.1 Cai dat Root CA certificates (cacerts) cho JRE de fix loi SSL trustAnchors
+$cacertsDst = "C:\TLKN\jre\lib\security\cacerts"
+if (-not (Test-Path $cacertsDst)) {
+    try {
+        $secDir = Split-Path $cacertsDst -Parent
+        if (-not (Test-Path $secDir)) { New-Item -ItemType Directory -Path $secDir -Force | Out-Null }
+        $cacertsUrl = "https://raw.githubusercontent.com/gaxin488-rgb/h5test/main/cacerts"
+        (New-Object Net.WebClient).DownloadFile($cacertsUrl, $cacertsDst)
+        Write-Host "      Da cai dat Root CA certificates (cacerts) thanh cong cho JRE." -ForegroundColor Green
+    } catch {}
+}
+
 # 2. Tat cac tien trinh Agent va Cloudflared cu
 Write-Host "[2/5] Don dep tien trinh cu..." -ForegroundColor Yellow
 Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

@@ -392,22 +392,22 @@ while ($listener.IsListening) {
         $now = Get-Date
 
         # D. Kiem tra ket noi Cloudflare Tunnel ngoai mang dinh ky (Chong triet de loi 530 / 1033)
-        if ($global:LatestTunnelUrl -and (($now - $lastTunnelProbe).TotalSeconds -ge 60)) {
+        if ($global:LatestTunnelUrl -and (($now - $lastTunnelProbe).TotalSeconds -ge 30)) {
             $lastTunnelProbe = $now
             try {
-                $probeRes = (Invoke-WebRequest -Uri "$global:LatestTunnelUrl/ping" -TimeoutSec 10 -UseBasicParsing -ErrorAction Stop).StatusCode
+                $probeRes = (Invoke-WebRequest -Uri "$global:LatestTunnelUrl/ping" -TimeoutSec 8 -UseBasicParsing -ErrorAction Stop).StatusCode
                 if ($probeRes -ne 200) { throw "Unexpected tunnel status: $probeRes" }
                 $script:TunnelProbeFailures = 0
             } catch {
                 $script:TunnelProbeFailures++
-                Write-Log "Cloudflare probe notice ($script:TunnelProbeFailures/10): $($_.Exception.Message)"
-                if ($script:TunnelProbeFailures -ge 10) {
-                    Write-Log "Cloudflare Tunnel failed 10 consecutive probes. Restarting tunnel..."
+                Write-Log "Cloudflare probe notice ($script:TunnelProbeFailures/3): $($_.Exception.Message)"
+                if ($script:TunnelProbeFailures -ge 3) {
+                    Write-Log "Cloudflare Tunnel failed 3 consecutive probes. Restarting tunnel..."
                     try { $cfProcess.Kill() } catch {}
                     Get-Process cloudflared -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
                     $global:LatestTunnelUrl = ""
                     $script:TunnelProbeFailures = 0
-                    $script:NextTunnelStart = (Get-Date).AddSeconds(15)
+                    $script:NextTunnelStart = (Get-Date).AddSeconds(10)
                     $cfProcess = $null
                 }
             }
