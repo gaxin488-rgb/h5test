@@ -105,20 +105,20 @@ if exist "%~dp0cacerts" (
 )
 
 rem --- Khoi chay game (Chan triet de crash dump hs_err_*.mdmp de bao ve o C: 15GB) ---
-"%JAVA_BIN%" -Xms16m -Xmx96m -XX:+UseSerialGC -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
+"%JAVA_BIN%" -Xms64m -Xmx256m -XX:+UseSerialGC -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%.
 
 rem --- Kiem tra neu nguoi dung muon tat han ---
 if exist "%~dp0tat_tu_khoi_dong.txt" (
-    echo [WATCHDOG] Phat hien file tat_tu_khoi_dong.txt -> Dung han Watchdog.
+    echo [WATCHDOG] Phat hien file tat_tu_khoi_dong.txt == Dung han Watchdog.
     if exist "%LOCK_FILE%" del /q "%LOCK_FILE%" >nul 2>&1
     pause
     exit /b 0
 )
 if exist "%~dp0stop_game.txt" (
-    echo [WATCHDOG] Phat hien file stop_game.txt -> Dung han Watchdog.
+    echo [WATCHDOG] Phat hien file stop_game.txt == Dung han Watchdog.
     if exist "%LOCK_FILE%" del /q "%LOCK_FILE%" >nul 2>&1
     pause
     exit /b 0

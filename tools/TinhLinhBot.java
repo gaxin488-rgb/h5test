@@ -61,7 +61,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 12: Live Combat Engine & EXP Progression Tracking (findNearestLivingMonster, enableGameNativeAutoCombat, executeAttackOnTarget, getPlayerExp, getPlayerMaxExp, getPlayerExpPercent, getCombatDebugInfo).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.1-Feature12-ExtendedLoadingAndLoginTimeout";
+    private static final String VERSION = "1.9.2-Feature12-MemoryAndPortalGuard";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -2144,7 +2144,7 @@ public final class TinhLinhBot {
 
     private static void runGuards() {
         long now = System.currentTimeMillis();
-        if (now - lastGuardCheckTime < 8000L) {
+        if (now - lastGuardCheckTime < 30_000L) {
             return;
         }
         lastGuardCheckTime = now;
@@ -2154,10 +2154,10 @@ public final class TinhLinhBot {
         long totalMem = Runtime.getRuntime().totalMemory();
         long maxMem = Runtime.getRuntime().maxMemory();
         long usedMem = totalMem - freeMem;
-        if (maxMem > 0 && usedMem > (maxMem * 85 / 100)) {
+        if (maxMem > 0 && usedMem > (maxMem * 92 / 100)) {
             long usedMb = usedMem / (1024L * 1024L);
             long maxMb = maxMem / (1024L * 1024L);
-            log("[MemoryGuard] Heap usage cao: " + usedMb + "MB / " + maxMb + "MB (>85%). Goi System.gc() thu hoi bo nho...");
+            log("[MemoryGuard] Heap usage cao: " + usedMb + "MB / " + maxMb + "MB (>92%). Goi System.gc() thu hoi bo nho...");
             System.gc();
         }
 
@@ -2668,8 +2668,21 @@ public final class TinhLinhBot {
         }
         if (src == 4) {
             if (dst <= 3) return 3;             // Quay lai Thung lung co lau
-            if (dst == 7 || dst == 6) return 6; // Tu Thao nguyen mach gio thuong di qua Map 6 roi moi toi Rung co moc 7
-            if (dst > 4) return dst;            // Di map tiep theo
+            if (dst >= 6) return 6;             // Di tiep toi Doi ngan Sayari
+        }
+        if (src == 6) {
+            if (dst <= 4) return 4;             // Quay lai Thao nguyen mach gio
+            if (dst >= 7) return 7;             // Di tiep toi Rung co moc
+        }
+        if (src == 7) {
+            if (dst <= 6) return 6;             // Quay ve Doi ngan Sayari
+            if (dst >= 8) return 8;             // Di tiep toi Map 8
+        }
+        if (src > dst) {
+            return src - 1; // Mac dinh di lui 1 map
+        }
+        if (src < dst) {
+            return src + 1; // Mac dinh tien 1 map
         }
 
         return targetMapId;
@@ -2741,38 +2754,43 @@ public final class TinhLinhBot {
             }
         }
 
-        // 4. Uu tien 4: Heuristic Tien Toi (Forward Routing) khi targetMapId > currentMapId
+        // 4. Uu tien 4: Heuristic Tien Toi (Forward Routing) theo toa do X (Rightmost Portal) khi targetMapId > currentMapId
         if (targetMapId > currentMapId) {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestFwd = null;
+            float maxWpX = -1.0f;
             for (int i = 0; i < waypoints.size; i++) {
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
                 if (wp != null) {
-                    int tid = wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
-                    // Chon cong co targetId lon hon map hien tai de tien ve phia truoc
-                    if (tid > currentMapId) {
-                        return wp;
-                    }
-                    // Neu khong ro targetId, chon bat ky cong nao khong phai la quay ve Map cu
-                    if (tid != 2 && tid != 0 && tid != (currentMapId - 1) && tid != 5) {
+                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                    float wx = (wpPos != null) ? wpPos.x : 0f;
+                    if (wx > maxWpX) {
+                        maxWpX = wx;
                         bestFwd = wp;
                     }
                 }
             }
-            if (bestFwd != null) {
+            if (bestFwd != null && maxWpX > 20.0f) {
                 return bestFwd;
             }
         }
 
-        // 5. Uu tien 5: Heuristic Lui Ve (Backward Routing) khi targetMapId < currentMapId
+        // 5. Uu tien 5: Heuristic Lui Ve (Backward Routing) theo toa do X (Leftmost Portal) khi targetMapId < currentMapId
         if (targetMapId < currentMapId) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestBwd = null;
+            float minWpX = Float.MAX_VALUE;
             for (int i = 0; i < waypoints.size; i++) {
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
                 if (wp != null) {
-                    int tid = wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
-                    if (tid < currentMapId && (tid == targetMapId || tid == 2 || tid == 0 || tid == (currentMapId - 1))) {
-                        return wp;
+                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                    float wx = (wpPos != null) ? wpPos.x : 0f;
+                    if (wx < minWpX) {
+                        minWpX = wx;
+                        bestBwd = wp;
                     }
                 }
+            }
+            if (bestBwd != null && minWpX < 50.0f) {
+                return bestBwd;
             }
         }
 
@@ -3314,6 +3332,28 @@ public final class TinhLinhBot {
             return;
         }
 
+        // Portal Boundary Guard: Neu nhan vat dang dung qua sat mep cong (< 3.0m) thi buoc lui ra vung an toan
+        Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> currentWps = getCurrentMapWaypoints();
+        if (currentWps != null) {
+            for (int i = 0; i < currentWps.size; i++) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = currentWps.get(i);
+                if (wp != null) {
+                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                    if (wpPos != null && pos.dst(wpPos) < 3.0f) {
+                        if (now - lastCombatMoveTime >= 1500L) {
+                            lastCombatMoveTime = now;
+                            float safeX = (wpPos.x > 30.0f) ? (wpPos.x - 5.0f) : (wpPos.x + 5.0f);
+                            log(String.format(Locale.ROOT,
+                                    "[AutoFarm-Combat] ⚠️ Nhan vat dung qua sat cong (X=%.1f) cach %.1fm -> Lui ra khoi mep cong (X=%.1f)...",
+                                    pos.x, pos.dst(wpPos), safeX));
+                            moveTo(safeX, pos.y);
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+
         com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 nearestMonster = findNearestLivingMonster(pos);
 
         if (nearestMonster != null) {
@@ -3325,9 +3365,29 @@ public final class TinhLinhBot {
                 // Nhan vat o ngoai tam danh -> Di chuyen ap sat quai vat
                 if (now - lastCombatMoveTime >= 1200L && mPos != null) {
                     lastCombatMoveTime = now;
+                    float targetX = mPos.x;
+                    float targetY = mPos.y;
+
+                    // Portal Boundary Guard: Khong di chuyen de vao khu vuc cong chuyen map
+                    if (currentWps != null) {
+                        for (int i = 0; i < currentWps.size; i++) {
+                            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = currentWps.get(i);
+                            if (wp != null) {
+                                Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                                if (wpPos != null && wpPos.dst(targetX, targetY) < 4.0f) {
+                                    if (wpPos.x > targetX) {
+                                        targetX = Math.min(targetX, wpPos.x - 4.0f);
+                                    } else {
+                                        targetX = Math.max(targetX, wpPos.x + 4.0f);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     log(String.format(Locale.ROOT, "[AutoFarm-Combat] Phat hien quai [%s] cach %.1fm -> Di chuyen toi (X=%.1f, Y=%.1f)...",
-                            mName, dist, mPos.x, mPos.y));
-                    moveTo(mPos.x, mPos.y);
+                            mName, dist, targetX, targetY));
+                    moveTo(targetX, targetY);
                 }
             } else {
                 // Trong tam danh (dist <= 2.8f):
@@ -3884,6 +3944,23 @@ public final class TinhLinhBot {
                 }
                 Vector2 mPos = getMonsterPosition(m);
                 if (mPos == null) continue;
+
+                // Bo qua quai vat dung sat cong dich chuyen (< 3.2m) de khong bi vo tinh hut qua map khac
+                boolean nearPortal = false;
+                Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+                if (wps != null) {
+                    for (int w = 0; w < wps.size; w++) {
+                        com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = wps.get(w);
+                        if (wp != null) {
+                            Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                            if (wpPos != null && mPos.dst(wpPos) < 3.2f) {
+                                nearPortal = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if (nearPortal) continue;
 
                 float d = (playerPos != null) ? playerPos.dst(mPos) : 0f;
                 if (d < bestDist) {
