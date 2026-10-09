@@ -216,6 +216,14 @@ public final class WindowPatch {
                             super.visitIntInsn(Opcodes.SIPUSH, width);
                             super.visitIntInsn(Opcodes.SIPUSH, height);
                             windowedCalls[0]++;
+                            super.visitMethodInsn(opcode, owner, methodName, methodDescriptor, isInterface);
+                            // Avoid GLFW monitor querying crash on headless/disconnected VPS (glfwGetMonitorPos NULL deref)
+                            super.visitVarInsn(Opcodes.ALOAD, 0);
+                            super.visitInsn(Opcodes.ICONST_0);
+                            super.visitInsn(Opcodes.ICONST_0);
+                            super.visitMethodInsn(Opcodes.INVOKEVIRTUAL, owner, "setWindowPosition",
+                                    "(II)V", false);
+                            return;
                         }
                         if (WINDOW_CONFIGURATION_OWNER.equals(owner)
                                 && "useVsync".equals(methodName)

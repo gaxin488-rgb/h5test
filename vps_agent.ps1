@@ -425,11 +425,20 @@ while ($listener.IsListening) {
                 }
             }
 
-            # 2. Don Temp va WER Crash Dumps
-            Get-ChildItem "$env:TEMP\*", "C:\Windows\Temp\*", "$env:LOCALAPPDATA\CrashDumps\*", "C:\ProgramData\Microsoft\Windows\WER\ReportQueue\*" -Recurse -Force -ErrorAction SilentlyContinue |
-                Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+            # 2. Giai phong file lock crash dump (tat WerFault/wermgr zombie neu co)
+            Get-Process WerFault, wermgr -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-            # 3. Don sach bat ky file log/trung gian (*.log, *.tmp, *.cmd) tai C:\TinhLinh (khong xoa game jar, script bat hay account)
+            # 3. Don Temp toan he thong (bao gom Administrator va tat ca user profiles), WER va pgame-sdk DLLs
+            Get-ChildItem -Path @(
+                "$env:TEMP\*",
+                "C:\Windows\Temp\*",
+                "C:\Users\*\AppData\Local\Temp\*",
+                "$env:LOCALAPPDATA\CrashDumps\*",
+                "C:\ProgramData\Microsoft\Windows\WER\ReportQueue\*",
+                "C:\ProgramData\Microsoft\Windows\WER\ReportArchive\*"
+            ) -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+
+            # 4. Don sach bat ky file log/trung gian (*.log, *.tmp, *.dmp, *.mdmp) tai C:\TinhLinh (khong xoa game jar, script bat hay account)
             Get-ChildItem -Path $Dir -File -ErrorAction SilentlyContinue |
                 Where-Object { ($_.Extension -in @(".log", ".tmp", ".dmp", ".mdmp") -or $_.Name -in @("vps_watchdog.cmd", "vps_watchdog.ps1", "agent.log", "tunnel.log")) -and ($_.Name -notlike "autofarm_log*.txt") } |
                 Remove-Item -Force -ErrorAction SilentlyContinue
