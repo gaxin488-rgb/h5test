@@ -109,6 +109,8 @@ public final class TinhLinhBot {
     private static final String EXHAUSTION_STATE_FILE = "tinhlinh-exhaustion-state.properties";
     private static final String EXHAUSTION_COORD_FILE = "saved_exhaustion_coord.txt";
     private static final String LAST_FARM_MAP_FILE = "last_farm_map.txt";
+    private static final int DEFAULT_FARM_MAP_ID = 7;
+    private static final String DEFAULT_FARM_MAP_NAME = "Rừng Cổ Mộc";
 
     // Feature 5: Tu dong Hai Tao & Thu Hoach (Apple Harvest & Farm Portal Automation)
     private static volatile boolean isAutoAppleHarvestEnabled = true;
@@ -991,7 +993,7 @@ public final class TinhLinhBot {
             } catch (Throwable ignored) {
             }
         }
-        return null;
+        return new SavedCoordinate(DEFAULT_FARM_MAP_ID, DEFAULT_FARM_MAP_NAME, 0, 0.0f, 0.0f, 0L);
     }
 
     /**
@@ -5228,12 +5230,12 @@ public final class TinhLinhBot {
         }
 
         SavedCoordinate sc = getSavedExhaustionCoordinate();
-        if (sc != null && sc.mapId >= 0) {
-            if (curMapId == sc.mapId) return true;
-            if (sc.mapName != null && !sc.mapName.isEmpty()) {
-                String scNorm = normalizeText(sc.mapName);
-                if (norm.contains(scNorm) || scNorm.contains(norm)) return true;
-            }
+        if (sc == null) {
+            sc = getLastFarmMap();
+        }
+        if (sc != null) {
+            if (isSameMap(curMapId, curMap, sc.mapId, sc.mapName)) return true;
+            return false;
         }
 
         return curMapId > 2;
