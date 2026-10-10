@@ -20,6 +20,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Executors;
@@ -63,10 +64,11 @@ import org.lwjgl.glfw.GLFW;
  * Feature 12: Live Combat Engine & EXP Progression Tracking (findNearestLivingMonster, enableGameNativeAutoCombat, executeAttackOnTarget, getPlayerExp, getPlayerMaxExp, getPlayerExpPercent, getCombatDebugInfo).
  * Feature 13: Loop Bo Sung: Auto Phuc Loi, Qua Online, Diem Danh & Dong Popup (handleWelfareLoop, handleOnlineReward, handleDailyCheckin, dismissRewardPopups).
  * Feature 14: Loop Bo Sung: Auto To Doi, Tao To Doi & Phe Duyet Thanh Vien (handlePartyAutomation, dismissOrAcceptPartyDialogs, getPartyStatusInfo, isAutoPartyEnabled, setAutoPartyEnabled).
- * Feature 15: Loop Bo Sung: Quet Map tai Map Kiet Suc (isAtExhaustionMap, handleExhaustionMapScan, getExhaustionMapScanInfo, isAutoMapScanEnabled, setAutoMapScanEnabled).
+ * Feature 15: Loop Bo Sung: Quet Map tai Map Kiet Suc - Loc Vat The Spawn Random 'Nam Huong' (isAtExhaustionMap, handleExhaustionMapScan, getExhaustionMapScanInfo, isMushroomName, lastScannedMushrooms).
+ * Feature 16: Loop Bo Sung: Quet Tui Do Nhan Vat (handleBagScan, getBagItems, getBagSummary, lastScannedBagItems, isAutoBagScanEnabled, setAutoBagScanEnabled).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.6-Feature15-ExhaustionMapScanner";
+    private static final String VERSION = "1.9.8-Feature16-CharacterBagScanner";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -181,14 +183,21 @@ public final class TinhLinhBot {
     private static volatile long lastApplicantApproveTime = 0L;
     private static volatile long lastPartyDialogCheckTime = 0L;
 
-    // Feature 15: Loop Bo Sung: Quet Map tai Map Kiet Suc (Map Scanner & Party Invite)
+    // Feature 15: Loop Bo Sung: Quet Map tai Map Kiet Suc (Loc Vat The Spawn Random 'Nam Huong')
     private static volatile boolean isAutoMapScanEnabled = true;
     private static volatile long lastExhaustionMapScanTime = 0L;
     private static volatile long lastExhaustionMapScanLogTime = 0L;
-    private static volatile int lastScannedPlayerCount = 0;
-    private static volatile int lastScannedMonsterCount = 0;
-    private static volatile int lastScannedGroundItemCount = 0;
-    private static final Map<Integer, Long> mapPlayerInviteCooldown = new ConcurrentHashMap<>();
+    private static volatile int lastScannedMushroomCount = 0;
+    public static final List<ScannedMushroom> lastScannedMushrooms = new CopyOnWriteArrayList<>();
+
+    // Feature 16: Loop Bo Sung: Quet Tui Do Nhan Vat (Character Bag Scanner)
+    private static volatile boolean isAutoBagScanEnabled = true;
+    private static volatile long lastBagScanTime = 0L;
+    private static volatile long lastBagScanLogTime = 0L;
+    private static volatile int lastScannedBagCount = 0;
+    private static volatile long lastScannedBagTotalQty = 0L;
+    private static volatile int lastDuiGaCount = 0;
+    public static final List<BagItem> lastScannedBagItems = new CopyOnWriteArrayList<>();
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -426,8 +435,11 @@ public final class TinhLinhBot {
         // --- 6.2. Feature 14: Loop Bo Sung - Auto To Doi (Tao To Doi & Phe Duyet Thanh Vien) ---
         handlePartyAutomation(now);
 
-        // --- 6.3. Feature 15: Loop Bo Sung - Quet Map tai Map Kiet Suc (Map Scanner & Party Invite) ---
+        // --- 6.3. Feature 15: Loop Bo Sung - Quet Map tai Map Kiet Suc (Loc Vat The Spawn Random 'Nam Huong') ---
         handleExhaustionMapScan(now);
+
+        // --- 6.4. Feature 16: Loop Bo Sung - Quet Tui Do Nhan Vat (Character Bag Scanner) ---
+        handleBagScan(now);
 
         // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
         handleAppleAndFarmNavigation(now);
@@ -3734,7 +3746,27 @@ public final class TinhLinhBot {
                     sb.append("\"auto_party_enabled\":").append(isAutoPartyEnabled).append(",");
                     sb.append("\"map_scan\":\"").append(escapeJson(getExhaustionMapScanInfo())).append("\",");
                     sb.append("\"is_at_exhaustion_map\":").append(isAtExhaustionMap()).append(",");
-                    sb.append("\"auto_map_scan_enabled\":").append(isAutoMapScanEnabled);
+                    sb.append("\"auto_map_scan_enabled\":").append(isAutoMapScanEnabled).append(",");
+                    sb.append("\"mushroom_count\":").append(lastScannedMushroomCount).append(",");
+                    sb.append("\"scanned_mushrooms\":[");
+                    for (int mIdx = 0; mIdx < lastScannedMushrooms.size(); mIdx++) {
+                        ScannedMushroom sm = lastScannedMushrooms.get(mIdx);
+                        if (mIdx > 0) sb.append(",");
+                        sb.append("{")
+                          .append("\"id\":").append(sm.id).append(",")
+                          .append("\"type\":\"").append(escapeJson(sm.type)).append("\",")
+                          .append("\"name\":\"").append(escapeJson(sm.name)).append("\",")
+                          .append("\"x\":").append(String.format(Locale.ROOT, "%.2f", sm.x)).append(",")
+                          .append("\"y\":").append(String.format(Locale.ROOT, "%.2f", sm.y)).append(",")
+                          .append("\"distance\":").append(String.format(Locale.ROOT, "%.2f", sm.distance))
+                          .append("}");
+                    }
+                    sb.append("],");
+                    sb.append("\"dui_ga_count\":").append(lastDuiGaCount).append(",");
+                    sb.append("\"bag_item_count\":").append(lastScannedBagCount).append(",");
+                    sb.append("\"bag_total_qty\":").append(lastScannedBagTotalQty).append(",");
+                    sb.append("\"bag_summary\":\"").append(escapeJson(getBagSummary())).append("\",");
+                    sb.append("\"auto_bag_scan_enabled\":").append(isAutoBagScanEnabled);
                     sb.append("}");
                     sb.append("}");
                     sendJsonResponse(exchange, 200, sb.toString());
@@ -3816,10 +3848,35 @@ public final class TinhLinhBot {
                 }
             });
 
-            // 4. GET /bag
+            // 4. GET /bag - Feature 16: Quet tui do nhan vat tu dong
             httpApiServer.createContext("/bag", exchange -> {
                 if (handleCors(exchange)) return;
-                sendJsonResponse(exchange, 200, "{\"bag\":[]}");
+                try {
+                    List<BagItem> items = new ArrayList<>(lastScannedBagItems);
+                    StringBuilder sb = new StringBuilder();
+                    sb.append("{\"ok\":true,");
+                    sb.append("\"total_slots\":").append(lastScannedBagCount).append(",");
+                    sb.append("\"total_qty\":").append(lastScannedBagTotalQty).append(",");
+                    sb.append("\"dui_ga_count\":").append(lastDuiGaCount).append(",");
+                    sb.append("\"summary\":\"").append(escapeJson(getBagSummary())).append("\",");
+                    sb.append("\"bag\":[");
+                    for (int i = 0; i < items.size(); i++) {
+                        if (i > 0) sb.append(",");
+                        BagItem it = items.get(i);
+                        sb.append("{");
+                        sb.append("\"slot\":").append(it.slot).append(",");
+                        sb.append("\"id\":").append(it.id).append(",");
+                        sb.append("\"name\":\"").append(escapeJson(it.name)).append("\",");
+                        sb.append("\"qty\":").append(it.qty).append(",");
+                        sb.append("\"type\":").append(it.type).append(",");
+                        sb.append("\"desc\":\"").append(escapeJson(it.description)).append("\"");
+                        sb.append("}");
+                    }
+                    sb.append("]}");
+                    sendJsonResponse(exchange, 200, sb.toString());
+                } catch (Throwable t) {
+                    sendJsonResponse(exchange, 500, "{\"ok\":false,\"error\":\"" + escapeJson(t.getMessage()) + "\"}");
+                }
             });
 
             // 5. GET /quests
@@ -3980,7 +4037,8 @@ public final class TinhLinhBot {
             isAutoPartyEnabled = !isAutoPartyEnabled;
             return "Da doi trang thai Auto Party thanh: " + (isAutoPartyEnabled ? "BAT" : "TAT");
         }
-        if ("scan_map".equals(cmd) || "quet_map".equals(cmd) || "map_scan".equals(cmd)) {
+        if ("scan_map".equals(cmd) || "quet_map".equals(cmd) || "map_scan".equals(cmd)
+                || "scan_mushroom".equals(cmd) || "quet_nam".equals(cmd) || "nam_huong".equals(cmd)) {
             lastExhaustionMapScanTime = 0L;
             handleExhaustionMapScan(System.currentTimeMillis());
             return getExhaustionMapScanInfo();
@@ -3988,6 +4046,15 @@ public final class TinhLinhBot {
         if ("toggle_map_scan".equals(cmd)) {
             isAutoMapScanEnabled = !isAutoMapScanEnabled;
             return "Da doi trang thai Quet Map Kiet Suc thanh: " + (isAutoMapScanEnabled ? "BAT" : "TAT");
+        }
+        if ("scan_bag".equals(cmd) || "quet_tui".equals(cmd) || "tui_do".equals(cmd) || "bag".equals(cmd)) {
+            lastBagScanTime = 0L;
+            handleBagScan(System.currentTimeMillis());
+            return getBagSummary();
+        }
+        if ("toggle_bag_scan".equals(cmd)) {
+            isAutoBagScanEnabled = !isAutoBagScanEnabled;
+            return "Da doi trang thai Quet Tui Do thanh: " + (isAutoBagScanEnabled ? "BAT" : "TAT");
         }
         if ("toggle_auto".equals(cmd) || "auto".equals(cmd)) {
             boolean next = !isAutoAttackMenuEnabled();
@@ -4033,7 +4100,7 @@ public final class TinhLinhBot {
             handlePostLoginDispatch(getCurrentMapId(), getCurrentMapName(), getPlayerPosition());
             return "Da kich hoat lai quy trinh Post-Login Dispatch (Auto Attack / Quay lai map kiet suc).";
         }
-        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, toggle_auto, return_village, goto_farm, post_login, dispatch, status, debug_combat, monsters.";
+        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, checkin, online_gift, party, create_party, approve_party, toggle_party, scan_map, toggle_map_scan, scan_bag, quet_tui, bag, toggle_bag_scan, toggle_auto, return_village, goto_farm, set_farm, post_login, dispatch, status, debug_combat, monsters.";
     }
 
     public static String getCharacterName() {
@@ -4853,15 +4920,132 @@ public final class TinhLinhBot {
         return curMapId > 2;
     }
 
-    public static String getOtherPlayerName(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 p) {
-        if (p == null) return "";
+    public static class ScannedMushroom {
+        public final int id;
+        public final String type;
+        public final String name;
+        public final float x;
+        public final float y;
+        public final float distance;
+        public final long detectedTime;
+
+        public ScannedMushroom(int id, String type, String name, float x, float y, float distance, long detectedTime) {
+            this.id = id;
+            this.type = type;
+            this.name = name;
+            this.x = x;
+            this.y = y;
+            this.distance = distance;
+            this.detectedTime = detectedTime;
+        }
+
+        @Override
+        public String toString() {
+            return String.format(Locale.ROOT, "[%s: %s (ID:%d) tai (%.1f, %.1f) - %.1fm]", type, name, id, x, y, distance);
+        }
+    }
+
+    public static boolean isMushroomName(String raw) {
+        if (raw == null || raw.trim().isEmpty()) return false;
+        String norm = normalizeText(raw);
+        return norm.contains("nam huong") || (norm.contains("nam") && norm.contains("huong"));
+    }
+
+    public static String getGroundItemName(com.a.c.f.a.b.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 item) {
+        if (item == null) return "";
         try {
-            String name = p.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75();
-            if (name != null && !name.trim().isEmpty()) {
-                return name.trim();
+            com.a.c.c.f.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 data =
+                    item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+            if (data != null) {
+                com.a.c.c.f.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 tmpl =
+                        data.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                if (tmpl == null && data.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 > 0) {
+                    tmpl = com.a.c.c.f.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(
+                            data.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75);
+                }
+                if (tmpl != null) {
+                    if (tmpl.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                            && !tmpl.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.trim().isEmpty()) {
+                        return tmpl.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.trim();
+                    }
+                    if (tmpl.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null
+                            && !tmpl.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.trim().isEmpty()) {
+                        return tmpl.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.trim();
+                    }
+                }
             }
         } catch (Throwable ignored) {}
-        return "ID:" + p.a_();
+        return inspectAnyEntityName(item);
+    }
+
+    public static String getResourceNodeName(com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 node) {
+        if (node == null) return "";
+        try {
+            String name = node.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (name != null && !name.trim().isEmpty()) return name.trim();
+        } catch (Throwable ignored) {}
+        try {
+            if (node.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                    && node.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                String tmplName = node.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                if (tmplName != null && !tmplName.trim().isEmpty()) {
+                    return tmplName.trim();
+                }
+            }
+        } catch (Throwable ignored) {}
+        return inspectAnyEntityName(node);
+    }
+
+    public static String getMapObjectName(com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 obj) {
+        if (obj == null) return "";
+        try {
+            if (obj.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                    && obj.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                String n = obj.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+                if (n != null && !n.trim().isEmpty()) return n.trim();
+            }
+        } catch (Throwable ignored) {}
+        return inspectAnyEntityName(obj);
+    }
+
+    public static String inspectAnyEntityName(Object entity) {
+        if (entity == null) return "";
+        try {
+            for (Field f : entity.getClass().getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                Object val = f.get(entity);
+                if (val instanceof String) {
+                    String s = (String) val;
+                    if (!s.trim().isEmpty() && s.length() < 60) {
+                        return s.trim();
+                    }
+                } else if (val != null && !f.getType().isPrimitive() && !f.getType().getName().startsWith("java.lang")) {
+                    for (Field subF : val.getClass().getDeclaredFields()) {
+                        if (Modifier.isStatic(subF.getModifiers())) continue;
+                        if (subF.getType() == String.class) {
+                            subF.setAccessible(true);
+                            Object subVal = subF.get(val);
+                            if (subVal instanceof String) {
+                                String s = (String) subVal;
+                                if (!s.trim().isEmpty() && s.length() < 60) {
+                                    return s.trim();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return "";
+    }
+
+    public static Vector2 getMapEntityPosition(com.a.a.a.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 entity) {
+        if (entity == null) return null;
+        try {
+            return entity.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+        } catch (Throwable ignored) {}
+        return null;
     }
 
     public static String getExhaustionMapScanInfo() {
@@ -4871,16 +5055,24 @@ public final class TinhLinhBot {
         if (!atExhaustion) {
             return "Khong o Map kiet suc (Hien tai: " + map + " - ID: " + mapId + ")";
         }
-        return "Map kiet suc: [" + map + " - ID: " + mapId + "] | Nguoi choi: "
-                + lastScannedPlayerCount + " | Quai song: " + lastScannedMonsterCount
-                + " | Vat pham: " + lastScannedGroundItemCount;
+        if (lastScannedMushrooms.isEmpty()) {
+            return "Map kiet suc: [" + map + " - ID: " + mapId + "] | Nam huong: 0";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Map kiet suc: [").append(map).append(" - ID: ").append(mapId).append("] | Nam huong (").append(lastScannedMushrooms.size()).append("): ");
+        for (int i = 0; i < lastScannedMushrooms.size(); i++) {
+            if (i > 0) sb.append(", ");
+            sb.append(lastScannedMushrooms.get(i).toString());
+        }
+        return sb.toString();
     }
 
     /**
      * Ham quet map trong Loop Bo Sung:
      * - RANG BUOC COT LOI: Chi hoat dong khi nhan vat o dung Map kiet suc (isAtExhaustionMap() == true).
-     * - Thong ke so luong nguoi choi, quai vat dang song va vat pham tren map.
-     * - Tu dong moi nguoi choi tren map vao to doi neu doi chua du 5 nguoi va nhan vat la Truong Nhom.
+     * - CHI LOC VAT DUOC SPAWN RANDOM O TREN MAP CO TEN LA 'NAM HUONG'.
+     * - Quet qua toan bo danh sach Vat pham roi, Tai nguyen thu thap, Quai vat va Doi tuong tren map.
+     * - Ghi nhan chi tiet toa do (X, Y), khoang cach va ID cua tung vat the 'Nam huong' phat hien duoc.
      */
     public static void handleExhaustionMapScan(long now) {
         if (!isAutoMapScanEnabled) return;
@@ -4889,126 +5081,281 @@ public final class TinhLinhBot {
         // DIEU KIEN COT LOI: Chi hoat dong o Map kiet suc
         if (!isAtExhaustionMap()) return;
 
-        if (now - lastExhaustionMapScanTime < 2_500L) return;
+        if (now - lastExhaustionMapScanTime < 2_000L) return;
         lastExhaustionMapScanTime = now;
 
         try {
-            // 1. Thong ke Nguoi choi tren Map
-            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> players =
-                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.giRLKUN75NEKlLLLIiIIIIWHatdoYoUWanThErEhIhIhIHAHAHAHohOHoheheheGirlkuN75;
-            lastScannedPlayerCount = (players != null) ? players.size : 0;
+            Vector2 playerPos = getPlayerPosition();
+            List<ScannedMushroom> foundList = new ArrayList<>();
 
-            // 2. Thong ke Quai vat dang song tren Map
-            int livingMonsters = 0;
+            // 1. Loc Vat pham roi tren map (Ground Items)
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> items =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75;
+            if (items != null) {
+                for (int i = 0; i < items.size; i++) {
+                    com.a.c.f.a.b.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 item = items.get(i);
+                    if (item == null) continue;
+                    String name = getGroundItemName(item);
+                    if (isMushroomName(name)) {
+                        Vector2 pos = getMapEntityPosition(item);
+                        float x = (pos != null) ? pos.x : 0f;
+                        float y = (pos != null) ? pos.y : 0f;
+                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
+                        foundList.add(new ScannedMushroom(item.a_(), "Vat pham", name, x, y, dist, now));
+                    }
+                }
+            }
+
+            // 2. Loc Tai nguyen / Thu thap / Cay coi / Khoang thach (Resource Nodes)
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> resources =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75;
+            if (resources != null) {
+                for (int i = 0; i < resources.size; i++) {
+                    com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 res = resources.get(i);
+                    if (res == null) continue;
+                    String name = getResourceNodeName(res);
+                    if (isMushroomName(name)) {
+                        Vector2 pos = getMapEntityPosition(res);
+                        float x = (pos != null) ? pos.x : 0f;
+                        float y = (pos != null) ? pos.y : 0f;
+                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
+                        foundList.add(new ScannedMushroom(res.a_(), "Thu thap", name, x, y, dist, now));
+                    }
+                }
+            }
+
+            // 3. Loc Quai vat tren map (Monsters / Mobs)
             com.badlogic.gdx.utils.Array<com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> monsters =
                     com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75;
             if (monsters != null) {
                 for (int i = 0; i < monsters.size; i++) {
                     com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m = monsters.get(i);
-                    if (m != null && !isMonsterDead(m)) {
-                        livingMonsters++;
+                    if (m == null || isMonsterDead(m)) continue;
+                    String name = getMonsterName(m);
+                    if (isMushroomName(name)) {
+                        Vector2 pos = getMapEntityPosition(m);
+                        float x = (pos != null) ? pos.x : 0f;
+                        float y = (pos != null) ? pos.y : 0f;
+                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
+                        foundList.add(new ScannedMushroom(m.a_(), "Quai vat", name, x, y, dist, now));
                     }
                 }
             }
-            lastScannedMonsterCount = livingMonsters;
 
-            // 3. Thong ke Vat pham roi
-            int groundItems = 0;
-            try {
-                com.badlogic.gdx.utils.Array<?> items =
-                        com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75;
-                if (items != null) groundItems = items.size;
-            } catch (Throwable ignored) {}
-            lastScannedGroundItemCount = groundItems;
-
-            // 4. Log tong quan dinh ky moi 25s tai map kiet suc
-            if (now - lastExhaustionMapScanLogTime > 25_000L) {
-                lastExhaustionMapScanLogTime = now;
-                log("[QuetMap] Map kiet suc [" + getCurrentMapName() + " - ID: " + getCurrentMapId() + "]: "
-                        + lastScannedPlayerCount + " nguoi choi tren map, "
-                        + lastScannedMonsterCount + " quai dang song, "
-                        + lastScannedGroundItemCount + " vat pham roi.");
+            // 4. Loc Vat the tuong tac / Special Entities (Map Objects)
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> objects =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75;
+            if (objects != null) {
+                for (int i = 0; i < objects.size; i++) {
+                    com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 obj = objects.get(i);
+                    if (obj == null) continue;
+                    String name = getMapObjectName(obj);
+                    if (isMushroomName(name)) {
+                        Vector2 pos = getMapEntityPosition(obj);
+                        float x = (pos != null) ? pos.x : 0f;
+                        float y = (pos != null) ? pos.y : 0f;
+                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
+                        foundList.add(new ScannedMushroom(obj.a_(), "Vat the", name, x, y, dist, now));
+                    }
+                }
             }
 
-            // 5. Quet va moi nguoi choi vao to doi neu doi chua day (< 5) va la Truong Nhom
-            com.a.c.c.F.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 party =
-                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;
-            if (party != null && players != null && players.size > 0) {
-                int memberCount = (party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null)
-                        ? party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.size : 1;
+            // 5. Kiem tra su thay doi hoac phat hien moi
+            int prevCount = lastScannedMushroomCount;
+            lastScannedMushrooms.clear();
+            lastScannedMushrooms.addAll(foundList);
+            lastScannedMushroomCount = foundList.size();
 
-                if (memberCount < 5) {
-                    boolean isLeader = true;
-                    int myPlayerId = -1;
-                    try {
-                        com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
-                                com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
-                        if (player != null) {
-                            myPlayerId = player.a_();
-                            Object role = party.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(myPlayerId);
-                            if (role instanceof Enum) {
-                                isLeader = (((Enum<?>) role).ordinal() == 0);
-                            }
-                        }
-                    } catch (Throwable ignored) {}
+            if (foundList.size() > 0 && prevCount != foundList.size()) {
+                for (ScannedMushroom sm : foundList) {
+                    log(String.format(Locale.ROOT,
+                            "[QuetMap] >>> PHAT HIEN [%s] (Loai: %s, ID: %d) tai (X=%.1f, Y=%.1f) cach %.1fm tren map kiet suc! <<<",
+                            sm.name, sm.type, sm.id, sm.x, sm.y, sm.distance));
+                }
+            }
 
-                    if (isLeader) {
-                        for (int i = 0; i < players.size; i++) {
-                            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 other = players.get(i);
-                            if (other == null) continue;
-                            int otherId = other.a_();
-                            if (otherId == myPlayerId) continue;
-
-                            // Bo qua nguoi choi da co doi
-                            if (other.gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75()) {
-                                continue;
-                            }
-
-                            // Bo qua nguoi choi da co trong to doi cua minh
-                            boolean inParty = false;
-                            if (party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null) {
-                                for (int j = 0; j < party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.size; j++) {
-                                    com.a.c.c.F.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 mem =
-                                            party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.get(j);
-                                    if (mem != null && mem.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == otherId) {
-                                        inParty = true;
-                                        break;
-                                    }
-                                }
-                            }
-                            if (inParty) continue;
-
-                            // Kiem tra cooldown moi (10s/nguoi)
-                            Long lastInvite = mapPlayerInviteCooldown.get(otherId);
-                            if (lastInvite != null && now - lastInvite < 10_000L) {
-                                continue;
-                            }
-
-                            mapPlayerInviteCooldown.put(otherId, now);
-                            final int targetId = otherId;
-                            final String targetName = getOtherPlayerName(other);
-                            final int curDoiSize = memberCount;
-
-                            Gdx.app.postRunnable(() -> {
-                                try {
-                                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
-                                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
-                                    if (client != null) {
-                                        client.GirLkUn75NEkLIIiiililIwHAtDoYoUwantheREHIhIHiHahAhahoHOhOhEHeHeGiRLKuN75(targetId);
-                                        log("[QuetMap-ToDoi] Phat hien nguoi choi [" + targetName + "] (ID=" + targetId
-                                                + ") tren map kiet suc -> Da gui loi moi vao to doi (" + curDoiSize + "/5)!");
-                                    }
-                                } catch (Throwable t) {
-                                    log("[QuetMap] Loi gui loi moi to doi: " + t.getMessage());
-                                }
-                            });
-                            break; // Moi 1 nguoi moi chu ky
-                        }
-                    }
+            // 6. Log dinh ky moi 25s tai map kiet suc
+            if (now - lastExhaustionMapScanLogTime > 25_000L) {
+                lastExhaustionMapScanLogTime = now;
+                String mapName = getCurrentMapName();
+                int mapId = getCurrentMapId();
+                if (foundList.size() > 0) {
+                    log("[QuetMap] Map kiet suc [" + mapName + " - ID: " + mapId + "]: Da loc duoc "
+                            + foundList.size() + " vat the 'Nam huong' tren map: " + foundList);
+                } else {
+                    log("[QuetMap] Map kiet suc [" + mapName + " - ID: " + mapId + "]: Khong co vat the spawn random 'Nam huong' nao (0 vat the).");
                 }
             }
         } catch (Throwable t) {
-            log("[QuetMap] Ngoai le quet map kiet suc: " + t.getMessage());
+            log("[QuetMap] Ngoai le loc vat the 'Nam huong' tren map: " + t.getMessage());
+        }
+    }
+
+    // =========================================================================
+    // Feature 16: Loop Bo Sung: Quet Tui Do Nhan Vat (Character Bag Scanner)
+    // =========================================================================
+    public static class BagItem {
+        public final int slot;
+        public final int id;
+        public final String name;
+        public final long qty;
+        public final int type;
+        public final String description;
+
+        public BagItem(int slot, int id, String name, long qty, int type, String description) {
+            this.slot = slot;
+            this.id = id;
+            this.name = (name != null) ? name : "";
+            this.qty = qty;
+            this.type = type;
+            this.description = (description != null) ? description : "";
+        }
+
+        @Override
+        public String toString() {
+            return String.format(Locale.ROOT, "[Slot %d] %s x%d (ID: %d)", slot, name, qty, id);
+        }
+    }
+
+    public static boolean isAutoBagScanEnabled() {
+        return isAutoBagScanEnabled;
+    }
+
+    public static void setAutoBagScanEnabled(boolean enabled) {
+        isAutoBagScanEnabled = enabled;
+    }
+
+    public static List<BagItem> getBagItems() {
+        return java.util.Collections.unmodifiableList(new ArrayList<>(lastScannedBagItems));
+    }
+
+    public static int getDuiGaCount() {
+        return lastDuiGaCount;
+    }
+
+    public static int getBagItemCount() {
+        return lastScannedBagCount;
+    }
+
+    public static long getBagTotalQty() {
+        return lastScannedBagTotalQty;
+    }
+
+    public static String getBagSummary() {
+        if (!wasInGame) {
+            return "Chua vao game de doc tui do.";
+        }
+        if (lastScannedBagItems.isEmpty()) {
+            return "Tui do trong hoac chua co du lieu quet.";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(String.format(Locale.ROOT, "Tui do: %d o (Tong %d mon, Dui ga: %d). Chi tiet: ",
+                lastScannedBagCount, lastScannedBagTotalQty, lastDuiGaCount));
+        int limit = Math.min(10, lastScannedBagItems.size());
+        for (int i = 0; i < limit; i++) {
+            if (i > 0) sb.append(", ");
+            BagItem it = lastScannedBagItems.get(i);
+            sb.append(it.name).append("x").append(it.qty);
+        }
+        if (lastScannedBagItems.size() > limit) {
+            sb.append(", ... (+").append(lastScannedBagItems.size() - limit).append(" o nua)");
+        }
+        return sb.toString();
+    }
+
+    /**
+     * Call-site hook: Injected into Loop Bo Sung inside tick()
+     * Quet toan bo o chua do trong tui do nhan vat (Inventory Bag) tu bo nho game LibGDX.
+     */
+    public static void handleBagScan(long now) {
+        if (!isAutoBagScanEnabled) {
+            return;
+        }
+
+        if (!wasInGame || !isPlayerInGame()) {
+            return;
+        }
+
+        // Quet moi 4 giay mot lan de giam tai CPU
+        if (now - lastBagScanTime < 4_000L) {
+            return;
+        }
+        lastBagScanTime = now;
+
+        try {
+            com.badlogic.gdx.utils.Array<com.a.c.c.E.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> bag =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75;
+            if (bag == null) {
+                return;
+            }
+
+            List<BagItem> scannedList = new ArrayList<>();
+            long totalQty = 0L;
+            int duiGa = 0;
+
+            int size = bag.size;
+            for (int i = 0; i < size; i++) {
+                com.a.c.c.E.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 item = bag.get(i);
+                if (item == null) continue;
+
+                long qty = item.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+                if (qty <= 0) continue;
+
+                com.a.c.c.E.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 tmpl =
+                        item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                if (tmpl == null) continue;
+
+                int id = tmpl.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                String name = tmpl.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                if (name == null || name.trim().isEmpty()) {
+                    name = "Vat pham #" + id;
+                } else {
+                    name = name.trim();
+                }
+
+                int type = tmpl.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+                String desc = tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
+                if (desc == null) desc = "";
+
+                scannedList.add(new BagItem(i, id, name, qty, type, desc));
+                totalQty += qty;
+
+                // Kiem tra vat pham hoi phuc the luc dac thu: Dui ga
+                String lower = name.toLowerCase(Locale.ROOT);
+                if (lower.contains("dui ga") || lower.contains("đùi gà") || lower.contains("duiga")) {
+                    duiGa += (int) Math.min(qty, (long) Integer.MAX_VALUE);
+                }
+            }
+
+            int prevCount = lastScannedBagCount;
+            long prevTotalQty = lastScannedBagTotalQty;
+
+            lastScannedBagItems.clear();
+            lastScannedBagItems.addAll(scannedList);
+            lastScannedBagCount = scannedList.size();
+            lastScannedBagTotalQty = totalQty;
+            lastDuiGaCount = duiGa;
+
+            // Log ngay lap tuc neu so luong item hoac tong so mon thay doi (nhat duoc do, an do)
+            if (prevCount != lastScannedBagCount || prevTotalQty != lastScannedBagTotalQty) {
+                log(String.format(Locale.ROOT,
+                        "[QuetTuiDo] >>> CAP NHAT TUI DO: %d o vat pham (Tong: %d mon, Dui ga: %d) <<<",
+                        lastScannedBagCount, lastScannedBagTotalQty, lastDuiGaCount));
+            }
+
+            // Log dinh ky moi 30 giay trong Loop Bo Sung
+            if (now - lastBagScanLogTime > 30_000L) {
+                lastBagScanLogTime = now;
+                if (lastScannedBagCount > 0) {
+                    log(String.format(Locale.ROOT,
+                            "[QuetTuiDo] Tui do hien co %d o vat pham (Tong %d mon, Dui ga: %d): %s",
+                            lastScannedBagCount, lastScannedBagTotalQty, lastDuiGaCount, getBagSummary()));
+                } else {
+                    log("[QuetTuiDo] Tui do hien tai dang trong (0 o vat pham).");
+                }
+            }
+        } catch (Throwable t) {
+            log("[QuetTuiDo] Ngoai le khi quet tui do: " + t.getMessage());
         }
     }
 
