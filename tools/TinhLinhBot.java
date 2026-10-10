@@ -66,9 +66,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 14: Loop Bo Sung: Auto To Doi, Tao To Doi & Phe Duyet Thanh Vien (handlePartyAutomation, dismissOrAcceptPartyDialogs, getPartyStatusInfo, isAutoPartyEnabled, setAutoPartyEnabled).
  * Feature 15: Loop Bo Sung: Quet Map tai Map Kiet Suc - Loc Vat The Spawn Random 'Nam Huong' (isAtExhaustionMap, handleExhaustionMapScan, getExhaustionMapScanInfo, isMushroomName, lastScannedMushrooms).
  * Feature 16: Loop Bo Sung: Quet Tui Do Nhan Vat (handleBagScan, getBagItems, getBagSummary, lastScannedBagItems, isAutoBagScanEnabled, setAutoBagScanEnabled).
+ * Feature 17: Loop Bo Sung: Tu Dong Dung Vat Pham 'Nam Huong' Trong Tui Do (handleAutoUseMushroom, isAutoUseMushroomEnabled, setMushroomUseIntervalMs).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.8-Feature16-CharacterBagScanner";
+    private static final String VERSION = "1.9.9-Feature17-AutoUseMushroom";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -201,6 +202,13 @@ public final class TinhLinhBot {
     private static volatile long lastBagGem = 0L;
     private static volatile long lastBagLocked = 0L;
     public static final List<BagItem> lastScannedBagItems = new CopyOnWriteArrayList<>();
+
+    // Feature 17: Tu dong su dung vat pham 'Nam huong' trong tui do
+    private static volatile boolean isAutoUseMushroomEnabled = true;
+    private static volatile long lastMushroomUseTime = 0L;
+    private static volatile long mushroomUseIntervalMs = 1_800_000L; // 30 phut (sau khi test nhanh 30s thanh cong)
+    private static volatile int lastMushroomCountInBag = 0;
+    private static volatile String lastMushroomUseResult = "";
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -3771,7 +3779,11 @@ public final class TinhLinhBot {
                     sb.append("\"bag_item_count\":").append(lastScannedBagCount).append(",");
                     sb.append("\"bag_total_qty\":").append(lastScannedBagTotalQty).append(",");
                     sb.append("\"bag_summary\":\"").append(escapeJson(getBagSummary())).append("\",");
-                    sb.append("\"auto_bag_scan_enabled\":").append(isAutoBagScanEnabled);
+                    sb.append("\"auto_bag_scan_enabled\":").append(isAutoBagScanEnabled).append(",");
+                    sb.append("\"mushroom_in_bag\":").append(lastMushroomCountInBag).append(",");
+                    sb.append("\"auto_use_mushroom_enabled\":").append(isAutoUseMushroomEnabled).append(",");
+                    sb.append("\"mushroom_use_interval_ms\":").append(mushroomUseIntervalMs).append(",");
+                    sb.append("\"last_mushroom_use_time\":").append(lastMushroomUseTime);
                     sb.append("}");
                     sb.append("}");
                     sendJsonResponse(exchange, 200, sb.toString());
@@ -3866,6 +3878,10 @@ public final class TinhLinhBot {
                     sb.append("\"total_slots\":").append(lastScannedBagCount).append(",");
                     sb.append("\"total_qty\":").append(lastScannedBagTotalQty).append(",");
                     sb.append("\"dui_ga_count\":").append(lastDuiGaCount).append(",");
+                    sb.append("\"mushroom_in_bag\":").append(lastMushroomCountInBag).append(",");
+                    sb.append("\"auto_use_mushroom_enabled\":").append(isAutoUseMushroomEnabled).append(",");
+                    sb.append("\"mushroom_use_interval_ms\":").append(mushroomUseIntervalMs).append(",");
+                    sb.append("\"last_mushroom_use_result\":\"").append(escapeJson(lastMushroomUseResult)).append("\",");
                     sb.append("\"summary\":\"").append(escapeJson(getBagSummary())).append("\",");
                     sb.append("\"bag\":[");
                     for (int i = 0; i < items.size(); i++) {
@@ -4064,6 +4080,22 @@ public final class TinhLinhBot {
             isAutoBagScanEnabled = !isAutoBagScanEnabled;
             return "Da doi trang thai Quet Tui Do thanh: " + (isAutoBagScanEnabled ? "BAT" : "TAT");
         }
+        if ("use_mushroom".equals(cmd) || "dung_nam".equals(cmd) || "eat_mushroom".equals(cmd)) {
+            lastMushroomUseTime = 0L;
+            return handleAutoUseMushroom(System.currentTimeMillis());
+        }
+        if ("set_mushroom_interval_30s".equals(cmd)) {
+            mushroomUseIntervalMs = 30_000L;
+            return "Da set chu ky dung Nam huong thanh 30 giay (Che do Test).";
+        }
+        if ("set_mushroom_interval_30m".equals(cmd)) {
+            mushroomUseIntervalMs = 1_800_000L;
+            return "Da set chu ky dung Nam huong thanh 30 phut (Che do Chinh thuc).";
+        }
+        if ("toggle_use_mushroom".equals(cmd)) {
+            isAutoUseMushroomEnabled = !isAutoUseMushroomEnabled;
+            return "Da doi trang thai Tu dong dung Nam huong thanh: " + (isAutoUseMushroomEnabled ? "BAT" : "TAT");
+        }
         if ("toggle_auto".equals(cmd) || "auto".equals(cmd)) {
             boolean next = !isAutoAttackMenuEnabled();
             setAutoAttackMenuEnabled(next);
@@ -4108,7 +4140,7 @@ public final class TinhLinhBot {
             handlePostLoginDispatch(getCurrentMapId(), getCurrentMapName(), getPlayerPosition());
             return "Da kich hoat lai quy trinh Post-Login Dispatch (Auto Attack / Quay lai map kiet suc).";
         }
-        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, checkin, online_gift, party, create_party, approve_party, toggle_party, scan_map, toggle_map_scan, scan_bag, quet_tui, bag, toggle_bag_scan, toggle_auto, return_village, goto_farm, set_farm, post_login, dispatch, status, debug_combat, monsters.";
+        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, checkin, online_gift, party, create_party, approve_party, toggle_party, scan_map, toggle_map_scan, scan_bag, quet_tui, bag, toggle_bag_scan, use_mushroom, dung_nam, set_mushroom_interval_30s, set_mushroom_interval_30m, toggle_use_mushroom, toggle_auto, return_village, goto_farm, set_farm, post_login, dispatch, status, debug_combat, monsters.";
     }
 
     public static String getCharacterName() {
@@ -5394,9 +5426,100 @@ public final class TinhLinhBot {
                             "[QuetTuiDo] Tui do hien tai dang trong (0 o vat pham). Vang: %d, Ngoc: %d.", lastBagGold, lastBagGem));
                 }
             }
+
+            // Feature 17: Tu dong su dung vat pham 'Nam huong' trong tui do neu co
+            handleAutoUseMushroom(now);
         } catch (Throwable t) {
             log("[QuetTuiDo] Ngoai le khi quet tui do: " + t.getMessage());
         }
+    }
+
+    // =========================================================================
+    // Feature 17: Loop Bo Sung: Tu Dong Dung Vat Pham 'Nam Huong' Trong Tui Do
+    // =========================================================================
+    public static boolean isAutoUseMushroomEnabled() {
+        return isAutoUseMushroomEnabled;
+    }
+
+    public static void setAutoUseMushroomEnabled(boolean enabled) {
+        isAutoUseMushroomEnabled = enabled;
+    }
+
+    public static long getMushroomUseIntervalMs() {
+        return mushroomUseIntervalMs;
+    }
+
+    public static void setMushroomUseIntervalMs(long intervalMs) {
+        mushroomUseIntervalMs = intervalMs;
+    }
+
+    public static int getMushroomCountInBag() {
+        return lastMushroomCountInBag;
+    }
+
+    /**
+     * Ham tu dong dung vat pham 'Nam huong' trong tui do theo chu ky dinh san.
+     * Quy trinh: Quet tui -> Tim item Nam huong -> Kiem tra so luong > 0 -> Gui packet su dung len server.
+     */
+    public static String handleAutoUseMushroom(long now) {
+        if (!isAutoUseMushroomEnabled) {
+            return "Tu dong dung Nam huong dang TAT.";
+        }
+        if (!wasInGame || !isPlayerInGame()) {
+            return "Chua vao game de dung Nam huong.";
+        }
+
+        // 1. Quet tim vat pham 'Nam huong' trong tui do
+        BagItem mushroomItem = null;
+        int totalMushroom = 0;
+        for (BagItem it : lastScannedBagItems) {
+            if (it != null && isMushroomName(it.name)) {
+                mushroomItem = it;
+                totalMushroom += (int) Math.min(it.qty, (long) Integer.MAX_VALUE);
+            }
+        }
+
+        lastMushroomCountInBag = totalMushroom;
+
+        if (mushroomItem == null || totalMushroom <= 0) {
+            lastMushroomUseResult = "Tui do khong co vat pham Nam huong nao (SL: 0).";
+            return lastMushroomUseResult;
+        }
+
+        // 2. Kiem tra chu ky su dung (30s test mode hoac 30 phut production mode)
+        long elapsed = now - lastMushroomUseTime;
+        if (lastMushroomUseTime != 0L && elapsed < mushroomUseIntervalMs) {
+            long remainSec = Math.max(1L, (mushroomUseIntervalMs - elapsed) / 1000L);
+            return String.format(Locale.ROOT,
+                    "Nam huong co trong tui: %d cai. Dang cho hoi chu ky su dung (con %ds / %ds).",
+                    totalMushroom, remainSec, mushroomUseIntervalMs / 1000L);
+        }
+
+        // 3. Co vat pham Nam huong -> Thuc hien su dung qua Game Client
+        final int targetId = mushroomItem.id;
+        final String targetName = mushroomItem.name;
+        final int curQty = totalMushroom;
+
+        Gdx.app.postRunnable(() -> {
+            try {
+                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                if (client != null) {
+                    client.GIRlkUn75nEKiLiLLliLiLWhATdOyouwanThEREHiHIHIhAhahahohoHOHehEhEgiRlKuN75(targetId);
+                    log(String.format(Locale.ROOT,
+                            "[DungNamHuong] >>> DA GUI PACKET SU DUNG [%s - ID: %d] (So luong con: %d) LEN GAME SERVER! Chu ky tiep theo: %ds <<<",
+                            targetName, targetId, curQty, mushroomUseIntervalMs / 1000L));
+                }
+            } catch (Throwable t) {
+                log("[DungNamHuong] Loi khi gui goi tin dung vat pham: " + t.getMessage());
+            }
+        });
+
+        lastMushroomUseTime = now;
+        lastMushroomUseResult = String.format(Locale.ROOT,
+                "Da gui lenh su dung Nam huong (ID: %d, SL: %d). Chu ky: %ds.",
+                targetId, curQty, mushroomUseIntervalMs / 1000L);
+        return lastMushroomUseResult;
     }
 
     public static boolean isPlayerInGame() {
