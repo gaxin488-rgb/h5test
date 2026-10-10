@@ -201,7 +201,7 @@ public final class TinhLinhBot {
     private static final Map<Integer, Integer> pickupAttemptCounts = new ConcurrentHashMap<>();
     private static final Map<Integer, Long> ignoredPickupItems = new ConcurrentHashMap<>();
 
-    // Feature 16: Loop Bo Sung: Quet Tui Do Nhan Vat (Character Bag Scanner)
+    // Feature 16: Loop Bo Sung: Quet Hanh Trang & Tui Do Nhan Vat (Character Equip & Bag Scanner)
     private static volatile boolean isAutoBagScanEnabled = true;
     private static volatile long lastBagScanTime = 0L;
     private static volatile long lastBagScanLogTime = 0L;
@@ -211,7 +211,11 @@ public final class TinhLinhBot {
     private static volatile long lastBagGold = 0L;
     private static volatile long lastBagGem = 0L;
     private static volatile long lastBagLocked = 0L;
+    public static final List<BagItem> lastScannedEquipItems = new CopyOnWriteArrayList<>();
+    private static volatile int lastScannedEquipCount = 0;
     public static final List<BagItem> lastScannedBagItems = new CopyOnWriteArrayList<>();
+    public static final List<BagItem> lastScannedBoxItems = new CopyOnWriteArrayList<>();
+    private static volatile int lastScannedBoxCount = 0;
 
     // Feature 17: Tu dong su dung vat pham 'Nam huong' trong tui do
     private static volatile boolean isAutoUseMushroomEnabled = true;
@@ -3879,17 +3883,34 @@ public final class TinhLinhBot {
                 }
             });
 
-            // 4. GET /bag - Feature 16: Quet tui do nhan vat tu dong
+            // 4. GET /bag - Feature 16: Quet Hanh Trang & Tui Do Nhan Vat tu dong
             httpApiServer.createContext("/bag", exchange -> {
                 if (handleCors(exchange)) return;
                 try {
+                    List<BagItem> equips = new ArrayList<>(lastScannedEquipItems);
                     List<BagItem> items = new ArrayList<>(lastScannedBagItems);
                     StringBuilder sb = new StringBuilder();
                     sb.append("{\"ok\":true,");
                     sb.append("\"gold\":").append(lastBagGold).append(",");
                     sb.append("\"gem\":").append(lastBagGem).append(",");
                     sb.append("\"locked\":").append(lastBagLocked).append(",");
-                    sb.append("\"total_slots\":").append(lastScannedBagCount).append(",");
+                    sb.append("\"equipped_count\":").append(equips.size()).append(",");
+                    sb.append("\"equipped\":[");
+                    for (int i = 0; i < equips.size(); i++) {
+                        if (i > 0) sb.append(",");
+                        BagItem it = equips.get(i);
+                        sb.append("{");
+                        sb.append("\"slot\":").append(it.slot).append(",");
+                        sb.append("\"id\":").append(it.id).append(",");
+                        sb.append("\"name\":\"").append(escapeJson(it.name)).append("\",");
+                        sb.append("\"qty\":").append(it.qty).append(",");
+                        sb.append("\"type\":").append(it.type).append(",");
+                        sb.append("\"desc\":\"").append(escapeJson(it.description)).append("\"");
+                        sb.append("}");
+                    }
+                    sb.append("],");
+                    sb.append("\"total_slots\":").append(items.size()).append(",");
+                    sb.append("\"bag_count\":").append(items.size()).append(",");
                     sb.append("\"total_qty\":").append(lastScannedBagTotalQty).append(",");
                     sb.append("\"dui_ga_count\":").append(lastDuiGaCount).append(",");
                     sb.append("\"mushroom_in_bag\":").append(lastMushroomCountInBag).append(",");
@@ -3910,8 +3931,35 @@ public final class TinhLinhBot {
                         sb.append("\"desc\":\"").append(escapeJson(it.description)).append("\"");
                         sb.append("}");
                     }
+                    sb.append("],");
+                    List<BagItem> boxes = new ArrayList<>(lastScannedBoxItems);
+                    sb.append("\"box_count\":").append(boxes.size()).append(",");
+                    sb.append("\"box\":[");
+                    for (int i = 0; i < boxes.size(); i++) {
+                        if (i > 0) sb.append(",");
+                        BagItem it = boxes.get(i);
+                        sb.append("{");
+                        sb.append("\"slot\":").append(it.slot).append(",");
+                        sb.append("\"id\":").append(it.id).append(",");
+                        sb.append("\"name\":\"").append(escapeJson(it.name)).append("\",");
+                        sb.append("\"qty\":").append(it.qty).append(",");
+                        sb.append("\"type\":").append(it.type).append(",");
+                        sb.append("\"desc\":\"").append(escapeJson(it.description)).append("\"");
+                        sb.append("}");
+                    }
                     sb.append("]}");
                     sendJsonResponse(exchange, 200, sb.toString());
+                } catch (Throwable t) {
+                    sendJsonResponse(exchange, 500, "{\"ok\":false,\"error\":\"" + escapeJson(t.getMessage()) + "\"}");
+                }
+            });
+
+            // 4.1. GET /inspect_inv - Chi tiet toan bo 8 mang trong Inventory Manager (RAM)
+            httpApiServer.createContext("/inspect_inv", exchange -> {
+                if (handleCors(exchange)) return;
+                try {
+                    String detail = inspectAllInventoryArrays();
+                    sendJsonResponse(exchange, 200, "{\"ok\":true,\"detail\":\"" + escapeJson(detail) + "\"}");
                 } catch (Throwable t) {
                     sendJsonResponse(exchange, 500, "{\"ok\":false,\"error\":\"" + escapeJson(t.getMessage()) + "\"}");
                 }
@@ -4095,14 +4143,20 @@ public final class TinhLinhBot {
             isAutoPickupMapItemsEnabled = !isAutoPickupMapItemsEnabled;
             return "Da doi trang thai Tu dong nhat item map kiet suc thanh: " + (isAutoPickupMapItemsEnabled ? "BAT" : "TAT");
         }
-        if ("scan_bag".equals(cmd) || "quet_tui".equals(cmd) || "tui_do".equals(cmd) || "bag".equals(cmd)) {
+        if ("scan_bag".equals(cmd) || "quet_tui".equals(cmd) || "tui_do".equals(cmd) || "bag".equals(cmd)
+                || "hanh_trang".equals(cmd) || "trang_bi".equals(cmd) || "equip".equals(cmd)) {
             lastBagScanTime = 0L;
             handleBagScan(System.currentTimeMillis());
             return getBagSummary();
         }
+        if ("inspect_inv".equals(cmd) || "inspect_bag".equals(cmd) || "soi_tui".equals(cmd) || "kiem_tra_kho".equals(cmd)) {
+            lastBagScanTime = 0L;
+            handleBagScan(System.currentTimeMillis());
+            return inspectAllInventoryArrays();
+        }
         if ("toggle_bag_scan".equals(cmd)) {
             isAutoBagScanEnabled = !isAutoBagScanEnabled;
-            return "Da doi trang thai Quet Tui Do thanh: " + (isAutoBagScanEnabled ? "BAT" : "TAT");
+            return "Da doi trang thai Quet Tui Do & Hanh Trang thanh: " + (isAutoBagScanEnabled ? "BAT" : "TAT");
         }
         if ("use_mushroom".equals(cmd) || "dung_nam".equals(cmd) || "eat_mushroom".equals(cmd)) {
             lastMushroomUseTime = 0L;
@@ -5458,6 +5512,14 @@ public final class TinhLinhBot {
         isAutoBagScanEnabled = enabled;
     }
 
+    public static List<BagItem> getEquipItems() {
+        return java.util.Collections.unmodifiableList(new ArrayList<>(lastScannedEquipItems));
+    }
+
+    public static int getEquipCount() {
+        return lastScannedEquipCount;
+    }
+
     public static List<BagItem> getBagItems() {
         return java.util.Collections.unmodifiableList(new ArrayList<>(lastScannedBagItems));
     }
@@ -5490,27 +5552,159 @@ public final class TinhLinhBot {
         if (!wasInGame) {
             return "Chua vao game de doc tui do.";
         }
-        if (lastScannedBagItems.isEmpty()) {
-            return String.format(Locale.ROOT, "Tui do trong (0 o). Vang: %d, Ngoc: %d.", lastBagGold, lastBagGem);
-        }
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format(Locale.ROOT, "Tui do: %d o (Tong %d mon, Vang: %d, Ngoc: %d, Dui ga: %d). Chi tiet: ",
-                lastScannedBagCount, lastScannedBagTotalQty, lastBagGold, lastBagGem, lastDuiGaCount));
-        int limit = Math.min(10, lastScannedBagItems.size());
-        for (int i = 0; i < limit; i++) {
-            if (i > 0) sb.append(", ");
-            BagItem it = lastScannedBagItems.get(i);
-            sb.append(it.name).append("x").append(it.qty);
+        // 1. Hanh Trang / Trang Bi tren nguoi (Equipped Gear)
+        sb.append(String.format(Locale.ROOT, "[Hanh Trang / Trang Bi] %d mon: ", lastScannedEquipCount));
+        if (lastScannedEquipItems.isEmpty()) {
+            sb.append("(Chua co trang bi)");
+        } else {
+            for (int i = 0; i < lastScannedEquipItems.size(); i++) {
+                if (i > 0) sb.append(", ");
+                BagItem it = lastScannedEquipItems.get(i);
+                sb.append(it.name).append("x").append(it.qty);
+            }
         }
-        if (lastScannedBagItems.size() > limit) {
-            sb.append(", ... (+").append(lastScannedBagItems.size() - limit).append(" o nua)");
+
+        // 2. Tui Do (Vat pham / Tieu hao)
+        sb.append(String.format(Locale.ROOT, " | [Tui Do] %d o (Tong %d mon, Vang: %d, Ngoc: %d, Dui ga: %d): ",
+                lastScannedBagCount, lastScannedBagTotalQty, lastBagGold, lastBagGem, lastDuiGaCount));
+        if (lastScannedBagItems.isEmpty()) {
+            sb.append("(Trong - chua co vat pham)");
+        } else {
+            int limit = Math.min(10, lastScannedBagItems.size());
+            for (int i = 0; i < limit; i++) {
+                if (i > 0) sb.append(", ");
+                BagItem it = lastScannedBagItems.get(i);
+                sb.append(it.name).append("x").append(it.qty);
+            }
+            if (lastScannedBagItems.size() > limit) {
+                sb.append(", ... (+").append(lastScannedBagItems.size() - limit).append(" o nua)");
+            }
+        }
+        // 3. Ruong Do / Kho Luu Tru
+        sb.append(String.format(Locale.ROOT, " | [Ruong Do] %d o: ", lastScannedBoxCount));
+        if (lastScannedBoxItems.isEmpty()) {
+            sb.append("(Trong)");
+        } else {
+            int limit = Math.min(8, lastScannedBoxItems.size());
+            for (int i = 0; i < limit; i++) {
+                if (i > 0) sb.append(", ");
+                BagItem it = lastScannedBoxItems.get(i);
+                sb.append(it.name).append("x").append(it.qty);
+            }
+            if (lastScannedBoxItems.size() > limit) {
+                sb.append(", ... (+").append(lastScannedBoxItems.size() - limit).append(" o nua)");
+            }
         }
         return sb.toString();
     }
 
+    private static List<BagItem> parseItemArray(com.badlogic.gdx.utils.Array<com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> arr) {
+        List<BagItem> list = new ArrayList<>();
+        if (arr == null) return list;
+        int size = arr.size;
+        for (int i = 0; i < size; i++) {
+            com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 item = arr.get(i);
+            if (item == null) continue;
+
+            int id = item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+            com.a.c.c.j.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 tmpl =
+                    item.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+
+            String name = "";
+            String desc = "";
+            int type = 0;
+            if (tmpl != null) {
+                if (tmpl.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
+                    name = tmpl.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75.trim();
+                }
+                if (tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null) {
+                    desc = tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.trim();
+                }
+                type = tmpl.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75;
+            }
+            if (name.isEmpty()) {
+                name = "Vat pham #" + id;
+            }
+
+            long qty = item.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
+            if (qty <= 0) {
+                qty = 1L;
+            }
+
+            list.add(new BagItem(i, id, name, qty, type, desc));
+        }
+        return list;
+    }
+
+    /**
+     * Soi toan bo cac mang du lieu trong Inventory Manager (RAM Game).
+     */
+    public static String inspectAllInventoryArrays() {
+        if (!wasInGame) {
+            return "Chua vao game de inspect inventory.";
+        }
+        try {
+            com.a.c.c.t.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 inv =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75;
+            if (inv == null) {
+                return "inv == null trong bo nho game.";
+            }
+
+            StringBuilder sb = new StringBuilder();
+            sb.append("=== CHI TIET CAC MANG TRONG INVENTORY (RAM GAME) ===\n");
+            sb.append(String.format(Locale.ROOT, "Vang: %d | Ngoc: %d | Khoa: %d\n",
+                    inv.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75,
+                    inv.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75,
+                    inv.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75));
+
+            appendArrayInspect(sb, "Mang 1 (Equipped - Hanh Trang/Trang Bi)", inv.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75);
+            appendArrayInspect(sb, "Mang 2 (GIRlkUn75...)", inv.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75);
+            appendArrayInspect(sb, "Mang 3 (girLkUN75...)", inv.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75);
+            appendArrayInspect(sb, "Mang 4 (GIRlkUn75...)", inv.GIRlkUn75nEKiLiLLliLiLWhATdOyouwanThEREHiHIHIhAhahahohoHOHehEhEgiRlKuN75);
+            appendArrayInspect(sb, "Mang 5 (gIRLkuN75...)", inv.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75);
+            appendArrayInspect(sb, "Mang 6 (gIRLkUn75 - UI Grid Tui Do)", inv.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75);
+            appendArrayInspect(sb, "Mang 7 (GirlKun75...)", inv.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75);
+            appendArrayInspect(sb, "Mang 8 (girLkUN75...)", inv.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75);
+
+            return sb.toString();
+        } catch (Throwable t) {
+            return "Loi khi inspect inventory: " + t.getMessage();
+        }
+    }
+
+    private static void appendArrayInspect(StringBuilder sb, String label, com.badlogic.gdx.utils.Array<com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> arr) {
+        if (arr == null) {
+            sb.append(label).append(": NULL\n");
+            return;
+        }
+        sb.append(label).append(": size=").append(arr.size);
+        if (arr.size > 0) {
+            sb.append(" [");
+            for (int i = 0; i < arr.size; i++) {
+                if (i > 0) sb.append(", ");
+                com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 it = arr.get(i);
+                if (it == null) {
+                    sb.append("null");
+                    continue;
+                }
+                String name = "";
+                if (it.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null &&
+                    it.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
+                    name = it.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75.trim();
+                }
+                int qty = it.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
+                if (qty <= 0) qty = 1;
+                sb.append(name.isEmpty() ? ("#" + it.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75) : name).append("x").append(qty);
+            }
+            sb.append("]");
+        }
+        sb.append("\n");
+    }
+
     /**
      * Call-site hook: Injected into Loop Bo Sung inside tick()
-     * Quet toan bo o chua do trong tui do nhan vat (Inventory Bag) tu bo nho game LibGDX.
+     * Quet toan bo o chua do trong Hanh Trang & Tui Do nhan vat tu bo nho game LibGDX.
      */
     public static void handleBagScan(long now) {
         if (!isAutoBagScanEnabled) {
@@ -5538,53 +5732,40 @@ public final class TinhLinhBot {
             lastBagGem = inv.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
             lastBagLocked = inv.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
 
-            com.badlogic.gdx.utils.Array<com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> bag =
-                    inv.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75;
-            if (bag == null) {
-                return;
+            // 1. Quet Hanh Trang / Trang Bi Dang Mac (Equipped Items) tu Mang 1
+            List<BagItem> equips = parseItemArray(inv.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75);
+            lastScannedEquipItems.clear();
+            lastScannedEquipItems.addAll(equips);
+            lastScannedEquipCount = equips.size();
+
+            // 2. Quet Tui Do (Inventory Bag Items):
+            // Mang 7 (inv.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75) la kho luu tru chinh thuc cua Tui Do
+            List<BagItem> bagList = new ArrayList<>();
+            if (inv.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75 != null &&
+                !inv.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75.isEmpty()) {
+                bagList.addAll(parseItemArray(inv.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75));
+            } else if (inv.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75 != null &&
+                !inv.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75.isEmpty()) {
+                bagList.addAll(parseItemArray(inv.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75));
             }
 
-            List<BagItem> scannedList = new ArrayList<>();
+            // 3. Quet Ruong Do / Kho Do (Storage Box Items) tu Mang 8
+            List<BagItem> boxList = new ArrayList<>();
+            if (inv.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75 != null &&
+                !inv.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75.isEmpty()) {
+                boxList.addAll(parseItemArray(inv.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75));
+            }
+            lastScannedBoxItems.clear();
+            lastScannedBoxItems.addAll(boxList);
+            lastScannedBoxCount = boxList.size();
+
             long totalQty = 0L;
             int duiGa = 0;
-
-            int size = bag.size;
-            for (int i = 0; i < size; i++) {
-                com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 item = bag.get(i);
-                if (item == null) continue;
-
-                int id = item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
-                com.a.c.c.j.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 tmpl =
-                        item.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-
-                String name = "";
-                String desc = "";
-                int type = 0;
-                if (tmpl != null) {
-                    if (tmpl.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
-                        name = tmpl.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75.trim();
-                    }
-                    if (tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null) {
-                        desc = tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.trim();
-                    }
-                    type = tmpl.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75;
-                }
-                if (name.isEmpty()) {
-                    name = "Vat pham #" + id;
-                }
-
-                long qty = item.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
-                if (qty <= 0) {
-                    qty = 1L;
-                }
-
-                scannedList.add(new BagItem(i, id, name, qty, type, desc));
-                totalQty += qty;
-
-                // Kiem tra vat pham hoi phuc the luc dac thu: Dui ga
-                String lower = name.toLowerCase(Locale.ROOT);
+            for (BagItem it : bagList) {
+                totalQty += it.qty;
+                String lower = it.name.toLowerCase(Locale.ROOT);
                 if (lower.contains("dui ga") || lower.contains("đùi gà") || lower.contains("duiga")) {
-                    duiGa += (int) Math.min(qty, (long) Integer.MAX_VALUE);
+                    duiGa += (int) Math.min(it.qty, (long) Integer.MAX_VALUE);
                 }
             }
 
@@ -5592,8 +5773,8 @@ public final class TinhLinhBot {
             long prevTotalQty = lastScannedBagTotalQty;
 
             lastScannedBagItems.clear();
-            lastScannedBagItems.addAll(scannedList);
-            lastScannedBagCount = scannedList.size();
+            lastScannedBagItems.addAll(bagList);
+            lastScannedBagCount = bagList.size();
             lastScannedBagTotalQty = totalQty;
             lastDuiGaCount = duiGa;
 
@@ -5607,14 +5788,8 @@ public final class TinhLinhBot {
             // Log dinh ky moi 30 giay trong Loop Bo Sung
             if (now - lastBagScanLogTime > 30_000L) {
                 lastBagScanLogTime = now;
-                if (lastScannedBagCount > 0) {
-                    log(String.format(Locale.ROOT,
-                            "[QuetTuiDo] Tui do hien co %d o vat pham (Tong %d mon, Vang: %d, Ngoc: %d, Dui ga: %d): %s",
-                            lastScannedBagCount, lastScannedBagTotalQty, lastBagGold, lastBagGem, lastDuiGaCount, getBagSummary()));
-                } else {
-                    log(String.format(Locale.ROOT,
-                            "[QuetTuiDo] Tui do hien tai dang trong (0 o vat pham). Vang: %d, Ngoc: %d.", lastBagGold, lastBagGem));
-                }
+                log(String.format(Locale.ROOT,
+                        "[QuetTuiDo] %s", getBagSummary()));
             }
 
             // Feature 17: Tu dong su dung vat pham 'Nam huong' trong tui do neu co
