@@ -70,7 +70,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 18: Loop Bo Sung: Tu Dong Nhat Item Spawn Random Tren Map Kiet Suc (handlePickupTargetMapItems, isAutoPickupMapItemsEnabled, setAutoPickupMapItemsEnabled, getTotalPickedItemCount, getLastPickedItemName).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.10-Feature18-AutoPickupMapItems";
+    private static final String VERSION = "1.9.11-Feature18-SpawnMapItems";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -3349,6 +3349,14 @@ public final class TinhLinhBot {
             return;
         }
 
+        // Feature 18: Uu tien nhat item spawn ngau nhien tren map kiet suc truoc khi danh quai
+        if (isAutoPickupMapItemsEnabled && !lastScannedMushrooms.isEmpty()) {
+            if (autoAttackAttemptPending) {
+                cancelAutoAttackAttempt("Dang uu tien tiep can & nhat item spawn tren map kiet suc.");
+            }
+            return;
+        }
+
         int curMapId = getCurrentMapId();
         String curMap = getCurrentMapName();
         String normMap = normalizeText(curMap);
@@ -5090,6 +5098,8 @@ public final class TinhLinhBot {
         if (norm.contains("hoi sinh") || norm.contains("thao duoc") || norm.contains("linh thao") || norm.contains("co")) return true;
         // 4. Vat pham / ruong / tui / ngoc / da roi tren map
         if (norm.contains("ruong") || norm.contains("tui") || norm.contains("hop") || norm.contains("da") || norm.contains("ngoc")) return true;
+        // 5. Thuc the spawn ngau nhien mac dinh tren map
+        if (norm.contains("spawn") || norm.contains("item")) return true;
         return false;
     }
 
@@ -5154,6 +5164,38 @@ public final class TinhLinhBot {
             }
         } catch (Throwable ignored) {}
         return inspectAnyEntityName(obj);
+    }
+
+    public static String getSpawnedEntityName(com.a.c.f.a.b.f.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 item) {
+        if (item == null) return "";
+        try {
+            for (Field f : item.getClass().getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers())) continue;
+                f.setAccessible(true);
+                Object inner = f.get(item);
+                if (inner instanceof com.a.c.f.a.b.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75) {
+                    com.a.c.f.a.b.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 data =
+                            (com.a.c.f.a.b.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75) inner;
+                    if (data.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                            && !data.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.trim().isEmpty()) {
+                        return data.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.trim();
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return inspectAnyEntityName(item);
+    }
+
+    public static String getSpecialEntityName(com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 item) {
+        if (item == null) return "";
+        try {
+            if (item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null
+                    && item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                String s = item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                if (s != null && !s.trim().isEmpty()) return s.trim();
+            }
+        } catch (Throwable ignored) {}
+        return inspectAnyEntityName(item);
     }
 
     public static String inspectAnyEntityName(Object entity) {
@@ -5233,17 +5275,47 @@ public final class TinhLinhBot {
     }
 
     /**
-     * Soi toan bo cac doi tuong tren map hien tai trong RAM (Ground items, Resource nodes, Map objects).
+     * Soi toan bo cac doi tuong tren map hien tai trong RAM (Ground items, Resource nodes, Spawned items, Special entities, Map objects).
      */
     public static String inspectMapEntities() {
         if (!wasInGame) return "Chua vao game.";
         StringBuilder sb = new StringBuilder();
         sb.append(String.format(Locale.ROOT, "=== CAC DOI TUONG HIEN CO TREN MAP [%s - ID: %d] ===\n", getCurrentMapName(), getCurrentMapId()));
         try {
-            // 1. Ground items
+            // 1. Spawned Map Items (Cac vat pham server spawn ngau nhien tren map: Nam huong, Qua mong, Co hoi sinh)
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.f.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> spawnedItems =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75;
+            sb.append("1. Spawned Items (Item Server Spawn): ").append(spawnedItems != null ? spawnedItems.size : 0).append("\n");
+            if (spawnedItems != null) {
+                for (int i = 0; i < spawnedItems.size; i++) {
+                    com.a.c.f.a.b.f.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 sp = spawnedItems.get(i);
+                    if (sp != null) {
+                        Vector2 p = getMapEntityPosition(sp);
+                        sb.append("   - #").append(sp.a_()).append(" [").append(getSpawnedEntityName(sp)).append("] tai (")
+                                .append(p != null ? String.format(Locale.ROOT, "%.1f, %.1f", p.x, p.y) : "?").append(")\n");
+                    }
+                }
+            }
+
+            // 2. Special Map Entities (Thuc the ban do dac biet)
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> specialEntities =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GirLkUN75NEKiIiiILILiLwhatDoyOUWANTheREhIhIHIHahahAhohoHohEHehEGIRlKuN75;
+            sb.append("2. Special Map Entities (Thuc the dac biet): ").append(specialEntities != null ? specialEntities.size : 0).append("\n");
+            if (specialEntities != null) {
+                for (int i = 0; i < specialEntities.size; i++) {
+                    com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 se = specialEntities.get(i);
+                    if (se != null) {
+                        Vector2 p = getMapEntityPosition(se);
+                        sb.append("   - #").append(se.a_()).append(" [").append(getSpecialEntityName(se)).append("] tai (")
+                                .append(p != null ? String.format(Locale.ROOT, "%.1f, %.1f", p.x, p.y) : "?").append(")\n");
+                    }
+                }
+            }
+
+            // 3. Ground items (Vat pham roi tu quai)
             com.badlogic.gdx.utils.Array<com.a.c.f.a.b.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> items =
                     com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75;
-            sb.append("1. Ground Items (Vat pham roi): ").append(items != null ? items.size : 0).append("\n");
+            sb.append("3. Ground Items (Vat pham roi): ").append(items != null ? items.size : 0).append("\n");
             if (items != null) {
                 for (int i = 0; i < items.size; i++) {
                     com.a.c.f.a.b.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 it = items.get(i);
@@ -5255,10 +5327,10 @@ public final class TinhLinhBot {
                 }
             }
 
-            // 2. Resource nodes
+            // 4. Resource nodes (Thu thap / Cay coi / Khoang thach)
             com.badlogic.gdx.utils.Array<com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> resources =
                     com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75;
-            sb.append("2. Resource Nodes (Thu thap): ").append(resources != null ? resources.size : 0).append("\n");
+            sb.append("4. Resource Nodes (Thu thap): ").append(resources != null ? resources.size : 0).append("\n");
             if (resources != null) {
                 for (int i = 0; i < resources.size; i++) {
                     com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 res = resources.get(i);
@@ -5271,10 +5343,10 @@ public final class TinhLinhBot {
                 }
             }
 
-            // 3. Map objects
+            // 5. Map objects (Vat the tuong tac / NPC)
             com.badlogic.gdx.utils.Array<com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> objects =
                     com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75;
-            sb.append("3. Map Objects (Vat the): ").append(objects != null ? objects.size : 0).append("\n");
+            sb.append("5. Map Objects (Vat the): ").append(objects != null ? objects.size : 0).append("\n");
             if (objects != null) {
                 for (int i = 0; i < objects.size; i++) {
                     com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 obj = objects.get(i);
@@ -5283,6 +5355,35 @@ public final class TinhLinhBot {
                         sb.append("   - #").append(obj.a_()).append(" [").append(getMapObjectName(obj)).append("] tai (")
                                 .append(p != null ? String.format(Locale.ROOT, "%.1f, %.1f", p.x, p.y) : "?").append(")\n");
                     }
+                }
+            }
+
+            // 6. Reflection quet toan bo cac mang static Array con lai trong GirlKun75
+            Class<?> rootCls = com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.class;
+            for (Field f : rootCls.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers()) && com.badlogic.gdx.utils.Array.class.isAssignableFrom(f.getType())) {
+                    String fn = f.getName();
+                    if ("girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75".equals(fn)
+                            || "GirLkUN75NEKiIiiILILiLwhatDoyOUWANTheREhIhIHIHahahAhohoHohEHehEGIRlKuN75".equals(fn)
+                            || "gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75".equals(fn)
+                            || "gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75".equals(fn)
+                            || "GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75".equals(fn)
+                            || "GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75".equals(fn)
+                            || "giRLKUN75NEKlLLLIiIIIIWHatdoYoUWanThErEhIhIhIHAHAHAHohOHoheheheGirlkuN75".equals(fn)) {
+                        continue;
+                    }
+                    try {
+                        f.setAccessible(true);
+                        com.badlogic.gdx.utils.Array<?> arr = (com.badlogic.gdx.utils.Array<?>) f.get(null);
+                        if (arr != null && arr.size > 0) {
+                            sb.append("6. Mang dac thu [").append(fn).append("]: ").append(arr.size).append(" phan tu:\n");
+                            for (int aIdx = 0; aIdx < Math.min(arr.size, 5); aIdx++) {
+                                Object elem = arr.get(aIdx);
+                                sb.append("   - #").append(aIdx).append(" [").append(inspectAnyEntityName(elem))
+                                        .append("] (Class: ").append(elem != null ? elem.getClass().getSimpleName() : "null").append(")\n");
+                            }
+                        }
+                    } catch (Throwable ignored) {}
                 }
             }
         } catch (Throwable t) {
@@ -5313,7 +5414,45 @@ public final class TinhLinhBot {
             Vector2 playerPos = getPlayerPosition();
             List<ScannedMushroom> foundList = new ArrayList<>();
 
-            // 1. Loc Vat pham roi tren map (Ground Items)
+            // 1. Loc Vat pham spawn ngau nhien tren map (Spawned Random Map Items: Nam huong, Qua mong, Co hoi sinh)
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.f.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> spawnedItems =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75;
+            if (spawnedItems != null) {
+                for (int i = 0; i < spawnedItems.size; i++) {
+                    com.a.c.f.a.b.f.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 sp = spawnedItems.get(i);
+                    if (sp == null) continue;
+                    String name = getSpawnedEntityName(sp);
+                    if (name.isEmpty() || isTargetSpawnItemName(name)) {
+                        if (name.isEmpty()) name = "Item Spawn #" + sp.a_();
+                        Vector2 pos = getMapEntityPosition(sp);
+                        float x = (pos != null) ? pos.x : 0f;
+                        float y = (pos != null) ? pos.y : 0f;
+                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
+                        foundList.add(new ScannedMushroom(sp.a_(), "Spawn", name, x, y, dist, now, 0));
+                    }
+                }
+            }
+
+            // 2. Loc Thuc the ban do dac biet (Special Map Entities)
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> specialEntities =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GirLkUN75NEKiIiiILILiLwhatDoyOUWANTheREhIhIHIHahahAhohoHohEHehEGIRlKuN75;
+            if (specialEntities != null) {
+                for (int i = 0; i < specialEntities.size; i++) {
+                    com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 se = specialEntities.get(i);
+                    if (se == null) continue;
+                    String name = getSpecialEntityName(se);
+                    if (name.isEmpty() || isTargetSpawnItemName(name)) {
+                        if (name.isEmpty()) name = "Special #" + se.a_();
+                        Vector2 pos = getMapEntityPosition(se);
+                        float x = (pos != null) ? pos.x : 0f;
+                        float y = (pos != null) ? pos.y : 0f;
+                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
+                        foundList.add(new ScannedMushroom(se.a_(), "Special", name, x, y, dist, now, 0));
+                    }
+                }
+            }
+
+            // 3. Loc Vat pham roi tren map (Ground Items)
             com.badlogic.gdx.utils.Array<com.a.c.f.a.b.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> items =
                     com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75;
             if (items != null) {
@@ -5513,23 +5652,49 @@ public final class TinhLinhBot {
                 com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
                         com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
                 if (client != null) {
-                    if ("Vat pham".equals(targetType)) {
+                    if ("Spawn".equals(targetType)) {
+                        // 1. Packet nhat item spawn ngau nhien tren map da duoc xac minh bytecode client
+                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
+                        try {
+                            client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75();
+                        } catch (Throwable ignored) {}
+
+                        // 2. Fallback cac packet pickup bo tro
+                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
+                        client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
+                    } else if ("Special".equals(targetType)) {
+                        // Special Map Entity
+                        try {
+                            com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 seObj =
+                                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75(targetId);
+                            if (seObj != null) {
+                                com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(seObj);
+                                com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
+                            }
+                        } catch (Throwable ignored) {}
+                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
+                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
+                    } else if ("Vat pham".equals(targetType)) {
                         // Ground item pickup: Gui ca 2 phuong thuc da xac minh tren bytecode client
                         client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
                         client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
+                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
                         if (targetTypeId > 0) {
                             client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
                         }
                     } else if ("Thu thap".equals(targetType)) {
                         // Resource node collection packet (Opcode 24)
                         client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
+                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
                         client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
                     } else if ("Vat the".equals(targetType)) {
                         // Map object interact packet
                         client.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75(targetId);
+                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
                         client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
                     } else {
                         // Fallback
+                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
                         client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
                         client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
                         client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
