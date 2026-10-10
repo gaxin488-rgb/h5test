@@ -197,6 +197,9 @@ public final class TinhLinhBot {
     private static volatile int lastScannedBagCount = 0;
     private static volatile long lastScannedBagTotalQty = 0L;
     private static volatile int lastDuiGaCount = 0;
+    private static volatile long lastBagGold = 0L;
+    private static volatile long lastBagGem = 0L;
+    private static volatile long lastBagLocked = 0L;
     public static final List<BagItem> lastScannedBagItems = new CopyOnWriteArrayList<>();
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
@@ -3762,6 +3765,8 @@ public final class TinhLinhBot {
                           .append("}");
                     }
                     sb.append("],");
+                    sb.append("\"gold\":").append(lastBagGold).append(",");
+                    sb.append("\"gem\":").append(lastBagGem).append(",");
                     sb.append("\"dui_ga_count\":").append(lastDuiGaCount).append(",");
                     sb.append("\"bag_item_count\":").append(lastScannedBagCount).append(",");
                     sb.append("\"bag_total_qty\":").append(lastScannedBagTotalQty).append(",");
@@ -3855,6 +3860,9 @@ public final class TinhLinhBot {
                     List<BagItem> items = new ArrayList<>(lastScannedBagItems);
                     StringBuilder sb = new StringBuilder();
                     sb.append("{\"ok\":true,");
+                    sb.append("\"gold\":").append(lastBagGold).append(",");
+                    sb.append("\"gem\":").append(lastBagGem).append(",");
+                    sb.append("\"locked\":").append(lastBagLocked).append(",");
                     sb.append("\"total_slots\":").append(lastScannedBagCount).append(",");
                     sb.append("\"total_qty\":").append(lastScannedBagTotalQty).append(",");
                     sb.append("\"dui_ga_count\":").append(lastDuiGaCount).append(",");
@@ -5241,16 +5249,28 @@ public final class TinhLinhBot {
         return lastScannedBagTotalQty;
     }
 
+    public static long getBagGold() {
+        return lastBagGold;
+    }
+
+    public static long getBagGem() {
+        return lastBagGem;
+    }
+
+    public static long getBagLocked() {
+        return lastBagLocked;
+    }
+
     public static String getBagSummary() {
         if (!wasInGame) {
             return "Chua vao game de doc tui do.";
         }
         if (lastScannedBagItems.isEmpty()) {
-            return "Tui do trong hoac chua co du lieu quet.";
+            return String.format(Locale.ROOT, "Tui do trong (0 o). Vang: %d, Ngoc: %d.", lastBagGold, lastBagGem);
         }
         StringBuilder sb = new StringBuilder();
-        sb.append(String.format(Locale.ROOT, "Tui do: %d o (Tong %d mon, Dui ga: %d). Chi tiet: ",
-                lastScannedBagCount, lastScannedBagTotalQty, lastDuiGaCount));
+        sb.append(String.format(Locale.ROOT, "Tui do: %d o (Tong %d mon, Vang: %d, Ngoc: %d, Dui ga: %d). Chi tiet: ",
+                lastScannedBagCount, lastScannedBagTotalQty, lastBagGold, lastBagGem, lastDuiGaCount));
         int limit = Math.min(10, lastScannedBagItems.size());
         for (int i = 0; i < limit; i++) {
             if (i > 0) sb.append(", ");
@@ -5283,8 +5303,18 @@ public final class TinhLinhBot {
         lastBagScanTime = now;
 
         try {
-            com.badlogic.gdx.utils.Array<com.a.c.c.E.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> bag =
-                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75;
+            com.a.c.c.t.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 inv =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75;
+            if (inv == null) {
+                return;
+            }
+
+            lastBagGold = inv.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+            lastBagGem = inv.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            lastBagLocked = inv.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+
+            com.badlogic.gdx.utils.Array<com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> bag =
+                    inv.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75;
             if (bag == null) {
                 return;
             }
@@ -5295,27 +5325,36 @@ public final class TinhLinhBot {
 
             int size = bag.size;
             for (int i = 0; i < size; i++) {
-                com.a.c.c.E.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 item = bag.get(i);
+                com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 item = bag.get(i);
                 if (item == null) continue;
 
-                long qty = item.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
-                if (qty <= 0) continue;
+                int id = item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                com.a.c.c.j.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 tmpl =
+                        item.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
 
-                com.a.c.c.E.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 tmpl =
-                        item.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
-                if (tmpl == null) continue;
-
-                int id = tmpl.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
-                String name = tmpl.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
-                if (name == null || name.trim().isEmpty()) {
+                String name = "";
+                String desc = "";
+                int type = 0;
+                if (tmpl != null) {
+                    if (tmpl.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
+                        name = tmpl.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75.trim();
+                    }
+                    if (tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null) {
+                        desc = tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.trim();
+                    }
+                    type = tmpl.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75;
+                }
+                if (name.isEmpty()) {
                     name = "Vat pham #" + id;
-                } else {
-                    name = name.trim();
                 }
 
-                int type = tmpl.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
-                String desc = tmpl.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
-                if (desc == null) desc = "";
+                long qty = item.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75;
+                if (qty <= 0) {
+                    qty = item.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
+                }
+                if (qty <= 0) {
+                    qty = 1L;
+                }
 
                 scannedList.add(new BagItem(i, id, name, qty, type, desc));
                 totalQty += qty;
@@ -5339,8 +5378,8 @@ public final class TinhLinhBot {
             // Log ngay lap tuc neu so luong item hoac tong so mon thay doi (nhat duoc do, an do)
             if (prevCount != lastScannedBagCount || prevTotalQty != lastScannedBagTotalQty) {
                 log(String.format(Locale.ROOT,
-                        "[QuetTuiDo] >>> CAP NHAT TUI DO: %d o vat pham (Tong: %d mon, Dui ga: %d) <<<",
-                        lastScannedBagCount, lastScannedBagTotalQty, lastDuiGaCount));
+                        "[QuetTuiDo] >>> CAP NHAT TUI DO: %d o vat pham (Tong: %d mon, Vang: %d, Ngoc: %d, Dui ga: %d) <<<",
+                        lastScannedBagCount, lastScannedBagTotalQty, lastBagGold, lastBagGem, lastDuiGaCount));
             }
 
             // Log dinh ky moi 30 giay trong Loop Bo Sung
@@ -5348,10 +5387,11 @@ public final class TinhLinhBot {
                 lastBagScanLogTime = now;
                 if (lastScannedBagCount > 0) {
                     log(String.format(Locale.ROOT,
-                            "[QuetTuiDo] Tui do hien co %d o vat pham (Tong %d mon, Dui ga: %d): %s",
-                            lastScannedBagCount, lastScannedBagTotalQty, lastDuiGaCount, getBagSummary()));
+                            "[QuetTuiDo] Tui do hien co %d o vat pham (Tong %d mon, Vang: %d, Ngoc: %d, Dui ga: %d): %s",
+                            lastScannedBagCount, lastScannedBagTotalQty, lastBagGold, lastBagGem, lastDuiGaCount, getBagSummary()));
                 } else {
-                    log("[QuetTuiDo] Tui do hien tai dang trong (0 o vat pham).");
+                    log(String.format(Locale.ROOT,
+                            "[QuetTuiDo] Tui do hien tai dang trong (0 o vat pham). Vang: %d, Ngoc: %d.", lastBagGold, lastBagGem));
                 }
             }
         } catch (Throwable t) {
