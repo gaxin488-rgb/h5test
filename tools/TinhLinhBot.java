@@ -5755,25 +5755,10 @@ public final class TinhLinhBot {
         handlePickupTargetMapItems(now, items, false);
     }
 
-    private static void sendSpecialPickupPacket118(
+    private static void interactWithSpecialItem(
             com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client,
             int itemId) throws Exception {
-        com.girlkun.a.a.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 packet =
-                new com.girlkun.a.a.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75(118);
-        packet.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(0);
-        packet.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(itemId);
-
-        Method sender = client.getClass().getDeclaredMethod(
-                "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
-                packet.getClass());
-        sender.setAccessible(true);
-        try {
-            sender.invoke(client, packet);
-        } catch (java.lang.reflect.InvocationTargetException e) {
-            Throwable cause = e.getCause();
-            if (cause instanceof Exception) throw (Exception) cause;
-            throw e;
-        }
+        client.gIrlkun75nEKIIIIiiIliiWhATdOyOuwanTHErehIhIHiHAHaHAHohOHoHEHehEGirlKun75(itemId);
     }
 
     private static void handlePickupTargetMapItems(long now, List<ScannedMushroom> items, boolean force) {
@@ -5880,23 +5865,21 @@ public final class TinhLinhBot {
                 // 2. Gui packet nhat tuong ung theo loai doi tuong
                 com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
                         com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
-                if (client != null) {
-                    // Special map items use opcode 118; Ground drops stay on their separate opcode 52 handler.
-                    sendSpecialPickupPacket118(client, targetId);
-
-                    long sentAt = System.currentTimeMillis();
-                    pendingPickupItems.put(targetId, new PendingPickup(targetName, sentAt, targetMapId, targetZone, inventoryQtyBefore));
-                    ignoredPickupItems.put(targetId, sentAt + 4000L);
-                    lastBagScanTime = 0L;
-                    boolean isMushroom = isMushroomName(targetName);
-                    if (isMushroom) {
-                        log("[NhatItem] Da gui lenh nhat nam huong [" + targetName + " - ID: " + targetId + "]; cho tui do xac nhan.");
-                    } else {
-                        log(String.format(Locale.ROOT,
-                                "[NhatItem] Da gui packet nhat Special [%s - ID: %d] tai (X=%.1f, Y=%.1f); cho tui do xac nhan.",
-                                targetName, targetId, finalTarget.x, finalTarget.y));
-                    }
+                if (client == null) {
+                    log("[NhatItem] Khong the tuong tac item [" + targetName + " - ID: " + targetId + "]: client chua san sang.");
+                    return;
                 }
+
+                // Goi entry point goc cua game de dong goi va gui yeu cau tuong tac Special theo dung protocol.
+                interactWithSpecialItem(client, targetId);
+
+                long sentAt = System.currentTimeMillis();
+                pendingPickupItems.put(targetId, new PendingPickup(targetName, sentAt, targetMapId, targetZone, inventoryQtyBefore));
+                ignoredPickupItems.put(targetId, sentAt + 4000L);
+                lastBagScanTime = 0L;
+                log(String.format(Locale.ROOT,
+                        "[NhatItem] Da goi tuong tac Special [%s - ID: %d]; tui truoc: %d; cho xac nhan.",
+                        targetName, targetId, inventoryQtyBefore));
             } catch (Throwable t) {
                 log("[NhatItem] Loi khi gui goi tin nhat item: " + t.getMessage());
             }
