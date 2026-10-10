@@ -5273,10 +5273,16 @@ public final class TinhLinhBot {
     private static final class PendingPickup {
         private final String name;
         private final long requestedAt;
+        private final int mapId;
+        private final int zone;
+        private final long inventoryQtyBefore;
 
-        private PendingPickup(String name, long requestedAt) {
+        private PendingPickup(String name, long requestedAt, int mapId, int zone, long inventoryQtyBefore) {
             this.name = name;
             this.requestedAt = requestedAt;
+            this.mapId = mapId;
+            this.zone = zone;
+            this.inventoryQtyBefore = inventoryQtyBefore;
         }
     }
 
@@ -5678,20 +5684,16 @@ public final class TinhLinhBot {
 
 
 
-            java.util.Set<Integer> visibleIds = new java.util.HashSet<>();
-            for (ScannedMushroom item : foundList) {
-                visibleIds.add(item.id);
-            }
             for (Map.Entry<Integer, PendingPickup> entry : pendingPickupItems.entrySet()) {
                 int itemId = entry.getKey();
                 PendingPickup pending = entry.getValue();
-                if (now - pending.requestedAt >= 400L && !visibleIds.contains(itemId)
-                        && pendingPickupItems.remove(itemId, pending)) {
-                    pickupAttemptCounts.remove(itemId);
+                boolean sameMapAndZone = pending.mapId == getCurrentMapId() && pending.zone == getCurrentZone();
+                if (!sameMapAndZone && pendingPickupItems.remove(itemId, pending)) {
                     ignoredPickupItems.remove(itemId);
-                    totalPickedItemCount++;
-                    lastPickedItemName = pending.name;
-                    log("[NhatItem] Da xac nhan vat the bien mat sau lenh nhat: " + pending.name + " (ID: " + itemId + ").");
+                    pickupAttemptCounts.remove(itemId);
+                    log("[NhatItem] Huy xac nhan nhat [" + pending.name + " - ID: " + itemId + "] do map/khu da thay doi.");
+                } else if (now - pending.requestedAt >= 12_000L) {
+                    pendingPickupItems.remove(itemId, pending);
                 }
             }
 
@@ -5758,7 +5760,9 @@ public final class TinhLinhBot {
             Map.Entry<Integer, Long> entry = it.next();
             if (now >= entry.getValue()) {
                 it.remove();
-                pickupAttemptCounts.remove(entry.getKey());
+                if (pickupAttemptCounts.getOrDefault(entry.getKey(), 0) > 4) {
+                    pickupAttemptCounts.remove(entry.getKey());
+                }
             }
         }
 
@@ -5834,6 +5838,12 @@ public final class TinhLinhBot {
 
         Gdx.app.postRunnable(() -> {
             try {
+                lastBagScanTime = 0L;
+                scanBag(System.currentTimeMillis(), true, false);
+                long inventoryQtyBefore = getBagItemQuantity(lastScannedBagItems, targetName);
+                int targetMapId = getCurrentMapId();
+                int targetZone = getCurrentZone();
+
                 // 1. Dung van toc nhan vat
                 stopPlayerVelocity(player);
                 if (player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 != null) {
@@ -5869,27 +5879,16 @@ public final class TinhLinhBot {
                         client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
                     }
 
-                    if ("Special".equals(targetType)) {
-                        try {
-                            com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 seObj =
-                                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75(targetId);
-                            if (seObj != null) {
-                                com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(seObj);
-                                com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
-                            }
-                        } catch (Throwable ignored) {}
-                    }
-
                     long sentAt = System.currentTimeMillis();
-                    pendingPickupItems.put(targetId, new PendingPickup(targetName, sentAt));
+                    pendingPickupItems.put(targetId, new PendingPickup(targetName, sentAt, targetMapId, targetZone, inventoryQtyBefore));
                     ignoredPickupItems.put(targetId, sentAt + 4000L);
+                    lastBagScanTime = 0L;
                     boolean isMushroom = isMushroomName(targetName);
                     if (isMushroom) {
-                        log("[NhatItem] Da gui lenh nhat nam huong [" + targetName + " - ID: " + targetId + "]; cho xac nhan vat the roi.");
-                        lastBagScanTime = 0L;
+                        log("[NhatItem] Da gui lenh nhat nam huong [" + targetName + " - ID: " + targetId + "]; cho tui do xac nhan.");
                     } else {
                         log(String.format(Locale.ROOT,
-                                "[NhatItem] Da gui packet nhat/thu thap [%s - Loai: %s, ID: %d, TypeId: %d] tai (X=%.1f, Y=%.1f); cho xac nhan vat the roi.",
+                                "[NhatItem] Da gui packet nhat/thu thap [%s - Loai: %s, ID: %d, TypeId: %d] tai (X=%.1f, Y=%.1f); cho tui do xac nhan.",
                                 targetName, targetType, targetId, targetTypeId, finalTarget.x, finalTarget.y));
                     }
                 }
@@ -5923,6 +5922,18 @@ public final class TinhLinhBot {
         public String toString() {
             return String.format(Locale.ROOT, "[Slot %d] %s x%d (ID: %d)", slot, name, qty, id);
         }
+    }
+
+    private static long getBagItemQuantity(List<BagItem> items, String targetName) {
+        if (items == null || targetName == null || targetName.trim().isEmpty()) return 0L;
+        long quantity = 0L;
+        String normalizedName = targetName.trim();
+        for (BagItem item : items) {
+            if (item != null && normalizedName.equalsIgnoreCase(item.name.trim())) {
+                quantity += Math.max(0L, item.qty);
+            }
+        }
+        return quantity;
     }
 
     public static boolean isAutoBagScanEnabled() {
@@ -6197,6 +6208,35 @@ public final class TinhLinhBot {
                 }
             }
             lastMushroomCountInBag = mushrooms;
+
+            int currentMapId = getCurrentMapId();
+            int currentZone = getCurrentZone();
+            for (Map.Entry<Integer, PendingPickup> entry : pendingPickupItems.entrySet()) {
+                int itemId = entry.getKey();
+                PendingPickup pending = entry.getValue();
+                if (pending.mapId != currentMapId || pending.zone != currentZone) {
+                    if (pendingPickupItems.remove(itemId, pending)) {
+                        ignoredPickupItems.remove(itemId);
+                        pickupAttemptCounts.remove(itemId);
+                        log("[NhatItem] Huy xac nhan nhat [" + pending.name + " - ID: " + itemId + "] do map/khu da thay doi.");
+                    }
+                    continue;
+                }
+                if (now - pending.requestedAt < 400L) continue;
+
+                long quantityAfter = getBagItemQuantity(bagList, pending.name);
+                if (quantityAfter > pending.inventoryQtyBefore && pendingPickupItems.remove(itemId, pending)) {
+                    ignoredPickupItems.remove(itemId);
+                    pickupAttemptCounts.remove(itemId);
+                    totalPickedItemCount++;
+                    lastPickedItemName = pending.name;
+                    log(String.format(Locale.ROOT,
+                            "[NhatItem] Da xac nhan nhat [%s - ID: %d] qua tui do: %d -> %d.",
+                            pending.name, itemId, pending.inventoryQtyBefore, quantityAfter));
+                } else if (now - pending.requestedAt >= 12_000L) {
+                    pendingPickupItems.remove(itemId, pending);
+                }
+            }
 
             int prevCount = lastScannedBagCount;
             long prevTotalQty = lastScannedBagTotalQty;
