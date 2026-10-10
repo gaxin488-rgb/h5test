@@ -6627,7 +6627,6 @@ public final class TinhLinhBot {
             if (elapsed >= 1500L && (pendingZoneTargetId < 0 || curZone == pendingZoneTargetId || elapsed >= 4000L)) {
                 isZoneChanging = false;
                 pendingZoneTargetId = -1;
-                lastZoneChangeTime = now;
                 totalZoneChanges++;
 
                 // Lam sach du lieu vat pham cua khu cu de quet moi ngay tai khu vua den
