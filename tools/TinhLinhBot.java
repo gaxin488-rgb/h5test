@@ -5573,10 +5573,7 @@ public final class TinhLinhBot {
                     name = "Vat pham #" + id;
                 }
 
-                long qty = item.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75;
-                if (qty <= 0) {
-                    qty = item.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
-                }
+                long qty = item.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
                 if (qty <= 0) {
                     qty = 1L;
                 }
