@@ -236,7 +236,7 @@ public final class TinhLinhBot {
 
     // Feature 19: Loop Bo Sung: Tu Dong Doi Khu (Auto Change Zone / Channel)
     private static volatile boolean isAutoChangeZoneEnabled = true;
-    private static volatile long zoneChangeIntervalMs = 25_000L; // 25 giay quet map va doi khu tim nam
+    private static volatile long zoneChangeIntervalMs = 40_000L; // 40 giay moi doi khu
     private static volatile long lastZoneChangeTime = 0L;
     private static volatile long lastZoneConfigCheckTime = 0L;
     private static volatile boolean isZoneChanging = false;
