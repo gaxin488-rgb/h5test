@@ -59,9 +59,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 10: Embedded Local HTTP API Server (Port 7654) for Antigravity MCP Bridge (startHttpApiServer, executeBotCommand, getCharacterName, getCharacterLevel, getPlayerMp, getPlayerMaxMp).
  * Feature 11: Post-Login Automation & Combat Dispatcher (handlePostLoginDispatch, isPostLoginDispatched, resetPostLoginDispatch).
  * Feature 12: Live Combat Engine & EXP Progression Tracking (findNearestLivingMonster, enableGameNativeAutoCombat, executeAttackOnTarget, getPlayerExp, getPlayerMaxExp, getPlayerExpPercent, getCombatDebugInfo).
+ * Feature 13: Loop Bo Sung: Auto Phuc Loi, Qua Online, Diem Danh & Dong Popup (handleWelfareLoop, handleOnlineReward, handleDailyCheckin, dismissRewardPopups).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.3-Feature12-StickyTargeting";
+    private static final String VERSION = "1.9.4-Feature13-WelfareAndOnlineRewards";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -159,6 +160,15 @@ public final class TinhLinhBot {
     private static volatile int lastTargetLoggedId = -1;
     private static final long TARGET_LOCK_TIMEOUT_MS = 25_000L; // 25s timeout neu quai bi ket/khong danh duoc
 
+    // Feature 13: Auto Phuc Loi, Qua Online & Diem Danh Hang Ngay
+    private static volatile boolean isAutoWelfareEnabled = true;
+    private static volatile long lastOnlineRewardCheckTime = 0L;
+    private static volatile long lastOnlineRewardClaimTime = 0L;
+    private static volatile long lastDailyCheckinCheckTime = 0L;
+    private static volatile long lastRewardPopupDismissTime = 0L;
+    private static volatile String lastCheckinDate = "";
+    private static final String CHECKIN_DATE_FILE = "saved_checkin_date.txt";
+
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     private TinhLinhBot() {
@@ -175,6 +185,7 @@ public final class TinhLinhBot {
 
         gameStartTime = System.currentTimeMillis();
         loadSavedAccount();
+        loadCheckinDate();
 
         log("========================================================");
         log(" [TinhLinhBot] He Thong Auto Login & Watchdog Bat Dau!");
@@ -387,6 +398,9 @@ public final class TinhLinhBot {
 
         // --- 6. Giam sat Vi tri & Map hien tai (Location Telemetry) ---
         checkLocationTelemetry(now);
+
+        // --- 6.1. Feature 13: Loop Bo Sung - Auto Phuc Loi, Qua Online, Diem Danh & Dong Popup ---
+        handleWelfareLoop(now);
 
         // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
         handleAppleAndFarmNavigation(now);
@@ -3885,8 +3899,23 @@ public final class TinhLinhBot {
         if ("f7".equals(cmd) || "eat".equals(cmd)) {
             return "Da ghi nhan lenh an do da ngoai (F7).";
         }
-        if ("f8".equals(cmd) || "sync_quest".equals(cmd)) {
-            return "Da gui lenh dong bo nhiem vu hang ngay (F8).";
+        if ("f8".equals(cmd) || "sync_quest".equals(cmd) || "welfare".equals(cmd) || "phucloi".equals(cmd)) {
+            lastOnlineRewardCheckTime = 0L;
+            lastOnlineRewardClaimTime = 0L;
+            lastDailyCheckinCheckTime = 0L;
+            handleWelfareLoop(System.currentTimeMillis());
+            return "Da gui lenh quet va nhan Phuc Loi, Qua Online, Diem Danh (F8). Ngay diem danh: " + getTodayDate();
+        }
+        if ("checkin".equals(cmd) || "diemdanh".equals(cmd)) {
+            lastDailyCheckinCheckTime = 0L;
+            handleDailyCheckin(System.currentTimeMillis());
+            return "Da kiem tra Diem Danh ngay: " + getTodayDate() + " (Da luu: " + lastCheckinDate + ")";
+        }
+        if ("online_gift".equals(cmd) || "quaonline".equals(cmd)) {
+            lastOnlineRewardCheckTime = 0L;
+            lastOnlineRewardClaimTime = 0L;
+            handleOnlineReward(System.currentTimeMillis());
+            return "Da kiem tra va gui packet nhan Thuong Online.";
         }
         if ("toggle_auto".equals(cmd) || "auto".equals(cmd)) {
             boolean next = !isAutoAttackMenuEnabled();
@@ -4273,6 +4302,245 @@ public final class TinhLinhBot {
         } catch (Throwable t) {
             return "Loi: " + t.getMessage();
         }
+    }
+
+    // =========================================================================
+    // FEATURE 13: AUTO PHUC LOI, QUA ONLINE, DIEM DANH & DONG POPUP
+    // =========================================================================
+
+    public static boolean isAutoWelfareEnabled() {
+        return isAutoWelfareEnabled;
+    }
+
+    public static void setAutoWelfareEnabled(boolean enabled) {
+        isAutoWelfareEnabled = enabled;
+    }
+
+    public static String getTodayDate() {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd", Locale.ROOT);
+        return sdf.format(new Date());
+    }
+
+    public static void loadCheckinDate() {
+        try {
+            File file = new File(CHECKIN_DATE_FILE);
+            if (file.exists() && file.isFile()) {
+                try (BufferedReader reader = new BufferedReader(new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8))) {
+                    String line = reader.readLine();
+                    if (line != null && !line.trim().isEmpty()) {
+                        lastCheckinDate = line.trim();
+                        log("[PhucLoi-DiemDanh] Khoi phuc ngay diem danh da luu tu file: " + lastCheckinDate);
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    public static void saveCheckinDate(String date) {
+        try {
+            File file = new File(CHECKIN_DATE_FILE);
+            try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(file, false), StandardCharsets.UTF_8)) {
+                writer.write(date);
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Tu dong kiem tra va nhan Qua Online / Truc Tuyen (Welfare Tabs + Online Notification).
+     */
+    public static void handleOnlineReward(long now) {
+        if (!isAutoWelfareEnabled) return;
+        if (now - lastOnlineRewardCheckTime < 10_000L) return;
+        lastOnlineRewardCheckTime = now;
+        if (now - lastOnlineRewardClaimTime < 5_000L) return;
+
+        try {
+            // 1. Quet cac tab Qua Online trong Welfare Manager
+            com.a.c.c.H.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 welfareMgr =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75;
+            if (welfareMgr != null && welfareMgr.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                for (int i = 0; i < welfareMgr.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.size; i++) {
+                    com.a.c.c.H.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 tab =
+                            welfareMgr.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.get(i);
+                    if (tab == null) continue;
+                    String tabName = tab.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                    if (tabName == null) continue;
+                    String norm = normalizeText(tabName);
+                    boolean isOnlineTab = norm.contains("online") || norm.contains("truc tuyen") || norm.contains("thoi gian");
+                    if (isOnlineTab && tab.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
+                        for (com.a.c.c.H.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 item : tab.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75) {
+                            if (item != null && item.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 == 1) { // 1 = san sang nhan
+                                int tabId = tab.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                                int itemId = item.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                                String itemName = (item.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 != null && !item.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75.trim().isEmpty())
+                                        ? item.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75.trim() : "Qua Online";
+                                item.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 = (byte) 2;
+                                lastOnlineRewardClaimTime = now;
+                                Gdx.app.postRunnable(() -> {
+                                    try {
+                                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                                        if (client != null) {
+                                            client.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75(tabId, itemId);
+                                            log("[PhucLoi-Online] Da gui lenh nhan Qua Online [" + itemName + "] (Tab: " + tabId + ", Item: " + itemId + ") len server!");
+                                        }
+                                    } catch (Throwable t) {
+                                        log("[PhucLoi-Online] Loi gui lenh nhan qua online: " + t.getMessage());
+                                    }
+                                });
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Kiem tra qua notification Online truc tuyen
+            com.a.c.c.o.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 onlineNotify =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIrLKuN75NekllIIlIllLIWHatDoYoUWantHEReHIHIHihahAHAHOHohOhEHehEGirlKUn75;
+            if (onlineNotify != null) {
+                boolean canClaim = onlineNotify.gIRLkun75NEKLILLLilLILWHaTDoyouWAnthEReHiHihIhAHAHaHOHOHOHEHeHeGiRLKuN75
+                        || onlineNotify.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75
+                        || onlineNotify.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;
+                if (canClaim) {
+                    lastOnlineRewardClaimTime = now;
+                    onlineNotify.gIRLkun75NEKLILLLilLILWHaTDoyouWAnthEReHiHihIhAHAHaHOHOHOHEHeHeGiRLKuN75 = false;
+                    onlineNotify.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75 = false;
+                    onlineNotify.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75 = false;
+                    Gdx.app.postRunnable(() -> {
+                        try {
+                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                            if (client != null) {
+                                client.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75();
+                                log("[PhucLoi-Online] Da gui lenh nhan Thuong Online notification len server!");
+                            }
+                        } catch (Throwable t) {
+                            log("[PhucLoi-Online] Loi gui packet nhan notification: " + t.getMessage());
+                        }
+                    });
+                }
+            }
+        } catch (Throwable t) {
+            log("[PhucLoi-Online] Ngoai le kiem tra Qua Online: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Tu dong kiem tra va nhan Qua Diem Danh / Chuyen Can hang ngay.
+     */
+    public static void handleDailyCheckin(long now) {
+        if (!isAutoWelfareEnabled) return;
+        if (now - lastDailyCheckinCheckTime < 20_000L) return;
+        lastDailyCheckinCheckTime = now;
+
+        String today = getTodayDate();
+        if (lastCheckinDate != null && lastCheckinDate.equals(today)) {
+            return; // Hom nay da diem danh roi
+        }
+
+        try {
+            com.a.c.c.H.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 welfareMgr =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girLkUN75nEKIlILlLlLIlWhATdOYOUwanThErEhIHihiHaHAHahOHoHoHehehegirLkUN75;
+            if (welfareMgr != null && welfareMgr.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                for (int i = 0; i < welfareMgr.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.size; i++) {
+                    com.a.c.c.H.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 tab =
+                            welfareMgr.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.get(i);
+                    if (tab == null) continue;
+                    String tabName = tab.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                    if (tabName == null) continue;
+                    String norm = normalizeText(tabName);
+                    boolean isCheckinTab = norm.contains("diem danh") || norm.contains("chuyen can") || norm.contains("checkin");
+                    if (isCheckinTab && tab.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
+                        for (com.a.c.c.H.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 item : tab.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75) {
+                            if (item != null && item.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 == 1) { // 1 = san sang nhan
+                                int tabId = tab.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                                int itemId = item.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                                item.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 = (byte) 2;
+                                lastCheckinDate = today;
+                                saveCheckinDate(today);
+                                Gdx.app.postRunnable(() -> {
+                                    try {
+                                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                                        if (client != null) {
+                                            client.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75(tabId, itemId);
+                                            log("[PhucLoi-DiemDanh] Da gui lenh Diem Danh (Tab: " + tabId + ", Item: " + itemId + ") len server thanh cong!");
+                                        }
+                                    } catch (Throwable t) {
+                                        log("[PhucLoi-DiemDanh] Loi gui lenh Diem Danh: " + t.getMessage());
+                                    }
+                                });
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            log("[PhucLoi-DiemDanh] Ngoai le kiem tra Diem Danh: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Tu dong tat popup phan thuong khi game hien thong bao chuc mung / nhan thuong thanh cong.
+     */
+    public static void dismissRewardPopups(long now) {
+        if (now - lastRewardPopupDismissTime < 2_000L) return;
+        lastRewardPopupDismissTime = now;
+
+        try {
+            List<Actor> dialogs = getActiveDialogRoots();
+            if (dialogs == null || dialogs.isEmpty()) return;
+
+            for (Actor dlg : dialogs) {
+                if (dlg == null || !isActorConsideredVisible(dlg)) continue;
+                String raw = getActorText(dlg);
+                if (raw == null || raw.isEmpty()) continue;
+                String norm = normalizeText(raw);
+
+                // Bo qua neu la dialog kiet suc hoac cay tao (de cac loop khac xu ly)
+                if (norm.contains("kiet suc") || norm.contains("ve lang") || norm.contains("cay tao") || norm.contains("thu hoach")) {
+                    continue;
+                }
+
+                boolean isRewardPopup = norm.contains("nhan thuong thanh cong")
+                        || norm.contains("thuong online")
+                        || norm.contains("diem danh thanh cong")
+                        || norm.contains("da nhan phan thuong")
+                        || (norm.contains("chuc mung") && (norm.contains("nhan duoc") || norm.contains("phan thuong")));
+
+                if (isRewardPopup) {
+                    List<Actor> buttons = new ArrayList<>();
+                    findAllButtons(dlg, buttons, dlg);
+                    boolean clicked = false;
+                    for (Actor btn : buttons) {
+                        String btnText = normalizeText(getActorText(btn));
+                        if (btnText.equals("dong") || btnText.equals("ok") || btnText.equals("xac nhan")
+                                || btnText.equals("nhan") || btnText.contains("tiep tuc") || btnText.equals("tat") || btnText.equals("close")) {
+                            clickActor(btn);
+                            log("[PhucLoi-Popup] Da tu dong tat popup phan thuong! (Nut: '" + getActorText(btn) + "')");
+                            clicked = true;
+                            break;
+                        }
+                    }
+                    if (!clicked && buttons.size() == 1) {
+                        clickActor(buttons.get(0));
+                        log("[PhucLoi-Popup] Da tu dong tat popup phan thuong (1 nut duy nhat)!");
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Bo dieu phoi Loop Bo Sung cho Phuc Loi, Qua Online, Diem Danh & Dong Popup.
+     */
+    public static void handleWelfareLoop(long now) {
+        if (!isAutoWelfareEnabled) return;
+        handleOnlineReward(now);
+        handleDailyCheckin(now);
+        dismissRewardPopups(now);
     }
 
     public static boolean isPlayerInGame() {
