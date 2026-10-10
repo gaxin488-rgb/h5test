@@ -17,7 +17,9 @@ import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.net.InetSocketAddress;
 import java.util.concurrent.Executors;
@@ -61,9 +63,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 12: Live Combat Engine & EXP Progression Tracking (findNearestLivingMonster, enableGameNativeAutoCombat, executeAttackOnTarget, getPlayerExp, getPlayerMaxExp, getPlayerExpPercent, getCombatDebugInfo).
  * Feature 13: Loop Bo Sung: Auto Phuc Loi, Qua Online, Diem Danh & Dong Popup (handleWelfareLoop, handleOnlineReward, handleDailyCheckin, dismissRewardPopups).
  * Feature 14: Loop Bo Sung: Auto To Doi, Tao To Doi & Phe Duyet Thanh Vien (handlePartyAutomation, dismissOrAcceptPartyDialogs, getPartyStatusInfo, isAutoPartyEnabled, setAutoPartyEnabled).
+ * Feature 15: Loop Bo Sung: Quet Map tai Map Kiet Suc (isAtExhaustionMap, handleExhaustionMapScan, getExhaustionMapScanInfo, isAutoMapScanEnabled, setAutoMapScanEnabled).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.5-Feature14-PartyAutomation";
+    private static final String VERSION = "1.9.6-Feature15-ExhaustionMapScanner";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -177,6 +180,15 @@ public final class TinhLinhBot {
     private static volatile long lastPartyToggleApproveTime = 0L;
     private static volatile long lastApplicantApproveTime = 0L;
     private static volatile long lastPartyDialogCheckTime = 0L;
+
+    // Feature 15: Loop Bo Sung: Quet Map tai Map Kiet Suc (Map Scanner & Party Invite)
+    private static volatile boolean isAutoMapScanEnabled = true;
+    private static volatile long lastExhaustionMapScanTime = 0L;
+    private static volatile long lastExhaustionMapScanLogTime = 0L;
+    private static volatile int lastScannedPlayerCount = 0;
+    private static volatile int lastScannedMonsterCount = 0;
+    private static volatile int lastScannedGroundItemCount = 0;
+    private static final Map<Integer, Long> mapPlayerInviteCooldown = new ConcurrentHashMap<>();
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -413,6 +425,9 @@ public final class TinhLinhBot {
 
         // --- 6.2. Feature 14: Loop Bo Sung - Auto To Doi (Tao To Doi & Phe Duyet Thanh Vien) ---
         handlePartyAutomation(now);
+
+        // --- 6.3. Feature 15: Loop Bo Sung - Quet Map tai Map Kiet Suc (Map Scanner & Party Invite) ---
+        handleExhaustionMapScan(now);
 
         // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
         handleAppleAndFarmNavigation(now);
@@ -3716,7 +3731,10 @@ public final class TinhLinhBot {
                     sb.append("\"farm_map\":\"").append(escapeJson(farmMap)).append("\",");
                     sb.append("\"farm_map_id\":").append(farmMapId).append(",");
                     sb.append("\"party\":\"").append(escapeJson(getPartyStatusInfo())).append("\",");
-                    sb.append("\"auto_party_enabled\":").append(isAutoPartyEnabled);
+                    sb.append("\"auto_party_enabled\":").append(isAutoPartyEnabled).append(",");
+                    sb.append("\"map_scan\":\"").append(escapeJson(getExhaustionMapScanInfo())).append("\",");
+                    sb.append("\"is_at_exhaustion_map\":").append(isAtExhaustionMap()).append(",");
+                    sb.append("\"auto_map_scan_enabled\":").append(isAutoMapScanEnabled);
                     sb.append("}");
                     sb.append("}");
                     sendJsonResponse(exchange, 200, sb.toString());
@@ -3961,6 +3979,15 @@ public final class TinhLinhBot {
         if ("toggle_party".equals(cmd)) {
             isAutoPartyEnabled = !isAutoPartyEnabled;
             return "Da doi trang thai Auto Party thanh: " + (isAutoPartyEnabled ? "BAT" : "TAT");
+        }
+        if ("scan_map".equals(cmd) || "quet_map".equals(cmd) || "map_scan".equals(cmd)) {
+            lastExhaustionMapScanTime = 0L;
+            handleExhaustionMapScan(System.currentTimeMillis());
+            return getExhaustionMapScanInfo();
+        }
+        if ("toggle_map_scan".equals(cmd)) {
+            isAutoMapScanEnabled = !isAutoMapScanEnabled;
+            return "Da doi trang thai Quet Map Kiet Suc thanh: " + (isAutoMapScanEnabled ? "BAT" : "TAT");
         }
         if ("toggle_auto".equals(cmd) || "auto".equals(cmd)) {
             boolean next = !isAutoAttackMenuEnabled();
@@ -4780,6 +4807,208 @@ public final class TinhLinhBot {
             }
         } catch (Throwable t) {
             log("[ToDoi] Ngoai le xu ly to doi: " + t.getMessage());
+        }
+    }
+
+    // =========================================================================
+    // FEATURE 15: LOOP BO SUNG - QUET MAP TAI MAP KIET SUC
+    // =========================================================================
+
+    public static boolean isAutoMapScanEnabled() {
+        return isAutoMapScanEnabled;
+    }
+
+    public static void setAutoMapScanEnabled(boolean enabled) {
+        isAutoMapScanEnabled = enabled;
+    }
+
+    /**
+     * Kiem tra nhan vat co dang dung dung tai Map kiet suc (bai train quai) khong.
+     * Tra ve false neu dang o Lang, Nong trai hoac dang tren duong quay lai.
+     */
+    public static boolean isAtExhaustionMap() {
+        if (!isPlayerInGame()) return false;
+        if (isReturningToExhaustion()) return false;
+
+        String curMap = getCurrentMapName();
+        int curMapId = getCurrentMapId();
+        if (curMap == null || curMap.trim().isEmpty()) return false;
+
+        String norm = normalizeText(curMap);
+        boolean isVillage = (curMapId == 0 || curMapId == 2) || norm.contains("lang") || norm.contains("eldarah");
+        boolean isFarm = (curMapId == 5) || norm.contains("nong");
+        if (isVillage || isFarm) {
+            return false;
+        }
+
+        SavedCoordinate sc = getSavedExhaustionCoordinate();
+        if (sc != null && sc.mapId >= 0) {
+            if (curMapId == sc.mapId) return true;
+            if (sc.mapName != null && !sc.mapName.isEmpty()) {
+                String scNorm = normalizeText(sc.mapName);
+                if (norm.contains(scNorm) || scNorm.contains(norm)) return true;
+            }
+        }
+
+        return curMapId > 2;
+    }
+
+    public static String getOtherPlayerName(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 p) {
+        if (p == null) return "";
+        try {
+            String name = p.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75();
+            if (name != null && !name.trim().isEmpty()) {
+                return name.trim();
+            }
+        } catch (Throwable ignored) {}
+        return "ID:" + p.a_();
+    }
+
+    public static String getExhaustionMapScanInfo() {
+        boolean atExhaustion = isAtExhaustionMap();
+        String map = getCurrentMapName();
+        int mapId = getCurrentMapId();
+        if (!atExhaustion) {
+            return "Khong o Map kiet suc (Hien tai: " + map + " - ID: " + mapId + ")";
+        }
+        return "Map kiet suc: [" + map + " - ID: " + mapId + "] | Nguoi choi: "
+                + lastScannedPlayerCount + " | Quai song: " + lastScannedMonsterCount
+                + " | Vat pham: " + lastScannedGroundItemCount;
+    }
+
+    /**
+     * Ham quet map trong Loop Bo Sung:
+     * - RANG BUOC COT LOI: Chi hoat dong khi nhan vat o dung Map kiet suc (isAtExhaustionMap() == true).
+     * - Thong ke so luong nguoi choi, quai vat dang song va vat pham tren map.
+     * - Tu dong moi nguoi choi tren map vao to doi neu doi chua du 5 nguoi va nhan vat la Truong Nhom.
+     */
+    public static void handleExhaustionMapScan(long now) {
+        if (!isAutoMapScanEnabled) return;
+        if (!isPlayerInGame()) return;
+
+        // DIEU KIEN COT LOI: Chi hoat dong o Map kiet suc
+        if (!isAtExhaustionMap()) return;
+
+        if (now - lastExhaustionMapScanTime < 2_500L) return;
+        lastExhaustionMapScanTime = now;
+
+        try {
+            // 1. Thong ke Nguoi choi tren Map
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> players =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.giRLKUN75NEKlLLLIiIIIIWHatdoYoUWanThErEhIhIhIHAHAHAHohOHoheheheGirlkuN75;
+            lastScannedPlayerCount = (players != null) ? players.size : 0;
+
+            // 2. Thong ke Quai vat dang song tren Map
+            int livingMonsters = 0;
+            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> monsters =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75;
+            if (monsters != null) {
+                for (int i = 0; i < monsters.size; i++) {
+                    com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m = monsters.get(i);
+                    if (m != null && !isMonsterDead(m)) {
+                        livingMonsters++;
+                    }
+                }
+            }
+            lastScannedMonsterCount = livingMonsters;
+
+            // 3. Thong ke Vat pham roi
+            int groundItems = 0;
+            try {
+                com.badlogic.gdx.utils.Array<?> items =
+                        com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75;
+                if (items != null) groundItems = items.size;
+            } catch (Throwable ignored) {}
+            lastScannedGroundItemCount = groundItems;
+
+            // 4. Log tong quan dinh ky moi 25s tai map kiet suc
+            if (now - lastExhaustionMapScanLogTime > 25_000L) {
+                lastExhaustionMapScanLogTime = now;
+                log("[QuetMap] Map kiet suc [" + getCurrentMapName() + " - ID: " + getCurrentMapId() + "]: "
+                        + lastScannedPlayerCount + " nguoi choi tren map, "
+                        + lastScannedMonsterCount + " quai dang song, "
+                        + lastScannedGroundItemCount + " vat pham roi.");
+            }
+
+            // 5. Quet va moi nguoi choi vao to doi neu doi chua day (< 5) va la Truong Nhom
+            com.a.c.c.F.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 party =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;
+            if (party != null && players != null && players.size > 0) {
+                int memberCount = (party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null)
+                        ? party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.size : 1;
+
+                if (memberCount < 5) {
+                    boolean isLeader = true;
+                    int myPlayerId = -1;
+                    try {
+                        com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                                com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+                        if (player != null) {
+                            myPlayerId = player.a_();
+                            Object role = party.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(myPlayerId);
+                            if (role instanceof Enum) {
+                                isLeader = (((Enum<?>) role).ordinal() == 0);
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+
+                    if (isLeader) {
+                        for (int i = 0; i < players.size; i++) {
+                            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 other = players.get(i);
+                            if (other == null) continue;
+                            int otherId = other.a_();
+                            if (otherId == myPlayerId) continue;
+
+                            // Bo qua nguoi choi da co doi
+                            if (other.gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75()) {
+                                continue;
+                            }
+
+                            // Bo qua nguoi choi da co trong to doi cua minh
+                            boolean inParty = false;
+                            if (party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null) {
+                                for (int j = 0; j < party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.size; j++) {
+                                    com.a.c.c.F.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 mem =
+                                            party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.get(j);
+                                    if (mem != null && mem.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == otherId) {
+                                        inParty = true;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (inParty) continue;
+
+                            // Kiem tra cooldown moi (10s/nguoi)
+                            Long lastInvite = mapPlayerInviteCooldown.get(otherId);
+                            if (lastInvite != null && now - lastInvite < 10_000L) {
+                                continue;
+                            }
+
+                            mapPlayerInviteCooldown.put(otherId, now);
+                            final int targetId = otherId;
+                            final String targetName = getOtherPlayerName(other);
+                            final int curDoiSize = memberCount;
+
+                            Gdx.app.postRunnable(() -> {
+                                try {
+                                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                                    if (client != null) {
+                                        client.GirLkUn75NEkLIIiiililIwHAtDoYoUwantheREHIhIHiHahAhahoHOhOhEHeHeGiRLKuN75(targetId);
+                                        log("[QuetMap-ToDoi] Phat hien nguoi choi [" + targetName + "] (ID=" + targetId
+                                                + ") tren map kiet suc -> Da gui loi moi vao to doi (" + curDoiSize + "/5)!");
+                                    }
+                                } catch (Throwable t) {
+                                    log("[QuetMap] Loi gui loi moi to doi: " + t.getMessage());
+                                }
+                            });
+                            break; // Moi 1 nguoi moi chu ky
+                        }
+                    }
+                }
+            }
+        } catch (Throwable t) {
+            log("[QuetMap] Ngoai le quet map kiet suc: " + t.getMessage());
         }
     }
 
