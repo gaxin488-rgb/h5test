@@ -109,6 +109,7 @@ public final class TinhLinhBot {
     private static final String EXHAUSTION_STATE_FILE = "tinhlinh-exhaustion-state.properties";
     private static final String EXHAUSTION_COORD_FILE = "saved_exhaustion_coord.txt";
     private static final String LAST_FARM_MAP_FILE = "last_farm_map.txt";
+    private static final String MUSHROOM_USE_STATE_FILE = "mushroom_use_state.txt";
     private static final int DEFAULT_FARM_MAP_ID = 7;
     private static final String DEFAULT_FARM_MAP_NAME = "Rừng Cổ Mộc";
 
@@ -228,8 +229,8 @@ public final class TinhLinhBot {
     public static final List<BagItem> lastScannedBoxItems = new CopyOnWriteArrayList<>();
     private static volatile int lastScannedBoxCount = 0;
 
-    // Feature 17: Tu dong su dung vat pham 'Nam huong' trong tui do (Tam tat de bao toan so luong x1 nhat duoc)
-    private static volatile boolean isAutoUseMushroomEnabled = false;
+    // Feature 17: Tu dong dung Nam huong khi co item; giu moc 30 phut qua ca restart.
+    private static volatile boolean isAutoUseMushroomEnabled = true;
     private static final AtomicBoolean mushroomUsePending = new AtomicBoolean(false);
     private static volatile long lastMushroomUseTime = 0L;
     private static volatile long mushroomUseIntervalMs = 1_800_000L; // 30 phut (sau khi test nhanh 30s thanh cong)
@@ -264,6 +265,7 @@ public final class TinhLinhBot {
         gameStartTime = System.currentTimeMillis();
         loadSavedAccount();
         loadCheckinDate();
+        loadLastMushroomUseTime();
 
         log("========================================================");
         log(" [TinhLinhBot] He Thong Auto Login & Watchdog Bat Dau!");
@@ -6295,6 +6297,40 @@ public final class TinhLinhBot {
         return useMushroom(now, true, false);
     }
 
+    private static void loadLastMushroomUseTime() {
+        File stateFile = new File(MUSHROOM_USE_STATE_FILE);
+        if (!stateFile.isFile()) {
+            return;
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                new FileInputStream(stateFile), StandardCharsets.UTF_8))) {
+            String value = reader.readLine();
+            if (value != null) {
+                long savedTime = Long.parseLong(value.trim());
+                if (savedTime > 0L) {
+                    lastMushroomUseTime = savedTime;
+                    long remainingMs = mushroomUseIntervalMs - (System.currentTimeMillis() - savedTime);
+                    log(remainingMs > 0L
+                            ? String.format(Locale.ROOT, "[DungNamHuong] Khoi phuc moc dung truoc; con %ds trong chu ky 30 phut.", (remainingMs + 999L) / 1000L)
+                            : "[DungNamHuong] Chu ky 30 phut da het; san sang dung khi tui co Nam huong.");
+                }
+            }
+        } catch (Throwable t) {
+            log("[DungNamHuong] Khong doc duoc moc su dung truoc: " + t.getMessage());
+        }
+    }
+
+    private static void persistLastMushroomUseTime(long usedAt) {
+        File stateFile = new File(MUSHROOM_USE_STATE_FILE);
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(stateFile, false), StandardCharsets.UTF_8)) {
+            writer.write(Long.toString(usedAt));
+            writer.write(System.lineSeparator());
+        } catch (Throwable t) {
+            log("[DungNamHuong] Khong luu duoc moc su dung: " + t.getMessage());
+        }
+    }
+
     private static String useMushroomNow(long now) {
         return useMushroom(now, false, true);
     }
@@ -6352,6 +6388,7 @@ public final class TinhLinhBot {
 
                 client.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75(targetId);
                 lastMushroomUseTime = System.currentTimeMillis();
+                persistLastMushroomUseTime(lastMushroomUseTime);
                 lastMushroomUseResult = String.format(Locale.ROOT,
                         "Da gui packet dung Nam huong [%s - ID: %d]. Chu ky: %ds.",
                         targetName, targetId, mushroomUseIntervalMs / 1000L);
