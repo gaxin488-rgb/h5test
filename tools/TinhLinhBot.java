@@ -60,9 +60,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 11: Post-Login Automation & Combat Dispatcher (handlePostLoginDispatch, isPostLoginDispatched, resetPostLoginDispatch).
  * Feature 12: Live Combat Engine & EXP Progression Tracking (findNearestLivingMonster, enableGameNativeAutoCombat, executeAttackOnTarget, getPlayerExp, getPlayerMaxExp, getPlayerExpPercent, getCombatDebugInfo).
  * Feature 13: Loop Bo Sung: Auto Phuc Loi, Qua Online, Diem Danh & Dong Popup (handleWelfareLoop, handleOnlineReward, handleDailyCheckin, dismissRewardPopups).
+ * Feature 14: Loop Bo Sung: Auto To Doi, Tao To Doi & Phe Duyet Thanh Vien (handlePartyAutomation, dismissOrAcceptPartyDialogs, getPartyStatusInfo, isAutoPartyEnabled, setAutoPartyEnabled).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.4-Feature13-WelfareAndOnlineRewards";
+    private static final String VERSION = "1.9.5-Feature14-PartyAutomation";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -168,6 +169,14 @@ public final class TinhLinhBot {
     private static volatile long lastRewardPopupDismissTime = 0L;
     private static volatile String lastCheckinDate = "";
     private static final String CHECKIN_DATE_FILE = "saved_checkin_date.txt";
+
+    // Feature 14: Loop Bo Sung: Auto To Doi (Tao To Doi & Phe Duyet Thanh Vien)
+    private static volatile boolean isAutoPartyEnabled = true;
+    private static volatile long lastPartyScanTime = 0L;
+    private static volatile long lastPartyCreateTime = 0L;
+    private static volatile long lastPartyToggleApproveTime = 0L;
+    private static volatile long lastApplicantApproveTime = 0L;
+    private static volatile long lastPartyDialogCheckTime = 0L;
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -401,6 +410,9 @@ public final class TinhLinhBot {
 
         // --- 6.1. Feature 13: Loop Bo Sung - Auto Phuc Loi, Qua Online, Diem Danh & Dong Popup ---
         handleWelfareLoop(now);
+
+        // --- 6.2. Feature 14: Loop Bo Sung - Auto To Doi (Tao To Doi & Phe Duyet Thanh Vien) ---
+        handlePartyAutomation(now);
 
         // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
         handleAppleAndFarmNavigation(now);
@@ -3702,7 +3714,9 @@ public final class TinhLinhBot {
                     sb.append("\"auto_attack_menu_enabled\":").append(isAutoAttackMenuEnabled()).append(",");
                     sb.append("\"is_exhausted\":").append(exhausted).append(",");
                     sb.append("\"farm_map\":\"").append(escapeJson(farmMap)).append("\",");
-                    sb.append("\"farm_map_id\":").append(farmMapId);
+                    sb.append("\"farm_map_id\":").append(farmMapId).append(",");
+                    sb.append("\"party\":\"").append(escapeJson(getPartyStatusInfo())).append("\",");
+                    sb.append("\"auto_party_enabled\":").append(isAutoPartyEnabled);
                     sb.append("}");
                     sb.append("}");
                     sendJsonResponse(exchange, 200, sb.toString());
@@ -3916,6 +3930,37 @@ public final class TinhLinhBot {
             lastOnlineRewardClaimTime = 0L;
             handleOnlineReward(System.currentTimeMillis());
             return "Da kiem tra va gui packet nhan Thuong Online.";
+        }
+        if ("party".equals(cmd) || "todoi".equals(cmd) || "party_status".equals(cmd)) {
+            lastPartyScanTime = 0L;
+            handlePartyAutomation(System.currentTimeMillis());
+            return "Trang thai: " + getPartyStatusInfo();
+        }
+        if ("create_party".equals(cmd) || "taotodoi".equals(cmd)) {
+            lastPartyCreateTime = 0L;
+            Gdx.app.postRunnable(() -> {
+                try {
+                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                    if (client != null) {
+                        client.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75();
+                        log("[ToDoi] Da gui packet Tao To Doi theo yeu cau API.");
+                    }
+                } catch (Throwable t) {
+                    log("[ToDoi] Loi tao to doi: " + t.getMessage());
+                }
+            });
+            return "Da gui lenh tao to doi len server.";
+        }
+        if ("approve_party".equals(cmd) || "duyet_todoi".equals(cmd)) {
+            lastPartyToggleApproveTime = 0L;
+            lastApplicantApproveTime = 0L;
+            handlePartyAutomation(System.currentTimeMillis());
+            return "Da gui lenh kich hoat tu dong duyet va phe duyet thanh vien to doi.";
+        }
+        if ("toggle_party".equals(cmd)) {
+            isAutoPartyEnabled = !isAutoPartyEnabled;
+            return "Da doi trang thai Auto Party thanh: " + (isAutoPartyEnabled ? "BAT" : "TAT");
         }
         if ("toggle_auto".equals(cmd) || "auto".equals(cmd)) {
             boolean next = !isAutoAttackMenuEnabled();
@@ -4541,6 +4586,201 @@ public final class TinhLinhBot {
         handleOnlineReward(now);
         handleDailyCheckin(now);
         dismissRewardPopups(now);
+    }
+
+    // =========================================================================
+    // FEATURE 14: LOOP BO SUNG - AUTO TO DOI (TAO TO DOI & PHE DUYET THANH VIEN)
+    // =========================================================================
+
+    public static boolean isAutoPartyEnabled() {
+        return isAutoPartyEnabled;
+    }
+
+    public static void setAutoPartyEnabled(boolean enabled) {
+        isAutoPartyEnabled = enabled;
+    }
+
+    public static String getPartyStatusInfo() {
+        try {
+            com.a.c.c.F.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 party =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;
+            if (party == null) {
+                return "Chua co to doi (AutoParty: " + (isAutoPartyEnabled ? "BAT" : "TAT") + ")";
+            }
+            int memberCount = (party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null)
+                    ? party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.size : 0;
+            int appCount = (party.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75 != null)
+                    ? party.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75.size : 0;
+            boolean autoApprove = party.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75;
+            StringBuilder sb = new StringBuilder();
+            sb.append("To doi ID: ").append(party.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75)
+              .append(" [").append(party.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null ? party.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 : "")
+              .append("] | TV: ").append(memberCount).append("/5")
+              .append(" | Cho duyet: ").append(appCount)
+              .append(" | Tu dong duyet: ").append(autoApprove ? "BAT" : "TAT");
+            if (memberCount > 0 && party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null) {
+                sb.append(" | Danh sach: [");
+                for (int i = 0; i < memberCount; i++) {
+                    com.a.c.c.F.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 m =
+                            party.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.get(i);
+                    if (m != null) {
+                        if (i > 0) sb.append(", ");
+                        sb.append(m.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75);
+                    }
+                }
+                sb.append("]");
+            }
+            return sb.toString();
+        } catch (Throwable t) {
+            return "Loi doc to doi: " + t.getMessage();
+        }
+    }
+
+    /**
+     * Tu dong dong hoac xac nhan cac popup / thong bao lien quan den to doi.
+     */
+    public static void dismissOrAcceptPartyDialogs(long now) {
+        if (now - lastPartyDialogCheckTime < 2_000L) return;
+        lastPartyDialogCheckTime = now;
+
+        try {
+            List<Actor> dialogs = getActiveDialogRoots();
+            if (dialogs == null || dialogs.isEmpty()) return;
+
+            for (Actor dlg : dialogs) {
+                if (dlg == null || !isActorConsideredVisible(dlg)) continue;
+                String raw = getActorText(dlg);
+                if (raw == null || raw.isEmpty()) continue;
+                String norm = normalizeText(raw);
+
+                // Bo qua cac dialog quan trong khac cua bot
+                if (norm.contains("kiet suc") || norm.contains("ve lang") || norm.contains("cay tao") || norm.contains("thu hoach")) {
+                    continue;
+                }
+
+                boolean isPartyPopup = norm.contains("to doi") || norm.contains("nhom") || norm.contains("gia nhap");
+                if (isPartyPopup) {
+                    List<Actor> buttons = new ArrayList<>();
+                    findAllButtons(dlg, buttons, dlg);
+                    if (buttons.size() == 1) {
+                        clickActor(buttons.get(0));
+                        log("[ToDoi-Popup] Da dong popup thong bao to doi: '" + raw.trim() + "'");
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Bo xu ly Tu Dong To Doi:
+     * 1. Neu chua co to doi -> Gui goi tin tao to doi.
+     * 2. Neu da co to doi va la Truong Nhom:
+     *    - Neu chua bat Tu dong phe duyet -> Gui lenh bat tu dong phe duyet len server.
+     *    - Neu co danh sach xin vao (applicants) -> Duyet tung thanh vien.
+     */
+    public static void handlePartyAutomation(long now) {
+        if (!isAutoPartyEnabled) return;
+        if (!isPlayerInGame()) return;
+
+        dismissOrAcceptPartyDialogs(now);
+
+        if (now - lastPartyScanTime < 1_500L) return;
+        lastPartyScanTime = now;
+
+        try {
+            com.a.c.c.F.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 party =
+                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;
+
+            // 1. CHUA CO TO DOI -> Tu dong tao to doi moi
+            if (party == null) {
+                if (now - lastPartyCreateTime > 5_000L) {
+                    lastPartyCreateTime = now;
+                    Gdx.app.postRunnable(() -> {
+                        try {
+                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                            if (client != null) {
+                                client.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75();
+                                log("[ToDoi] Nhan vat chua co to doi -> Da TU DONG gui goi tin TAO TO DOI len server!");
+                            }
+                        } catch (Throwable t) {
+                            log("[ToDoi] Loi tao to doi: " + t.getMessage());
+                        }
+                    });
+                }
+                return;
+            }
+
+            // 2. DA CO TO DOI -> Kiem tra vai tro Truong Nhom
+            boolean isLeader = true;
+            try {
+                com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                        com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+                if (player != null) {
+                    int myCharId = player.a_();
+                    Object role = party.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(myCharId);
+                    if (role instanceof Enum) {
+                        isLeader = (((Enum<?>) role).ordinal() == 0);
+                    }
+                }
+            } catch (Throwable ignored) {}
+
+            if (!isLeader) {
+                return; // Chi truong nhom moi co quyen duyet va bat tu dong duyet
+            }
+
+            // 2.1. Tu dong bat 'Tu dong phe duyet thanh vien' neu server dang tat
+            if (!party.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75 && now - lastPartyToggleApproveTime > 3_000L) {
+                lastPartyToggleApproveTime = now;
+                Gdx.app.postRunnable(() -> {
+                    try {
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                        if (client != null) {
+                            client.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75();
+                            log("[ToDoi] To doi chua bat 'Tu dong phe duyet' -> Da gui lenh BAT 'Tu dong phe duyet' len server!");
+                        }
+                    } catch (Throwable t) {
+                        log("[ToDoi] Loi gui goi bat tu dong phe duyet: " + t.getMessage());
+                    }
+                });
+            }
+
+            // 2.2. Tu dong phe duyet danh sach nguoi cho duyet (applicants)
+            com.badlogic.gdx.utils.Array<com.a.c.c.F.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> applicants =
+                    party.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75;
+            if (applicants != null && applicants.size > 0 && now - lastApplicantApproveTime > 1_500L) {
+                lastApplicantApproveTime = now;
+                Gdx.app.postRunnable(() -> {
+                    try {
+                        com.a.c.c.F.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 curParty =
+                                com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;
+                        if (curParty == null) return;
+                        com.badlogic.gdx.utils.Array<com.a.c.c.F.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> curApplicants =
+                                curParty.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75;
+                        if (curApplicants == null || curApplicants.size <= 0) return;
+
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                        if (client != null) {
+                            for (int i = 0; i < curApplicants.size; i++) {
+                                com.a.c.c.F.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 app = curApplicants.get(i);
+                                if (app == null) continue;
+                                int appId = app.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                                String appName = (app.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 != null)
+                                        ? app.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.trim() : ("ID:" + appId);
+                                client.GiRlKun75neklIiLliILliWHatdOyOUwANThEREHihiHIHAHAhahoHOhOhEHeHeGiRlkUN75(appId);
+                                log("[ToDoi] Da PHE DUYET thanh vien: [" + appName + "] (ID: " + appId + ") vao to doi!");
+                            }
+                        }
+                    } catch (Throwable t) {
+                        log("[ToDoi] Loi phe duyet thanh vien: " + t.getMessage());
+                    }
+                });
+            }
+        } catch (Throwable t) {
+            log("[ToDoi] Ngoai le xu ly to doi: " + t.getMessage());
+        }
     }
 
     public static boolean isPlayerInGame() {
