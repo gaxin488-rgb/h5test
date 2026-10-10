@@ -40,6 +40,7 @@ import com.badlogic.gdx.scenes.scene2d.InputEvent;
 import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.scenes.scene2d.ui.Button;
 import com.badlogic.gdx.scenes.scene2d.ui.Label;
+import com.badlogic.gdx.scenes.scene2d.ui.Table;
 import com.badlogic.gdx.scenes.scene2d.ui.TextButton;
 import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.utils.Array;
@@ -68,9 +69,10 @@ import org.lwjgl.glfw.GLFW;
  * Feature 16: Loop Bo Sung: Quet Tui Do Nhan Vat (handleBagScan, getBagItems, getBagSummary, lastScannedBagItems, isAutoBagScanEnabled, setAutoBagScanEnabled).
  * Feature 17: Loop Bo Sung: Tu Dong Dung Vat Pham 'Nam Huong' Trong Tui Do (handleAutoUseMushroom, isAutoUseMushroomEnabled, setMushroomUseIntervalMs).
  * Feature 18: Loop Bo Sung: Tu Dong Nhat Item Spawn Random Tren Map Kiet Suc (handlePickupTargetMapItems, isAutoPickupMapItemsEnabled, setAutoPickupMapItemsEnabled, getTotalPickedItemCount, getLastPickedItemName).
+ * Feature 19: Loop Bo Sung: Tu Dong Doi Khu / Channel Tren Map Kiet Suc (handleAutoZoneLoop, triggerNextZoneChange, isAutoChangeZoneEnabled, setAutoChangeZoneEnabled, setZoneChangeIntervalMs, getAvailableZoneIds).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.11-Feature18-SpawnMapItems";
+    private static final String VERSION = "1.9.12-Feature19-AutoChangeZone";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -223,6 +225,16 @@ public final class TinhLinhBot {
     private static volatile long mushroomUseIntervalMs = 1_800_000L; // 30 phut (sau khi test nhanh 30s thanh cong)
     private static volatile int lastMushroomCountInBag = 0;
     private static volatile String lastMushroomUseResult = "";
+
+    // Feature 19: Loop Bo Sung: Tu Dong Doi Khu (Auto Change Zone / Channel)
+    private static volatile boolean isAutoChangeZoneEnabled = true;
+    private static volatile long zoneChangeIntervalMs = 40_000L; // Mac dinh 40 giay theo chuan codebase
+    private static volatile long lastZoneChangeTime = 0L;
+    private static volatile long lastZoneConfigCheckTime = 0L;
+    private static volatile boolean isZoneChanging = false;
+    private static volatile long zoneChangeStartTime = 0L;
+    private static volatile int pendingZoneTargetId = -1;
+    private static volatile int totalZoneChanges = 0;
 
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
@@ -465,6 +477,9 @@ public final class TinhLinhBot {
 
         // --- 6.4. Feature 16: Loop Bo Sung - Quet Tui Do Nhan Vat (Character Bag Scanner) ---
         handleBagScan(now);
+
+        // --- 6.5. Feature 19: Loop Bo Sung - Tu Dong Doi Khu tai Map Kiet Suc (Auto Change Zone / Channel) ---
+        handleAutoZoneLoop(now);
 
         // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
         handleAppleAndFarmNavigation(now);
@@ -3357,6 +3372,14 @@ public final class TinhLinhBot {
             return;
         }
 
+        // Feature 19: Uu tien tien trinh doi khu dang dien ra
+        if (isZoneChanging) {
+            if (autoAttackAttemptPending) {
+                cancelAutoAttackAttempt("Dang trong tien trinh doi sang khu moi.");
+            }
+            return;
+        }
+
         int curMapId = getCurrentMapId();
         String curMap = getCurrentMapName();
         String normMap = normalizeText(curMap);
@@ -3809,7 +3832,11 @@ public final class TinhLinhBot {
                     sb.append("\"mushroom_in_bag\":").append(lastMushroomCountInBag).append(",");
                     sb.append("\"auto_use_mushroom_enabled\":").append(isAutoUseMushroomEnabled).append(",");
                     sb.append("\"mushroom_use_interval_ms\":").append(mushroomUseIntervalMs).append(",");
-                    sb.append("\"last_mushroom_use_time\":").append(lastMushroomUseTime);
+                    sb.append("\"last_mushroom_use_time\":").append(lastMushroomUseTime).append(",");
+                    sb.append("\"auto_zone\":").append(isAutoChangeZoneEnabled).append(",");
+                    sb.append("\"zone_interval_s\":").append(zoneChangeIntervalMs / 1000L).append(",");
+                    sb.append("\"is_zone_changing\":").append(isZoneChanging).append(",");
+                    sb.append("\"total_zone_changes\":").append(totalZoneChanges);
                     sb.append("}");
                     sb.append("}");
                     sendJsonResponse(exchange, 200, sb.toString());
@@ -4185,6 +4212,39 @@ public final class TinhLinhBot {
             isAutoUseMushroomEnabled = !isAutoUseMushroomEnabled;
             return "Da doi trang thai Tu dong dung Nam huong thanh: " + (isAutoUseMushroomEnabled ? "BAT" : "TAT");
         }
+        if ("auto_zone".equals(cmd) || "toggle_auto_zone".equals(cmd) || "f9".equals(cmd) || "toggle_doi_khu".equals(cmd)) {
+            isAutoChangeZoneEnabled = !isAutoChangeZoneEnabled;
+            lastZoneChangeTime = System.currentTimeMillis();
+            return "Da doi trang thai Tu dong Chuyen Khu (F9) thanh: " + (isAutoChangeZoneEnabled ? "BAT (" + (zoneChangeIntervalMs / 1000L) + "s/lan)" : "TAT");
+        }
+        if ("auto_zone_on".equals(cmd) || "bat_doi_khu".equals(cmd)) {
+            isAutoChangeZoneEnabled = true;
+            lastZoneChangeTime = System.currentTimeMillis();
+            return "Da BAT Tu dong Chuyen Khu (" + (zoneChangeIntervalMs / 1000L) + "s/lan).";
+        }
+        if ("auto_zone_off".equals(cmd) || "tat_doi_khu".equals(cmd)) {
+            isAutoChangeZoneEnabled = false;
+            return "Da TAT Tu dong Chuyen Khu.";
+        }
+        if ("next_zone".equals(cmd) || "doi_khu".equals(cmd) || "chuyen_khu".equals(cmd)) {
+            int n = triggerNextZoneChange("Lenh_API");
+            return "Da gui lenh chuyen sang Khu: " + n;
+        }
+        if (cmd.startsWith("set_zone_interval_") || cmd.startsWith("zone_interval_")) {
+            try {
+                String numStr = cmd.replaceAll("[^0-9]", "");
+                long s = Long.parseLong(numStr);
+                if (s >= 5L) {
+                    zoneChangeIntervalMs = s * 1000L;
+                    return "Da set chu ky Chuyen Khu thanh " + s + " giay.";
+                }
+            } catch (Throwable ignored) {}
+        }
+        if ("zone_list".equals(cmd) || "danh_sach_khu".equals(cmd)) {
+            requestZoneList();
+            List<Integer> zones = getAvailableZoneIds();
+            return "Khu hien tai: " + getCurrentZone() + " | Danh sach khu kha dung: " + (zones.isEmpty() ? "0..14 (Mac dinh)" : zones.toString());
+        }
         if ("toggle_auto".equals(cmd) || "auto".equals(cmd)) {
             boolean next = !isAutoAttackMenuEnabled();
             setAutoAttackMenuEnabled(next);
@@ -4229,7 +4289,7 @@ public final class TinhLinhBot {
             handlePostLoginDispatch(getCurrentMapId(), getCurrentMapName(), getPlayerPosition());
             return "Da kich hoat lai quy trinh Post-Login Dispatch (Auto Attack / Quay lai map kiet suc).";
         }
-        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, checkin, online_gift, party, create_party, approve_party, toggle_party, scan_map, toggle_map_scan, scan_bag, quet_tui, bag, toggle_bag_scan, use_mushroom, dung_nam, set_mushroom_interval_30s, set_mushroom_interval_30m, toggle_use_mushroom, toggle_auto, return_village, goto_farm, set_farm, post_login, dispatch, status, debug_combat, monsters.";
+        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, checkin, online_gift, party, create_party, approve_party, toggle_party, scan_map, toggle_map_scan, scan_bag, quet_tui, bag, toggle_bag_scan, use_mushroom, dung_nam, set_mushroom_interval_30s, set_mushroom_interval_30m, toggle_use_mushroom, auto_zone, toggle_auto_zone, f9, next_zone, doi_khu, set_zone_interval_40, zone_list, toggle_auto, return_village, goto_farm, set_farm, post_login, dispatch, status, debug_combat, monsters.";
     }
 
     public static String getCharacterName() {
@@ -6121,6 +6181,286 @@ public final class TinhLinhBot {
                 "Da gui lenh su dung Nam huong (ID: %d, SL: %d). Chu ky: %ds.",
                 targetId, curQty, mushroomUseIntervalMs / 1000L);
         return lastMushroomUseResult;
+    }
+
+    // =========================================================================
+    // FEATURE 19: LOOP BO SUNG - TU DONG DOI KHU (AUTO CHANGE ZONE / CHANNEL)
+    // =========================================================================
+
+    public static boolean isAutoChangeZoneEnabled() {
+        return isAutoChangeZoneEnabled;
+    }
+
+    public static void setAutoChangeZoneEnabled(boolean enabled) {
+        isAutoChangeZoneEnabled = enabled;
+        if (enabled) {
+            lastZoneChangeTime = System.currentTimeMillis();
+        }
+    }
+
+    public static long getZoneChangeIntervalMs() {
+        return zoneChangeIntervalMs;
+    }
+
+    public static void setZoneChangeIntervalMs(long intervalMs) {
+        zoneChangeIntervalMs = intervalMs;
+    }
+
+    public static boolean isZoneChanging() {
+        return isZoneChanging;
+    }
+
+    public static int getTotalZoneChanges() {
+        return totalZoneChanges;
+    }
+
+    /**
+     * Kiem tra file cau hinh Chuyen Khu (moi 5 giay mot lan).
+     * Ho tro: auto_chuyen_khu.txt, bat_auto_chuyen_khu.txt, tat_auto_chuyen_khu.txt
+     */
+    public static void checkAutoZoneConfigFile(long now) {
+        if (now - lastZoneConfigCheckTime < 5000L) {
+            return;
+        }
+        lastZoneConfigCheckTime = now;
+
+        if (new File("tat_auto_chuyen_khu.txt").exists()) {
+            if (isAutoChangeZoneEnabled) {
+                isAutoChangeZoneEnabled = false;
+                log("[AutoChuyenKhu] Da TAT theo file tat_auto_chuyen_khu.txt.");
+            }
+            return;
+        }
+
+        String[] paths = new String[]{
+                "auto_chuyen_khu.txt",
+                "bat_auto_chuyen_khu.txt",
+                "C:\\TinhLinh\\auto_chuyen_khu.txt",
+                "d:\\tinhlinh\\TinhLinh_Lite\\auto_chuyen_khu.txt",
+                "d:\\tinhlinh\\auto_chuyen_khu.txt"
+        };
+
+        for (String path : paths) {
+            File f = new File(path);
+            if (!f.exists()) continue;
+            try (BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(f), StandardCharsets.UTF_8))) {
+                String line = br.readLine();
+                if (line != null) {
+                    line = line.trim().toLowerCase(Locale.ROOT);
+                    if (line.equals("0") || line.equals("tat") || line.equals("off") || line.equals("false")) {
+                        if (isAutoChangeZoneEnabled) {
+                            isAutoChangeZoneEnabled = false;
+                            log("[AutoChuyenKhu] Da TAT theo file cau hinh: " + path);
+                        }
+                        break;
+                    }
+                    try {
+                        long s = Long.parseLong(line.replaceAll("[^0-9]", ""));
+                        if (s >= 5L) {
+                            zoneChangeIntervalMs = s * 1000L;
+                        }
+                    } catch (Throwable ignored) {}
+
+                    if (!isAutoChangeZoneEnabled) {
+                        isAutoChangeZoneEnabled = true;
+                        lastZoneChangeTime = now;
+                        log(String.format(Locale.ROOT,
+                                "[AutoChuyenKhu] Da BAT theo file cau hinh (%ds/lan): %s",
+                                zoneChangeIntervalMs / 1000L, path));
+                    }
+                    break;
+                }
+            } catch (Throwable ignored) {}
+        }
+    }
+
+    /**
+     * Lay danh sach cac Khu (Zone IDs) kha dung tren Dialog Chuyen Khu (neu UI dang mo).
+     */
+    public static List<Integer> getAvailableZoneIds() {
+        List<Integer> list = new ArrayList<>();
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return list;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 screen =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (screen != null && screen.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
+                com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 ui =
+                        screen.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+                com.a.c.f.e.a.a.a.gIrLkuN75neKlILiLiLIiIwhatdoYOUwANThEReHiHiHIhAhahaHoHOhohEhEheGIRlkUN75 dialog =
+                        (com.a.c.f.e.a.a.a.gIrLkuN75neKlILiLiLIiIwhatdoYOUwANThEReHiHiHIhAhahaHoHOhohEhEheGIRlkUN75) ui.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(
+                                com.a.c.f.e.a.a.a.gIrLkuN75neKlILiLiLIiIwhatdoYOUwANThEReHiHiHIhAhahaHoHOhohEhEheGIRlkUN75.class);
+                if (dialog != null) {
+                    Field field = dialog.getClass().getDeclaredField("gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75");
+                    field.setAccessible(true);
+                    Object object = field.get(dialog);
+                    if (object != null) {
+                        Field field2 = object.getClass().getDeclaredField("GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75");
+                        field2.setAccessible(true);
+                        Table table = (Table) field2.get(object);
+                        if (table != null && table.getChildren() != null) {
+                            SnapshotArray<Actor> snapshotArray = table.getChildren();
+                            for (int i = 0; i < snapshotArray.size; ++i) {
+                                Actor actor = snapshotArray.get(i);
+                                if (actor == null || !actor.getClass().getName().contains("GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75")) continue;
+                                Field field3 = actor.getClass().getDeclaredField("GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75");
+                                field3.setAccessible(true);
+                                com.a.c.c.n.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 zoneItem =
+                                        (com.a.c.c.n.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75) field3.get(actor);
+                                if (zoneItem != null) {
+                                    list.add(zoneItem.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Throwable ignored) {}
+        return list;
+    }
+
+    /**
+     * Dong hop thoai Chuyen Khu neu dang mo tren man hinh.
+     */
+    public static void closeZoneDialog() {
+        try {
+            com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
+                    com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+            if (game == null) return;
+            com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 screen =
+                    game.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75();
+            if (screen != null && screen.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 != null) {
+                com.a.c.f.a.b.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 ui =
+                        screen.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75;
+                com.a.c.f.e.a.a.a.gIrLkuN75neKlILiLiLIiIwhatdoYOUwANThEReHiHiHIhAhahaHoHOhohEhEheGIRlkUN75 dialog =
+                        (com.a.c.f.e.a.a.a.gIrLkuN75neKlILiLiLIiIwhatdoYOUwANThEReHiHiHIhAhahaHoHOhohEhEheGIRlkUN75) ui.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(
+                                com.a.c.f.e.a.a.a.gIrLkuN75neKlILiLiLIiIwhatdoYOUwANThEReHiHiHIhAhahaHoHOhohEhEheGIRlkUN75.class);
+                if (dialog != null) {
+                    dialog.setVisible(false);
+                    dialog.remove();
+                }
+            }
+        } catch (Throwable ignored) {}
+    }
+
+    /**
+     * Yeu cau Server gui danh sach Khu moi nhat ve Game Client.
+     */
+    public static void requestZoneList() {
+        Gdx.app.postRunnable(() -> {
+            try {
+                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                if (client != null) {
+                    client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75();
+                }
+            } catch (Throwable t) {
+                log("[AutoChuyenKhu] Loi goi requestZoneList: " + t.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Kich hoat chuyen sang Khu tiep theo (xoay vong qua cac khu kha dung hoac 0..14).
+     */
+    public static int triggerNextZoneChange(String triggerSource) {
+        int curZone = getCurrentZone();
+        List<Integer> list = getAvailableZoneIds();
+        int nextZone = -1;
+
+        if (list != null && list.size() > 1) {
+            int idx = list.indexOf(curZone);
+            nextZone = (idx >= 0) ? list.get((idx + 1) % list.size()) : list.get(0);
+        } else {
+            nextZone = (curZone >= 14 || curZone < 0) ? 0 : (curZone + 1);
+        }
+
+        if (nextZone == curZone) {
+            nextZone = (curZone + 1) % 15;
+        }
+
+        final int targetZone = nextZone;
+        Gdx.app.postRunnable(() -> {
+            try {
+                closeZoneDialog();
+                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                if (client != null) {
+                    client.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75(targetZone);
+                }
+            } catch (Throwable t) {
+                log("[AutoChuyenKhu] Loi khi gui packet doi khu sang Khu " + targetZone + ": " + t.getMessage());
+            }
+        });
+
+        long now = System.currentTimeMillis();
+        lastZoneChangeTime = now;
+        isZoneChanging = true;
+        zoneChangeStartTime = now;
+        pendingZoneTargetId = targetZone;
+
+        log(String.format(Locale.ROOT,
+                "[AutoChuyenKhu] [%s] >>> DA GUI PACKET CHUYEN KHU: Khu %d -> Khu %d (Chu ky %ds) | Cho load khu de tiep tuc danh <<<",
+                triggerSource, curZone, targetZone, zoneChangeIntervalMs / 1000L));
+        return targetZone;
+    }
+
+    /**
+     * Ham dieu phoi Chuyen Khu trong Loop Bo Sung (duoc goi truc tiep moi nhip tick).
+     */
+    public static void handleAutoZoneLoop(long now) {
+        checkAutoZoneConfigFile(now);
+
+        // 1. Theo doi tien trinh doi khu dang dien ra
+        if (isZoneChanging) {
+            long elapsed = now - zoneChangeStartTime;
+            int curZone = getCurrentZone();
+            // Cho toi thieu 1.5s de server load hoac khi curZone da sang pendingZoneTargetId, timeout 4s
+            if (elapsed >= 1500L && (pendingZoneTargetId < 0 || curZone == pendingZoneTargetId || elapsed >= 4000L)) {
+                isZoneChanging = false;
+                pendingZoneTargetId = -1;
+                lastZoneChangeTime = now;
+                totalZoneChanges++;
+
+                // Reset trang thai chien dau & khoi dong lai Tu Dong Danh tai khu moi
+                currentCombatTarget = null;
+                currentCombatTargetId = -1;
+                lastTargetLoggedId = -1;
+                autoAttackAttemptPending = false;
+                lastAutoAttackTriggerTime = 0L;
+                enableGameNativeAutoCombat();
+
+                log(String.format(Locale.ROOT,
+                        "[AutoChuyenKhu] >>> DA HOAN TAT DOI KHU: [Khu %d] (Tong cong: %d lan) -> Da khoi dong lai Tu Dong Danh! <<<",
+                        curZone, totalZoneChanges));
+            }
+            return;
+        }
+
+        if (!isAutoChangeZoneEnabled) {
+            return;
+        }
+
+        // 2. Kiem tra cac dieu kien an toan de chuyen khu
+        if (!wasInGame || !isPlayerInGame()) return;
+        if (isPlayerExhausted() || isExhaustionDialogVisible()) return;
+        if (isAppleHarvesting() || isReturningToExhaustion()) return;
+        if (!isAtExhaustionMap()) return;
+        if (isAutoPickupMapItemsEnabled && !lastScannedMushrooms.isEmpty()) {
+            // Dang co vat pham spawn can nhat -> uu tien nhat xong moi chuyen khu
+            return;
+        }
+
+        // 3. Kiem tra thoi gian chu ky
+        if (lastZoneChangeTime == 0L) {
+            lastZoneChangeTime = now;
+            return;
+        }
+
+        if (now - lastZoneChangeTime >= zoneChangeIntervalMs) {
+            triggerNextZoneChange("LoopBoSung");
+        }
     }
 
     public static boolean isPlayerInGame() {
