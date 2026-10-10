@@ -5304,6 +5304,10 @@ public final class TinhLinhBot {
                 || norm.contains("thao duoc") || norm.contains("linh thao");
     }
 
+    private static boolean hasVerifiedPickupHandler(String entityType) {
+        return "Special".equals(entityType);
+    }
+
     public static boolean isMushroomName(String raw) {
         if (raw == null || raw.trim().isEmpty()) return false;
         String norm = normalizeText(raw);
@@ -5684,6 +5688,8 @@ public final class TinhLinhBot {
 
 
 
+            foundList.removeIf(sm -> !hasVerifiedPickupHandler(sm.type));
+
             for (Map.Entry<Integer, PendingPickup> entry : pendingPickupItems.entrySet()) {
                 int itemId = entry.getKey();
                 PendingPickup pending = entry.getValue();
@@ -5771,6 +5777,7 @@ public final class TinhLinhBot {
         float minDist = Float.MAX_VALUE;
         for (ScannedMushroom sm : items) {
             if (sm == null) continue;
+            if (!hasVerifiedPickupHandler(sm.type)) continue;
             if (ignoredPickupItems.containsKey(sm.id)) continue;
             if (isMushroomName(sm.name)) {
                 if (sm.distance < minDist) {
@@ -5784,6 +5791,7 @@ public final class TinhLinhBot {
             minDist = Float.MAX_VALUE;
             for (ScannedMushroom sm : items) {
                 if (sm == null) continue;
+                if (!hasVerifiedPickupHandler(sm.type)) continue;
                 if (ignoredPickupItems.containsKey(sm.id)) continue;
                 if (sm.distance < minDist) {
                     minDist = sm.distance;
@@ -5821,8 +5829,6 @@ public final class TinhLinhBot {
 
         final ScannedMushroom finalTarget = target;
         final int targetId = target.id;
-        final int targetTypeId = target.typeId;
-        final String targetType = target.type;
         final String targetName = target.name;
 
         // Tang dem so lan thu nhat
@@ -5854,30 +5860,8 @@ public final class TinhLinhBot {
                 com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
                         com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
                 if (client != null) {
-                    // Opcode 34: sub 4, sub 2
-                    client.GirLKun75NekiiiIIIIiIiwHATDoYoUWANtHERehihIhIHAHAhAHOhOhoHEhehegIrlKUN75(targetId);
-                    try {
-                        client.GirLKun75NekiiiIIIIiIiwHATDoYoUWANtHERehihIhIHAHAhAHOhOhoHEhehegIrlKUN75();
-                    } catch (Throwable ignored) {}
-                    client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
-                    try {
-                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75();
-                    } catch (Throwable ignored) {}
-
-                    // Opcode 37: sub 2, sub 4
-                    client.GIrlKun75NEkilliILLLLLwHaTdoYouwaNtHeREHIHihihAHAHAHoHoHOhEheHEgIRLkuN75(targetId);
-                    try {
-                        client.GIrlKun75NEkilliILLLLLwHaTdoYouwaNtHeREHIHihihAHAHAHoHoHOhEheHEgIRLkuN75();
-                    } catch (Throwable ignored) {}
-                    client.GiRLkun75NeKiLiiLLlLiiWHAtdoyOUWanThEREHIHIhIHaHAHaHohOHOhEheHEGIRLkUN75(targetId);
-
-                    // Opcode 52: sub 1, sub 0
-                    client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
-                    client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
-
-                    if (targetTypeId > 0) {
-                        client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
-                    }
+                    // Opcode 54 handler for Special map items; send one verified pickup packet.
+                    client.gIrlkun75nEKIIIIiiIliiWhATdOyOuwanTHErehIhIHiHAHaHAHohOHoHEHehEGirlKun75(targetId);
 
                     long sentAt = System.currentTimeMillis();
                     pendingPickupItems.put(targetId, new PendingPickup(targetName, sentAt, targetMapId, targetZone, inventoryQtyBefore));
@@ -5888,8 +5872,8 @@ public final class TinhLinhBot {
                         log("[NhatItem] Da gui lenh nhat nam huong [" + targetName + " - ID: " + targetId + "]; cho tui do xac nhan.");
                     } else {
                         log(String.format(Locale.ROOT,
-                                "[NhatItem] Da gui packet nhat/thu thap [%s - Loai: %s, ID: %d, TypeId: %d] tai (X=%.1f, Y=%.1f); cho tui do xac nhan.",
-                                targetName, targetType, targetId, targetTypeId, finalTarget.x, finalTarget.y));
+                                "[NhatItem] Da gui packet nhat Special [%s - ID: %d] tai (X=%.1f, Y=%.1f); cho tui do xac nhan.",
+                                targetName, targetId, finalTarget.x, finalTarget.y));
                     }
                 }
             } catch (Throwable t) {
