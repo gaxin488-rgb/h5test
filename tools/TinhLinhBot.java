@@ -219,8 +219,8 @@ public final class TinhLinhBot {
     public static final List<BagItem> lastScannedBoxItems = new CopyOnWriteArrayList<>();
     private static volatile int lastScannedBoxCount = 0;
 
-    // Feature 17: Tu dong su dung vat pham 'Nam huong' trong tui do
-    private static volatile boolean isAutoUseMushroomEnabled = true;
+    // Feature 17: Tu dong su dung vat pham 'Nam huong' trong tui do (Tam tat de bao toan so luong x1 nhat duoc)
+    private static volatile boolean isAutoUseMushroomEnabled = false;
     private static volatile long lastMushroomUseTime = 0L;
     private static volatile long mushroomUseIntervalMs = 1_800_000L; // 30 phut (sau khi test nhanh 30s thanh cong)
     private static volatile int lastMushroomCountInBag = 0;
@@ -228,7 +228,7 @@ public final class TinhLinhBot {
 
     // Feature 19: Loop Bo Sung: Tu Dong Doi Khu (Auto Change Zone / Channel)
     private static volatile boolean isAutoChangeZoneEnabled = true;
-    private static volatile long zoneChangeIntervalMs = 40_000L; // Mac dinh 40 giay theo chuan codebase
+    private static volatile long zoneChangeIntervalMs = 25_000L; // 25 giay quet map va doi khu tim nam
     private static volatile long lastZoneChangeTime = 0L;
     private static volatile long lastZoneConfigCheckTime = 0L;
     private static volatile boolean isZoneChanging = false;
@@ -4270,6 +4270,9 @@ public final class TinhLinhBot {
             lastSavedExhaustionCoord = c;
             persistExhaustionState(c);
             isAutoReturnToExhaustionEnabled = true;
+            isReturningToExhaustion = false;
+            returnArrivalSamples = 0;
+            returnStartTime = 0L;
             return "Da set map farm thanh: " + mapName + " (ID: " + mapId + ") tai (" + String.format(Locale.ROOT, "%.1f, %.1f", x, y) + ")";
         }
         if ("fight".equals(cmd) || "attack".equals(cmd)) {
@@ -4531,6 +4534,23 @@ public final class TinhLinhBot {
         } catch (Throwable t) {
             log("[AutoFarm-Combat] Loi khi kich hoat native auto: " + t.getMessage());
         }
+    }
+
+    public static void disableGameNativeAutoCombat() {
+        try {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (player != null) {
+                player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(true);
+                if (player.gIrLkun75nEKiLliiliiLiWhATDOYouWAntHeReHiHihIhaHahAHoHohOHEHEheGIrlKUN75 != null) {
+                    if (player.gIrLkun75nEKiLliiliiLiWhATDOYouWAntHeReHiHihIhaHahAHoHohOHEHEheGIrlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75) {
+                        player.gIrLkun75nEKiLliiliiLiWhATDOYouWAntHeReHiHihIhaHahAHoHohOHEHEheGIrlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 = false;
+                        log("[AutoFarm-Combat] Da TAM TAT Native Auto Combat de uu tien di chuyen nhat item!");
+                    }
+                }
+            }
+            isAutoAttackActive = false;
+        } catch (Throwable ignored) {}
     }
 
     public static void executeAttackOnTarget(com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 target) {
@@ -5153,12 +5173,10 @@ public final class TinhLinhBot {
         // 1. Nam huong (nấm hương, nấm, nấm linh chi, v.v.)
         if (norm.contains("nam")) return true;
         // 2. Qua mong (quả mọng, dâu, mâm xôi, quả)
-        if (norm.contains("mong") || norm.contains("qua") || norm.contains("dau") || norm.contains("mam xoi")) return true;
+        if (norm.contains("mong") || norm.contains("qua mong") || norm.contains("dau") || norm.contains("mam xoi")) return true;
         // 3. Co hoi sinh (cỏ hồi sinh, cỏ, thảo dược, linh thảo)
-        if (norm.contains("hoi sinh") || norm.contains("thao duoc") || norm.contains("linh thao") || norm.contains("co")) return true;
-        // 4. Vat pham / ruong / tui / ngoc / da roi tren map
-        if (norm.contains("ruong") || norm.contains("tui") || norm.contains("hop") || norm.contains("da") || norm.contains("ngoc")) return true;
-        // 5. Thuc the spawn ngau nhien mac dinh tren map
+        if (norm.contains("hoi sinh") || norm.contains("thao duoc") || norm.contains("linh thao") || (norm.contains("co") && norm.contains("sinh"))) return true;
+        // 4. Thuc the spawn ngau nhien mac dinh tren map
         if (norm.contains("spawn") || norm.contains("item")) return true;
         return false;
     }
@@ -5166,7 +5184,7 @@ public final class TinhLinhBot {
     public static boolean isMushroomName(String raw) {
         if (raw == null || raw.trim().isEmpty()) return false;
         String norm = normalizeText(raw);
-        return norm.contains("nam huong") || (norm.contains("nam") && norm.contains("huong"));
+        return norm.contains("nam huong") || norm.contains("nam");
     }
 
     public static String getGroundItemName(com.a.c.f.a.b.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 item) {
@@ -5531,60 +5549,7 @@ public final class TinhLinhBot {
                 }
             }
 
-            // 2. Loc Tai nguyen / Thu thap / Cay coi / Khoang thach (Resource Nodes)
-            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> resources =
-                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75;
-            if (resources != null) {
-                for (int i = 0; i < resources.size; i++) {
-                    com.a.c.f.a.b.h.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 res = resources.get(i);
-                    if (res == null) continue;
-                    String name = getResourceNodeName(res);
-                    if (isTargetSpawnItemName(name)) {
-                        Vector2 pos = getMapEntityPosition(res);
-                        float x = (pos != null) ? pos.x : 0f;
-                        float y = (pos != null) ? pos.y : 0f;
-                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
-                        int typeId = getEntityHTypeId(res);
-                        foundList.add(new ScannedMushroom(res.a_(), "Thu thap", name, x, y, dist, now, typeId));
-                    }
-                }
-            }
 
-            // 3. Loc Quai vat tren map (Monsters / Mobs)
-            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> monsters =
-                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75;
-            if (monsters != null) {
-                for (int i = 0; i < monsters.size; i++) {
-                    com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m = monsters.get(i);
-                    if (m == null || isMonsterDead(m)) continue;
-                    String name = getMonsterName(m);
-                    if (isTargetSpawnItemName(name)) {
-                        Vector2 pos = getMapEntityPosition(m);
-                        float x = (pos != null) ? pos.x : 0f;
-                        float y = (pos != null) ? pos.y : 0f;
-                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
-                        foundList.add(new ScannedMushroom(m.a_(), "Quai vat", name, x, y, dist, now, 0));
-                    }
-                }
-            }
-
-            // 4. Loc Vat the tuong tac / Special Entities (Map Objects)
-            com.badlogic.gdx.utils.Array<com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75> objects =
-                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75;
-            if (objects != null) {
-                for (int i = 0; i < objects.size; i++) {
-                    com.a.c.f.a.b.d.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 obj = objects.get(i);
-                    if (obj == null) continue;
-                    String name = getMapObjectName(obj);
-                    if (isTargetSpawnItemName(name)) {
-                        Vector2 pos = getMapEntityPosition(obj);
-                        float x = (pos != null) ? pos.x : 0f;
-                        float y = (pos != null) ? pos.y : 0f;
-                        float dist = (pos != null && playerPos != null) ? playerPos.dst(pos) : 0f;
-                        foundList.add(new ScannedMushroom(obj.a_(), "Vat the", name, x, y, dist, now, 0));
-                    }
-                }
-            }
 
             // 5. Kiem tra su thay doi hoac phat hien moi
             int prevCount = lastScannedMushroomCount;
@@ -5616,6 +5581,8 @@ public final class TinhLinhBot {
             // 7. Feature 18: Tu dong tiep can & Nhat/Thu thap cac item muc tieu da loc tren map kiet suc
             if (isAutoPickupMapItemsEnabled && !foundList.isEmpty()) {
                 handlePickupTargetMapItems(now, foundList);
+            } else if (foundList.isEmpty() && !isAutoAttackActive && isAutoAttackMenuEnabled()) {
+                enableGameNativeAutoCombat();
             }
         } catch (Throwable t) {
             log("[QuetMap] Ngoai le loc vat the spawn random tren map: " + t.getMessage());
@@ -5647,15 +5614,29 @@ public final class TinhLinhBot {
             }
         }
 
-        // Tim item gan nhat chua bi ignore
+        // Tim item gan nhat chua bi ignore - UU TIEN 1: Nam huong neu co
         ScannedMushroom target = null;
         float minDist = Float.MAX_VALUE;
         for (ScannedMushroom sm : items) {
             if (sm == null) continue;
             if (ignoredPickupItems.containsKey(sm.id)) continue;
-            if (sm.distance < minDist) {
-                minDist = sm.distance;
-                target = sm;
+            if (isMushroomName(sm.name) || sm.name.toLowerCase(Locale.ROOT).contains("nam")) {
+                if (sm.distance < minDist) {
+                    minDist = sm.distance;
+                    target = sm;
+                }
+            }
+        }
+        // Neu khong co Nam huong, chon vat pham spawn gan nhat (Qua mong, Co hoi sinh)
+        if (target == null) {
+            minDist = Float.MAX_VALUE;
+            for (ScannedMushroom sm : items) {
+                if (sm == null) continue;
+                if (ignoredPickupItems.containsKey(sm.id)) continue;
+                if (sm.distance < minDist) {
+                    minDist = sm.distance;
+                    target = sm;
+                }
             }
         }
 
@@ -5670,6 +5651,7 @@ public final class TinhLinhBot {
 
         // Chang 1: Tiep can neu khoang cach > 2.2m (tang ban kinh tiep can)
         if (currentDist > 2.2f) {
+            disableGameNativeAutoCombat();
             if (now - lastPickupMoveTime >= 350L) {
                 lastPickupMoveTime = now;
                 log(String.format(Locale.ROOT,
@@ -5693,11 +5675,11 @@ public final class TinhLinhBot {
         // Tang dem so lan thu nhat
         int attempts = pickupAttemptCounts.getOrDefault(targetId, 0) + 1;
         pickupAttemptCounts.put(targetId, attempts);
-        if (attempts >= 6) {
+        if (attempts >= 3) {
             log(String.format(Locale.ROOT,
-                    "[NhatItem] ⚠️ Vat the [%s - ID: %d] da thu nhat %d lan -> Tam thoi bo qua 15s de tranh ket bot.",
+                    "[NhatItem] ⚠️ Vat the [%s - ID: %d] da thu nhat %d lan -> Tam thoi bo qua 45s de tranh ket bot.",
                     targetName, targetId, attempts));
-            ignoredPickupItems.put(targetId, now);
+            ignoredPickupItems.put(targetId, now + 45_000L);
         }
 
         Gdx.app.postRunnable(() -> {
@@ -5712,18 +5694,32 @@ public final class TinhLinhBot {
                 com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
                         com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
                 if (client != null) {
-                    if ("Spawn".equals(targetType)) {
-                        // 1. Packet nhat item spawn ngau nhien tren map da duoc xac minh bytecode client
-                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
-                        try {
-                            client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75();
-                        } catch (Throwable ignored) {}
+                    // Opcode 34: sub 4, sub 2
+                    client.GirLKun75NekiiiIIIIiIiwHATDoYoUWANtHERehihIhIHAHAhAHOhOhoHEhehegIrlKUN75(targetId);
+                    try {
+                        client.GirLKun75NekiiiIIIIiIiwHATDoYoUWANtHERehihIhIHAHAhAHOhOhoHEhehegIrlKUN75();
+                    } catch (Throwable ignored) {}
+                    client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
+                    try {
+                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75();
+                    } catch (Throwable ignored) {}
 
-                        // 2. Fallback cac packet pickup bo tro
-                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
-                        client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
-                    } else if ("Special".equals(targetType)) {
-                        // Special Map Entity
+                    // Opcode 37: sub 2, sub 4
+                    client.GIrlKun75NEkilliILLLLLwHaTdoYouwaNtHeREHIHihihAHAHAHoHoHOhEheHEgIRLkuN75(targetId);
+                    try {
+                        client.GIrlKun75NEkilliILLLLLwHaTdoYouwaNtHeREHIHihihAHAHAHoHoHOhEheHEgIRLkuN75();
+                    } catch (Throwable ignored) {}
+                    client.GiRLkun75NeKiLiiLLlLiiWHAtdoyOUWanThEREHIHIhIHaHAHaHohOHOhEheHEGIRLkUN75(targetId);
+
+                    // Opcode 52: sub 1, sub 0
+                    client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
+                    client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
+
+                    if (targetTypeId > 0) {
+                        client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
+                    }
+
+                    if ("Special".equals(targetType)) {
                         try {
                             com.a.c.f.a.b.i.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 seObj =
                                     com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIrlKuN75NEKIlILIIiLlLWHatDOYouWanthereHihIhiHaHahAhOhoHOhEHEHEGIRLkun75(targetId);
@@ -5732,39 +5728,22 @@ public final class TinhLinhBot {
                                 com.a.c.f.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
                             }
                         } catch (Throwable ignored) {}
-                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
-                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
-                    } else if ("Vat pham".equals(targetType)) {
-                        // Ground item pickup: Gui ca 2 phuong thuc da xac minh tren bytecode client
-                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
-                        client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
-                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
-                        if (targetTypeId > 0) {
-                            client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
-                        }
-                    } else if ("Thu thap".equals(targetType)) {
-                        // Resource node collection packet (Opcode 24)
-                        client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
-                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
-                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
-                    } else if ("Vat the".equals(targetType)) {
-                        // Map object interact packet
-                        client.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75(targetId);
-                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
-                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
-                    } else {
-                        // Fallback
-                        client.girlKUn75NeklLILlLlLlLWhATdOYouWantHerehIhihIHahAHAhohOHoHEHeHegIrlKUN75(targetId);
-                        client.gIrlKun75nEKlIliIIlilLWHAtdOyoUwANTherehihiHIhaHaHahOHOHoHEhEhEgiRLKuN75(targetId);
-                        client.GIRLKun75NEkIllLLIilIlwHATdoYOUWaNTHErEHiHiHIHaHAHahoHohOhehEHegIRlKun75(targetId);
-                        client.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(targetId, targetTypeId);
                     }
 
+                    ignoredPickupItems.put(targetId, now + 4000L);
                     totalPickedItemCount++;
                     lastPickedItemName = targetName;
-                    log(String.format(Locale.ROOT,
-                            "[NhatItem] 🎯 >>> DA GUI PACKET NHAT/THU THAP [%s - Loai: %s, ID: %d, TypeId: %d] TAI (X=%.1f, Y=%.1f) TREN MAP KIET SUC! (Tong da nhat: %d) <<<",
-                            targetName, targetType, targetId, targetTypeId, finalTarget.x, finalTarget.y, totalPickedItemCount));
+                    boolean isMushroom = isMushroomName(targetName) || targetName.toLowerCase(Locale.ROOT).contains("nam");
+                    if (isMushroom) {
+                        log(String.format(Locale.ROOT,
+                                "[NhatItem] 🍄 >>> DA NHAT NAM HUONG [%s - ID: %d] TREN MAP KIET SUC! Kiem tra lai tui do... <<<",
+                                targetName, targetId));
+                        lastBagScanTime = 0L;
+                    } else {
+                        log(String.format(Locale.ROOT,
+                                "[NhatItem] 🎯 >>> DA GUI PACKET NHAT/THU THAP [%s - Loai: %s, ID: %d, TypeId: %d] TAI (X=%.1f, Y=%.1f) TREN MAP KIET SUC! (Tong da nhat: %d) <<<",
+                                targetName, targetType, targetId, targetTypeId, finalTarget.x, finalTarget.y, totalPickedItemCount));
+                    }
                 }
             } catch (Throwable t) {
                 log("[NhatItem] Loi khi gui goi tin nhat item: " + t.getMessage());
@@ -6055,13 +6034,18 @@ public final class TinhLinhBot {
 
             long totalQty = 0L;
             int duiGa = 0;
+            int mushrooms = 0;
             for (BagItem it : bagList) {
                 totalQty += it.qty;
                 String lower = it.name.toLowerCase(Locale.ROOT);
                 if (lower.contains("dui ga") || lower.contains("đùi gà") || lower.contains("duiga")) {
                     duiGa += (int) Math.min(it.qty, (long) Integer.MAX_VALUE);
                 }
+                if (isMushroomName(it.name) || lower.contains("nam huong") || lower.contains("nấm hương")) {
+                    mushrooms += (int) Math.min(it.qty, (long) Integer.MAX_VALUE);
+                }
             }
+            lastMushroomCountInBag = mushrooms;
 
             int prevCount = lastScannedBagCount;
             long prevTotalQty = lastScannedBagTotalQty;
@@ -6383,6 +6367,7 @@ public final class TinhLinhBot {
         final int targetZone = nextZone;
         Gdx.app.postRunnable(() -> {
             try {
+                disableGameNativeAutoCombat();
                 closeZoneDialog();
                 com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
                         com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
@@ -6423,6 +6408,13 @@ public final class TinhLinhBot {
                 lastZoneChangeTime = now;
                 totalZoneChanges++;
 
+                // Lam sach du lieu vat pham cua khu cu de quet moi ngay tai khu vua den
+                lastScannedMushrooms.clear();
+                lastScannedMushroomCount = 0;
+                lastExhaustionMapScanTime = 0L;
+                pickupAttemptCounts.clear();
+                ignoredPickupItems.clear();
+
                 // Reset trang thai chien dau & khoi dong lai Tu Dong Danh tai khu moi
                 currentCombatTarget = null;
                 currentCombatTargetId = -1;
@@ -6447,9 +6439,24 @@ public final class TinhLinhBot {
         if (isPlayerExhausted() || isExhaustionDialogVisible()) return;
         if (isAppleHarvesting() || isReturningToExhaustion()) return;
         if (!isAtExhaustionMap()) return;
-        if (isAutoPickupMapItemsEnabled && !lastScannedMushrooms.isEmpty()) {
-            // Dang co vat pham spawn can nhat -> uu tien nhat xong moi chuyen khu
-            return;
+        if (isAutoPickupMapItemsEnabled) {
+            // Chi hoan doi khu neu dang co Nam huong tren map chua nhat xong hoac dang tiep can nhat
+            boolean hasPendingMushroom = false;
+            for (ScannedMushroom sm : lastScannedMushrooms) {
+                if (sm != null && (isMushroomName(sm.name) || sm.name.toLowerCase(Locale.ROOT).contains("nam"))) {
+                    int att = pickupAttemptCounts.getOrDefault(sm.id, 0);
+                    if (att < 4) {
+                        hasPendingMushroom = true;
+                        break;
+                    }
+                }
+            }
+            if (hasPendingMushroom) {
+                return; // Co Nam huong tren map can uu tien nhat
+            }
+            if (now - lastPickupMoveTime < 2000L) {
+                return; // Dang trong nhip di chuyen tiep can vat the
+            }
         }
 
         // 3. Kiem tra thoi gian chu ky
