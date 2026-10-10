@@ -5755,6 +5755,27 @@ public final class TinhLinhBot {
         handlePickupTargetMapItems(now, items, false);
     }
 
+    private static void sendSpecialPickupPacket118(
+            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client,
+            int itemId) throws Exception {
+        com.girlkun.a.a.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 packet =
+                new com.girlkun.a.a.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75(118);
+        packet.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(0);
+        packet.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(itemId);
+
+        Method sender = client.getClass().getDeclaredMethod(
+                "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                packet.getClass());
+        sender.setAccessible(true);
+        try {
+            sender.invoke(client, packet);
+        } catch (java.lang.reflect.InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Exception) throw (Exception) cause;
+            throw e;
+        }
+    }
+
     private static void handlePickupTargetMapItems(long now, List<ScannedMushroom> items, boolean force) {
         if (!force && !isAutoPickupMapItemsEnabled) return;
         if (!isPlayerInGame()) return;
@@ -5860,8 +5881,8 @@ public final class TinhLinhBot {
                 com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
                         com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
                 if (client != null) {
-                    // Opcode 54 handler for Special map items; send one verified pickup packet.
-                    client.gIrlkun75nEKIIIIiiIliiWhATdOyOuwanTHErehIhIHiHAHaHAHohOHoHEHehEGirlKun75(targetId);
+                    // Special map items use opcode 118; Ground drops stay on their separate opcode 52 handler.
+                    sendSpecialPickupPacket118(client, targetId);
 
                     long sentAt = System.currentTimeMillis();
                     pendingPickupItems.put(targetId, new PendingPickup(targetName, sentAt, targetMapId, targetZone, inventoryQtyBefore));
