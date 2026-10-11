@@ -57,6 +57,9 @@ if %JAVA_MAJOR% LSS 17 (
 set "LIBGL_ALWAYS_SOFTWARE=1"
 set "MESA_LOADER_DRIVER_OVERRIDE=llvmpipe"
 set "GALLIUM_DRIVER=llvmpipe"
+set "LP_NUM_THREADS=1"
+set "MESA_GL_VERSION_OVERRIDE=3.0"
+set "MESA_GLSL_VERSION_OVERRIDE=130"
 
 echo [i] Java %JAVA_VERSION%: %JAVA_BIN%
 echo [i] Watchdog san sang. De tat, tao file tat_tu_khoi_dong.txt hoac bam Ctrl+C.
