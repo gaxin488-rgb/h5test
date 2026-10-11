@@ -5,18 +5,6 @@
    - **PHƯƠNG THỨC XÓA BẮT BUỘC (An toàn & Tự động 100%)**:
      * Xóa tệp đơn lẻ: Dùng method .NET `[System.IO.File]::Delete($path)` hoặc PowerShell không kèm cờ `-Force` (`Remove-Item -LiteralPath $path`).
      * Xóa thư mục tạm: Dùng `[System.IO.Directory]::Delete($dirPath, $true)` hoặc `Remove-Item -LiteralPath $dirPath -Recurse` (tuyệt đối không kèm `-Force`).
-
-# Antigravity Rules & Tool Guide for LDPlayer 9 Automation
-
-When the user asks to inspect, view, or interact with LDPlayer 9 / Android emulator (`emulator-5556`):
-1. **Never ask the user to take a manual screenshot.**
-   - Antigravity can directly view the screen using `ldplayer_see_screen` (or `adb exec-out screencap -p`).
-2. **For Native Android UI / Apps:**
-   - Use `ldplayer_get_ui_tree` or `ldplayer_tap_element_by_text` to find buttons and text with 100% precision.
-3. **For Unity/Cocos/Unreal Games:**
-   - Use `ldplayer_find_and_tap` / `ldplayer_find_template` with a cropped button template for pixel-perfect OpenCV matching.
-   - Alternatively, tap using normalized percentage coordinates via `ldplayer_tap_percent(x_pct, y_pct)` or internal resolution (1280x720).
-
 # Antigravity Rules for Storage & Capacity Guard (VPS & Local PC)
 
 1. **Micro-VPS (15GB Disk) Hardware Reality & Invariants**:
