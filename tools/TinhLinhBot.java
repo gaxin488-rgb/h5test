@@ -208,8 +208,11 @@ public final class TinhLinhBot {
     private static volatile com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 currentCombatTarget = null;
     private static volatile int currentCombatTargetId = -1;
     private static volatile long currentTargetLockTime = 0L;
+    private static volatile long currentTargetLastHp = -1L;
+    private static volatile long currentTargetLastHpChangeTime = 0L;
+    private static final Map<Integer, Long> skippedCombatTargets = new ConcurrentHashMap<>();
     private static volatile int lastTargetLoggedId = -1;
-    private static final long TARGET_LOCK_TIMEOUT_MS = 25_000L; // 25s timeout neu quai bi ket/khong danh duoc
+    private static final long TARGET_LOCK_TIMEOUT_MS = 25_000L; // 25s timeout neu quai bi stagnant HP/khong mat mau
 
     // Feature 13: Auto Phuc Loi, Qua Online & Diem Danh Hang Ngay
     private static volatile boolean isAutoWelfareEnabled = true;
@@ -1364,6 +1367,9 @@ public final class TinhLinhBot {
         if (exhausted) {
             currentCombatTarget = null;
             currentCombatTargetId = -1;
+            currentTargetLastHp = -1L;
+            currentTargetLastHpChangeTime = 0L;
+            skippedCombatTargets.clear();
             lastTargetLoggedId = -1;
         }
         previousExhausted = exhausted;
@@ -1386,6 +1392,9 @@ public final class TinhLinhBot {
             if (mapChanged) {
                 currentCombatTarget = null;
                 currentCombatTargetId = -1;
+                currentTargetLastHp = -1L;
+                currentTargetLastHpChangeTime = 0L;
+                skippedCombatTargets.clear();
                 lastTargetLoggedId = -1;
                 activeWaypointId = -1;
                 activeWaypointMapId = -1;
@@ -4107,27 +4116,68 @@ public final class TinhLinhBot {
                 log(String.format(Locale.ROOT,
                         "[AutoFarm-Combat] ⚔️ Quai muc tieu [%s - ID: %d] DA BI HA GUC! Dang chon muc tieu tiep theo...",
                         getMonsterName(currentCombatTarget), currentCombatTargetId));
+                skippedCombatTargets.remove(currentCombatTargetId);
                 currentCombatTarget = null;
                 currentCombatTargetId = -1;
+                currentTargetLastHp = -1L;
+                currentTargetLastHpChangeTime = 0L;
             } else {
                 Vector2 curTargetPos = getMonsterPosition(currentCombatTarget);
                 if (curTargetPos == null) {
                     currentCombatTarget = null;
                     currentCombatTargetId = -1;
+                    currentTargetLastHp = -1L;
+                    currentTargetLastHpChangeTime = 0L;
                 } else {
                     float distToTarget = pos.dst(curTargetPos);
-                    if (now - currentTargetLockTime > TARGET_LOCK_TIMEOUT_MS) {
+                    long curHp = getMonsterHp(currentCombatTarget);
+
+                    // 1. Theo doi va cap nhat HP cua quai vat dang target:
+                    if (currentTargetLastHp < 0L) {
+                        // Khoi tao moc HP ban dau khi vua khoa muc tieu
+                        currentTargetLastHp = curHp;
+                        currentTargetLastHpChangeTime = now;
+                    } else if (curHp < currentTargetLastHp) {
+                        // HP CUA MOB DANG GIAM (dang nhan damage / bi tan cong thanh cong)
+                        // Tiep tuc target mob do va reset lai moc thoi gian stagnant!
+                        long damageDealt = currentTargetLastHp - curHp;
+                        currentTargetLastHp = curHp;
+                        currentTargetLastHpChangeTime = now;
+                        skippedCombatTargets.remove(currentCombatTargetId);
+                        long maxHp = getMonsterMaxHp(currentCombatTarget);
+                        double pct = (maxHp > 0) ? (curHp * 100.0 / maxHp) : 0.0;
                         log(String.format(Locale.ROOT,
-                                "[AutoFarm-Combat] ⏱️ Muc tieu [%s - ID: %d] qua 25s chua ha guc -> Reset de doi muc tieu khac...",
-                                getMonsterName(currentCombatTarget), currentCombatTargetId));
+                                "[AutoFarm-Combat] ⚔️ Muc tieu [%s - ID: %d] giam -%d HP -> Con: %d/%d (%.1f%%); tiep tuc giu target!",
+                                getMonsterName(currentCombatTarget), currentCombatTargetId, damageDealt, curHp, maxHp, pct));
+                    } else if (curHp > currentTargetLastHp) {
+                        // Truong hop mob hoi phuc HP
+                        currentTargetLastHp = curHp;
+                    }
+
+                    // 2. Dieu kien 25s doi muc tieu:
+                    // CHI DOI MUC TIEU KHI HP MOB VAN GIU NGUYEN SAU 25s (hpStagnantFor25s)!
+                    // Neu HP mob dang giam, currentTargetLastHpChangeTime lien tuc duoc reset -> tiep tuc target khong ngat quang.
+                    boolean hpStagnantFor25s = (now - currentTargetLastHpChangeTime > TARGET_LOCK_TIMEOUT_MS);
+
+                    if (hpStagnantFor25s) {
+                        log(String.format(Locale.ROOT,
+                                "[AutoFarm-Combat] ⏱️ Muc tieu [%s - ID: %d] qua 25s HP van giu nguyen khong doi (%d/%d) -> Doi sang muc tieu khac...",
+                                getMonsterName(currentCombatTarget), currentCombatTargetId, curHp, getMonsterMaxHp(currentCombatTarget)));
+                        skippedCombatTargets.put(currentCombatTargetId, now + 20_000L);
+                        temporarilySkippedCombatTargetId = currentCombatTargetId;
+                        temporarilySkippedCombatTargetUntil = now + 20_000L;
                         currentCombatTarget = null;
                         currentCombatTargetId = -1;
+                        currentTargetLastHp = -1L;
+                        currentTargetLastHpChangeTime = 0L;
                     } else if (distToTarget > 14.0f) {
                         log(String.format(Locale.ROOT,
                                 "[AutoFarm-Combat] 🏃 Muc tieu [%s - ID: %d] di chuyen qua xa (%.1fm > 14m) -> Bo khoa de tim quai gan hon...",
                                 getMonsterName(currentCombatTarget), currentCombatTargetId, distToTarget));
                         currentCombatTarget = null;
                         currentCombatTargetId = -1;
+                        currentTargetLastHp = -1L;
+                        currentTargetLastHpChangeTime = 0L;
                     } else {
                         // Kiem tra quai co bi day vao mep cong khong
                         boolean targetNearPortal = false;
@@ -4147,8 +4197,13 @@ public final class TinhLinhBot {
                             log(String.format(Locale.ROOT,
                                     "[AutoFarm-Combat] 🚪 Muc tieu [%s - ID: %d] dung qua sat cong (< 3.2m) -> Bo qua de tranh hut vao cong...",
                                     getMonsterName(currentCombatTarget), currentCombatTargetId));
+                            skippedCombatTargets.put(currentCombatTargetId, now + 10_000L);
+                            temporarilySkippedCombatTargetId = currentCombatTargetId;
+                            temporarilySkippedCombatTargetUntil = now + 10_000L;
                             currentCombatTarget = null;
                             currentCombatTargetId = -1;
+                            currentTargetLastHp = -1L;
+                            currentTargetLastHpChangeTime = 0L;
                         } else {
                             // MUC TIEU HOP LE: Giu chat muc tieu nay!
                             activeTarget = currentCombatTarget;
@@ -4167,6 +4222,8 @@ public final class TinhLinhBot {
                 currentCombatTarget = activeTarget;
                 currentCombatTargetId = activeTarget.a_();
                 currentTargetLockTime = now;
+                currentTargetLastHp = getMonsterHp(activeTarget);
+                currentTargetLastHpChangeTime = now;
                 if (combatJumpTargetId >= 0 && combatJumpTargetId != currentCombatTargetId) {
                     resetCombatJumpAttempt();
                 }
@@ -4248,6 +4305,8 @@ public final class TinhLinhBot {
                             currentCombatTarget = null;
                             currentCombatTargetId = -1;
                             currentTargetLockTime = 0L;
+                            currentTargetLastHp = -1L;
+                            currentTargetLastHpChangeTime = 0L;
                             lastTargetLoggedId = -1;
                             lastCombatMoveTime = now;
                             resetCombatJumpAttempt();
@@ -4334,6 +4393,9 @@ public final class TinhLinhBot {
         postLoginDispatched = false;
         currentCombatTarget = null;
         currentCombatTargetId = -1;
+        currentTargetLastHp = -1L;
+        currentTargetLastHpChangeTime = 0L;
+        skippedCombatTargets.clear();
         lastTargetLoggedId = -1;
         log("[AutoLogin-Dispatch] Da reset trang thai Post-Login Dispatch.");
     }
@@ -5162,11 +5224,17 @@ public final class TinhLinhBot {
             float bestDist = Float.MAX_VALUE;
 
             Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+            long nowTime = System.currentTimeMillis();
+            skippedCombatTargets.entrySet().removeIf(entry -> nowTime >= entry.getValue());
 
             for (int i = 0; i < monsters.size; i++) {
                 com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 m = monsters.get(i);
                 if (m == null || isMonsterDead(m) || (excludedTargetId >= 0 && m.a_() == excludedTargetId)) {
-                    continue; // Da chet
+                    continue; // Da chet hoac bi loai tru
+                }
+                Long skipUntil = skippedCombatTargets.get(m.a_());
+                if (skipUntil != null && nowTime < skipUntil) {
+                    continue; // Quai bi stagnant HP qua 25s, dang tam thoi bo qua
                 }
                 Vector2 mPos = getMonsterPosition(m);
                 if (mPos == null) continue;
@@ -7857,6 +7925,9 @@ public final class TinhLinhBot {
                 // Reset trang thai chien dau & khoi dong lai Tu Dong Danh tai khu moi
                 currentCombatTarget = null;
                 currentCombatTargetId = -1;
+                currentTargetLastHp = -1L;
+                currentTargetLastHpChangeTime = 0L;
+                skippedCombatTargets.clear();
                 lastTargetLoggedId = -1;
                 autoAttackAttemptPending = false;
                 lastAutoAttackTriggerTime = 0L;
