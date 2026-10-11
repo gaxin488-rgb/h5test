@@ -47,3 +47,16 @@ pwsh -File .\jar-error-watch.ps1 -Label tab-01
 ```
 
 Profile Local 1 GB dùng `-Xmx64m`; kiểm thử thực tế phù hợp tối đa 2 tab đồng thời.
+
+---
+
+## 🌐 Thông Tin Kết Nối Remote VPS & Agent
+
+- **Remote Desktop (RDP)**: `remote.io.vn:12998`
+  - Kết nối qua Windows Remote Desktop (`mstsc.exe /v:remote.io.vn:12998`).
+  - *Lưu ý quan trọng*: Cổng 12998 là cổng RDP đồ họa (NAT về 3389), **KHÔNG PHẢI SSH**. VPS chạy Windows Server 2012 R2 và không cài OpenSSH daemon.
+- **HTTP Agent API (MCP / Remote Control)**:
+  - Địa chỉ chính thức: **`https://khoi.2ten.dpdns.org`** (được lưu tại `vps_tunnel_url.txt`).
+  - Agent chạy ngầm trên VPS tại cổng nội bộ `127.0.0.1:8765` và định tuyến ra ngoài thông qua Cloudflare Named Tunnel. Cổng 8765 không NAT trực tiếp ra IP công cộng.
+  - Kiểm tra trạng thái Agent: `GET https://khoi.2ten.dpdns.org/ping` hoặc `GET https://khoi.2ten.dpdns.org/health`.
+
