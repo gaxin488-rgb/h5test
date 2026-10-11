@@ -281,6 +281,13 @@ public final class TinhLinhBot {
     private static volatile int pendingZoneTargetId = -1;
     private static volatile int totalZoneChanges = 0;
 
+    // Feature 20: Map Transition Guard - Chong crash Native Box2D/OpenGL khi buoc vao cong va doi map
+    private static volatile int activeWaypointId = -1;
+    private static volatile int activeWaypointMapId = -1;
+    private static volatile long activeWaypointSetTime = 0L;
+    private static volatile long mapTransitionGraceUntil = 0L;
+    private static volatile boolean isMapTransitioning = false;
+
     private static final SimpleDateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
 
     private TinhLinhBot() {
@@ -1340,6 +1347,11 @@ public final class TinhLinhBot {
                 currentCombatTarget = null;
                 currentCombatTargetId = -1;
                 lastTargetLoggedId = -1;
+                activeWaypointId = -1;
+                activeWaypointMapId = -1;
+                activeWaypointSetTime = 0L;
+                isMapTransitioning = false;
+                mapTransitionGraceUntil = now + 3000L; // 3s grace period cho map moi load on dinh Box2D va textures
                 log("[AutoFarm-Map] CHUYEN MAP -> Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
             } else {
                 log("[AutoFarm-Map] Dang o Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
@@ -1465,6 +1477,10 @@ public final class TinhLinhBot {
     private static void handleAppleAndFarmNavigation(long now) {
         if (!isAutoAppleHarvestEnabled()) {
             return;
+        }
+
+        if (now < mapTransitionGraceUntil || isMapTransitioning) {
+            return; // Dang trong nhip chuyen map hoac map vua load, cho on dinh
         }
 
         int mapId = getCurrentMapId();
@@ -2157,11 +2173,30 @@ public final class TinhLinhBot {
 
     /**
      * Di chuyen nhan vat den cong Waypoint va kich hoat chuyen map thong qua Waypoint Wrapper callback.
+     * Tich hop Map Transition Guard: Chong goi de trung lap gay crash Native Box2D/OpenGL.
      */
     public static boolean moveToWaypoint(com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 waypoint) {
         if (waypoint == null) {
             return false;
         }
+        long now = System.currentTimeMillis();
+        int curMapId = getCurrentMapId();
+
+        // 1. Neu map moi vua load chua day 3s hoac dang trong nhip chuyen map, khong goi them
+        if (now < mapTransitionGraceUntil) {
+            return false;
+        }
+
+        int wpId = -1;
+        try {
+            wpId = waypoint.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+        } catch (Throwable ignored) {}
+
+        // 2. Chuc nang chong goi de: Neu da ra lenh cho cong nay tren map nay trong vong 10 giay, de controller tu chay
+        if (wpId >= 0 && activeWaypointId == wpId && activeWaypointMapId == curMapId && (now - activeWaypointSetTime < 10_000L)) {
+            return true;
+        }
+
         try {
             com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
                     com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
@@ -2174,9 +2209,34 @@ public final class TinhLinhBot {
                 return false;
             }
 
+            Vector2 myPos = getPlayerPosition();
+            final int finalWpId = wpId;
             final Vector2 targetPos = wpPos;
             final com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 targetWp = waypoint;
             String wpName = getWaypointName(targetWp);
+
+            // 3. Neu da dung ngay mep cong (<= 2.2m): Gui truc tiep packet chuyen map, tranh invoke controller raycast gay crash Box2D
+            if (myPos != null && myPos.dst(wpPos) <= 2.2f && finalWpId >= 0) {
+                try {
+                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                    if (client != null) {
+                        client.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(finalWpId);
+                        log("[Waypoint] Da dung ngay mep cong [" + wpName + "] -> Gui truc tiep goi tin chuyen map len server (WpID=" + finalWpId + ")!");
+                        activeWaypointId = finalWpId;
+                        activeWaypointMapId = curMapId;
+                        activeWaypointSetTime = now;
+                        isMapTransitioning = true;
+                        mapTransitionGraceUntil = now + 4000L;
+                        return true;
+                    }
+                } catch (Throwable ignored) {}
+            }
+
+            // 4. Neu o xa (> 2.2m): Di chuyen tiep can cong (chi set 1 lan duy nhat cho moi cong)
+            activeWaypointId = finalWpId;
+            activeWaypointMapId = curMapId;
+            activeWaypointSetTime = now;
 
             Gdx.app.postRunnable(() -> {
                 try {
@@ -2189,6 +2249,7 @@ public final class TinhLinhBot {
                     constructor.setAccessible(true);
                     Object wpTrigger = constructor.newInstance(targetWp);
                     Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
+                    if (controller == null) return;
                     Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
                     Method moveMethod = controller.getClass().getMethod(
                             "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
@@ -3297,6 +3358,10 @@ public final class TinhLinhBot {
             return;
         }
 
+        if (now < mapTransitionGraceUntil || isMapTransitioning) {
+            return; // Dang trong nhip chuyen map hoac map vua load, cho on dinh
+        }
+
         int curMapId = getCurrentMapId();
         String curMap = getCurrentMapName();
 
@@ -3670,6 +3735,11 @@ public final class TinhLinhBot {
     private static void handleAutoAttackFlow(long now) {
         if (!isAutoAttackMenuEnabled()) {
             cancelAutoAttackAttempt("Auto Attack dang tat.");
+            return;
+        }
+
+        if (now < mapTransitionGraceUntil || isMapTransitioning) {
+            cancelAutoAttackAttempt("Dang trong nhip chuyen map / map moi load.");
             return;
         }
 
