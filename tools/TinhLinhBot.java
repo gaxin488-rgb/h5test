@@ -4764,7 +4764,7 @@ public final class TinhLinhBot {
           .append(",\"is_at_exhaustion_map\":").append(isAtExhaustionMap())
           .append(",\"auto_map_scan_enabled\":").append(isAutoMapScanEnabled)
           .append(",\"mushroom_count\":").append(lastScannedMushroomCount)
-          .append(",\"auto_pickup_enabled\":").append(totalPickedItemCount)
+          .append(",\"auto_pickup_enabled\":").append(isAutoPickupMapItemsEnabled)
           .append(",\"auto_pickup_count\":").append(totalPickedItemCount)
           .append(",\"auto_pickup_active\":").append(isAutoPickupMapItemsEnabled)
           .append(",\"total_picked_items\":").append(totalPickedItemCount)
