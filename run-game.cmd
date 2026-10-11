@@ -108,7 +108,7 @@ if exist "%~dp0cacerts" (
 )
 
 rem --- Khoi chay game (Chan triet de crash dump hs_err_*.mdmp va toi uu native memory cho VPS 1GB RAM) ---
-"%JAVA_BIN%" -Xms64m -Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ReservedCodeCacheSize=32m -Xss256k -XX:MaxMetaspaceSize=96m -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
+"%JAVA_BIN%" -Xms64m -Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ReservedCodeCacheSize=64m -Xss256k -XX:MaxMetaspaceSize=96m -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%.

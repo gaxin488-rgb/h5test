@@ -80,6 +80,6 @@ try {
 }
 finally {
     if (Test-Path -LiteralPath $scratch) {
-        Remove-Item -LiteralPath $scratch -Recurse -Force -ErrorAction SilentlyContinue
+        try { [System.IO.Directory]::Delete($scratch, $true) } catch {}
     }
 }

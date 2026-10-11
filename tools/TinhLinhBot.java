@@ -332,6 +332,27 @@ public final class TinhLinhBot {
         log("[AtlasFallback] Phat hien thieu AtlasRegion -> Da su dung fallback texture dau tien.");
     }
 
+    private static final java.util.concurrent.atomic.AtomicLong totalPixmapsDisposed = new java.util.concurrent.atomic.AtomicLong(0);
+
+    /**
+     * Memory Guard hook: Injected by WindowPatch into girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75
+     * Automatically disposes native C-Heap Pixmap right after Texture creation, preventing fatal memory exhaustion / crash 0xe06d7363.
+     */
+    public static void disposePixmapQuietly(com.badlogic.gdx.graphics.Pixmap pixmap) {
+        if (pixmap != null) {
+            try {
+                if (!pixmap.isDisposed()) {
+                    pixmap.dispose();
+                    long count = totalPixmapsDisposed.incrementAndGet();
+                    if (count == 1 || count % 25 == 0) {
+                        log("[MemoryGuard] Da tu dong giai phong " + count + " Pixmap C-Heap native leak thanh cong!");
+                    }
+                }
+            } catch (Throwable ignored) {
+            }
+        }
+    }
+
     private static void runWatcherLoop() {
         log("[AutoFarm-Watcher] Vong lap giam sat 800ms da bat dau.");
         while (true) {
@@ -1361,6 +1382,10 @@ public final class TinhLinhBot {
                 activeWaypointSetTime = 0L;
                 isMapTransitioning = false;
                 mapTransitionGraceUntil = now + 3000L; // 3s grace period cho map moi load on dinh Box2D va textures
+                try {
+                    System.gc();
+                } catch (Throwable ignored) {
+                }
                 log("[AutoFarm-Map] CHUYEN MAP -> Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
             } else {
                 log("[AutoFarm-Map] Dang o Map [" + mapName + " - ID: " + mapId + ", Khu: " + zone + "] tai " + posStr + " " + statusStr);
