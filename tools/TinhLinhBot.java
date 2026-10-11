@@ -76,7 +76,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 19: Loop Bo Sung: Tu Dong Doi Khu / Channel Tren Map Kiet Suc (handleAutoZoneLoop, triggerNextZoneChange, isAutoChangeZoneEnabled, setAutoChangeZoneEnabled, setZoneChangeIntervalMs, getAvailableZoneIds).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.14-Feature21-AssetGuardAndPortalAdvancing";
+    private static final String VERSION = "1.9.15-Feature22-PortalAdvancingAndAppleBagVerification";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -1491,6 +1491,38 @@ public final class TinhLinhBot {
         }
     }
 
+    private static volatile long appleQuantityBeforeHarvest = 0L;
+    private static volatile String appleSummaryBeforeHarvest = "";
+
+    public static long getTotalAppleQuantityInBag() {
+        long total = 0L;
+        for (BagItem it : lastScannedBagItems) {
+            if (it != null && it.name != null) {
+                String norm = normalizeText(it.name);
+                if (norm.contains("tao")) {
+                    total += Math.max(0L, it.qty);
+                }
+            }
+        }
+        return total;
+    }
+
+    public static String getAppleItemsSummaryInBag() {
+        List<String> list = new ArrayList<>();
+        for (BagItem it : lastScannedBagItems) {
+            if (it != null && it.name != null) {
+                String norm = normalizeText(it.name);
+                if (norm.contains("tao")) {
+                    list.add(it.name + "x" + it.qty);
+                }
+            }
+        }
+        if (list.isEmpty()) {
+            return "0 qua (Khong co tao trong bag)";
+        }
+        return String.join(", ", list);
+    }
+
     public static boolean isAppleHarvesting() {
         return isAppleHarvesting;
     }
@@ -1756,7 +1788,13 @@ public final class TinhLinhBot {
             appleHarvestStartTime = now;
             currentHarvestTreeId = finalTreeId;
             currentHarvestTreeTypeId = finalTreeTypeId;
+
+            // Kiem tra so luong tao trong bag truoc khi thu hoach
+            scanBag(now, true, false);
+            appleQuantityBeforeHarvest = getTotalAppleQuantityInBag();
+            appleSummaryBeforeHarvest = getAppleItemsSummaryInBag();
             log("[AutoFarm-Apple] Phat hien [" + finalTreeName + "] (ID=" + finalTreeId + ", Type=" + finalTreeTypeId + ") tai nong trai. Dang tiep can de thu hoach...");
+            log("[AutoFarm-Apple] [Bag-TruocKhiThu] So luong tao dang co trong bag: " + appleSummaryBeforeHarvest + " (Tong: " + appleQuantityBeforeHarvest + " qua).");
 
             if (finalTreePos != null) {
                 Gdx.app.postRunnable(() -> {
@@ -1843,7 +1881,9 @@ public final class TinhLinhBot {
             });
 
             if (stepElapsed > 4000L) {
-                log("[AutoFarm-Apple] Timeout cho doi menu cay tao buoc 2 -> Bo qua.");
+                scanBag(now, true, false);
+                long curApples = getTotalAppleQuantityInBag();
+                log("[AutoFarm-Apple] Timeout cho doi menu cay tao buoc 2 -> Bo qua. Tao trong bag: " + getAppleItemsSummaryInBag() + " (Tong: " + curApples + " qua).");
                 appleHarvestStep = 0;
                 isAppleHarvesting = false;
                 hasHarvestedApple = true;
@@ -1870,7 +1910,9 @@ public final class TinhLinhBot {
             });
 
             if (stepElapsed > 3500L) {
-                log("[AutoFarm-Apple] Timeout cho doi menu thu hoach buoc 3 -> Bo qua.");
+                scanBag(now, true, false);
+                long curApples = getTotalAppleQuantityInBag();
+                log("[AutoFarm-Apple] Timeout cho doi menu thu hoach buoc 3 -> Bo qua. Tao trong bag: " + getAppleItemsSummaryInBag() + " (Tong: " + curApples + " qua).");
                 appleHarvestStep = 0;
                 isAppleHarvesting = false;
                 hasHarvestedApple = true;
@@ -1893,8 +1935,23 @@ public final class TinhLinhBot {
             hasHarvestedApple = true;
             appleEnterNongTraiTime = 0L;
             lastMenuClickTime = 0L;
+
+            // Kiem tra so luong tao trong bag sau khi thu hoach
+            scanBag(System.currentTimeMillis(), true, false);
+            long appleQuantityAfterHarvest = getTotalAppleQuantityInBag();
+            String appleSummaryAfterHarvest = getAppleItemsSummaryInBag();
+            long diff = appleQuantityAfterHarvest - appleQuantityBeforeHarvest;
             int harvestCountToday = recordAppleHarvestToday();
-            log("[AutoFarm-Apple] >>> HOAN TAT THU HOACH CAY TAO THANH CONG! Hom nay: " + harvestCountToday + " lan. <<<");
+
+            if (diff > 0) {
+                log(String.format(Locale.ROOT,
+                        "[AutoFarm-Apple] >>> HOAN TAT THU HOACH CAY TAO THANH CONG! Nhan them +%d qua tao! [Bag] Truoc: %s (tong %d) -> Sau: %s (tong %d). Hom nay da thu: %d lan. <<<",
+                        diff, appleSummaryBeforeHarvest, appleQuantityBeforeHarvest, appleSummaryAfterHarvest, appleQuantityAfterHarvest, harvestCountToday));
+            } else {
+                log(String.format(Locale.ROOT,
+                        "[AutoFarm-Apple] >>> HOAN TAT THU HOACH CAY TAO! [Bag] Truoc: %s (tong %d) -> Sau: %s (tong %d). Hom nay da thu: %d lan. <<<",
+                        appleSummaryBeforeHarvest, appleQuantityBeforeHarvest, appleSummaryAfterHarvest, appleQuantityAfterHarvest, harvestCountToday));
+            }
             return false;
         }
 
@@ -2361,7 +2418,7 @@ public final class TinhLinhBot {
         // Ket thuc trang thai cho neu yeu cau chuyen map khong lam thay doi map.
         if (isMapTransitioning && now >= mapTransitionGraceUntil) {
             isMapTransitioning = false;
-            log("[Waypoint] Het thoi gian cho chuyen map nhung map chua doi; cho phep thu lai.");
+            log("[Waypoint] Het thoi gian cho chuyen map nhung map chua doi; cho phep buoc tiep va thu lai.");
         }
         if (now < mapTransitionGraceUntil || isMapTransitioning) {
             return false;
@@ -2390,26 +2447,35 @@ public final class TinhLinhBot {
             String wpName = getWaypointName(waypoint);
             boolean sameActiveWaypoint = wpId >= 0 && activeWaypointId == wpId && activeWaypointMapId == curMapId;
 
-            // Khi den gan cong, gui yeu cau qua client; khong goi waypoint trigger native.
-            if (myPos != null && myPos.dst(wpPos) <= 2.2f && finalWpId >= 0) {
-                try {
-                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
-                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
-                    if (client != null) {
-                        client.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(finalWpId);
-                        log("[Waypoint] Da dung ngay mep cong [" + wpName + "] -> Gui truc tiep goi tin chuyen map len server (WpID=" + finalWpId + ")!");
-                        activeWaypointId = finalWpId;
-                        activeWaypointMapId = curMapId;
-                        activeWaypointSetTime = now;
-                        isMapTransitioning = true;
-                        mapTransitionGraceUntil = now + 10_000L;
-                        return true;
-                    }
-                } catch (Throwable ignored) {}
+            // Khi den gan cong: gui yeu cau qua client.
+            // Neu con cach tam cong > 0.6m (nhu dang o mep ngoai sensor), KHONG dung lai ma tiep tuc buoc thang vao tam cong!
+            // Chi dung han va dat transition lock khi da buoc sau vao tam cong (<= 0.6m).
+            if (myPos != null && finalWpId >= 0) {
+                float distToWp = myPos.dst(wpPos);
+                if (distToWp <= 2.5f) {
+                    try {
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                        if (client != null) {
+                            client.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(finalWpId);
+                            if (distToWp <= 0.6f) {
+                                log("[Waypoint] Da buoc sau vao cong [" + wpName + "] (cach " + String.format(Locale.ROOT, "%.2f", distToWp) + "m) -> Gui truc tiep goi tin chuyen map (WpID=" + finalWpId + ")!");
+                                activeWaypointId = finalWpId;
+                                activeWaypointMapId = curMapId;
+                                activeWaypointSetTime = now;
+                                isMapTransitioning = true;
+                                mapTransitionGraceUntil = now + 6_000L;
+                                return true;
+                            } else {
+                                log("[Waypoint] Dang tiep can mep cong [" + wpName + "] (cach " + String.format(Locale.ROOT, "%.2f", distToWp) + "m) -> Gui goi tin truoc va tiep tuc buoc thang vao tam cong...");
+                            }
+                        }
+                    } catch (Throwable ignored) {}
+                }
             }
 
-            // Bo qua lenh lap trong khi cung mot waypoint dang duoc tiep can.
-            if (sameActiveWaypoint && now - activeWaypointSetTime < 10_000L) {
+            // Bo qua lenh lap trong khi cung mot waypoint dang duoc tiep can (giam throttle con 2.5s de bot khong ngat quang buoc di).
+            if (sameActiveWaypoint && now - activeWaypointSetTime < 2_500L) {
                 return true;
             }
             activeWaypointId = finalWpId;
@@ -4789,6 +4855,8 @@ public final class TinhLinhBot {
           .append(",\"bag_summary\":\"").append(escapeJson(getBagSummary())).append("\"")
           .append(",\"auto_bag_scan_enabled\":").append(isAutoBagScanEnabled)
           .append(",\"mushroom_in_bag\":").append(lastMushroomCountInBag)
+          .append(",\"apple_in_bag_qty\":").append(getTotalAppleQuantityInBag())
+          .append(",\"apple_in_bag_summary\":\"").append(escapeJson(getAppleItemsSummaryInBag())).append("\"")
           .append(",\"auto_use_mushroom_enabled\":").append(isAutoUseMushroomEnabled)
           .append(",\"mushroom_use_interval_ms\":").append(mushroomUseIntervalMs)
           .append(",\"last_mushroom_use_time\":").append(lastMushroomUseTime)
@@ -4881,6 +4949,10 @@ public final class TinhLinhBot {
             hasHarvestedApple = false;
             triggerHarvestApple();
             return "Da kich hoat chu trinh thu hoach cay tao nong trai (F6).";
+        }
+        if ("apple_bag".equals(cmd) || "check_apple".equals(cmd) || "tao".equals(cmd)) {
+            scanBag(System.currentTimeMillis(), true, false);
+            return "Tao trong bag: " + getAppleItemsSummaryInBag() + " (Tong: " + getTotalAppleQuantityInBag() + " qua). Hom nay da thu: " + getAppleHarvestCountToday() + " lan.";
         }
         if ("f7".equals(cmd) || "eat".equals(cmd)) {
             return "Da ghi nhan lenh an do da ngoai (F7).";
