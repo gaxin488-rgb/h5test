@@ -42,10 +42,21 @@ Lấy toàn bộ thông tin nhân vật và trạng thái hoạt động của b
     "isAutoAttack": true,
     "isReconnecting": false,
     "isHarvestingApple": false,
+    "has_harvested_apple": 2,
+    "apple_harvest_count_today": 2,
+    "apple_harvest_cycle_handled": true,
+    "auto_pickup_enabled": 5,
+    "auto_pickup_count": 5,
+    "total_picked_items": 5,
+    "auto_pickup_active": true,
     "uptimeSeconds": 14200
   }
 }
 ```
+
+Trong `/status`, `apple_harvest_count_today` là số lượt thu táo thành công trong ngày, được giữ qua lần khởi động lại bot và tự reset sang ngày mới. `total_picked_items` là tổng số item đã xác nhận nhặt thành công trong phiên chạy; chỉ tăng sau khi số lượng trong túi tăng. `apple_harvest_cycle_handled` và `auto_pickup_active` mới là các cờ trạng thái boolean.
+
+Để tương thích với bộ hiển thị cũ, `has_harvested_apple` trả số lượt thu táo hôm nay và `auto_pickup_enabled` trả tổng lượt nhặt; hai trường này không còn là boolean. Bộ hiển thị mới nên dùng `apple_harvest_count_today`, `total_picked_items` cùng hai cờ trạng thái có tên rõ nghĩa ở trên.
 
 ---
 

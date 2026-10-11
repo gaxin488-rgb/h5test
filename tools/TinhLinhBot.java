@@ -111,12 +111,15 @@ public final class TinhLinhBot {
     private static final String EXHAUSTION_COORD_FILE = "saved_exhaustion_coord.txt";
     private static final String LAST_FARM_MAP_FILE = "last_farm_map.txt";
     private static final String MUSHROOM_USE_STATE_FILE = "mushroom_use_state.txt";
+    private static final String APPLE_HARVEST_COUNT_FILE = "apple_harvest_count_today.txt";
     private static final int DEFAULT_FARM_MAP_ID = 7;
     private static final String DEFAULT_FARM_MAP_NAME = "Rừng Cổ Mộc";
 
     // Feature 5: Tu dong Hai Tao & Thu Hoach (Apple Harvest & Farm Portal Automation)
     private static volatile boolean isAutoAppleHarvestEnabled = true;
     private static volatile boolean hasHarvestedApple = false;
+    private static volatile int appleHarvestCountToday = 0;
+    private static volatile String appleHarvestCountDate = "";
     private static volatile boolean isAppleHarvesting = false;
     private static volatile int appleHarvestStep = 0;
     private static volatile long appleHarvestStartTime = 0L;
@@ -278,6 +281,7 @@ public final class TinhLinhBot {
         loadSavedAccount();
         loadCheckinDate();
         loadLastMushroomUseTime();
+        loadAppleHarvestCountToday();
 
         log("========================================================");
         log(" [TinhLinhBot] He Thong Auto Login & Watchdog Bat Dau!");
@@ -1348,6 +1352,61 @@ public final class TinhLinhBot {
         hasHarvestedApple = harvested;
     }
 
+    private static synchronized void loadAppleHarvestCountToday() {
+        String today = getTodayDate();
+        appleHarvestCountDate = today;
+        appleHarvestCountToday = 0;
+        File stateFile = new File(APPLE_HARVEST_COUNT_FILE);
+        if (!stateFile.isFile()) {
+            return;
+        }
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(
+                new FileInputStream(stateFile), StandardCharsets.UTF_8))) {
+            String saved = reader.readLine();
+            if (saved == null) {
+                return;
+            }
+            int separator = saved.indexOf('=');
+            if (separator > 0 && today.equals(saved.substring(0, separator).trim())) {
+                appleHarvestCountToday = Math.max(0, Integer.parseInt(saved.substring(separator + 1).trim()));
+            }
+        } catch (Throwable t) {
+            log("[AutoFarm-Apple] Khong doc duoc so lan thu tao hom nay: " + t.getMessage());
+        }
+    }
+
+    private static synchronized void refreshAppleHarvestCountDate() {
+        String today = getTodayDate();
+        if (!today.equals(appleHarvestCountDate)) {
+            appleHarvestCountDate = today;
+            appleHarvestCountToday = 0;
+            persistAppleHarvestCountToday();
+        }
+    }
+
+    private static synchronized int getAppleHarvestCountToday() {
+        refreshAppleHarvestCountDate();
+        return appleHarvestCountToday;
+    }
+
+    private static synchronized int recordAppleHarvestToday() {
+        refreshAppleHarvestCountDate();
+        appleHarvestCountToday++;
+        persistAppleHarvestCountToday();
+        return appleHarvestCountToday;
+    }
+
+    private static void persistAppleHarvestCountToday() {
+        File stateFile = new File(APPLE_HARVEST_COUNT_FILE);
+        try (OutputStreamWriter writer = new OutputStreamWriter(
+                new FileOutputStream(stateFile, false), StandardCharsets.UTF_8)) {
+            writer.write(appleHarvestCountDate + "=" + appleHarvestCountToday);
+            writer.write(System.lineSeparator());
+        } catch (Throwable t) {
+            log("[AutoFarm-Apple] Khong luu duoc so lan thu tao hom nay: " + t.getMessage());
+        }
+    }
+
     public static boolean isAppleHarvesting() {
         return isAppleHarvesting;
     }
@@ -1746,7 +1805,8 @@ public final class TinhLinhBot {
             hasHarvestedApple = true;
             appleEnterNongTraiTime = 0L;
             lastMenuClickTime = 0L;
-            log("[AutoFarm-Apple] >>> HOAN TAT THU HOACH CAY TAO THANH CONG! <<<");
+            int harvestCountToday = recordAppleHarvestToday();
+            log("[AutoFarm-Apple] >>> HOAN TAT THU HOACH CAY TAO THANH CONG! Hom nay: " + harvestCountToday + " lan. <<<");
             return false;
         }
 
@@ -4105,6 +4165,7 @@ public final class TinhLinhBot {
         SavedCoordinate savedCoord = getSavedExhaustionCoordinate();
         String farmMap = (savedCoord != null) ? savedCoord.mapName : (lastKnownMapName != null ? lastKnownMapName : "");
         int farmMapId = (savedCoord != null) ? savedCoord.mapId : lastKnownMapId;
+        int appleHarvestsToday = getAppleHarvestCountToday();
 
         StringBuilder sb = new StringBuilder();
         sb.append("{\"connected\":").append(inGame)
@@ -4128,7 +4189,9 @@ public final class TinhLinhBot {
           .append(",\"reconnecting\":").append(isLoggingIn)
           .append(",\"returning_to_farm\":").append(isReturningToExhaustion())
           .append(",\"harvesting_apple\":").append(isAppleHarvesting())
-          .append(",\"has_harvested_apple\":").append(hasHarvestedApple)
+          .append(",\"has_harvested_apple\":").append(appleHarvestsToday)
+          .append(",\"apple_harvest_count_today\":").append(appleHarvestsToday)
+          .append(",\"apple_harvest_cycle_handled\":").append(hasHarvestedApple)
           .append(",\"is_auto_attack\":").append(isAutoAttackActive())
           .append(",\"auto_attack_menu_enabled\":").append(isAutoAttackMenuEnabled())
           .append(",\"is_exhausted\":").append(exhausted)
@@ -4140,7 +4203,9 @@ public final class TinhLinhBot {
           .append(",\"is_at_exhaustion_map\":").append(isAtExhaustionMap())
           .append(",\"auto_map_scan_enabled\":").append(isAutoMapScanEnabled)
           .append(",\"mushroom_count\":").append(lastScannedMushroomCount)
-          .append(",\"auto_pickup_enabled\":").append(isAutoPickupMapItemsEnabled)
+          .append(",\"auto_pickup_enabled\":").append(totalPickedItemCount)
+          .append(",\"auto_pickup_count\":").append(totalPickedItemCount)
+          .append(",\"auto_pickup_active\":").append(isAutoPickupMapItemsEnabled)
           .append(",\"total_picked_items\":").append(totalPickedItemCount)
           .append(",\"last_picked_item\":\"").append(escapeJson(lastPickedItemName)).append("\"")
           .append(",\"scanned_mushrooms\":[");
