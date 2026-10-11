@@ -6451,18 +6451,75 @@ public final class TinhLinhBot {
 
         Actor bagActor = (Actor) bagPanel;
         List<Actor> openedUiActors = openActorChain(bagActor, stageRoot);
+        InventoryItemFilterState filterState = null;
 
         try {
-            Method refreshItems = bagPanelClass.getDeclaredMethod(
-                    "GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75");
-            refreshItems.setAccessible(true);
-            refreshItems.invoke(bagPanel);
+            filterState = clearInventoryItemFilter(bagPanel, bagPanelClass);
+            refreshInventoryItemPanel(bagPanel, bagPanelClass);
+            validateActorLayoutHierarchy(bagActor);
             scheduleMushroomItemSelection(uiRoot, bagPanel, bagPanelClass, bagActor, openedUiActors,
-                    nativeItem, targetSlot, expectedItemId, targetName, stackQuantityBefore, mushroomCountBefore, 0);
+                    filterState, nativeItem, targetSlot, expectedItemId, targetName,
+                    stackQuantityBefore, mushroomCountBefore, 0);
         } catch (Throwable t) {
-            restoreOpenedUiActors(openedUiActors);
+            restoreInventoryUiState(filterState, openedUiActors);
             throw t;
         }
+    }
+
+    private static final class InventoryItemFilterState {
+        private final Object bagPanel;
+        private final Class<?> bagPanelClass;
+        private final Field filterField;
+        private final Object originalFilter;
+
+        private InventoryItemFilterState(Object bagPanel, Class<?> bagPanelClass, Field filterField, Object originalFilter) {
+            this.bagPanel = bagPanel;
+            this.bagPanelClass = bagPanelClass;
+            this.filterField = filterField;
+            this.originalFilter = originalFilter;
+        }
+    }
+
+    private static InventoryItemFilterState clearInventoryItemFilter(Object bagPanel, Class<?> bagPanelClass) throws Exception {
+        Field filterField = null;
+        for (Field field : bagPanelClass.getDeclaredFields()) {
+            if (field.getType().getEnclosingClass() == bagPanelClass
+                    && !java.lang.reflect.Modifier.isStatic(field.getModifiers())) {
+                filterField = field;
+                break;
+            }
+        }
+        if (filterField == null) {
+            throw new IllegalStateException("Khong tim thay bo loc item hien tai cua panel tui do.");
+        }
+        filterField.setAccessible(true);
+        Object originalFilter = filterField.get(bagPanel);
+        if (originalFilter != null) {
+            filterField.set(bagPanel, null);
+            log("[DungNamHuong] Tam bo loc danh muc tui do de hien item Nam huong trong UI.");
+        }
+        return new InventoryItemFilterState(bagPanel, bagPanelClass, filterField, originalFilter);
+    }
+
+    private static void refreshInventoryItemPanel(Object bagPanel, Class<?> bagPanelClass) throws Exception {
+        Method refreshItems = bagPanelClass.getDeclaredMethod(
+                "GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75");
+        refreshItems.setAccessible(true);
+        refreshItems.invoke(bagPanel);
+    }
+
+    private static void restoreInventoryUiState(InventoryItemFilterState filterState, List<Actor> openedUiActors) {
+        if (filterState != null && filterState.filterField != null) {
+            try {
+                if (filterState.filterField.get(filterState.bagPanel) != filterState.originalFilter) {
+                    filterState.filterField.set(filterState.bagPanel, filterState.originalFilter);
+                    refreshInventoryItemPanel(filterState.bagPanel, filterState.bagPanelClass);
+                }
+            } catch (Throwable t) {
+                log("[DungNamHuong] Khong khoi phuc duoc bo loc tui do: " + t.getMessage());
+            }
+        }
+        restoreOpenedUiActors(openedUiActors);
     }
 
     private static List<Actor> openActorChain(Actor actor, Actor stageRoot) {
@@ -6508,6 +6565,7 @@ public final class TinhLinhBot {
             Class<?> bagPanelClass,
             Actor bagActor,
             List<Actor> openedUiActors,
+            InventoryItemFilterState filterState,
             com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 nativeItem,
             int targetSlot,
             int expectedItemId,
@@ -6518,10 +6576,7 @@ public final class TinhLinhBot {
         CompletableFuture.delayedExecutor(attempt == 0 ? 600L : 200L, TimeUnit.MILLISECONDS).execute(() -> {
             boolean queued = postGameAction(() -> {
                 try {
-                    Method refreshItems = bagPanelClass.getDeclaredMethod(
-                            "GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75");
-                    refreshItems.setAccessible(true);
-                    refreshItems.invoke(bagPanel);
+                    refreshInventoryItemPanel(bagPanel, bagPanelClass);
                     validateActorLayoutHierarchy(bagActor);
 
                     Class<?> itemCellClass = Class.forName(
@@ -6532,7 +6587,7 @@ public final class TinhLinhBot {
                     if (itemCell == null) {
                         if (attempt < 10) {
                             scheduleMushroomItemSelection(uiRoot, bagPanel, bagPanelClass, bagActor, openedUiActors,
-                                    nativeItem, targetSlot, expectedItemId, targetName, stackQuantityBefore,
+                                    filterState, nativeItem, targetSlot, expectedItemId, targetName, stackQuantityBefore,
                                     mushroomCountBefore, attempt + 1);
                             return;
                         }
@@ -6548,14 +6603,15 @@ public final class TinhLinhBot {
                             "[DungNamHuong] Da goi callback tuong tac item goc cua client cho [%s - ID: %d, slot: %d, stack: %d]; dang cho action menu.",
                             targetName, expectedItemId, targetSlot, stackQuantityBefore));
                     scheduleMushroomUseMenuSelection(itemCell, openedUiActors, nativeItem,
-                            targetSlot, expectedItemId, targetName, stackQuantityBefore, mushroomCountBefore, 0);
+                            filterState, targetSlot, expectedItemId, targetName,
+                            stackQuantityBefore, mushroomCountBefore, 0);
                 } catch (Throwable t) {
-                    restoreOpenedUiActors(openedUiActors);
+                    restoreInventoryUiState(filterState, openedUiActors);
                     finishMushroomUseFailure("Loi chon item Nam huong tren UI: " + t.getMessage(), t);
                 }
             });
             if (!queued) {
-                postGameAction(() -> restoreOpenedUiActors(openedUiActors));
+                postGameAction(() -> restoreInventoryUiState(filterState, openedUiActors));
                 finishMushroomUseFailure("Khong the xep lenh chon item Nam huong len game thread.", null);
             }
         });
@@ -6608,6 +6664,7 @@ public final class TinhLinhBot {
             Actor selectedItemActor,
             List<Actor> openedUiActors,
             com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 nativeItem,
+            InventoryItemFilterState filterState,
             int targetSlot,
             int expectedItemId,
             String targetName,
@@ -6627,7 +6684,7 @@ public final class TinhLinhBot {
                     if (useMenu == null || !isActorConsideredVisible(useMenu)) {
                         if (attempt < 5) {
                             scheduleMushroomUseMenuSelection(selectedItemActor, openedUiActors, nativeItem,
-                                    targetSlot, expectedItemId, targetName, stackQuantityBefore,
+                                    filterState, targetSlot, expectedItemId, targetName, stackQuantityBefore,
                                     mushroomCountBefore, attempt + 1);
                             return;
                         }
@@ -6660,7 +6717,7 @@ public final class TinhLinhBot {
                     if (useActionActor == null) {
                         if (attempt < 5) {
                             scheduleMushroomUseMenuSelection(selectedItemActor, openedUiActors, nativeItem,
-                                    targetSlot, expectedItemId, targetName, stackQuantityBefore,
+                                    filterState, targetSlot, expectedItemId, targetName, stackQuantityBefore,
                                     mushroomCountBefore, attempt + 1);
                             return;
                         }
@@ -6678,7 +6735,7 @@ public final class TinhLinhBot {
                     }
                     invokeNativeClickListener(useActionActor, ITEM_ACTION_CLICK_LISTENER);
 
-                    restoreOpenedUiActors(openedUiActors);
+                    restoreInventoryUiState(filterState, openedUiActors);
                     log(String.format(Locale.ROOT,
                             "[DungNamHuong] Da chay callback client: action=%s, handler=%s, item=[%s - ID: %d, slot: %d]; cho cap nhat tui.",
                             normalizeText(getDirectActorText(useActionActor)), actionHandlerClass,
@@ -6686,14 +6743,14 @@ public final class TinhLinhBot {
                     scheduleMushroomUseVerification(targetSlot, expectedItemId, targetName,
                             stackQuantityBefore, mushroomCountBefore, 0);
                 } catch (Throwable t) {
-                    restoreOpenedUiActors(openedUiActors);
+                    restoreInventoryUiState(filterState, openedUiActors);
                     Throwable cause = t instanceof java.lang.reflect.InvocationTargetException && t.getCause() != null
                             ? t.getCause() : t;
                     finishMushroomUseFailure("Loi callback client 'Dung' sau khi chon item UI: " + cause.getMessage(), cause);
                 }
             });
             if (!queued) {
-                postGameAction(() -> restoreOpenedUiActors(openedUiActors));
+                postGameAction(() -> restoreInventoryUiState(filterState, openedUiActors));
                 finishMushroomUseFailure("Khong the xep callback client 'Dung' len game thread.", null);
             }
         });
