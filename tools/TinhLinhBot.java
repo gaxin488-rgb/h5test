@@ -698,6 +698,10 @@ public final class TinhLinhBot {
      * Neu chua vao game hoac player null, tra ve null.
      */
     public static Vector2 getPlayerPosition() {
+        if (Thread.currentThread() != gameThread) {
+            return callOnGameThread(TinhLinhBot::getPlayerPosition, null);
+        }
+
         try {
             com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
                     com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
@@ -1290,6 +1294,11 @@ public final class TinhLinhBot {
      * Tu dong phat hien trang thai kiet suc / hien popup kiet suc de goi saveExhaustionCoordinate().
      */
     private static void checkLocationTelemetry(long now) {
+        if (isMapTransitioning && now >= mapTransitionGraceUntil) {
+            isMapTransitioning = false;
+            log("[Waypoint] Het thoi gian cho chuyen map nhung map chua doi; cho phep thu lai.");
+        }
+
         String mapName = getCurrentMapName();
         if (mapName == null || mapName.trim().isEmpty()) {
             return;
@@ -2171,10 +2180,7 @@ public final class TinhLinhBot {
         return null;
     }
 
-    /**
-     * Di chuyen nhan vat den cong Waypoint va kich hoat chuyen map thong qua Waypoint Wrapper callback.
-     * Tich hop Map Transition Guard: Chong goi de trung lap gay crash Native Box2D/OpenGL.
-     */
+    /** Di chuyen toi waypoint va chi gui lenh chuyen map khi nhan vat da tiep can cong. */
     public static boolean moveToWaypoint(com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 waypoint) {
         if (waypoint == null) {
             return false;
@@ -2182,8 +2188,12 @@ public final class TinhLinhBot {
         long now = System.currentTimeMillis();
         int curMapId = getCurrentMapId();
 
-        // 1. Neu map moi vua load chua day 3s hoac dang trong nhip chuyen map, khong goi them
-        if (now < mapTransitionGraceUntil) {
+        // Ket thuc trang thai cho neu yeu cau chuyen map khong lam thay doi map.
+        if (isMapTransitioning && now >= mapTransitionGraceUntil) {
+            isMapTransitioning = false;
+            log("[Waypoint] Het thoi gian cho chuyen map nhung map chua doi; cho phep thu lai.");
+        }
+        if (now < mapTransitionGraceUntil || isMapTransitioning) {
             return false;
         }
 
@@ -2191,11 +2201,6 @@ public final class TinhLinhBot {
         try {
             wpId = waypoint.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
         } catch (Throwable ignored) {}
-
-        // 2. Chuc nang chong goi de: Neu da ra lenh cho cong nay tren map nay trong vong 10 giay, de controller tu chay
-        if (wpId >= 0 && activeWaypointId == wpId && activeWaypointMapId == curMapId && (now - activeWaypointSetTime < 10_000L)) {
-            return true;
-        }
 
         try {
             com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
@@ -2211,11 +2216,11 @@ public final class TinhLinhBot {
 
             Vector2 myPos = getPlayerPosition();
             final int finalWpId = wpId;
-            final Vector2 targetPos = wpPos;
-            final com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 targetWp = waypoint;
-            String wpName = getWaypointName(targetWp);
+            final Vector2 targetPos = new Vector2(wpPos);
+            String wpName = getWaypointName(waypoint);
+            boolean sameActiveWaypoint = wpId >= 0 && activeWaypointId == wpId && activeWaypointMapId == curMapId;
 
-            // 3. Neu da dung ngay mep cong (<= 2.2m): Gui truc tiep packet chuyen map, tranh invoke controller raycast gay crash Box2D
+            // Khi den gan cong, gui yeu cau qua client; khong goi waypoint trigger native.
             if (myPos != null && myPos.dst(wpPos) <= 2.2f && finalWpId >= 0) {
                 try {
                     com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
@@ -2227,27 +2232,25 @@ public final class TinhLinhBot {
                         activeWaypointMapId = curMapId;
                         activeWaypointSetTime = now;
                         isMapTransitioning = true;
-                        mapTransitionGraceUntil = now + 4000L;
+                        mapTransitionGraceUntil = now + 10_000L;
                         return true;
                     }
                 } catch (Throwable ignored) {}
             }
 
-            // 4. Neu o xa (> 2.2m): Di chuyen tiep can cong (chi set 1 lan duy nhat cho moi cong)
-            activeWaypointId = finalWpId;
-            activeWaypointMapId = curMapId;
-            activeWaypointSetTime = now;
+            // Bo qua lenh lap trong khi cung mot waypoint dang duoc tiep can.
+            if (sameActiveWaypoint && now - activeWaypointSetTime < 10_000L) {
+                return true;
+            }
 
+            // Tiep can waypoint bang movement controller, khong gan callback kich hoat cong.
             Gdx.app.postRunnable(() -> {
                 try {
+                    if (getCurrentMapId() != curMapId) return;
                     unlockPlayerMovement(player);
                     if (player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75 != null) {
                         player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75.set(targetPos);
                     }
-                    Class<?> clazz = Class.forName("com.a.c.f.a.b.e.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75");
-                    Constructor<?> constructor = clazz.getDeclaredConstructors()[0];
-                    constructor.setAccessible(true);
-                    Object wpTrigger = constructor.newInstance(targetWp);
                     Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
                     if (controller == null) return;
                     Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
@@ -2255,12 +2258,15 @@ public final class TinhLinhBot {
                             "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
                             float.class, float.class, callbackClass
                     );
-                    moveMethod.invoke(controller, targetPos.x, targetPos.y, wpTrigger);
+                    moveMethod.invoke(controller, targetPos.x, targetPos.y, null);
                     log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
                 } catch (Throwable t) {
                     log("[Waypoint] Loi khi khoi tao di chuyen cong waypoint: " + t.getMessage());
                 }
             });
+            activeWaypointId = finalWpId;
+            activeWaypointMapId = curMapId;
+            activeWaypointSetTime = now;
             return true;
         } catch (Throwable t) {
             log("[Waypoint] Loi trong moveToWaypoint: " + t.getMessage());
