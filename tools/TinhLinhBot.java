@@ -6335,6 +6335,45 @@ public final class TinhLinhBot {
         return useMushroom(now, false, true);
     }
 
+    private static void interactWithInventoryItem(int targetSlot, int expectedItemId) throws Exception {
+        if (targetSlot < 0) {
+            throw new IllegalArgumentException("Vat pham trong tui khong hop le.");
+        }
+
+        com.a.c.c.t.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 inventory =
+                com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIRlkUn75nEkLLllLLLlLlwhATDoyOuWanTHEreHIHihihAHAhahoHOhohEHEhegirlKUN75;
+        if (inventory == null) {
+            throw new IllegalStateException("Inventory manager chua san sang.");
+        }
+
+        com.badlogic.gdx.utils.Array<com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> items =
+                inventory.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75;
+        if (items == null || items.isEmpty()) {
+            items = inventory.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75;
+        }
+        if (items == null || targetSlot >= items.size) {
+            throw new IllegalStateException("Khong tim thay slot item trong tui do.");
+        }
+
+        com.a.c.c.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 nativeItem =
+                items.get(targetSlot);
+        if (nativeItem == null || nativeItem.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != expectedItemId) {
+            throw new IllegalStateException("Item trong slot da thay doi; huy thao tac de tranh dung nham.");
+        }
+
+        // Gọi callback "Dùng" gốc của UI game; callback nhận object item và tự gọi client packet.
+        Class<?> actionClass = Class.forName(
+                "com.a.c.f.e.a.a.a.gIRlkUn75nEKiilIIIILilwhatDoYOuwaNtherEhiHiHihAHahAhoHOhoHeheheGirlKUN75");
+        java.lang.reflect.Constructor<?> constructor = actionClass.getDeclaredConstructor(String.class);
+        constructor.setAccessible(true);
+        Object action = constructor.newInstance("Dùng");
+        java.lang.reflect.Method useAction = actionClass.getDeclaredMethod(
+                "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                nativeItem.getClass());
+        useAction.setAccessible(true);
+        useAction.invoke(action, nativeItem);
+    }
+
     private static String useMushroom(long now, boolean requireAutoEnabled, boolean ignoreCooldown) {
         if (requireAutoEnabled && !isAutoUseMushroomEnabled) {
             return "Tu dong dung Nam huong dang TAT.";
@@ -6374,30 +6413,24 @@ public final class TinhLinhBot {
 
         // 3. Co vat pham Nam huong -> Thuc hien su dung qua Game Client
         final int targetId = mushroomItem.id;
+        final int targetSlot = mushroomItem.slot;
         final String targetName = mushroomItem.name;
         final int curQty = totalMushroom;
 
         boolean queued = postGameAction(() -> {
             try {
-                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
-                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
-                if (client == null) {
-                    lastMushroomUseResult = "Game client chua san sang; se thu lai sau.";
-                    return;
-                }
-
-                client.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75(targetId);
+                interactWithInventoryItem(targetSlot, targetId);
                 lastMushroomUseTime = System.currentTimeMillis();
                 persistLastMushroomUseTime(lastMushroomUseTime);
                 lastMushroomUseResult = String.format(Locale.ROOT,
-                        "Da gui packet dung Nam huong [%s - ID: %d]. Chu ky: %ds.",
-                        targetName, targetId, mushroomUseIntervalMs / 1000L);
+                        "Da goi hanh dong Dung item goc cho [%s - ID: %d, slot: %d]. Chu ky: %ds.",
+                        targetName, targetId, targetSlot, mushroomUseIntervalMs / 1000L);
                 log(String.format(Locale.ROOT,
-                        "[DungNamHuong] Da gui packet su dung [%s - ID: %d] (so luong trong tui: %d).",
-                        targetName, targetId, curQty));
+                        "[DungNamHuong] Da goi hanh dong Dung item goc [%s - ID: %d, slot: %d] (so luong truoc thao tac: %d).",
+                        targetName, targetId, targetSlot, curQty));
             } catch (Throwable t) {
-                lastMushroomUseResult = "Loi gui packet dung Nam huong: " + t.getMessage();
-                log("[DungNamHuong] Loi khi gui goi tin dung vat pham: " + t.getMessage());
+                lastMushroomUseResult = "Loi tuong tac dung Nam huong: " + t.getMessage();
+                log("[DungNamHuong] Loi khi goi hanh dong Dung item goc: " + t.getMessage());
             } finally {
                 mushroomUsePending.set(false);
             }
