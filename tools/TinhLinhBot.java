@@ -2037,6 +2037,7 @@ public final class TinhLinhBot {
         if (player == null) return;
         try {
             player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(true);
+            player.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75 = false;
         } catch (Throwable ignored) {
         }
         try {
@@ -2180,6 +2181,9 @@ public final class TinhLinhBot {
             Gdx.app.postRunnable(() -> {
                 try {
                     unlockPlayerMovement(player);
+                    if (player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75 != null) {
+                        player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75.set(targetPos);
+                    }
                     Class<?> clazz = Class.forName("com.a.c.f.a.b.e.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75");
                     Constructor<?> constructor = clazz.getDeclaredConstructors()[0];
                     constructor.setAccessible(true);
@@ -2975,6 +2979,9 @@ public final class TinhLinhBot {
             Gdx.app.postRunnable(() -> {
                 try {
                     unlockPlayerMovement(player);
+                    if (player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75 != null) {
+                        player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75.set(targetX, targetY);
+                    }
                     Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
                     Method moveMethod = controller.getClass().getMethod(
                             "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
