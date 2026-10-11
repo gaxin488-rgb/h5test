@@ -4056,8 +4056,7 @@ public final class TinhLinhBot {
         }
 
         // --- 2. DONG BO & KICH HOAT CO AUTO NATIVE CUA GAME ---
-        if (combatJumpTargetId >= 0 || combatRepositionPending || portalAvoidancePending
-                || (temporarilySkippedCombatTargetId >= 0 && now < temporarilySkippedCombatTargetUntil)) {
+        if (combatJumpTargetId >= 0 || combatRepositionPending || portalAvoidancePending) {
             disableGameNativeAutoCombat();
         } else {
             enableGameNativeAutoCombat();
@@ -4354,7 +4353,7 @@ public final class TinhLinhBot {
                     temporarilySkippedCombatTargetId = -1;
                     temporarilySkippedCombatTargetUntil = 0L;
                 }
-                if (!combatRepositionPending && !portalAvoidancePending && temporarilySkippedCombatTargetId < 0) {
+                if (!combatRepositionPending && !portalAvoidancePending) {
                     enableGameNativeAutoCombat();
                 }
 
@@ -5298,19 +5297,13 @@ public final class TinhLinhBot {
 
     public static void enableGameNativeAutoCombat() {
         try {
-            // 1. Khong gioi han pham vi auto (0 = toan ban do) va bat toan bo skill flags qua Reflection
+            // 1. Khong gioi han pham vi auto (0 = toan ban do) va bat toan bo skill flags
             try {
-                Class<?> autoSettingCls = Class.forName("com.a.c.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75");
-                for (java.lang.reflect.Field f : autoSettingCls.getDeclaredFields()) {
-                    if (f.getType() == int.class) {
-                        f.setAccessible(true);
-                        f.setInt(null, 0); // radius = 0 (infinite)
-                    } else if (f.getType() == boolean[].class) {
-                        f.setAccessible(true);
-                        boolean[] arr = (boolean[]) f.get(null);
-                        if (arr != null) {
-                            for (int i = 0; i < arr.length; i++) arr[i] = true;
-                        }
+                com.a.c.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 = 0; // radius = 0 (toan ban do)
+                boolean[] skillsEnabled = com.a.c.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75;
+                if (skillsEnabled != null) {
+                    for (int i = 0; i < skillsEnabled.length; i++) {
+                        skillsEnabled[i] = true;
                     }
                 }
             } catch (Throwable ignored) {}
@@ -5354,10 +5347,13 @@ public final class TinhLinhBot {
         if (Gdx.app == null) return;
         Gdx.app.postRunnable(() -> {
             try {
-                // 1. Khoa muc tieu (Target Lock)
-                if (target != null) {
+                if (target == null) return;
+
+                // 1. Khoa muc tieu (Target Lock): Set ca phuong thuc lan static target field
+                try {
                     com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(target);
-                }
+                } catch (Throwable ignored) {}
+                com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 = target;
 
                 // 2. Thuc hien tan cong co ban qua Normal Attack Controller (false = che do tan cong muc tieu)
                 com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
@@ -5366,16 +5362,30 @@ public final class TinhLinhBot {
                     player.GIrLkun75NEkIliiILiiliWhATDOYouwantherehihIHihaHaHAhOHOhOhEHeHeGIRlKuN75.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(false);
                 }
 
-                // 2b. Direct Attack Packet Fallback: Truyen truc tiep goi tin danh muc tieu len server
+                // 2b. Direct Attack Packet: Truyen truc tiep goi tin danh muc tieu len server
                 try {
                     com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 sender =
                             com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
-                    if (sender != null && target != null) {
-                        sender.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(0, -1, target.a_());
+                    if (sender != null) {
+                        int skillId = 0;
+                        com.a.c.c.E.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 curSkill =
+                                com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75;
+                        if (curSkill != null && curSkill.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                            skillId = curSkill.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                        } else {
+                            com.badlogic.gdx.utils.Array<com.a.c.c.E.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75> skills =
+                                    com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75;
+                            if (skills != null && skills.size > 0 && skills.get(0) != null && skills.get(0).GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 != null) {
+                                skillId = skills.get(0).GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                                com.a.c.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 = skills.get(0);
+                            }
+                        }
+                        // param0: skillId, param1: targetType (0 = Monster, 1 = Player), param2: targetId
+                        sender.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(skillId, 0, target.a_());
                     }
                 } catch (Throwable ignored) {}
 
-                // 3. Goi cac nut ky nang (SkillButtons) tren UI neu co san sang
+                // 3. Goi cac nut ky nang (SkillButtons) tren UI
                 com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 game =
                         com.a.c.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
                 if (game != null) {
@@ -5388,25 +5398,14 @@ public final class TinhLinhBot {
                             com.a.c.f.e.a.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 table =
                                     ui.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
                             if (table.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 != null) {
-                                Object btnsObj = table.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75;
-                                for (java.lang.reflect.Field f : btnsObj.getClass().getDeclaredFields()) {
-                                    if (f.getType().isArray()) {
-                                        f.setAccessible(true);
-                                        Object[] arr = (Object[]) f.get(btnsObj);
-                                        if (arr != null) {
-                                            for (Object btn : arr) {
-                                                if (btn != null) {
-                                                    try {
-                                                        for (java.lang.reflect.Method clickM : btn.getClass().getMethods()) {
-                                                            if (clickM.getName().equals("GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75")
-                                                                    && clickM.getParameterCount() == 0) {
-                                                                clickM.invoke(btn);
-                                                                break;
-                                                            }
-                                                        }
-                                                    } catch (Throwable ignored) {}
-                                                }
-                                            }
+                                com.a.c.f.e.a.a.gIRlKun75nEkliIILLLLLIWHAtdoyoUWANtheREHiHIhIHahAhAHOhohOhehEheGiRLKuN75[] btns =
+                                        table.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75;
+                                if (btns != null) {
+                                    for (com.a.c.f.e.a.a.gIRlKun75nEkliIILLLLLIWHAtdoyoUWANtheREHiHIhIHahAhAHOhohOhehEheGiRLKuN75 btn : btns) {
+                                        if (btn != null) {
+                                            try {
+                                                btn.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75();
+                                            } catch (Throwable ignored) {}
                                         }
                                     }
                                 }
