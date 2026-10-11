@@ -2448,18 +2448,23 @@ public final class TinhLinhBot {
             boolean sameActiveWaypoint = wpId >= 0 && activeWaypointId == wpId && activeWaypointMapId == curMapId;
 
             // Khi den gan cong: gui yeu cau qua client.
-            // Neu con cach tam cong > 0.6m (nhu dang o mep ngoai sensor), KHONG dung lai ma tiep tuc buoc thang vao tam cong!
-            // Chi dung han va dat transition lock khi da buoc sau vao tam cong (<= 0.6m).
+            // Trong game 2D platformer, chieu cao cong (Y) co the lech 4-5m so voi vi tri dung tren mat dat.
+            // Do do kiem tra khoang cach ngang dx <= 2.5m (va dy <= 6.0m) hoac khoang cach hinh hoc 2D <= 2.5m.
             if (myPos != null && finalWpId >= 0) {
-                float distToWp = myPos.dst(wpPos);
-                if (distToWp <= 2.5f) {
+                float dx = Math.abs(myPos.x - wpPos.x);
+                float dy = Math.abs(myPos.y - wpPos.y);
+                float dist2D = myPos.dst(wpPos);
+                boolean inApproachZone = (dx <= 2.5f && dy <= 6.0f) || dist2D <= 2.5f;
+                boolean isDeepInside = (dx <= 0.8f && dy <= 6.0f) || dist2D <= 0.8f;
+
+                if (inApproachZone) {
                     try {
                         com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
                                 com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
                         if (client != null) {
                             client.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(finalWpId);
-                            if (distToWp <= 0.6f) {
-                                log("[Waypoint] Da buoc sau vao cong [" + wpName + "] (cach " + String.format(Locale.ROOT, "%.2f", distToWp) + "m) -> Gui truc tiep goi tin chuyen map (WpID=" + finalWpId + ")!");
+                            if (isDeepInside) {
+                                log("[Waypoint] Da buoc sau vao cong [" + wpName + "] (dx=" + String.format(Locale.ROOT, "%.2f", dx) + "m, dy=" + String.format(Locale.ROOT, "%.2f", dy) + "m) -> Gui truc tiep goi tin chuyen map (WpID=" + finalWpId + ")!");
                                 activeWaypointId = finalWpId;
                                 activeWaypointMapId = curMapId;
                                 activeWaypointSetTime = now;
@@ -2467,7 +2472,7 @@ public final class TinhLinhBot {
                                 mapTransitionGraceUntil = now + 6_000L;
                                 return true;
                             } else {
-                                log("[Waypoint] Dang tiep can mep cong [" + wpName + "] (cach " + String.format(Locale.ROOT, "%.2f", distToWp) + "m) -> Gui goi tin truoc va tiep tuc buoc thang vao tam cong...");
+                                log("[Waypoint] Dang tiep can mep cong [" + wpName + "] (dx=" + String.format(Locale.ROOT, "%.2f", dx) + "m, dy=" + String.format(Locale.ROOT, "%.2f", dy) + "m) -> Gui goi tin truoc va tiep tuc buoc thang vao tam cong...");
                             }
                         }
                     } catch (Throwable ignored) {}
