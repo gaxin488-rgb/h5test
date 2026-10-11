@@ -342,6 +342,23 @@ while ($listener.IsListening) {
                     } else {
                         Send-Response $res 404 @{ ok = $false; error = "File not found" }
                     }
+                } elseif ($path -eq "/download") {
+                    $filePath = $req.QueryString["path"]
+                    if ($filePath -and (Test-Path -LiteralPath $filePath -PathType Leaf)) {
+                        $res.ContentType = "application/octet-stream"
+                        $res.AddHeader("Content-Disposition", "attachment; filename=`"" + (Split-Path $filePath -Leaf) + "`"")
+                        $inStream = [IO.File]::OpenRead($filePath)
+                        $res.ContentLength64 = $inStream.Length
+                        try {
+                            $inStream.CopyTo($res.OutputStream)
+                        } finally {
+                            $inStream.Dispose()
+                            $res.Close()
+                        }
+                        continue
+                    } else {
+                        Send-Response $res 404 @{ ok = $false; error = "File not found" }
+                    }
                 } elseif ($path -eq "/write_file") {
                     $b = Get-Body $req
                     $parent = Split-Path ([string]$b.path) -Parent

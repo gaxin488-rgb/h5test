@@ -76,7 +76,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 19: Loop Bo Sung: Tu Dong Doi Khu / Channel Tren Map Kiet Suc (handleAutoZoneLoop, triggerNextZoneChange, isAutoChangeZoneEnabled, setAutoChangeZoneEnabled, setZoneChangeIntervalMs, getAvailableZoneIds).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.12-Feature19-AutoChangeZone";
+    private static final String VERSION = "1.9.14-Feature21-AssetGuardAndPortalAdvancing";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -193,6 +193,16 @@ public final class TinhLinhBot {
     private static volatile long combatRepositionStartTime = 0L;
     private static volatile int temporarilySkippedCombatTargetId = -1;
     private static volatile long temporarilySkippedCombatTargetUntil = 0L;
+
+    // Feature 21: Portal Boundary Guard & Mob Advancing Engine (Chong ket sat mep cong)
+    private static final float PORTAL_DANGER_RADIUS_METERS = 5.0f;
+    private static final float PORTAL_SAFE_ESCAPE_DISTANCE_METERS = 25.0f;
+    private static final long PORTAL_AVOIDANCE_TIMEOUT_MS = 6_000L;
+    private static volatile boolean portalAvoidancePending = false;
+    private static volatile float portalAvoidanceTargetX = 0f;
+    private static volatile float portalAvoidanceTargetY = 0f;
+    private static volatile long portalAvoidanceStartTime = 0L;
+    private static volatile long lastPortalAvoidanceAttemptTime = 0L;
 
     // Sticky Target Locking: Giu chat 1 quai danh den khi ha guc hoan toan
     private static volatile com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 currentCombatTarget = null;
@@ -2096,8 +2106,11 @@ public final class TinhLinhBot {
             if (phys != null) {
                 Method m = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
                 com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) m.invoke(phys);
-                if (body != null && body.getType() != com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody) {
-                    body.setType(com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody);
+                if (body != null) {
+                    if (body.getType() != com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody) {
+                        body.setType(com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody);
+                    }
+                    body.setAwake(true);
                 }
             }
         } catch (Throwable ignored) {
@@ -2123,6 +2136,129 @@ public final class TinhLinhBot {
         } catch (Throwable ignored) {
         }
         return null;
+    }
+
+    /**
+     * Kiem tra xem toa do nhan vat co dang nam trong vung nguy hiem sat bat ky mep cong waypoint nao khong.
+     */
+    public static boolean isNearPortalBoundary(Vector2 pos, float marginMeters) {
+        if (pos == null) return false;
+        Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+        if (wps == null || wps.size == 0) return false;
+        for (int i = 0; i < wps.size; i++) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = wps.get(i);
+            if (wp != null) {
+                Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                if (wpPos != null && pos.dst(wpPos) < marginMeters) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Tim toa do cong waypoint gan nhat voi vi tri hien tai cua nhan vat.
+     */
+    public static Vector2 findNearestWaypoint(Vector2 pos) {
+        if (pos == null) return null;
+        Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+        if (wps == null || wps.size == 0) return null;
+        Vector2 nearest = null;
+        float minDist = Float.MAX_VALUE;
+        for (int i = 0; i < wps.size; i++) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = wps.get(i);
+            if (wp != null) {
+                Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                if (wpPos != null) {
+                    float d = pos.dst(wpPos);
+                    if (d < minDist) {
+                        minDist = d;
+                        nearest = wpPos;
+                    }
+                }
+            }
+        }
+        return nearest;
+    }
+
+    /**
+     * Tinh toan toa do dich den an toan va tien sau vao bai quai trung tam de thoat khoi cong:
+     * 1. Uu tien toa do quai vat dang song gan nhat tren map (neu quai cach xa mep cong >= 6.0m).
+     * 2. Uu tien toa do bai train da luu (neu da luu va cach xa cong >= 8.0m).
+     * 3. Mac dinh: Tien vao vung trung tam map (X=35.0f - 45.0f neu cong ben trai, hoac lui 25m neu cong ben phai).
+     */
+    public static Vector2 calculateMobAdvanceTarget(Vector2 pos, Vector2 wpPos) {
+        if (pos == null) return new Vector2(40.0f, 7.0f);
+        float groundY = (pos.y > 0.0f) ? pos.y : 7.0f;
+
+        // 1. Kiem tra quai vat con song tren map
+        try {
+            com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 mob = findNearestLivingMonster(pos);
+            if (mob != null) {
+                Vector2 mobPos = getMonsterPosition(mob);
+                if (mobPos != null && mobPos.x > 10.0f && mobPos.y > 1.0f && !isNearPortalBoundary(mobPos, 6.0f)) {
+                    return new Vector2(mobPos.x, mobPos.y);
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // 2. Kiem tra toa do train da luu
+        try {
+            SavedCoordinate saved = getSavedExhaustionCoordinate();
+            if (saved == null) saved = getLastFarmMap();
+            if (saved != null && saved.x > 10.0f && saved.y > 1.0f
+                    && isSameMap(getCurrentMapId(), getCurrentMapName(), saved.mapId, saved.mapName)) {
+                Vector2 savedVec = new Vector2(saved.x, saved.y);
+                if (!isNearPortalBoundary(savedVec, 8.0f)) {
+                    return savedVec;
+                }
+            }
+        } catch (Throwable ignored) {}
+
+        // 3. Toa do fallback tien sau vao map
+        float targetX;
+        if (wpPos != null) {
+            if (wpPos.x <= 30.0f) {
+                targetX = Math.max(pos.x + PORTAL_SAFE_ESCAPE_DISTANCE_METERS, 40.0f);
+            } else {
+                targetX = Math.min(pos.x - PORTAL_SAFE_ESCAPE_DISTANCE_METERS, wpPos.x - 25.0f);
+            }
+        } else {
+            targetX = (pos.x <= 30.0f) ? Math.max(pos.x + PORTAL_SAFE_ESCAPE_DISTANCE_METERS, 40.0f) : (pos.x - PORTAL_SAFE_ESCAPE_DISTANCE_METERS);
+        }
+        if (wpPos != null && wpPos.x <= 30.0f && targetX < 15.0f) {
+            targetX = 40.0f;
+        }
+        return new Vector2(targetX, groundY);
+    }
+
+    /**
+     * Thuc thi chu trinh thoat cong va tien vao bai quai (Trace du 4 chang Box2D & State Machine).
+     */
+    public static void executePortalAvoidanceStep(Vector2 pos, Vector2 wpPos, long now) {
+        lastCombatMoveTime = now;
+        lastPortalAvoidanceAttemptTime = now;
+        portalAvoidanceStartTime = now;
+        portalAvoidancePending = true;
+
+        Vector2 target = calculateMobAdvanceTarget(pos, wpPos);
+        if (wpPos != null && wpPos.x <= 30.0f && target.x < 15.0f) {
+            target.x = 40.0f;
+        }
+        portalAvoidanceTargetX = target.x;
+        portalAvoidanceTargetY = target.y;
+
+        float distFromPortal = (wpPos != null) ? pos.dst(wpPos) : 0f;
+        log(String.format(Locale.ROOT,
+                "[AutoFarm-PortalGuard] 🚀 Phat hien nhan vat dung sat cong (X=%.1f, cach cong %.1fm) -> Buoc tien sau vao bai quai toi (X=%.1f, Y=%.1f)...",
+                pos.x, distFromPortal, target.x, target.y));
+
+        // Chang 1 & 2: Giai phong Native Auto Combat de Navigator khong bi khoa chan
+        disableGameNativeAutoCombat();
+
+        // Chang 3: Actuator - Ra lenh cho Movement Controller
+        moveTo(target.x, target.y);
     }
 
     /**
@@ -2267,6 +2403,9 @@ public final class TinhLinhBot {
             if (sameActiveWaypoint && now - activeWaypointSetTime < 10_000L) {
                 return true;
             }
+            activeWaypointId = finalWpId;
+            activeWaypointMapId = curMapId;
+            activeWaypointSetTime = now;
 
             // Tiep can waypoint bang movement controller, khong gan callback kich hoat cong.
             Gdx.app.postRunnable(() -> {
@@ -2296,6 +2435,44 @@ public final class TinhLinhBot {
         } catch (Throwable t) {
             log("[Waypoint] Loi trong moveToWaypoint: " + t.getMessage());
             return false;
+        }
+    }
+
+    // --- ASSET INTEGRITY GUARD: DUMMY FALLBACK TEXTURE REGION ---
+    private static volatile com.badlogic.gdx.graphics.g2d.TextureRegion fallbackTextureRegion = null;
+    private static final java.util.Set<String> reportedMissingTextures =
+            java.util.Collections.newSetFromMap(new java.util.concurrent.ConcurrentHashMap<String, Boolean>());
+
+    /**
+     * Cung cap mot TextureRegion hop le (1x1 transparent) khi game khong the nap texture
+     * tu file anh hoac texture atlas, ngan chan hoan toan ngoai le NullPointerException
+     * trong vong lap render cua LibGDX khi goi TextureRegion.getU().
+     */
+    public static com.badlogic.gdx.graphics.g2d.TextureRegion getFallbackTextureRegion(String name) {
+        try {
+            if (name != null && !name.trim().isEmpty() && !reportedMissingTextures.contains(name)) {
+                reportedMissingTextures.add(name);
+                log("[AssetGuard] 🛡️ Phat hien thieu asset/texture: [" + name + "] -> Cap phat dummy TextureRegion de chong crash game!");
+            }
+            if (fallbackTextureRegion == null) {
+                synchronized (TinhLinhBot.class) {
+                    if (fallbackTextureRegion == null) {
+                        try {
+                            com.badlogic.gdx.graphics.Pixmap pixmap = new com.badlogic.gdx.graphics.Pixmap(1, 1, com.badlogic.gdx.graphics.Pixmap.Format.RGBA8888);
+                            pixmap.setColor(0, 0, 0, 0);
+                            pixmap.fill();
+                            com.badlogic.gdx.graphics.Texture texture = new com.badlogic.gdx.graphics.Texture(pixmap);
+                            pixmap.dispose();
+                            fallbackTextureRegion = new com.badlogic.gdx.graphics.g2d.TextureRegion(texture);
+                        } catch (Throwable fallbackErr) {
+                            fallbackTextureRegion = new com.badlogic.gdx.graphics.g2d.TextureRegion();
+                        }
+                    }
+                }
+            }
+            return (fallbackTextureRegion != null) ? fallbackTextureRegion : new com.badlogic.gdx.graphics.g2d.TextureRegion();
+        } catch (Throwable t) {
+            return new com.badlogic.gdx.graphics.g2d.TextureRegion();
         }
     }
 
@@ -3870,7 +4047,7 @@ public final class TinhLinhBot {
         }
 
         // --- 2. DONG BO & KICH HOAT CO AUTO NATIVE CUA GAME ---
-        if (combatJumpTargetId >= 0 || combatRepositionPending
+        if (combatJumpTargetId >= 0 || combatRepositionPending || portalAvoidancePending
                 || (temporarilySkippedCombatTargetId >= 0 && now < temporarilySkippedCombatTargetUntil)) {
             disableGameNativeAutoCombat();
         } else {
@@ -3887,27 +4064,27 @@ public final class TinhLinhBot {
         if (pos == null) {
             return;
         }
-
-        // Portal Boundary Guard: Neu nhan vat dang dung qua sat mep cong (< 3.0m) thi buoc lui ra vung an toan
         Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> currentWps = getCurrentMapWaypoints();
-        if (currentWps != null) {
-            for (int i = 0; i < currentWps.size; i++) {
-                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = currentWps.get(i);
-                if (wp != null) {
-                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
-                    if (wpPos != null && pos.dst(wpPos) < 3.0f) {
-                        if (now - lastCombatMoveTime >= 1500L) {
-                            lastCombatMoveTime = now;
-                            float safeX = (wpPos.x > 30.0f) ? (wpPos.x - 5.0f) : (wpPos.x + 5.0f);
-                            log(String.format(Locale.ROOT,
-                                    "[AutoFarm-Combat] ⚠️ Nhan vat dung qua sat cong (X=%.1f) cach %.1fm -> Lui ra khoi mep cong (X=%.1f)...",
-                                    pos.x, pos.dst(wpPos), safeX));
-                            moveTo(safeX, pos.y);
-                        }
-                        return;
-                    }
-                }
+
+        // --- FEATURE 21: PORTAL BOUNDARY GUARD & ADVANCING ENGINE ---
+        if (portalAvoidancePending) {
+            float remainingToTarget = pos.dst(portalAvoidanceTargetX, portalAvoidanceTargetY);
+            boolean escapedPortals = !isNearPortalBoundary(pos, PORTAL_DANGER_RADIUS_METERS);
+            if (remainingToTarget <= 1.2f || (escapedPortals && now - portalAvoidanceStartTime >= 1500L)
+                    || (now - portalAvoidanceStartTime >= PORTAL_AVOIDANCE_TIMEOUT_MS)) {
+                portalAvoidancePending = false;
+                log(String.format(Locale.ROOT,
+                        "[AutoFarm-PortalGuard] ✅ Nhan vat da thoat khoi vung cong an toan toi (X=%.1f, Y=%.1f); tiep tuc chu trinh combat.",
+                        pos.x, pos.y));
+            } else {
+                return; // Dang tiep tuc di chuyen tien vao bai quai
             }
+        } else if (isNearPortalBoundary(pos, PORTAL_DANGER_RADIUS_METERS)) {
+            if (now - lastPortalAvoidanceAttemptTime >= 2000L) {
+                Vector2 nearestWp = findNearestWaypoint(pos);
+                executePortalAvoidanceStep(pos, nearestWp, now);
+            }
+            return;
         }
 
         if (combatRepositionPending) {
@@ -4118,7 +4295,7 @@ public final class TinhLinhBot {
                     temporarilySkippedCombatTargetId = -1;
                     temporarilySkippedCombatTargetUntil = 0L;
                 }
-                if (!combatRepositionPending && temporarilySkippedCombatTargetId < 0) {
+                if (!combatRepositionPending && !portalAvoidancePending && temporarilySkippedCombatTargetId < 0) {
                     enableGameNativeAutoCombat();
                 }
 
@@ -4135,16 +4312,11 @@ public final class TinhLinhBot {
                 }
             }
         } else {
-            // Khong tim thay quai vat nao gan (hoac dang dung o cong vao map X < 10)
-            if (pos.x < 10.0f) {
-                if (now - lastCombatMoveTime >= 3000L) {
-                    lastCombatMoveTime = now;
-                    float targetX = 45.0f;
-                    float targetY = (pos.y > 0.0f) ? pos.y : 5.5f;
-                    log(String.format(Locale.ROOT,
-                            "[AutoFarm-Combat] Nhan vat dang o cong vao (X=%.1f, Y=%.1f) chua thay quai -> Tien vao bai quai trung tam (X=%.1f, Y=%.1f)...",
-                            pos.x, pos.y, targetX, targetY));
-                    moveTo(targetX, targetY);
+            // Khong tim thay quai vat nao gan (hoac dang dung o cong vao map)
+            if (pos.x < 15.0f || isNearPortalBoundary(pos, PORTAL_DANGER_RADIUS_METERS)) {
+                if (now - lastCombatMoveTime >= 2000L) {
+                    Vector2 nearestWp = findNearestWaypoint(pos);
+                    executePortalAvoidanceStep(pos, nearestWp, now);
                 }
             }
         }
@@ -5547,6 +5719,7 @@ public final class TinhLinhBot {
     public static void handlePartyAutomation(long now) {
         if (!isAutoPartyEnabled) return;
         if (!isPlayerInGame()) return;
+        if (!isAtExhaustionMap()) return;
 
         dismissOrAcceptPartyDialogs(now);
 

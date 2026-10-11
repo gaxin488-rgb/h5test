@@ -107,11 +107,11 @@ if exist "%~dp0cacerts" (
     set "SSL_FLAG=-Djavax.net.ssl.trustStore=%~dp0jre\lib\security\cacerts"
 )
 
-rem --- Khoi chay game (Chan triet de crash dump hs_err_*.mdmp va toi uu native memory cho VPS 1GB RAM) ---
-"%JAVA_BIN%" -Xms64m -Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ReservedCodeCacheSize=64m -Xss256k -XX:MaxMetaspaceSize=96m -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
+rem --- Khoi chay game (Toi uu native memory cho VPS 1GB RAM) ---
+"%JAVA_BIN%" -Xms64m -Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ReservedCodeCacheSize=64m -Xss512k -XX:MaxMetaspaceSize=96m -XX:-CreateCoredumpOnCrash -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar" >> "%~dp0game_stdout.txt" 2>&1
 set "EXIT_CODE=%ERRORLEVEL%"
 
-echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%.
+echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%. >> "%~dp0game_stdout.txt"
 
 rem --- Kiem tra neu nguoi dung muon tat han ---
 if exist "%~dp0tat_tu_khoi_dong.txt" (
