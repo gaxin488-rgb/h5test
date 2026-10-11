@@ -80,7 +80,7 @@ echo  [WATCHDOG] Phien chay #%RESTART_COUNT% - %DATE% %TIME%
 echo ========================================================
 
 rem --- Storage & Capacity Guard: Don dep pgame-sdk temp va cat tia log truoc khi khoi chay ---
-powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 'C:\Users\*\AppData\Local\Temp\pgame-sdk*', '$env:TEMP\hs_err*.log' -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force; Write-Host '[StorageGuard] Da cat tia autofarm_log.txt ve 1500 dong (<3MB).' -ForegroundColor Yellow } }"
+powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 'C:\Users\*\AppData\Local\Temp\pgame-sdk*', '$env:TEMP\hs_err*.log', '%~dp0replay_*.log' -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force; Write-Host '[StorageGuard] Da cat tia autofarm_log.txt ve 1500 dong (<3MB).' -ForegroundColor Yellow } }"
 
 rem --- Don dep thu muc temp neu o C: duoi 1500MB ---
 powershell.exe -NoProfile -Command "$freeMB = [math]::Round(((Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -like '*C:*' }).Free / 1MB), 0); if ($freeMB -lt 1500) { Clear-RecycleBin -Force -ErrorAction SilentlyContinue; Remove-Item -Path \"$env:TEMP\tinhlinh*\", \"C:\Users\*\AppData\Local\Temp\pgame-sdk*\" -Recurse -Force -ErrorAction SilentlyContinue; Write-Host ('[StorageGuard] Canh bao dung luong o C: con {0}MB -> Da don dep temp va RecycleBin.' -f $freeMB) -ForegroundColor Yellow }"
@@ -104,8 +104,8 @@ if exist "%~dp0cacerts" (
     set "SSL_FLAG=-Djavax.net.ssl.trustStore=%~dp0jre\lib\security\cacerts"
 )
 
-rem --- Khoi chay game (Chan triet de crash dump hs_err_*.mdmp de bao ve o C: 15GB) ---
-"%JAVA_BIN%" -Xms64m -Xmx256m -XX:+UseSerialGC -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
+rem --- Khoi chay game (Chan triet de crash dump hs_err_*.mdmp va toi uu native memory cho VPS 1GB RAM) ---
+"%JAVA_BIN%" -Xms64m -Xmx256m -XX:+UseSerialGC -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -XX:ReservedCodeCacheSize=32m -Xss256k -XX:MaxMetaspaceSize=96m -XX:-CreateCoredumpOnCrash -XX:ErrorFile=NUL -Dfile.encoding=UTF-8 !SSL_FLAG! -jar "%~dp0TinhLinh.jar"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 echo [WATCHDOG] Tien trinh game da dung (Ma thoat: %EXIT_CODE%) tai %DATE% %TIME%.
@@ -125,7 +125,7 @@ if exist "%~dp0stop_game.txt" (
 )
 
 rem --- Post-Run Emergency Storage Cleanup ---
-powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 'C:\Users\*\AppData\Local\Temp\pgame-sdk*' -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force } }; [GC]::Collect()"
+powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 'C:\Users\*\AppData\Local\Temp\pgame-sdk*', '%~dp0replay_*.log' -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force } }; [GC]::Collect()"
 
 rem --- Hot-Patch Pause Check: Tam dung watchdog de cap nhat JAR ma khong lam crash tien trinh ---
 :wait_hot_patch
