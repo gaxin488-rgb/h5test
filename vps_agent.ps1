@@ -199,6 +199,10 @@ function Update-AgentFromGithub {
 }
 
 function Start-TunnelProcess {
+    if ((Get-Service Cloudflared -ErrorAction SilentlyContinue).Status -eq 'Running') {
+        Write-Log "Cloudflared Windows Service is already Running. Skipping inline quick-tunnel."
+        return $null
+    }
     if ((Get-Date) -lt $script:NextTunnelStart) {
         return $null
     }
@@ -348,6 +352,22 @@ while ($listener.IsListening) {
                         [IO.File]::WriteAllText($b.path, [string]$b.content, [Text.Encoding]::UTF8)
                     }
                     Send-Response $res 200 @{ ok = $true; path = $b.path }
+                } elseif ($path -eq "/upload") {
+                    $targetPath = $req.QueryString["path"]
+                    if (-not $targetPath) {
+                        Send-Response $res 400 @{ ok = $false; error = "Missing path parameter" }
+                    } else {
+                        $parent = Split-Path $targetPath -Parent
+                        if ($parent -and -not (Test-Path $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
+                        $fileStream = [IO.File]::Create($targetPath)
+                        try {
+                            $req.InputStream.CopyTo($fileStream)
+                        } finally {
+                            $fileStream.Dispose()
+                        }
+                        $len = (Get-Item -LiteralPath $targetPath).Length
+                        Send-Response $res 200 @{ ok = $true; path = $targetPath; size = $len }
+                    }
                 } elseif ($path -eq "/list_files") {
                     $p = if ($req.QueryString["path"]) { $req.QueryString["path"] } else { $Dir }
                     if (Test-Path $p) {
