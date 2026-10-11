@@ -2029,6 +2029,31 @@ public final class TinhLinhBot {
     }
 
     /**
+     * Mo khoa di chuyen cho nhan vat:
+     * 1. Kich hoat master flag canMove = true (Field #102 trong Player) de Navigator.act() khong bi return som.
+     * 2. Dam bao Box2D Body o trang thai DynamicBody de tiep nhan xung luc van toc di chuyen.
+     */
+    public static void unlockPlayerMovement(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        if (player == null) return;
+        try {
+            player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(true);
+        } catch (Throwable ignored) {
+        }
+        try {
+            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
+                    player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+            if (phys != null) {
+                Method m = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
+                com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) m.invoke(phys);
+                if (body != null && body.getType() != com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody) {
+                    body.setType(com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    /**
      * Tra ve danh sach tat ca cac cong Waypoint tren map hien tai.
      */
     public static Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> getCurrentMapWaypoints() {
@@ -2154,6 +2179,7 @@ public final class TinhLinhBot {
 
             Gdx.app.postRunnable(() -> {
                 try {
+                    unlockPlayerMovement(player);
                     Class<?> clazz = Class.forName("com.a.c.f.a.b.e.GIrLkUn75NEkIlillliLIIwhatDOYOUwaNThEREHIHihIHAHAHAHoHoHOHehEhEGIrLKuN75");
                     Constructor<?> constructor = clazz.getDeclaredConstructors()[0];
                     constructor.setAccessible(true);
@@ -2948,6 +2974,7 @@ public final class TinhLinhBot {
             Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
             Gdx.app.postRunnable(() -> {
                 try {
+                    unlockPlayerMovement(player);
                     Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
                     Method moveMethod = controller.getClass().getMethod(
                             "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",

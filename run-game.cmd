@@ -63,7 +63,7 @@ echo [i] Watchdog san sang. De tat, tao file tat_tu_khoi_dong.txt hoac bam Ctrl+
 
 rem --- Single-Instance Guard: Ngan chan chay trung lap nhieu watchdog ---
 set "LOCK_FILE=%~dp0.watchdog.pid"
-powershell.exe -NoProfile -Command "$lf = '%LOCK_FILE%'; if (Test-Path $lf) { $p = Get-Content $lf -ErrorAction SilentlyContinue; if ($p -and (Get-Process -Id ([int]$p) -ErrorAction SilentlyContinue)) { Write-Host ('[Watchdog] Da co tien trinh watchdog PID {0} dang chay. Thoat instance moi.' -f $p) -ForegroundColor Yellow; exit 42 } }; [IO.File]::WriteAllText($lf, $PID.ToString())"
+powershell.exe -NoProfile -Command "$lf = '%LOCK_FILE%'; $parentPid = (Get-CimInstance Win32_Process -Filter \"ProcessId = $PID\").ParentProcessId; if (Test-Path $lf) { $p = Get-Content $lf -ErrorAction SilentlyContinue; if ($p -and ($p -ne $parentPid) -and (Get-Process -Id ([int]$p) -ErrorAction SilentlyContinue)) { Write-Host ('[Watchdog] Da co tien trinh watchdog PID {0} dang chay. Thoat instance moi.' -f $p) -ForegroundColor Yellow; exit 42 } }; [IO.File]::WriteAllText($lf, $parentPid.ToString())"
 if errorlevel 42 (
     echo [Watchdog] Da co mot phien watchdog khac dang hoat dong. Cua so nay se dong.
     timeout /t 5 >nul
@@ -126,6 +126,14 @@ if exist "%~dp0stop_game.txt" (
 
 rem --- Post-Run Emergency Storage Cleanup ---
 powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 'C:\Users\*\AppData\Local\Temp\pgame-sdk*' -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force } }; [GC]::Collect()"
+
+rem --- Hot-Patch Pause Check: Tam dung watchdog de cap nhat JAR ma khong lam crash tien trinh ---
+:wait_hot_patch
+if exist "%~dp0pause_game.txt" (
+    echo [WATCHDOG] Phat hien pause_game.txt - Tam dung cho cap nhat file...
+    timeout /t 3 /nobreak >nul
+    goto wait_hot_patch
+)
 
 echo [WATCHDOG] Tu dong khoi dong lai game sau 5 giay...
 timeout /t 5 /nobreak >nul
