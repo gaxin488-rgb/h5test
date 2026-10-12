@@ -112,8 +112,8 @@ public final class TinhLinhBot {
     private static final String LAST_FARM_MAP_FILE = "last_farm_map.txt";
     private static final String MUSHROOM_USE_STATE_FILE = "mushroom_use_state.txt";
     private static final String APPLE_HARVEST_COUNT_FILE = "apple_harvest_count_today.txt";
-    private static final int DEFAULT_FARM_MAP_ID = 7;
-    private static final String DEFAULT_FARM_MAP_NAME = "Rừng Cổ Mộc";
+    private static final int DEFAULT_FARM_MAP_ID = 4;
+    private static final String DEFAULT_FARM_MAP_NAME = "Thảo nguyên mạch gió";
 
     // Feature 5: Tu dong Hai Tao & Thu Hoach (Apple Harvest & Farm Portal Automation)
     private static volatile boolean isAutoAppleHarvestEnabled = false;
