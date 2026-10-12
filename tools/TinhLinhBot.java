@@ -2503,20 +2503,6 @@ public final class TinhLinhBot {
                             float.class, float.class, callbackClass
                     );
                     moveMethod.invoke(controller, targetPos.x, targetPos.y, null);
-                    if (curMapId == 5 && myPos != null && myPos.x < 14.0f && myPos.y < 4.0f) {
-                        try {
-                            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 physComp =
-                                    player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
-                            if (physComp != null) {
-                                Method bm = physComp.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
-                                com.badlogic.gdx.physics.box2d.Body b = (com.badlogic.gdx.physics.box2d.Body) bm.invoke(physComp);
-                                if (b != null) {
-                                    b.setLinearVelocity(3.5f, 5.5f);
-                                    log("[AutoFarm-Apple] Nhan vat nhay tien thoat khoi ho Map 5 de len san cong!");
-                                }
-                            }
-                        } catch (Throwable ignored) {}
-                    }
                     log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
                 } catch (Throwable t) {
                     log("[Waypoint] Loi khi khoi tao di chuyen cong waypoint: " + t.getMessage());
