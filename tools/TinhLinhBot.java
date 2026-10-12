@@ -112,17 +112,11 @@ public final class TinhLinhBot {
     private static final String LAST_FARM_MAP_FILE = "last_farm_map.txt";
     private static final String MUSHROOM_USE_STATE_FILE = "mushroom_use_state.txt";
     private static final String APPLE_HARVEST_COUNT_FILE = "apple_harvest_count_today.txt";
-    private static final int DEFAULT_FARM_MAP_ID = 4;
-    private static final String DEFAULT_FARM_MAP_NAME = "Thảo nguyên mạch gió";
-
-    // Feature 23: Tu dong chuyen Map Farm khi dat moc Target EXP (Mac dinh 7,000,000 EXP)
-    private static volatile long targetExpThreshold = 7_000_000L;
-    private static volatile int nextMapAfterTargetExp = 6;
-    private static volatile String nextMapNameAfterTargetExp = "Đại ngàn Sayari";
-    private static volatile boolean targetExpProgressionTriggered = false;
+    private static final int DEFAULT_FARM_MAP_ID = 7;
+    private static final String DEFAULT_FARM_MAP_NAME = "Rừng Cổ Mộc";
 
     // Feature 5: Tu dong Hai Tao & Thu Hoach (Apple Harvest & Farm Portal Automation)
-    private static volatile boolean isAutoAppleHarvestEnabled = true;
+    private static volatile boolean isAutoAppleHarvestEnabled = false;
     private static volatile boolean hasHarvestedApple = false;
     private static volatile int appleHarvestCountToday = 0;
     private static volatile String appleHarvestCountDate = "";
@@ -352,12 +346,6 @@ public final class TinhLinhBot {
     }
 
     private static final java.util.concurrent.atomic.AtomicLong totalPixmapsDisposed = new java.util.concurrent.atomic.AtomicLong(0);
-
-    /**
-     * Compatibility guard: Prevents NoSuchMethodError if game bytecode contains legacy onRenderTick call.
-     */
-    public static void onRenderTick() {
-    }
 
     /**
      * Memory Guard hook: Injected by WindowPatch into girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75
@@ -2387,12 +2375,30 @@ public final class TinhLinhBot {
         for (int i = 0; i < waypoints.size; i++) {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
             if (wp != null) {
+                int targetId = wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                if ((targetNorm.contains("nong") || targetNorm.contains("trai")) && targetId == 5) {
+                    return wp;
+                }
+                if ((targetNorm.contains("lang") || targetNorm.contains("eldarah")) && (targetId == 2 || targetId == 0)) {
+                    return wp;
+                }
+                if (targetNorm.contains("thung lung") && targetId == 3) {
+                    return wp;
+                }
+                if (targetNorm.contains("thao nguyen") && targetId == 4) {
+                    return wp;
+                }
+                if ((targetNorm.contains("doi ngan") || targetNorm.contains("sayari")) && (targetId == 6 || targetId == 1)) {
+                    return wp;
+                }
+                if (targetNorm.contains("rung co moc") && (targetId == 7 || targetId == 2)) {
+                    return wp;
+                }
                 String wpName = getWaypointName(wp);
                 String wpNorm = normalizeText(wpName);
                 if (allWp.length() > 0) allWp.append(", ");
-                allWp.append("[").append(wpName).append("]");
-                if (!wpNorm.isEmpty() && !targetNorm.isEmpty()
-                        && (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm))) {
+                allWp.append("[").append(wpName).append(" (ID:").append(targetId).append(")]");
+                if (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm) || (targetNorm.contains("nong") && wpNorm.contains("nong"))) {
                     return wp;
                 }
             }
@@ -2497,6 +2503,20 @@ public final class TinhLinhBot {
                             float.class, float.class, callbackClass
                     );
                     moveMethod.invoke(controller, targetPos.x, targetPos.y, null);
+                    if (curMapId == 5 && myPos != null && myPos.x < 14.0f && myPos.y < 4.0f) {
+                        try {
+                            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 physComp =
+                                    player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+                            if (physComp != null) {
+                                Method bm = physComp.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
+                                com.badlogic.gdx.physics.box2d.Body b = (com.badlogic.gdx.physics.box2d.Body) bm.invoke(physComp);
+                                if (b != null) {
+                                    b.setLinearVelocity(3.5f, 5.5f);
+                                    log("[AutoFarm-Apple] Nhan vat nhay tien thoat khoi ho Map 5 de len san cong!");
+                                }
+                            }
+                        } catch (Throwable ignored) {}
+                    }
                     log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
                 } catch (Throwable t) {
                     log("[Waypoint] Loi khi khoi tao di chuyen cong waypoint: " + t.getMessage());
@@ -3356,31 +3376,6 @@ public final class TinhLinhBot {
     }
 
     /**
-     * Danh sach tu khoa dinh danh ten cong chuyen map cho tung Map ID.
-     */
-    public static String[] getMapKeywords(int mapId) {
-        switch (mapId) {
-            case 2:
-            case 0:
-                return new String[]{"lang", "eldarah"};
-            case 3:
-                return new String[]{"thung lung", "co lau"};
-            case 4:
-                return new String[]{"thao nguyen", "mach gio"};
-            case 5:
-                return new String[]{"nong trai", "nong", "trai"};
-            case 6:
-                return new String[]{"sayari", "dai ngan", "doi ngan"};
-            case 7:
-                return new String[]{"rung co moc", "co moc"};
-            case 8:
-                return new String[]{"rung than moc", "than moc"};
-            default:
-                return new String[]{};
-        }
-    }
-
-    /**
      * Xac dinh ID cua map tiep theo can di qua tu currentMapId de den duoc targetMapId (Map Routing Path).
      */
     private static int getNextHopMapId(int currentMapId, int targetMapId) {
@@ -3402,18 +3397,15 @@ public final class TinhLinhBot {
         }
         if (src == 4) {
             if (dst <= 3) return 3;             // Quay lai Thung lung co lau
-            if (dst >= 6) return 6;             // Di tiep toi Dai ngan Sayari
+            if (dst >= 6) return 6;             // Di tiep toi Doi ngan Sayari
         }
         if (src == 6) {
             if (dst <= 4) return 4;             // Quay lai Thao nguyen mach gio
             if (dst >= 7) return 7;             // Di tiep toi Rung co moc
         }
         if (src == 7) {
-            if (dst <= 6) return 6;             // Quay ve Dai ngan Sayari
+            if (dst <= 6) return 6;             // Quay ve Doi ngan Sayari
             if (dst >= 8) return 8;             // Di tiep toi Map 8
-        }
-        if (src == 8) {
-            return 7;                           // Map 8 chi co cong quay ve Map 7
         }
         if (src > dst) {
             return src - 1; // Mac dinh di lui 1 map
@@ -3435,34 +3427,17 @@ public final class TinhLinhBot {
             return null;
         }
 
-        // 1. Tinh Next-Hop Map ID theo so do map tuyen tinh BFS
-        int nextHopId = getNextHopMapId(currentMapId, targetMapId);
-        if (nextHopId == currentMapId) {
-            return null; // Da o dung map dich
-        }
-
-        // 2. Lay danh sach tu khoa cua nextHopId va targetMapId
-        String[] hopKeywords = getMapKeywords(nextHopId);
         String targetNorm = normalizeText(targetMapName);
 
-        // Uu tien A: Tim cong co ten khop voi tu khoa cua nextHopId
-        if (hopKeywords != null && hopKeywords.length > 0) {
-            for (int i = 0; i < waypoints.size; i++) {
-                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
-                if (wp != null) {
-                    String wpNorm = normalizeText(getWaypointName(wp));
-                    if (!wpNorm.isEmpty()) {
-                        for (String kw : hopKeywords) {
-                            if (!kw.isEmpty() && (wpNorm.contains(kw) || kw.contains(wpNorm))) {
-                                return wp;
-                            }
-                        }
-                    }
-                }
+        // 1. Uu tien 1: Tim cong truc tiep dan den targetMapId
+        for (int i = 0; i < waypoints.size; i++) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+            if (wp != null && wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == targetMapId) {
+                return wp;
             }
         }
 
-        // Uu tien B: Neu khong khop nextHopKeywords, thu tim theo targetNorm
+        // 2. Uu tien 2: Tim cong co ten khop voi targetMapName
         if (!targetNorm.isEmpty()) {
             for (int i = 0; i < waypoints.size; i++) {
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
@@ -3475,28 +3450,41 @@ public final class TinhLinhBot {
             }
         }
 
-        // Uu tien C: Fallback theo huong di chuyen (Direction Heuristic theo toa do X)
-        // Trong the gioi 2D tuyen tinh cua Tinh Linh:
-        // - nextHopId < currentMapId (di lui / ve huong Lang): Cong luon nam o mep trai (X nho nhat)
-        // - nextHopId > currentMapId (di tien / ra map sau): Cong luon nam o mep phai (X lon nhat)
-        if (nextHopId < currentMapId) {
-            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestBwd = null;
-            float minWpX = Float.MAX_VALUE;
+        // 3. Uu tien 3: Tim cong qua Routing Next-Hop (BFS)
+        int nextHopId = getNextHopMapId(currentMapId, targetMapId);
+        if (nextHopId != currentMapId) {
             for (int i = 0; i < waypoints.size; i++) {
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
                 if (wp != null) {
-                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
-                    float wx = (wpPos != null) ? wpPos.x : 0f;
-                    if (wx < minWpX) {
-                        minWpX = wx;
-                        bestBwd = wp;
+                    if (wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == nextHopId) {
+                        return wp;
+                    }
+                    if (nextHopId == 2 && (wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == 0)) {
+                        return wp;
                     }
                 }
             }
-            if (bestBwd != null) {
-                return bestBwd;
+
+            // Tim theo tu khoa pho bien cua nextHopId
+            String hopKeyword = "";
+            if (nextHopId == 2 || nextHopId == 0) hopKeyword = "lang";
+            else if (nextHopId == 3) hopKeyword = "thung lung";
+            else if (nextHopId == 4) hopKeyword = "thao nguyen";
+            else if (nextHopId == 5) hopKeyword = "nong trai";
+            else if (nextHopId == 6) hopKeyword = "doi ngan";
+            else if (nextHopId == 7) hopKeyword = "rung co moc";
+
+            if (!hopKeyword.isEmpty()) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 hopWp = findWaypointByName(hopKeyword);
+                if (hopWp == null && nextHopId == 6) {
+                    hopWp = findWaypointByName("sayari");
+                }
+                if (hopWp != null) return hopWp;
             }
-        } else if (nextHopId > currentMapId) {
+        }
+
+        // 4. Uu tien 4: Heuristic Tien Toi (Forward Routing) theo toa do X (Rightmost Portal) khi targetMapId > currentMapId
+        if (targetMapId > currentMapId) {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestFwd = null;
             float maxWpX = -1.0f;
             for (int i = 0; i < waypoints.size; i++) {
@@ -3510,8 +3498,28 @@ public final class TinhLinhBot {
                     }
                 }
             }
-            if (bestFwd != null) {
+            if (bestFwd != null && maxWpX > 20.0f) {
                 return bestFwd;
+            }
+        }
+
+        // 5. Uu tien 5: Heuristic Lui Ve (Backward Routing) theo toa do X (Leftmost Portal) khi targetMapId < currentMapId
+        if (targetMapId < currentMapId) {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestBwd = null;
+            float minWpX = Float.MAX_VALUE;
+            for (int i = 0; i < waypoints.size; i++) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+                if (wp != null) {
+                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                    float wx = (wpPos != null) ? wpPos.x : 0f;
+                    if (wx < minWpX) {
+                        minWpX = wx;
+                        bestBwd = wp;
+                    }
+                }
+            }
+            if (bestBwd != null && minWpX < 50.0f) {
+                return bestBwd;
             }
         }
 
@@ -3526,7 +3534,8 @@ public final class TinhLinhBot {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
             if (wp != null) {
                 if (allWpLog.length() > 0) allWpLog.append(", ");
-                allWpLog.append("[").append(getWaypointName(wp)).append("]");
+                allWpLog.append("[").append(getWaypointName(wp))
+                        .append(" (TargetID:").append(wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75).append(")]");
             }
         }
         log(String.format(Locale.ROOT, "[Waypoint-Routing] Khong tim duoc cong toi Map [%s - ID: %d]. Danh sach %d cong tren Map [%s - ID: %d]: %s",
@@ -4116,9 +4125,6 @@ public final class TinhLinhBot {
             log(String.format(Locale.ROOT, "[AutoFarm-Combat] Tien do EXP hien tai: %d/%d (%.2f%%) tai Map [%s - ID: %d]",
                     curExp, maxExp, expPct, curMap, curMapId));
         }
-
-        // Feature 23: Tu dong kiem tra va chuyen sang Map tiep theo khi dat Target EXP (7M EXP)
-        checkTargetExpAutoMapProgression(now, curExp, curMap, curMapId);
 
         if (autoAttackAttemptPending) {
             if (now - autoAttackAttemptStartTime > AUTO_ATTACK_ATTEMPT_TIMEOUT_MS) {
@@ -4803,11 +4809,8 @@ public final class TinhLinhBot {
         boolean inGame = isPlayerInGame();
         boolean exhausted = isPlayerExhausted();
         SavedCoordinate savedCoord = getSavedExhaustionCoordinate();
-        if (savedCoord == null) {
-            savedCoord = getLastFarmMap();
-        }
-        String farmMap = (savedCoord != null) ? savedCoord.mapName : (lastKnownMapName != null ? lastKnownMapName : DEFAULT_FARM_MAP_NAME);
-        int farmMapId = (savedCoord != null) ? savedCoord.mapId : DEFAULT_FARM_MAP_ID;
+        String farmMap = (savedCoord != null) ? savedCoord.mapName : (lastKnownMapName != null ? lastKnownMapName : "");
+        int farmMapId = (savedCoord != null) ? savedCoord.mapId : lastKnownMapId;
         int appleHarvestsToday = getAppleHarvestCountToday();
 
         StringBuilder sb = new StringBuilder();
@@ -4840,9 +4843,6 @@ public final class TinhLinhBot {
           .append(",\"is_exhausted\":").append(exhausted)
           .append(",\"farm_map\":\"").append(escapeJson(farmMap)).append("\"")
           .append(",\"farm_map_id\":").append(farmMapId)
-          .append(",\"target_exp\":").append(targetExpThreshold)
-          .append(",\"next_map_id\":").append(nextMapAfterTargetExp)
-          .append(",\"next_map\":\"").append(escapeJson(nextMapNameAfterTargetExp)).append("\"")
           .append(",\"party\":\"").append(escapeJson(getPartyStatusInfo())).append("\"")
           .append(",\"auto_party_enabled\":").append(isAutoPartyEnabled)
           .append(",\"map_scan\":\"").append(escapeJson(getExhaustionMapScanInfo())).append("\"")
@@ -5136,47 +5136,20 @@ public final class TinhLinhBot {
             boolean ok = returnToExhaustionCoordinate();
             return ok ? "Dang di chuyen quay lai toa do train cu." : "Khong the bat dau quay lai toa do cu.";
         }
-        if (cmd.startsWith("set_farm") || cmd.startsWith("farm ") || cmd.startsWith("map ")) {
-            int targetId = -1;
-            String targetName = "";
-            float targetX = 30.0f;
-            float targetY = 5.0f;
-
-            String num = cmd.replaceAll("[^0-9]", "");
-            if (!num.isEmpty()) {
-                try {
-                    int parsed = Integer.parseInt(num);
-                    targetId = parsed;
-                    if (parsed == 2) { targetName = "Làng ánh sáng Eldarah"; targetX = 50.0f; }
-                    else if (parsed == 3) { targetName = "Thung lũng cỏ lau"; targetX = 40.0f; }
-                    else if (parsed == 4) { targetName = "Thảo nguyên mạch gió"; targetX = 30.0f; }
-                    else if (parsed == 5) { targetName = "Nông trại"; targetX = 30.0f; }
-                    else if (parsed == 6) { targetName = "Đại ngàn Sayari"; targetX = 30.0f; }
-                    else if (parsed == 7) { targetName = "Rừng cổ mộc"; targetX = 5.6f; }
-                    else { targetName = "Map " + parsed; }
-                } catch (Throwable ignored) {}
-            }
-
-            if (targetId <= 0) {
-                targetId = getCurrentMapId();
-                targetName = getCurrentMapName();
-                Vector2 pos = getPlayerPosition();
-                if (pos != null) { targetX = pos.x; targetY = pos.y; }
-            }
-
-            setTargetFarmMap(targetId, targetName, targetX, targetY);
-            returnToExhaustionCoordinate();
-            return "Da set map farm thanh: " + targetName + " (ID: " + targetId + ") tai (" + String.format(Locale.ROOT, "%.1f, %.1f", targetX, targetY) + ") va bat dau di chuyen.";
-        }
-        if (cmd.startsWith("target_exp") || cmd.startsWith("set_target_exp")) {
-            try {
-                String num = cmd.replaceAll("[^0-9]", "");
-                if (!num.isEmpty()) {
-                    targetExpThreshold = Long.parseLong(num);
-                    targetExpProgressionTriggered = false;
-                    return "Da set nguong Target EXP thanh: " + targetExpThreshold;
-                }
-            } catch (Throwable ignored) {}
+        if ("set_farm".equals(cmd)) {
+            int mapId = getCurrentMapId();
+            String mapName = getCurrentMapName();
+            Vector2 pos = getPlayerPosition();
+            float x = (pos != null) ? pos.x : 0f;
+            float y = (pos != null) ? pos.y : 0f;
+            SavedCoordinate c = new SavedCoordinate(mapId, mapName, getCurrentZone(), x, y, System.currentTimeMillis());
+            lastSavedExhaustionCoord = c;
+            persistExhaustionState(c);
+            isAutoReturnToExhaustionEnabled = true;
+            isReturningToExhaustion = false;
+            returnArrivalSamples = 0;
+            returnStartTime = 0L;
+            return "Da set map farm thanh: " + mapName + " (ID: " + mapId + ") tai (" + String.format(Locale.ROOT, "%.1f, %.1f", x, y) + ")";
         }
         if ("fight".equals(cmd) || "attack".equals(cmd)) {
             isReturningToExhaustion = false;
@@ -8095,61 +8068,6 @@ public final class TinhLinhBot {
         if (now - lastZoneChangeTime >= zoneChangeIntervalMs) {
             triggerNextZoneChange("LoopBoSung");
         }
-    }
-
-    // =========================================================================
-    // FEATURE 23: AUTO MAP PROGRESSION BY TARGET EXP MILESTONE (7M EXP)
-    // =========================================================================
-
-    public static synchronized void setTargetFarmMap(int mapId, String mapName, float x, float y) {
-        SavedCoordinate c = new SavedCoordinate(mapId, mapName, 0, x, y, System.currentTimeMillis());
-        lastSavedExhaustionCoord = c;
-        persistExhaustionState(c);
-        isAutoReturnToExhaustionEnabled = true;
-        isReturningToExhaustion = false;
-        returnArrivalSamples = 0;
-        returnStartTime = 0L;
-        log(String.format(Locale.ROOT,
-                "[AutoFarm-Config] >>> DA CAU HINH MAP FARM DICH: [%s - ID: %d] tai (X=%.1f, Y=%.1f) <<<",
-                mapName, mapId, x, y));
-    }
-
-    public static void checkTargetExpAutoMapProgression(long now, long curExp, String curMap, int curMapId) {
-        if (targetExpThreshold <= 0L || targetExpProgressionTriggered) return;
-        if (curExp >= targetExpThreshold) {
-            SavedCoordinate curFarm = getSavedExhaustionCoordinate();
-            int farmMapId = (curFarm != null) ? curFarm.mapId : curMapId;
-            // Neu dang farm o Map 4 (hoac map thap hon next map)
-            if (farmMapId == 4 || farmMapId < nextMapAfterTargetExp) {
-                targetExpProgressionTriggered = true;
-                log(String.format(Locale.ROOT,
-                        "[AutoFarm-Progress] 🎉🎉🎉 CHUC MUNG! Nhan vat dat moc %d >= %d EXP! "
-                        + "Tu dong chuyen map farm tu [%s - ID: %d] sang [%s - ID: %d]!",
-                        curExp, targetExpThreshold,
-                        (curFarm != null ? curFarm.mapName : curMap), farmMapId,
-                        nextMapNameAfterTargetExp, nextMapAfterTargetExp));
-                setTargetFarmMap(nextMapAfterTargetExp, nextMapNameAfterTargetExp, 30.0f, 5.0f);
-                returnToExhaustionCoordinate();
-            }
-        }
-    }
-
-    public static long getTargetExpThreshold() {
-        return targetExpThreshold;
-    }
-
-    public static void setTargetExpThreshold(long threshold) {
-        targetExpThreshold = threshold;
-        targetExpProgressionTriggered = false;
-    }
-
-    public static int getNextMapAfterTargetExp() {
-        return nextMapAfterTargetExp;
-    }
-
-    public static void setNextMapAfterTargetExp(int mapId, String mapName) {
-        nextMapAfterTargetExp = mapId;
-        nextMapNameAfterTargetExp = mapName;
     }
 
     public static boolean isPlayerInGame() {

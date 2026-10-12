@@ -104,7 +104,7 @@ public final class WindowPatch {
                                                 String methodDescriptor, boolean isInterface) {
                         if (opcode == Opcodes.INVOKESTATIC
                                 && ("FreshExhaustion".equals(owner) || "TinhLinhBot".equals(owner))
-                                && ("startWatcher".equals(methodName) || "onRenderTick".equals(methodName))
+                                && "startWatcher".equals(methodName)
                                 && "()V".equals(methodDescriptor)) {
                             return; // Drop old hook to keep injection idempotent
                         }
