@@ -354,6 +354,12 @@ public final class TinhLinhBot {
     private static final java.util.concurrent.atomic.AtomicLong totalPixmapsDisposed = new java.util.concurrent.atomic.AtomicLong(0);
 
     /**
+     * Compatibility guard: Prevents NoSuchMethodError if game bytecode contains legacy onRenderTick call.
+     */
+    public static void onRenderTick() {
+    }
+
+    /**
      * Memory Guard hook: Injected by WindowPatch into girLkUN75NekLiiiliILiiWhaTdOYOUwaNTHeReHihiHihahAhAHOhOHohEhEHEGiRlKUN75
      * Automatically disposes native C-Heap Pixmap right after Texture creation, preventing fatal memory exhaustion / crash 0xe06d7363.
      */
