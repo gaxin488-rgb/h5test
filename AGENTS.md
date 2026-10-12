@@ -85,3 +85,21 @@
 4. **Bảo Mật & Bộ Lọc File Lớn (Security & Large File Invariant)**:
    - Tuyệt đối tuân thủ `.gitignore`: Không bao giờ commit tài khoản/mật khẩu (`saved_account*.txt`), SSH config, token cá nhân hoặc các file nhị phân lớn $> 50\text{MB}$ (`TinhLinh_Lite.zip`, `TLKN-setup.exe`).
 
+# Antigravity Rules for Visible & Interactive Execution (Strict Zero-Headless / Non-Background Policy)
+
+1. **CẤM TUYỆT ĐỐI CHẠY NGẦM / ẨN TIẾN TRÌNH GAME (Strict No-Background Invariant)**:
+   - **Lý do**: Khi chạy ngầm (`-WindowStyle Hidden`, `CreateNoWindow = $true`, hoặc chạy giấu cửa sổ trong background Session 0), người dùng hoàn toàn không biết bot có đang chạy hay không, không thấy nhân vật đang đứng ở map nào, dẫn tới tình trạng bot bị lỗi kẹt map cả ngày mà không phát hiện được, gây lãng phí toàn bộ thời gian cày cuốc của người dùng.
+   - **Quy tắc bắt buộc**:
+     * CẤM TUYỆT ĐỐI khởi chạy tiến trình game (`run-game.cmd`, `java.exe`) bằng các tham số ẩn cửa sổ như `-WindowStyle Hidden`, `CreateNoWindow = $true`, hoặc chạy ngầm dưới dạng background service không có giao diện.
+     * Cửa sổ dòng lệnh `cmd.exe` và cửa sổ đồ họa game `Tinh Linh` (LibGDX Window) BẮT BUỘC phải luôn hiển thị trực quan (`-WindowStyle Normal`) trên màn hình Desktop đồ họa của VPS và máy Local.
+     * Khi người dùng mở RDP hoặc nhìn vào màn hình máy, cửa sổ game và console log phải hiện diện ngay lập tức để người dùng kiểm soát được 100% tình trạng nhân vật (đang đánh quái, nhặt đồ hay bị kẹt).
+
+2. **Duy Trì Phiên Đồ Họa Tương Tác 24/7 (Interactive Desktop & RDP Keepalive)**:
+   - Luôn duy trì phiên đồ họa tương tác (Interactive Console Session 1) trên VPS bằng lệnh chuyển phiên `tscon 1 /dest:console` hoặc script giữ phiên RDP.
+   - Không để tiến trình game bị Windows đẩy về Session 0 phi tương tác làm vô hiệu hóa việc render cửa sổ.
+
+3. **Minh Bạch Trạng Thái Thực & Cảnh Báo Kẹt Map Tức Thời (Zero False Telemetry)**:
+   - Bắt buộc kiểm tra tọa độ thực tế: Nếu tọa độ nhân vật không thay đổi qua 30 giây trong khi bot đang cố di chuyển, hoặc chu kỳ lặp lại liên tục trên cùng một waypoint, PHẢI báo cáo ngay là **BOT ĐANG BỊ KẸT (STUCK)** kèm tên Map và tọa độ cụ thể.
+   - Tuyệt đối cấm báo cáo mập mờ, giả mạo "bot vẫn đang hoạt động bình thường / đang tìm đường" khi thực tế nhân vật bị kẹt cứng tại chỗ.
+
+
