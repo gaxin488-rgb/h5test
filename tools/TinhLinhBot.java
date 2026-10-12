@@ -3415,82 +3415,45 @@ public final class TinhLinhBot {
 
         String targetNorm = normalizeText(targetMapName);
 
-        // 1. Uu tien 1: Tim cong truc tiep dan den targetMapId
-        for (int i = 0; i < waypoints.size; i++) {
-            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
-            if (wp != null && wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == targetMapId) {
-                return wp;
-            }
-        }
-
-        // 2. Uu tien 2: Tim cong co ten khop voi targetMapName
-        if (!targetNorm.isEmpty()) {
-            for (int i = 0; i < waypoints.size; i++) {
-                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
-                if (wp != null) {
-                    String wpNorm = normalizeText(getWaypointName(wp));
-                    if (!wpNorm.isEmpty() && (wpNorm.contains(targetNorm) || targetNorm.contains(wpNorm))) {
-                        return wp;
-                    }
-                }
-            }
-        }
-
-        // 3. Uu tien 3: Tim cong qua Routing Next-Hop (BFS)
+        // 1. Next-Hop Routing qua so do ban do (Graph BFS)
         int nextHopId = getNextHopMapId(currentMapId, targetMapId);
-        if (nextHopId != currentMapId) {
+        if (nextHopId == currentMapId) {
+            return null; // Da o dung map dich
+        }
+
+        // Truong hop dac biet tai Map 5 (Nong trai): Chi co 1 cong duy nhat ve lai Lang
+        if (currentMapId == 5 && waypoints.size == 1) {
+            return waypoints.get(0);
+        }
+
+        // 2. Tim cong theo tu khoa ten ban do cua nextHop
+        String hopKeyword = "";
+        if (nextHopId == 2 || nextHopId == 0) hopKeyword = "lang";
+        else if (nextHopId == 3) hopKeyword = "thung lung";
+        else if (nextHopId == 4) hopKeyword = "thao nguyen";
+        else if (nextHopId == 5) hopKeyword = "nong trai";
+        else if (nextHopId == 6) hopKeyword = "doi ngan";
+        else if (nextHopId == 7) hopKeyword = "rung co moc";
+        else if (nextHopId == 8) hopKeyword = "than moc";
+
+        if (!hopKeyword.isEmpty()) {
             for (int i = 0; i < waypoints.size; i++) {
                 com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
                 if (wp != null) {
-                    if (wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == nextHopId) {
-                        return wp;
-                    }
-                    if (nextHopId == 2 && (wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 == 0)) {
+                    String wpName = normalizeText(getWaypointName(wp));
+                    if (wpName.contains(hopKeyword)
+                            || (nextHopId == 6 && wpName.contains("sayari"))
+                            || (nextHopId == 2 && wpName.contains("eldarah"))) {
                         return wp;
                     }
                 }
-            }
-
-            // Tim theo tu khoa pho bien cua nextHopId
-            String hopKeyword = "";
-            if (nextHopId == 2 || nextHopId == 0) hopKeyword = "lang";
-            else if (nextHopId == 3) hopKeyword = "thung lung";
-            else if (nextHopId == 4) hopKeyword = "thao nguyen";
-            else if (nextHopId == 5) hopKeyword = "nong trai";
-            else if (nextHopId == 6) hopKeyword = "doi ngan";
-            else if (nextHopId == 7) hopKeyword = "rung co moc";
-
-            if (!hopKeyword.isEmpty()) {
-                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 hopWp = findWaypointByName(hopKeyword);
-                if (hopWp == null && nextHopId == 6) {
-                    hopWp = findWaypointByName("sayari");
-                }
-                if (hopWp != null) return hopWp;
             }
         }
 
-        // 4. Uu tien 4: Heuristic Tien Toi (Forward Routing) theo toa do X (Rightmost Portal) khi targetMapId > currentMapId
-        if (targetMapId > currentMapId) {
-            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestFwd = null;
-            float maxWpX = -1.0f;
-            for (int i = 0; i < waypoints.size; i++) {
-                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
-                if (wp != null) {
-                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
-                    float wx = (wpPos != null) ? wpPos.x : 0f;
-                    if (wx > maxWpX) {
-                        maxWpX = wx;
-                        bestFwd = wp;
-                    }
-                }
-            }
-            if (bestFwd != null && maxWpX > 20.0f) {
-                return bestFwd;
-            }
-        }
-
-        // 5. Uu tien 5: Heuristic Lui Ve (Backward Routing) theo toa do X (Leftmost Portal) khi targetMapId < currentMapId
-        if (targetMapId < currentMapId) {
+        // 3. Fallback Heuristic theo huong di chuyen vat ly:
+        // Neu nextHopId < currentMapId (di lui ve Lang / Map ID nho hon) -> Chon cong o cuc trai (min X)
+        // Neu nextHopId > currentMapId (di tien toi Map ID lon hon) -> Chon cong o cuc phai (max X)
+        if (nextHopId < currentMapId) {
             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestBwd = null;
             float minWpX = Float.MAX_VALUE;
             for (int i = 0; i < waypoints.size; i++) {
@@ -3504,28 +3467,27 @@ public final class TinhLinhBot {
                     }
                 }
             }
-            if (bestBwd != null && minWpX < 50.0f) {
+            if (bestBwd != null) {
                 return bestBwd;
             }
-        }
-
-        // Fallback: neu o Nong trai va chi co 1 cong -> luon la cong ve Lang
-        if (currentMapId == 5 && waypoints.size == 1) {
-            return waypoints.get(0);
-        }
-
-        // In log chi tiet tat ca cac cong dang co tren map de theo doi
-        StringBuilder allWpLog = new StringBuilder();
-        for (int i = 0; i < waypoints.size; i++) {
-            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
-            if (wp != null) {
-                if (allWpLog.length() > 0) allWpLog.append(", ");
-                allWpLog.append("[").append(getWaypointName(wp))
-                        .append(" (TargetID:").append(wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75).append(")]");
+        } else {
+            com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 bestFwd = null;
+            float maxWpX = -Float.MAX_VALUE;
+            for (int i = 0; i < waypoints.size; i++) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = waypoints.get(i);
+                if (wp != null) {
+                    Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
+                    float wx = (wpPos != null) ? wpPos.x : 0f;
+                    if (wx > maxWpX) {
+                        maxWpX = wx;
+                        bestFwd = wp;
+                    }
+                }
+            }
+            if (bestFwd != null) {
+                return bestFwd;
             }
         }
-        log(String.format(Locale.ROOT, "[Waypoint-Routing] Khong tim duoc cong toi Map [%s - ID: %d]. Danh sach %d cong tren Map [%s - ID: %d]: %s",
-                targetMapName, targetMapId, waypoints.size, currentMapName, currentMapId, allWpLog));
 
         return null;
     }
