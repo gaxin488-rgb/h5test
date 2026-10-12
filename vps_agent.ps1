@@ -320,6 +320,32 @@ while ($listener.IsListening) {
                 } elseif ($path -eq "/sys_info") {
                     $free = [math]::Round(((Get-PSDrive C -ErrorAction SilentlyContinue).Free / 1GB), 2)
                     Send-Response $res 200 @{ ok = $true; data = @{ hostname = $env:COMPUTERNAME; os = "Windows Server"; disk_free_gb = $free } }
+                } elseif ($path.StartsWith("/game_api/")) {
+                    $gameEndpoint = $path.Substring(9)
+                    $gameUrl = "http://127.0.0.1:7654$gameEndpoint"
+                    try {
+                        $wc = New-Object Net.WebClient
+                        $wc.Headers.Add("Content-Type", "application/json; charset=utf-8")
+                        $gameRes = if ($req.HttpMethod -eq "POST") {
+                            $postData = ""
+                            if ($req.HasEntityBody) {
+                                $sr = New-Object IO.StreamReader($req.InputStream, [Text.Encoding]::UTF8)
+                                try { $postData = $sr.ReadToEnd() } finally { $sr.Dispose() }
+                            }
+                            $wc.UploadString($gameUrl, "POST", $postData)
+                        } else {
+                            $wc.DownloadString($gameUrl)
+                        }
+                        $bytes = [Text.Encoding]::UTF8.GetBytes($gameRes)
+                        $res.StatusCode = 200
+                        $res.ContentType = "application/json; charset=utf-8"
+                        $res.ContentLength64 = $bytes.Length
+                        $res.OutputStream.Write($bytes, 0, $bytes.Length)
+                        $res.Close()
+                        continue
+                    } catch {
+                        Send-Response $res 502 @{ ok = $false; error = "Game API 7654 error: $($_.Exception.Message)" }
+                    }
                 } elseif ($path -eq "/update") {
                     Send-Response $res 200 @{ ok = $true; message = "Dang tu dong cap nhat Agent tu GitHub va khoi dong lai..." }
                     Update-AgentFromGithub
@@ -478,14 +504,24 @@ while ($listener.IsListening) {
             # 4. Don sach bat ky file log/trung gian (*.log, *.tmp, *.dmp, *.mdmp) tai C:\TinhLinh (khong xoa game jar, script bat hay account)
             Get-ChildItem -Path $Dir -File -ErrorAction SilentlyContinue |
                 Where-Object { ($_.Extension -in @(".log", ".tmp", ".dmp", ".mdmp") -or $_.Name -in @("vps_watchdog.cmd", "vps_watchdog.ps1", "agent.log", "tunnel.log")) -and ($_.Name -notlike "autofarm_log*.txt") } |
-                Remove-Item -Force -ErrorAction SilentlyContinue
+                ForEach-Object { [IO.File]::Delete($_.FullName) }
 
-            # 4. Kiem tra dung luong o C:
+            # 4b. Cat tia log autofarm neu > 3MB de giu dung luong dia an toan
+            $afLog = Join-Path $Dir "autofarm_log.txt"
+            if ((Test-Path -LiteralPath $afLog) -and ((Get-Item -LiteralPath $afLog).Length -gt 3MB)) {
+                try {
+                    $tailLines = Get-Content -LiteralPath $afLog -Tail 1500 -Encoding UTF8
+                    [IO.File]::WriteAllLines($afLog, $tailLines, [Text.Encoding]::UTF8)
+                    Write-Log "StorageGuard: Da cat tia autofarm_log.txt xuong 1500 dong an toan."
+                } catch {}
+            }
+
+            # 4c. Kiem tra dung luong o C:
             $freeMB = (Get-PSDrive C -ErrorAction SilentlyContinue).Free / 1MB
             if ($freeMB -lt 1536) {
-                Clear-RecycleBin -Force -ErrorAction SilentlyContinue
-                Get-ChildItem "C:\Windows\SoftwareDistribution\Download\*", "C:\Windows\Logs\CBS\*.log", "C:\Windows\Logs\DISM\*.log" -Recurse -Force -ErrorAction SilentlyContinue |
-                    Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+                Clear-RecycleBin -ErrorAction SilentlyContinue
+                Get-ChildItem "C:\Windows\SoftwareDistribution\Download\*", "C:\Windows\Logs\CBS\*.log", "C:\Windows\Logs\DISM\*.log" -Recurse -ErrorAction SilentlyContinue |
+                    ForEach-Object { try { [IO.File]::Delete($_.FullName) } catch {} }
             }
             if ($freeMB -lt 800) {
                 & vssadmin.exe delete shadows /all /quiet *>$null

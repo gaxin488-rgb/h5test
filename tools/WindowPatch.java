@@ -104,7 +104,7 @@ public final class WindowPatch {
                                                 String methodDescriptor, boolean isInterface) {
                         if (opcode == Opcodes.INVOKESTATIC
                                 && ("FreshExhaustion".equals(owner) || "TinhLinhBot".equals(owner))
-                                && "startWatcher".equals(methodName)
+                                && ("startWatcher".equals(methodName) || "onRenderTick".equals(methodName))
                                 && "()V".equals(methodDescriptor)) {
                             return; // Drop old hook to keep injection idempotent
                         }
@@ -154,7 +154,21 @@ public final class WindowPatch {
                             super.visitMethodInsn(Opcodes.INVOKESTATIC, "TinhLinhBot", "startWatcher",
                                     "()V", false);
                             freshHookCalls[0]++;
+                        } else if ("render".equals(name) && "()V".equals(descriptor)) {
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "TinhLinhBot", "onRenderTick",
+                                    "()V", false);
+                            freshHookCalls[0]++;
                         }
+                    }
+
+                    @Override
+                    public void visitInsn(int opcode) {
+                        if ("render".equals(name) && "()V".equals(descriptor) && opcode == Opcodes.RETURN) {
+                            super.visitMethodInsn(Opcodes.INVOKESTATIC, "TinhLinhBot", "onRenderTick",
+                                    "()V", false);
+                            freshHookCalls[0]++;
+                        }
+                        super.visitInsn(opcode);
                     }
 
                 };
