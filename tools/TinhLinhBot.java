@@ -76,7 +76,7 @@ import org.lwjgl.glfw.GLFW;
  * Feature 19: Loop Bo Sung: Tu Dong Doi Khu / Channel Tren Map Kiet Suc (handleAutoZoneLoop, triggerNextZoneChange, isAutoChangeZoneEnabled, setAutoChangeZoneEnabled, setZoneChangeIntervalMs, getAvailableZoneIds).
  */
 public final class TinhLinhBot {
-    private static final String VERSION = "1.9.19-Feature25-ContinuousWalkAndSafeCenterAnchor";
+    private static final String VERSION = "1.9.15-Feature22-PortalAdvancingAndAppleBagVerification";
     private static final long POLL_INTERVAL_MS = 800L;
     private static final long LOADING_TIMEOUT_MS = 180_000L;
     private static final long MAX_LOG_FILE_BYTES = 3 * 1024 * 1024; // 3MB
@@ -114,8 +114,6 @@ public final class TinhLinhBot {
     private static final String APPLE_HARVEST_COUNT_FILE = "apple_harvest_count_today.txt";
     private static final int DEFAULT_FARM_MAP_ID = 4;
     private static final String DEFAULT_FARM_MAP_NAME = "Thảo nguyên mạch gió";
-    private static final float DEFAULT_FARM_MAP_X = 38.0f; // Cach cong ben trai ~36.6m, cach cong ben phai ~39.4m (giua map an toan)
-    private static final float DEFAULT_FARM_MAP_Y = 5.0f;
 
     // Feature 23: Tu dong chuyen Map Farm khi dat moc Target EXP (Mac dinh 7,000,000 EXP)
     private static volatile long targetExpThreshold = 7_000_000L;
@@ -136,11 +134,6 @@ public final class TinhLinhBot {
     private static volatile int currentHarvestTreeTypeId = -1;
     private static volatile long lastMenuClickTime = 0L;
     private static volatile long lastWaypointMoveTime = 0L;
-    private static volatile float lastWpTrackingX = 0f;
-    private static volatile long lastWpTrackingTime = 0L;
-    private static volatile int wpAntiStuckCount = 0;
-    private static volatile long lastWpLogTime = 0L;
-    private static volatile long lastReturnLogTime = 0L;
 
     private static volatile String savedUsername = null;
     private static volatile String savedPassword = null;
@@ -216,13 +209,6 @@ public final class TinhLinhBot {
     private static volatile float portalAvoidanceTargetY = 0f;
     private static volatile long portalAvoidanceStartTime = 0L;
     private static volatile long lastPortalAvoidanceAttemptTime = 0L;
-
-    public static float getPortalDangerRadius(int mapId) {
-        if (mapId == 4) {
-            return 30.0f; // Map 4: Giu khoang cach cach cong 30-40m de vao giua map an toan
-        }
-        return PORTAL_DANGER_RADIUS_METERS;
-    }
 
     // Sticky Target Locking: Giu chat 1 quai danh den khi ha guc hoan toan
     private static volatile com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 currentCombatTarget = null;
@@ -317,8 +303,6 @@ public final class TinhLinhBot {
     // Feature 20: Map Transition Guard - Chong crash Native Box2D/OpenGL khi buoc vao cong va doi map
     private static volatile int activeWaypointId = -1;
     private static volatile int activeWaypointMapId = -1;
-    private static volatile float activeWaypointTargetX = 0f;
-    private static volatile float activeWaypointTargetY = 0f;
     private static volatile long activeWaypointSetTime = 0L;
     private static volatile long mapTransitionGraceUntil = 0L;
     private static volatile boolean isMapTransitioning = false;
@@ -961,13 +945,6 @@ public final class TinhLinhBot {
 
         float x = (pos != null) ? pos.x : 0.0f;
         float y = (pos != null) ? pos.y : 0.0f;
-        if (mapId == 4) {
-            // Tren Map 4: Luon khoa toa do an toan o giua map (cach cong 35-40m)
-            if (x < 28.0f || x > 50.0f || x <= 0.0f) {
-                x = DEFAULT_FARM_MAP_X;
-                y = DEFAULT_FARM_MAP_Y;
-            }
-        }
         long now = System.currentTimeMillis();
 
         SavedCoordinate coord = new SavedCoordinate(mapId, mapName, zone, x, y, now);
@@ -1056,10 +1033,6 @@ public final class TinhLinhBot {
                 float y = Float.parseFloat(props.getProperty("y", "0.0"));
                 long savedAt = Long.parseLong(props.getProperty("savedAt", "0"));
                 if (mapId >= 0 || (mapName != null && !mapName.trim().isEmpty())) {
-                    if (mapId == 4 && (x < 28.0f || x > 50.0f || x <= 0.0f)) {
-                        x = DEFAULT_FARM_MAP_X;
-                        y = DEFAULT_FARM_MAP_Y;
-                    }
                     return new SavedCoordinate(mapId, mapName, zone, x, y, savedAt);
                 }
             } catch (Throwable ignored) {
@@ -1079,10 +1052,6 @@ public final class TinhLinhBot {
                         int zone = Integer.parseInt(parts[2].trim());
                         float x = Float.parseFloat(parts[3].trim());
                         float y = Float.parseFloat(parts[4].trim());
-                        if (mapId == 4 && (x < 28.0f || x > 50.0f || x <= 0.0f)) {
-                            x = DEFAULT_FARM_MAP_X;
-                            y = DEFAULT_FARM_MAP_Y;
-                        }
                         return new SavedCoordinate(mapId, mapName, zone, x, y, txtFile.lastModified());
                     }
                 }
@@ -1106,25 +1075,13 @@ public final class TinhLinhBot {
                     if (parts.length >= 2) {
                         int mapId = Integer.parseInt(parts[0].trim());
                         String mapName = parts[1].trim();
-                        float defX = (mapId == 4) ? DEFAULT_FARM_MAP_X : 0.0f;
-                        float defY = (mapId == 4) ? DEFAULT_FARM_MAP_Y : 0.0f;
-                        if (parts.length >= 5) {
-                            try {
-                                defX = Float.parseFloat(parts[3].trim());
-                                defY = Float.parseFloat(parts[4].trim());
-                            } catch (Throwable ignored) {}
-                        }
-                        if (mapId == 4 && (defX < 28.0f || defX > 50.0f || defX <= 0.0f)) {
-                            defX = DEFAULT_FARM_MAP_X;
-                            defY = DEFAULT_FARM_MAP_Y;
-                        }
-                        return new SavedCoordinate(mapId, mapName, 0, defX, defY, farmMapFile.lastModified());
+                        return new SavedCoordinate(mapId, mapName, 0, 0.0f, 0.0f, farmMapFile.lastModified());
                     }
                 }
             } catch (Throwable ignored) {
             }
         }
-        return new SavedCoordinate(DEFAULT_FARM_MAP_ID, DEFAULT_FARM_MAP_NAME, 0, DEFAULT_FARM_MAP_X, DEFAULT_FARM_MAP_Y, 0L);
+        return new SavedCoordinate(DEFAULT_FARM_MAP_ID, DEFAULT_FARM_MAP_NAME, 0, 0.0f, 0.0f, 0L);
     }
 
     /**
@@ -1447,8 +1404,6 @@ public final class TinhLinhBot {
                 lastTargetLoggedId = -1;
                 activeWaypointId = -1;
                 activeWaypointMapId = -1;
-                activeWaypointTargetX = 0f;
-                activeWaypointTargetY = 0f;
                 activeWaypointSetTime = 0L;
                 isMapTransitioning = false;
                 mapTransitionGraceUntil = now + 3000L; // 3s grace period cho map moi load on dinh Box2D va textures
@@ -1656,8 +1611,8 @@ public final class TinhLinhBot {
         else if (isFarm) {
             if (!hasHarvestedApple) {
                 handleAppleHarvest();
-            } else if (!isAutoReturnToExhaustionEnabled) {
-                // Da thu hoach xong tao ma van con trong Nong trai va khong bat Auto Return -> di chuyen ra cong ve lai Lang
+            } else {
+                // Da thu hoach xong tao ma van con trong Nong trai -> di chuyen ra cong ve lai Lang
                 if (now - lastWaypointMoveTime >= 3500L) {
                     lastWaypointMoveTime = now;
                     com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 villageWp =
@@ -2192,7 +2147,6 @@ public final class TinhLinhBot {
     private static void stopPlayerVelocity(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
         if (player == null) return;
         try {
-            setPlayerTouchDirection(0f);
             com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
                     player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
             if (phys != null) {
@@ -2209,14 +2163,12 @@ public final class TinhLinhBot {
     /**
      * Mo khoa di chuyen cho nhan vat:
      * 1. Kich hoat master flag canMove = true (Field #102 trong Player) de Navigator.act() khong bi return som.
-     * 2. Kich hoat isAutoMovingToTarget = true (Field #431 trong Player) de vong lap Player.act(delta) lien tuc goi controller di chuyen den muc tieu.
-     * 3. Dam bao Box2D Body o trang thai DynamicBody de tiep nhan xung luc van toc di chuyen.
+     * 2. Dam bao Box2D Body o trang thai DynamicBody de tiep nhan xung luc van toc di chuyen.
      */
     public static void unlockPlayerMovement(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
         if (player == null) return;
         try {
             player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(true);
-            // Khoa isAutoMovingToTarget = false de ngan ngua tuyet doi Player.act() goi controller.moveTo() lam reset Vx = 0
             player.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75 = false;
         } catch (Throwable ignored) {
         }
@@ -2231,212 +2183,6 @@ public final class TinhLinhBot {
                         body.setType(com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody);
                     }
                     body.setAwake(true);
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    private static float lastObsX = 0f;
-    private static long obsStuckStart = 0L;
-    private static long leapStartTime = 0L;
-    private static float leapDir = 1.0f;
-    private static int leapAttemptCount = 0;
-    private static volatile Method controllerJumpMethod = null;
-    private static volatile boolean controllerJumpMethodInitialized = false;
-
-    /**
-     * Tac dong huong di chuyen truc tiep vao Vector2 touchVector cua InputAdapter singleton.
-     * Dam bao Controller.act(delta) nhan dien nguoi choi dang giu phim/joystick huong dirX
-     * va khong bao gio zero-out van toc ngang Vx trong moi frame.
-     */
-    public static void setPlayerTouchDirection(float dirX) {
-        try {
-            com.a.a.d.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 inputSingleton =
-                    com.a.a.d.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
-            if (inputSingleton != null) {
-                Vector2 touch = inputSingleton.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75();
-                if (touch != null) {
-                    touch.set(dirX, 0f);
-                }
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    /**
-     * Goi method private native jump tren Controller de kich hoat nhay hop le (am thanh, hat bui, counter).
-     */
-    public static void invokeControllerJump(Object controller) {
-        if (controller == null) return;
-        try {
-            if (!controllerJumpMethodInitialized) {
-                controllerJumpMethodInitialized = true;
-                for (Method m : controller.getClass().getDeclaredMethods()) {
-                    if (m.getParameterCount() == 0 && m.getReturnType() == void.class && Modifier.isPrivate(m.getModifiers())) {
-                        if ("gIRLkun75NEKLILLLilLILWHaTDoyouWAnthEReHiHihIhAHAHaHOHOHOHEHeHeGiRLKuN75".equals(m.getName())) {
-                            m.setAccessible(true);
-                            controllerJumpMethod = m;
-                            break;
-                        }
-                    }
-                }
-            }
-            if (controllerJumpMethod != null) {
-                controllerJumpMethod.invoke(controller);
-            }
-        } catch (Throwable ignored) {
-        }
-    }
-
-    /**
-     * LibGDX Render Frame Hook: Duoc WindowPatch tiem truc tiep vao GAME_ENTRY.render()
-     * Chay tren Game Render Thread moi khung hinh (15-60 FPS), dong bo truc tiep voi Box2D World Step.
-     * Ngan chan triet de viec native Controller.act() zero out van toc ngang khi gap chuong ngai vat.
-     */
-    public static void onRenderTick() {
-        try {
-            updateActiveNavigation();
-        } catch (Throwable ignored) {}
-    }
-
-    private static void updateActiveNavigation() {
-        if (activeWaypointTargetX == 0f) return;
-        try {
-            int curMapId = getCurrentMapId();
-            if (activeWaypointMapId != curMapId) {
-                setPlayerTouchDirection(0f);
-                activeWaypointTargetX = 0f;
-                activeWaypointTargetY = 0f;
-                return;
-            }
-
-            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
-                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
-            if (player == null) return;
-
-            // Triet tieu master auto-move native de controller raycast khong bao gio can thiep
-            player.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75 = false;
-
-            Vector2 myPos = getPlayerPosition();
-            if (myPos == null) return;
-
-            float dx = activeWaypointTargetX - myPos.x;
-            if (Math.abs(dx) < 0.35f) {
-                setPlayerTouchDirection(0f);
-                stopPlayerVelocity(player);
-                activeWaypointTargetX = 0f;
-                activeWaypointTargetY = 0f;
-                return;
-            }
-
-            float dir = (dx > 0f) ? 1.0f : -1.0f;
-            setPlayerTouchDirection(dir);
-
-            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
-                    player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
-            if (phys == null) return;
-
-            Method m = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
-            com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) m.invoke(phys);
-            if (body == null) return;
-
-            if (body.getType() != com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody) {
-                body.setType(com.badlogic.gdx.physics.box2d.BodyDef.BodyType.DynamicBody);
-            }
-            body.setAwake(true);
-
-            long now = System.currentTimeMillis();
-            long elapsedLeap = now - leapStartTime;
-
-            // --- LEAP & FORWARD GLIDE (LUOT MANH QUA DINH CHUONG NGAI VAT) ---
-            if (elapsedLeap < 800L) {
-                setPlayerTouchDirection(leapDir);
-                float vx = leapDir * 4.8f;
-                float curVy = body.getLinearVelocity().y;
-                body.setLinearVelocity(vx, curVy);
-                return;
-            }
-
-            float curVy = body.getLinearVelocity().y;
-            float vx = dir * 4.2f;
-
-            // Kiem tra vat can chan truoc mat (khong tien trien duoc >= 0.06m trong 300ms)
-            boolean isBlocked = false;
-            if (Math.abs(myPos.x - lastObsX) < 0.06f) {
-                if (obsStuckStart == 0L) {
-                    obsStuckStart = now;
-                } else if (now - obsStuckStart >= 300L) {
-                    isBlocked = true;
-                }
-            } else {
-                lastObsX = myPos.x;
-                obsStuckStart = now;
-                leapAttemptCount = 0;
-            }
-
-            // Kiem tra dia hinh cao hon (vd: loi len doc/thung lung, TargetY >= MyY + 0.8m)
-            boolean isHigherGround = (activeWaypointTargetY > myPos.y + 0.8f && Math.abs(curVy) < 0.3f);
-
-            if ((isBlocked || isHigherGround) && elapsedLeap >= 1000L) {
-                leapStartTime = now;
-                leapDir = dir;
-                obsStuckStart = now;
-                leapAttemptCount++;
-                if (leapAttemptCount >= 3) {
-                    leapAttemptCount = 0;
-                    float newX = myPos.x + dir * 1.2f;
-                    float newY = myPos.y + 1.2f;
-                    lastObsX = newX;
-                    body.setTransform(newX, newY, body.getAngle());
-                    body.setLinearVelocity(dir * 4.2f, 0f);
-                    body.setAwake(true);
-                    log(String.format(Locale.ROOT, "[NavGuard] 🪜 Vuot chuong ngai vat bang Anti-Stuck Nudge tai X=%.2f -> X=%.2f, Y=%.2f!", myPos.x, newX, newY));
-                    return;
-                }
-                lastObsX = myPos.x;
-                log(String.format(Locale.ROOT, "[NavGuard] 🦘 Kich hoat nhay vuot chuong ngai vat lan %d tai X=%.2f, Y=%.2f (dir=%.1f)!", leapAttemptCount, myPos.x, myPos.y, dir));
-                invokeControllerJump(player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75);
-                body.applyLinearImpulse(new Vector2(0f, 16.0f), body.getLocalCenter(), true);
-                body.setLinearVelocity(dir * 4.8f, 16.0f);
-                return;
-            }
-
-            body.setLinearVelocity(vx, curVy);
-        } catch (Throwable ignored) {
-        }
-    }
-
-    /**
-     * Tac dong van toc di chuyen ngang Box2D truc tiep ve phia muc tieu targetX
-     * dam bao nhan vat luon luon buoc di ma khong bi treo boi timeout 1000ms hay raycast blocking.
-     */
-    public static void applyPlayerHorizontalMovement(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player, float targetX) {
-        if (player == null) return;
-        try {
-            unlockPlayerMovement(player);
-            Vector2 myPos = getPlayerPosition();
-            if (myPos == null) return;
-            float dx = targetX - myPos.x;
-            if (Math.abs(dx) < 0.35f) {
-                setPlayerTouchDirection(0f);
-                return;
-            }
-            float dir = (dx > 0f) ? 1.0f : -1.0f;
-            setPlayerTouchDirection(dir);
-            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
-                    player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
-            if (phys != null) {
-                Method m = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
-                com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) m.invoke(phys);
-                if (body != null) {
-                    float curVy = body.getLinearVelocity().y;
-                    if (activeWaypointTargetY > myPos.y + 1.0f && Math.abs(curVy) < 0.25f) {
-                        curVy = 16.0f;
-                        invokeControllerJump(player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75);
-                    }
-                    float vx = dir * 4.2f;
-                    body.setLinearVelocity(vx, curVy);
                 }
             }
         } catch (Throwable ignored) {
@@ -2515,20 +2261,6 @@ public final class TinhLinhBot {
      * 3. Mac dinh: Tien vao vung trung tam map (X=35.0f - 45.0f neu cong ben trai, hoac lui 25m neu cong ben phai).
      */
     public static Vector2 calculateMobAdvanceTarget(Vector2 pos, Vector2 wpPos) {
-        int curMapId = getCurrentMapId();
-        if (curMapId == 4) {
-            // Map 4: Diem trung tam an toan giua map cach 2 cong 35-40m (X=38.0f, Y=5.0f)
-            try {
-                com.a.c.f.a.b.g.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75 mob = findNearestLivingMonster(pos);
-                if (mob != null) {
-                    Vector2 mobPos = getMonsterPosition(mob);
-                    if (mobPos != null && mobPos.x >= 30.0f && mobPos.x <= 48.0f) {
-                        return new Vector2(mobPos.x, (mobPos.y > 0.0f ? mobPos.y : 5.0f));
-                    }
-                }
-            } catch (Throwable ignored) {}
-            return new Vector2(DEFAULT_FARM_MAP_X, DEFAULT_FARM_MAP_Y);
-        }
         if (pos == null) return new Vector2(40.0f, 7.0f);
         float groundY = (pos.y > 0.0f) ? pos.y : 7.0f;
 
@@ -2735,54 +2467,37 @@ public final class TinhLinhBot {
                 }
             }
 
-            // Bo qua lenh lap trong khi cung mot waypoint dang duoc tiep can (giam throttle con 1.5s de bot khong ngat quang buoc di).
-            if (sameActiveWaypoint && now - activeWaypointSetTime < 1_500L) {
-                activeWaypointTargetX = targetPos.x;
-                activeWaypointTargetY = targetPos.y;
-                Gdx.app.postRunnable(() -> {
-                    try {
-                        applyPlayerHorizontalMovement(player, targetPos.x);
-                    } catch (Throwable ignored) {}
-                });
+            // Bo qua lenh lap trong khi cung mot waypoint dang duoc tiep can (giam throttle con 2.5s de bot khong ngat quang buoc di).
+            if (sameActiveWaypoint && now - activeWaypointSetTime < 2_500L) {
                 return true;
             }
             activeWaypointId = finalWpId;
             activeWaypointMapId = curMapId;
-            activeWaypointTargetX = targetPos.x;
-            activeWaypointTargetY = targetPos.y;
             activeWaypointSetTime = now;
 
-            // Tiep can waypoint thong qua onRenderTick ket hop Box2D velocity truc tiep.
+            // Tiep can waypoint bang movement controller, khong gan callback kich hoat cong.
             Gdx.app.postRunnable(() -> {
                 try {
-                    if (getCurrentMapId() != curMapId) {
-                        activeWaypointTargetX = 0f;
-                        activeWaypointTargetY = 0f;
-                        return;
-                    }
+                    if (getCurrentMapId() != curMapId) return;
                     unlockPlayerMovement(player);
-                    // Tat master auto-move native de controller raycast khong bao gio can thiep
-                    player.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75 = false;
+                    if (player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75 != null) {
+                        player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75.set(targetPos);
+                    }
                     Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
-                    if (controller != null) {
-                        try {
-                            controller.getClass().getMethod("GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75", boolean.class)
-                                    .invoke(controller, false);
-                        } catch (Throwable ignored) {}
-                    }
-                    applyPlayerHorizontalMovement(player, targetPos.x);
-                    if (now - lastWpLogTime >= 4000L) {
-                        lastWpLogTime = now;
-                        log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
-                    }
+                    if (controller == null) return;
+                    Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+                    Method moveMethod = controller.getClass().getMethod(
+                            "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                            float.class, float.class, callbackClass
+                    );
+                    moveMethod.invoke(controller, targetPos.x, targetPos.y, null);
+                    log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
                 } catch (Throwable t) {
                     log("[Waypoint] Loi khi khoi tao di chuyen cong waypoint: " + t.getMessage());
                 }
             });
             activeWaypointId = finalWpId;
             activeWaypointMapId = curMapId;
-            activeWaypointTargetX = targetPos.x;
-            activeWaypointTargetY = targetPos.y;
             activeWaypointSetTime = now;
             return true;
         } catch (Throwable t) {
@@ -3597,24 +3312,19 @@ public final class TinhLinhBot {
             if (player == null || player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75 == null) {
                 return false;
             }
-            activeWaypointTargetX = targetX;
-            activeWaypointTargetY = targetY;
-            activeWaypointMapId = getCurrentMapId();
+            Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
             Gdx.app.postRunnable(() -> {
                 try {
                     unlockPlayerMovement(player);
                     if (player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75 != null) {
                         player.gIRlKun75NekLLllIlllIlwHAtDOYoUWaNThERehihiHihahahahOhohOhEHEHEGirlkun75.set(targetX, targetY);
                     }
-                    player.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75 = false;
-                    Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
-                    if (controller != null) {
-                        try {
-                            controller.getClass().getMethod("GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75", boolean.class)
-                                    .invoke(controller, false);
-                        } catch (Throwable ignored) {}
-                    }
-                    applyPlayerHorizontalMovement(player, targetX);
+                    Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+                    Method moveMethod = controller.getClass().getMethod(
+                            "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                            float.class, float.class, callbackClass
+                    );
+                    moveMethod.invoke(controller, targetX, targetY, null);
                 } catch (Throwable t) {
                     log("[Movement] Loi khi di chuyen toi (" + targetX + ", " + targetY + "): " + t.getMessage());
                 }
@@ -3855,17 +3565,11 @@ public final class TinhLinhBot {
 
         // --- TRUONG HOP 1: Da toi dung Map kiet suc ---
         if (isSameMap(currentMapId, currentMapName, saved.mapId, saved.mapName)) {
-            float targetX = saved.x;
-            float targetY = saved.y;
-            if (saved.mapId == 4 && (targetX < 28.0f || targetX > 50.0f || targetX <= 0.0f)) {
-                targetX = DEFAULT_FARM_MAP_X;
-                targetY = DEFAULT_FARM_MAP_Y;
-            }
-            boolean hasSpecificCoord = (targetX > 0f || targetY > 0f);
+            boolean hasSpecificCoord = (saved.x > 0f || saved.y > 0f);
             float dist = 0.0f;
             if (hasSpecificCoord) {
-                float dx = targetX - currentPos.x;
-                float dy = targetY - currentPos.y;
+                float dx = saved.x - currentPos.x;
+                float dy = saved.y - currentPos.y;
                 dist = (float) Math.sqrt(dx * dx + dy * dy);
             }
 
@@ -3892,23 +3596,20 @@ public final class TinhLinhBot {
                 }
             } else {
                 returnArrivalSamples = 0;
-                if (now - lastReturnActionTime >= 800L) {
+                if (now - lastReturnActionTime >= 2000L) {
                     lastReturnActionTime = now;
                     isReturningToExhaustion = true;
                     if (returnStartTime == 0L) returnStartTime = now;
-                    if (now - lastReturnLogTime >= 4000L) {
-                        lastReturnLogTime = now;
-                        log(String.format(Locale.ROOT, "[AutoFarm-Return] Dang chay toi toa do kiet suc (X=%.1f, Y=%.1f) tren Map [%s - ID: %d]. Khoang cach con: %.1fm...",
-                                targetX, targetY, saved.mapName, saved.mapId, dist));
-                    }
-                    moveTo(targetX, targetY);
+                    log(String.format(Locale.ROOT, "[AutoFarm-Return] Dang chay toi toa do kiet suc (X=%.1f, Y=%.1f) tren Map [%s - ID: %d]. Khoang cach con: %.1fm...",
+                            saved.x, saved.y, saved.mapName, saved.mapId, dist));
+                    moveTo(saved.x, saved.y);
                 }
             }
             return true;
         }
 
         // --- TRUONG HOP 2: Dang o khac Map -> Tim cong de chuyen sang Map kiet suc ---
-        if (now - lastReturnActionTime >= 800L) {
+        if (now - lastReturnActionTime >= 3500L) {
             lastReturnActionTime = now;
             isReturningToExhaustion = true;
             if (returnStartTime == 0L) returnStartTime = now;
@@ -3918,25 +3619,13 @@ public final class TinhLinhBot {
 
             if (nextPortal != null) {
                 String wpName = getWaypointName(nextPortal);
-                if (now - lastReturnLogTime >= 4000L) {
-                    lastReturnLogTime = now;
-                    log(String.format(Locale.ROOT, "[AutoFarm-Return] Tim thay cong [%s] de di toi Map dich [%s - ID: %d]. Dang di chuyen vao cong...",
-                            wpName, saved.mapName, saved.mapId));
-                }
+                log(String.format(Locale.ROOT, "[AutoFarm-Return] Tim thay cong [%s] de di toi Map dich [%s - ID: %d]. Dang di chuyen vao cong...",
+                        wpName, saved.mapName, saved.mapId));
                 moveToWaypoint(nextPortal);
                 return true;
             } else {
                 log(String.format(Locale.ROOT, "[AutoFarm-Return] Chua tim thay cong di toi Map [%s - ID: %d] tu Map hien tai [%s - ID: %d].",
                         saved.mapName, saved.mapId, currentMapName, currentMapId));
-            }
-        } else {
-            // Duy tri van toc buoc di Box2D lien tuc giua cac frame de thang ma sat
-            if (activeWaypointTargetX != 0f && activeWaypointMapId == currentMapId) {
-                com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
-                        com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
-                if (player != null) {
-                    applyPlayerHorizontalMovement(player, activeWaypointTargetX);
-                }
             }
         }
 
@@ -4459,13 +4148,9 @@ public final class TinhLinhBot {
         Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> currentWps = getCurrentMapWaypoints();
 
         // --- FEATURE 21: PORTAL BOUNDARY GUARD & ADVANCING ENGINE ---
-        curMapId = getCurrentMapId();
-        float dangerRadius = getPortalDangerRadius(curMapId);
-        boolean isUnsafeForMap = (curMapId == 4) ? (pos.x < 28.0f || pos.x > 50.0f) : isNearPortalBoundary(pos, dangerRadius);
-
         if (portalAvoidancePending) {
             float remainingToTarget = pos.dst(portalAvoidanceTargetX, portalAvoidanceTargetY);
-            boolean escapedPortals = (curMapId == 4) ? (pos.x >= 28.0f && pos.x <= 50.0f) : !isNearPortalBoundary(pos, dangerRadius);
+            boolean escapedPortals = !isNearPortalBoundary(pos, PORTAL_DANGER_RADIUS_METERS);
             if (remainingToTarget <= 1.2f || (escapedPortals && now - portalAvoidanceStartTime >= 1500L)
                     || (now - portalAvoidanceStartTime >= PORTAL_AVOIDANCE_TIMEOUT_MS)) {
                 portalAvoidancePending = false;
@@ -4475,7 +4160,7 @@ public final class TinhLinhBot {
             } else {
                 return; // Dang tiep tuc di chuyen tien vao bai quai
             }
-        } else if (isUnsafeForMap) {
+        } else if (isNearPortalBoundary(pos, PORTAL_DANGER_RADIUS_METERS)) {
             if (now - lastPortalAvoidanceAttemptTime >= 2000L) {
                 Vector2 nearestWp = findNearestWaypoint(pos);
                 executePortalAvoidanceStep(pos, nearestWp, now);
@@ -4717,9 +4402,7 @@ public final class TinhLinhBot {
                     float targetY = mPos.y;
 
                     // Portal Boundary Guard: Khong di chuyen de vao khu vuc cong chuyen map
-                    if (curMapId == 4) {
-                        targetX = Math.max(28.0f, Math.min(50.0f, targetX));
-                    } else if (currentWps != null) {
+                    if (currentWps != null) {
                         for (int i = 0; i < currentWps.size; i++) {
                             com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = currentWps.get(i);
                             if (wp != null) {
@@ -4761,8 +4444,7 @@ public final class TinhLinhBot {
             }
         } else {
             // Khong tim thay quai vat nao gan (hoac dang dung o cong vao map)
-            boolean isUnsafeIdle = (curMapId == 4) ? (pos.x < 28.0f || pos.x > 50.0f) : (pos.x < 15.0f || isNearPortalBoundary(pos, dangerRadius));
-            if (isUnsafeIdle) {
+            if (pos.x < 15.0f || isNearPortalBoundary(pos, PORTAL_DANGER_RADIUS_METERS)) {
                 if (now - lastCombatMoveTime >= 2000L) {
                     Vector2 nearestWp = findNearestWaypoint(pos);
                     executePortalAvoidanceStep(pos, nearestWp, now);
@@ -4895,7 +4577,6 @@ public final class TinhLinhBot {
         }
         try {
             httpApiServer = HttpServer.create(new InetSocketAddress("127.0.0.1", HTTP_API_PORT), 0);
-            httpApiServer.setExecutor(Executors.newCachedThreadPool());
 
             // 1. GET /status
             httpApiServer.createContext("/status", exchange -> {
@@ -5276,25 +4957,7 @@ public final class TinhLinhBot {
     }
 
     private static String executeBotCommandOnGameThread(String cmd) {
-        if ("wps".equals(cmd) || "waypoints".equals(cmd) || "cong".equals(cmd)) {
-            Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
-            if (wps == null || wps.size == 0) {
-                return "Map [" + getCurrentMapName() + " - ID: " + getCurrentMapId() + "] khong co waypoint cong nao.";
-            }
-            StringBuilder sb = new StringBuilder();
-            sb.append("Map [").append(getCurrentMapName()).append(" - ID: ").append(getCurrentMapId()).append("] co ").append(wps.size).append(" cong:\n");
-            for (int i = 0; i < wps.size; i++) {
-                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = wps.get(i);
-                if (wp != null) {
-                    int wId = -1;
-                    try { wId = wp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75; } catch (Throwable ignored) {}
-                    Vector2 pos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
-                    String wName = getWaypointName(wp);
-                    sb.append(String.format(Locale.ROOT, "- #%d [ID: %d] '%s' tai (X=%.2f, Y=%.2f)\n", i, wId, wName, (pos != null ? pos.x : 0f), (pos != null ? pos.y : 0f)));
-                }
-            }
-            return sb.toString().trim();
-        }
+        log("[API] Nhan lenh qua HTTP API: " + cmd);
         if ("f6".equals(cmd) || "harvest_apple".equals(cmd)) {
             hasHarvestedApple = false;
             triggerHarvestApple();
@@ -5480,7 +5143,7 @@ public final class TinhLinhBot {
                     targetId = parsed;
                     if (parsed == 2) { targetName = "Làng ánh sáng Eldarah"; targetX = 50.0f; }
                     else if (parsed == 3) { targetName = "Thung lũng cỏ lau"; targetX = 40.0f; }
-                    else if (parsed == 4) { targetName = "Thảo nguyên mạch gió"; targetX = DEFAULT_FARM_MAP_X; targetY = DEFAULT_FARM_MAP_Y; }
+                    else if (parsed == 4) { targetName = "Thảo nguyên mạch gió"; targetX = 30.0f; }
                     else if (parsed == 5) { targetName = "Nông trại"; targetX = 30.0f; }
                     else if (parsed == 6) { targetName = "Đại ngàn Sayari"; targetX = 30.0f; }
                     else if (parsed == 7) { targetName = "Rừng cổ mộc"; targetX = 5.6f; }
@@ -5493,10 +5156,6 @@ public final class TinhLinhBot {
                 targetName = getCurrentMapName();
                 Vector2 pos = getPlayerPosition();
                 if (pos != null) { targetX = pos.x; targetY = pos.y; }
-            }
-            if (targetId == 4 && (targetX < 28.0f || targetX > 50.0f || targetX <= 0.0f)) {
-                targetX = DEFAULT_FARM_MAP_X;
-                targetY = DEFAULT_FARM_MAP_Y;
             }
 
             setTargetFarmMap(targetId, targetName, targetX, targetY);
@@ -5530,7 +5189,7 @@ public final class TinhLinhBot {
             handlePostLoginDispatch(getCurrentMapId(), getCurrentMapName(), getPlayerPosition());
             return "Da kich hoat lai quy trinh Post-Login Dispatch (Auto Attack / Quay lai map kiet suc).";
         }
-        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, checkin, online_gift, party, create_party, approve_party, toggle_party, scan_map, toggle_map_scan, scan_bag, quet_tui, bag, toggle_bag_scan, use_mushroom, dung_nam, set_mushroom_interval_30s, set_mushroom_interval_30m, toggle_use_mushroom, auto_zone, toggle_auto_zone, f9, next_zone, doi_khu, set_zone_interval_40, zone_list, toggle_auto, return_village, goto_farm, set_farm, post_login, dispatch, status, debug_combat, monsters, wps, waypoints, cong, pickup.";
+        return "Lenh hop le: harvest_apple, f6, eat, f7, sync_quest, f8, checkin, online_gift, party, create_party, approve_party, toggle_party, scan_map, toggle_map_scan, scan_bag, quet_tui, bag, toggle_bag_scan, use_mushroom, dung_nam, set_mushroom_interval_30s, set_mushroom_interval_30m, toggle_use_mushroom, auto_zone, toggle_auto_zone, f9, next_zone, doi_khu, set_zone_interval_40, zone_list, toggle_auto, return_village, goto_farm, set_farm, post_login, dispatch, status, debug_combat, monsters.";
     }
 
     public static String getCharacterName() {
@@ -5692,16 +5351,13 @@ public final class TinhLinhBot {
                 if (mPos == null) continue;
 
                 // Bo qua quai vat dung sat cong dich chuyen (< 3.2m) de khong bi vo tinh hut qua map khac
-                // Rieng Map 4: Giu khoang cach cach cong 28-30m (chi danh quai o giua map X tu 28m den 50m)
-                int curMapId = getCurrentMapId();
-                float minPortalDist = (curMapId == 4) ? 28.0f : 3.2f;
                 boolean nearPortal = false;
                 if (wps != null) {
                     for (int w = 0; w < wps.size; w++) {
                         com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 wp = wps.get(w);
                         if (wp != null) {
                             Vector2 wpPos = wp.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75();
-                            if (wpPos != null && mPos.dst(wpPos) < minPortalDist) {
+                            if (wpPos != null && mPos.dst(wpPos) < 3.2f) {
                                 nearPortal = true;
                                 break;
                             }
@@ -5709,9 +5365,6 @@ public final class TinhLinhBot {
                     }
                 }
                 if (nearPortal) continue;
-                if (curMapId == 4 && (mPos.x < 28.0f || mPos.x > 50.0f)) {
-                    continue; // Tren Map 4: chi danh quai trong vung an toan giua map cach cong 30-40m
-                }
 
                 float d = (playerPos != null) ? playerPos.dst(mPos) : 0f;
                 // Uu tien quai da bi thuong trong pham vi 6.0m de ket lieu dut diem truoc (-3.0m khoang cach ao)
@@ -8443,10 +8096,6 @@ public final class TinhLinhBot {
     // =========================================================================
 
     public static synchronized void setTargetFarmMap(int mapId, String mapName, float x, float y) {
-        if (mapId == 4 && (x < 28.0f || x > 50.0f || x <= 0.0f)) {
-            x = DEFAULT_FARM_MAP_X;
-            y = DEFAULT_FARM_MAP_Y;
-        }
         SavedCoordinate c = new SavedCoordinate(mapId, mapName, 0, x, y, System.currentTimeMillis());
         lastSavedExhaustionCoord = c;
         persistExhaustionState(c);

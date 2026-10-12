@@ -82,12 +82,6 @@ echo ========================================================
 echo  [WATCHDOG] Phien chay #%RESTART_COUNT% - %DATE% %TIME%
 echo ========================================================
 
-rem --- Auto Hot-Patch ZIP into TinhLinh.jar ---
-if exist "%~dp0patch_nav.zip" (
-    echo [WATCHDOG] Phat hien patch_nav.zip - Dang patch bytecode vao TinhLinh.jar...
-    powershell.exe -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression; Add-Type -AssemblyName System.IO.Compression.FileSystem; $z = [System.IO.Compression.ZipFile]::OpenRead('%~dp0patch_nav.zip'); $j = [System.IO.Compression.ZipFile]::Open('%~dp0TinhLinh.jar', [System.IO.Compression.ZipArchiveMode]::Update); foreach ($e in $z.Entries) { $x = $j.GetEntry($e.FullName); if ($x) { $x.Delete() }; $ne = $j.CreateEntry($e.FullName, [System.IO.Compression.CompressionLevel]::Optimal); $s = $e.Open(); $d = $ne.Open(); $s.CopyTo($d); $d.Dispose(); $s.Dispose() }; $j.Dispose(); $z.Dispose(); [System.IO.File]::Delete('%~dp0patch_nav.zip'); Write-Host '[WATCHDOG] PATCH THANH CONG!'"
-)
-
 rem --- Storage & Capacity Guard: Don dep pgame-sdk temp va cat tia log truoc khi khoi chay ---
 powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 'C:\Users\*\AppData\Local\Temp\pgame-sdk*', '$env:TEMP\hs_err*.log', '%~dp0replay_*.log' -Recurse -Force -ErrorAction SilentlyContinue | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue; if (Test-Path '%~dp0autofarm_log.txt') { if ((Get-Item '%~dp0autofarm_log.txt').Length -gt 3MB) { $t = Get-Content '%~dp0autofarm_log.txt' -Tail 1500 -Encoding UTF8; Set-Content '%~dp0autofarm_log.txt' -Value $t -Encoding UTF8 -Force; Write-Host '[StorageGuard] Da cat tia autofarm_log.txt ve 1500 dong (<3MB).' -ForegroundColor Yellow } }"
 
@@ -104,7 +98,6 @@ if exist "%~dp0cacerts" (
         copy /y "%~dp0cacerts" "%~dp0jre\lib\security\cacerts" >nul 2>&1
     )
 )
-
 set "SSL_FLAG="
 if exist "%~dp0cacerts" (
     set "SSL_FLAG=-Djavax.net.ssl.trustStore=%~dp0cacerts"
@@ -140,9 +133,9 @@ powershell.exe -NoProfile -Command "Get-ChildItem -Path '$env:TEMP\pgame-sdk*', 
 rem --- Hot-Patch Pause Check: Tam dung watchdog de cap nhat JAR ma khong lam crash tien trinh ---
 :wait_hot_patch
 if exist "%~dp0pause_game.txt" (
-    echo [WATCHDOG] Phat hien pause_game.txt - Tam dung 15 giay cho cap nhat JAR...
-    timeout /t 15 /nobreak >nul
-    del /q "%~dp0pause_game.txt" 2>nul
+    echo [WATCHDOG] Phat hien pause_game.txt - Tam dung cho cap nhat file...
+    timeout /t 3 /nobreak >nul
+    goto wait_hot_patch
 )
 
 echo [WATCHDOG] Tu dong khoi dong lai game sau 5 giay...
