@@ -49,6 +49,7 @@ import com.badlogic.gdx.scenes.scene2d.utils.ClickListener;
 import com.badlogic.gdx.scenes.scene2d.utils.Layout;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.SnapshotArray;
+import com.badlogic.gdx.physics.box2d.Body;
 import com.github.tommyettinger.textra.TextraButton;
 import com.github.tommyettinger.textra.TextraLabel;
 import org.lwjgl.glfw.GLFW;
@@ -128,6 +129,7 @@ public final class TinhLinhBot {
     private static volatile int currentHarvestTreeTypeId = -1;
     private static volatile long lastMenuClickTime = 0L;
     private static volatile long lastWaypointMoveTime = 0L;
+    private static volatile long map5StuckStartTime = 0L;
 
     private static volatile String savedUsername = null;
     private static volatile String savedPassword = null;
@@ -649,6 +651,7 @@ public final class TinhLinhBot {
 
         // --- 7. Tu dong Hai Tao & Di chuyen qua Cong Nong Trai / Lang ---
         handleAppleAndFarmNavigation(now);
+        handleMap5LiveMovement(now);
 
         // --- 8. Tu dong Quay lai Toa do Kiet suc sau khi Hai Tao / Ve Lang ---
         handleReturnToExhaustionNavigation(now);
@@ -1400,6 +1403,8 @@ public final class TinhLinhBot {
                 activeWaypointMapId = -1;
                 activeWaypointSetTime = 0L;
                 isMapTransitioning = false;
+                setJoystickDirection(0.0f, 0.0f);
+                releaseAllKeys();
                 mapTransitionGraceUntil = now + 3000L; // 3s grace period cho map moi load on dinh Box2D va textures
                 try {
                     System.gc();
@@ -1629,6 +1634,101 @@ public final class TinhLinhBot {
                     }
                 }
             }
+        }
+    }
+
+    private static volatile long lastMap5JumpTime = 0L;
+    private static volatile long lastMap5LogTime = 0L;
+    private static volatile long map5JumpReleaseUntil = 0L;
+
+    /**
+     * Giam sat va dieu huong vat ly Map 5 (Nong trai):
+     * Su dung Joystick huong sang phai de nhan vat chay muot ma 100% lien tuc tren san phang fix1 (X=[10.7, 31.9]),
+     * tu dong nhay cao vuot them da 1.4m tai X=31.9 len san cao fix2 (Y=4.3),
+     * va gui packet chuyen map khi da tiep can sat cong Lang (X >= 43.5m).
+     */
+    private static void handleMap5LiveMovement(long now) {
+        if (!wasInGame || !isPlayerInGame()) return;
+        int curMapId = getCurrentMapId();
+        if (curMapId != 5) return;
+        if (now < mapTransitionGraceUntil || isMapTransitioning) return;
+
+        // Chi kich hoat khi da hai tao xong hoac dang trong chu trinh ve lai map farm / lang
+        if (!hasHarvestedApple && !isReturningToExhaustion()) return;
+
+        Vector2 myPos = getPlayerPosition();
+        if (myPos == null) return;
+
+        com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player =
+                com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+        if (player == null) return;
+
+        unlockPlayerMovement(player);
+
+        // Tu dong nha phim nhay neu da het nhip nhan 150ms
+        if (map5JumpReleaseUntil > 0L && now >= map5JumpReleaseUntil) {
+            releaseKey(19);
+            map5JumpReleaseUntil = 0L;
+        }
+
+        // 1. O khu vuc spawn Map 5 (X < 11.5m) -> Nhay thoat khoi vach tuong 10.7m len san thap Y=2.9
+        if (myPos.x < 11.5f) {
+            setJoystickDirection(1.0f, 0.0f);
+            if (now - lastMap5JumpTime >= 800L) {
+                lastMap5JumpTime = now;
+                map5JumpReleaseUntil = now + 150L;
+                log(String.format(Locale.ROOT, "[Map5-Live] (X=%.2f, Y=%.2f) O khu vuc spawn -> Nhay thoat vach tuong len san thap Y=2.9...", myPos.x, myPos.y));
+                pressKey(19);
+                Body b = getPlayerBody(player);
+                if (b != null) {
+                    b.setLinearVelocity(4.5f, 7.5f);
+                }
+            }
+            return;
+        }
+
+        // 2. Chan them da Map 5 (31.0m <= X < 32.8m, them da tai X=31.9 cao tu Y=2.9 len Y=4.3)
+        if (myPos.x >= 31.0f && myPos.x < 32.8f) {
+            if (myPos.y < 3.8f && (now - lastMap5JumpTime >= 800L)) {
+                lastMap5JumpTime = now;
+                map5JumpReleaseUntil = now + 180L;
+                log(String.format(Locale.ROOT, "[Map5-Live] (X=%.2f, Y=%.2f) O chan them da -> Xung luc nhay cao len san cao Y=4.3...", myPos.x, myPos.y));
+                pressKey(19);
+                Body b = getPlayerBody(player);
+                if (b != null) {
+                    b.setLinearVelocity(4.5f, 10.5f);
+                }
+            }
+        }
+
+        // 3. Da den sat cong Lang (X >= 43.5m, cong tai X=45.58)
+        if (myPos.x >= 43.5f) {
+            releaseAllKeys();
+            Array<com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75> wps = getCurrentMapWaypoints();
+            if (wps != null && wps.size > 0) {
+                com.a.c.f.a.b.e.GIRLKUn75NEkLIilIiLLLLwHaTdOyOuWAntHERehiHiHIHAHAhAHohohoheheHegirlkUN75 villageWp = wps.get(0);
+                int wpId = villageWp.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75;
+                try {
+                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                    if (client != null) {
+                        client.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(wpId);
+                        isMapTransitioning = true;
+                        mapTransitionGraceUntil = now + 6_000L;
+                        log(String.format(Locale.ROOT, "[Map5-Live] (X=%.2f, Y=%.2f) >>> DA TOI CONG VE LANG (WpID=%d)! Gui packet qua cong! <<<", myPos.x, myPos.y, wpId));
+                    }
+                } catch (Throwable t) {
+                    log("[Map5-Live] Loi gui packet qua cong: " + t.getMessage());
+                }
+            }
+            return;
+        }
+
+        // 4. Neu X < 43.5m: Duy tri joystick huong sang phai de nhan vat chay deu ve cong Lang
+        setJoystickDirection(1.0f, 0.0f);
+        if (now - lastMap5LogTime >= 3000L) {
+            lastMap5LogTime = now;
+            log(String.format(Locale.ROOT, "[Map5-Live] (X=%.2f, Y=%.2f) Dang chay ve cong Lang bang Joystick...", myPos.x, myPos.y));
         }
     }
 
@@ -2155,6 +2255,246 @@ public final class TinhLinhBot {
     }
 
     /**
+     * Kich hoat xung luc nhay Box2D giup nhan vat vuot qua gop / them da / vach chan.
+     */
+    /**
+     * Ap dung van toc di chuyen hoac nhay co thoi luong thong qua phuong thuc chinh thuc cua movement controller.
+     * Phuong thuc nay cap nhat ca Box2D linear velocity va thoi gian khoa van toc trong controller de khong bi game loop de ve 0.
+     */
+    public static void setJoystickDirection(float dirX, float dirY) {
+        try {
+            Class<?> joyClass = Class.forName("com.a.a.d.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75");
+            Method getInstance = joyClass.getMethod("GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+            Object joy = getInstance.invoke(null);
+            if (joy != null) {
+                Method setDir = joyClass.getMethod("GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75", float.class, float.class);
+                setDir.invoke(joy, dirX, dirY);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void pressKey(int keycode) {
+        try {
+            Class<?> joyClass = Class.forName("com.a.a.d.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75");
+            Method getInstance = joyClass.getMethod("GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+            Object joy = getInstance.invoke(null);
+            if (joy != null) {
+                Method kd = joyClass.getMethod("keyDown", int.class);
+                kd.invoke(joy, keycode);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void releaseKey(int keycode) {
+        try {
+            Class<?> joyClass = Class.forName("com.a.a.d.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75");
+            Method getInstance = joyClass.getMethod("GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+            Object joy = getInstance.invoke(null);
+            if (joy != null) {
+                Method ku = joyClass.getMethod("keyUp", int.class);
+                ku.invoke(joy, keycode);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void releaseAllKeys() {
+        releaseKey(19); // UP
+        releaseKey(20); // DOWN
+        releaseKey(21); // LEFT
+        releaseKey(22); // RIGHT
+        releaseKey(29); // A
+        releaseKey(32); // D
+        releaseKey(47); // S
+        releaseKey(51); // W
+        setJoystickDirection(0.0f, 0.0f);
+    }
+
+    public static void triggerPlayerJump(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        if (player == null) return;
+        try {
+            unlockPlayerMovement(player);
+            pressKey(19);
+            Vector2 curVel = null;
+            try {
+                if (player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 != null) {
+                    Body b = player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75
+                            .gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
+                    if (b != null) curVel = b.getLinearVelocity();
+                }
+            } catch (Throwable ignored) {}
+            float vx = (curVel != null && Math.abs(curVel.x) > 0.5f) ? curVel.x : 4.0f;
+            applyPlayerVelocity(player, vx, 9.5f, 500);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void clearPlayerTarget(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        if (player == null) return;
+        try {
+            Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
+            if (controller != null) {
+                Method clearMethod = controller.getClass().getMethod("GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75", boolean.class);
+                clearMethod.invoke(controller, false);
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void setPlayerSensorMode(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player, boolean sensor) {
+        if (player == null) return;
+        try {
+            Class<?> baseActorClass = Class.forName("com.a.a.a.a.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
+            Method sensorMethod = baseActorClass.getMethod("GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75", boolean.class);
+            sensorMethod.invoke(player, sensor);
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static Body getPlayerBody(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player) {
+        if (player == null) return null;
+        try {
+            if (player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75 != null) {
+                Body b = player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75
+                        .gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75();
+                if (b != null) return b;
+            }
+        } catch (Throwable ignored) {}
+        try {
+            Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
+            if (controller != null) {
+                Field f = controller.getClass().getDeclaredField("GirlkUn75neKiLlIIiLLiLWhATDoyouWanTherehIHihihAhaHAhOhOHOhehEHEGIrLkun75");
+                f.setAccessible(true);
+                return (Body) f.get(controller);
+            }
+        } catch (Throwable ignored) {}
+        return null;
+    }
+
+    public static boolean setPlayerPositionDirect(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player, float x, float y) {
+        if (player == null) return false;
+        try {
+            Body body = getPlayerBody(player);
+            if (body != null) {
+                body.setTransform(x, y, body.getAngle());
+                body.setLinearVelocity(0f, 0f);
+                log(String.format(Locale.ROOT, "[PositionDirect] Da setTransform Box2D Body tai (%.2f, %.2f)!", x, y));
+            } else {
+                log("[PositionDirect] CANH BAO: getPlayerBody tra ve NULL!");
+            }
+            if (player.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75() != null) {
+                player.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75().set(x, y);
+            }
+            if (player.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75() != null) {
+                player.gIRLkUn75NEkLlLillLiLiwhatDOyouWanthERehihihIHAHAhAhOhOHoheHEHEgirLkuN75().set(x, y);
+            }
+            try {
+                com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 client =
+                        com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                if (client != null) {
+                    client.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(x, y);
+                }
+            } catch (Throwable ignored) {}
+            return true;
+        } catch (Throwable t) {
+            log("[PositionDirect] Loi khi dat toa do (" + x + ", " + y + "): " + t.getMessage());
+            return false;
+        }
+    }
+
+    public static void invokeMoveMethod(Object controller, float tx, float ty, Class<?> callbackClass) {
+        if (controller == null) return;
+        try {
+            Method moveMethod = controller.getClass().getMethod(
+                    "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                    float.class, float.class, callbackClass
+            );
+            moveMethod.invoke(controller, tx, ty, null);
+        } catch (Throwable t) {
+            log("[MoveMethod] Loi khi goi moveMethod: " + t.getMessage());
+        }
+    }
+
+    public static void applyPlayerVelocity(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player, float vx, float vy, int durationMs) {
+        if (player == null) return;
+        try {
+            unlockPlayerMovement(player);
+            Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
+            if (controller != null) {
+                Method velMethod = controller.getClass().getMethod(
+                        "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
+                        float.class, float.class, int.class
+                );
+                velMethod.invoke(controller, vx, vy, durationMs);
+                return;
+            }
+        } catch (Throwable ignored) {
+        }
+        try {
+            com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
+                    player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+            if (phys != null) {
+                Method m = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
+                com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) m.invoke(phys);
+                if (body != null) {
+                    body.setLinearVelocity(vx, vy);
+                }
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    public static void triggerJumpImpulse(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player, float vx, float vy) {
+        triggerPlayerJump(player);
+        applyPlayerVelocity(player, vx, vy, 600);
+    }
+
+    /**
+     * Cuu ho nhan vat: Dich chuyen Box2D Body va dong bo toa do len server game.
+     */
+    public static void teleportPlayer(com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 player, float tx, float ty) {
+        if (player == null) return;
+        Gdx.app.postRunnable(() -> {
+            try {
+                // 1. Chinh vi tri GameObject & Box2D Body thong qua method chinh thuc cua game engine
+                player.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75(tx, ty);
+
+                // 2. Trieu tieu van toc Body de khong bi vang
+                try {
+                    com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
+                            player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+                    if (phys != null) {
+                        Method bm = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
+                        com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) bm.invoke(phys);
+                        if (body != null) {
+                            body.setTransform(tx, ty, body.getAngle());
+                            body.setLinearVelocity(0f, 0f);
+                        }
+                    }
+                } catch (Throwable ignored) {}
+
+                // 3. Gui goi tin dong bo toa do len server game
+                try {
+                    com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75 cl =
+                            com.a.d.a.gIRLkuN75nEKliLILiiLiiWhAtDOYOUwAnTherehiHihIHAHAhaHOhohohEheHEgIRlKUN75.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75();
+                    if (cl != null) {
+                        cl.GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75(tx, ty);
+                    }
+                } catch (Throwable ignored) {}
+
+                // 4. Reset controller waypoint va target de khong keo nguoc ve cu
+                activeWaypointId = -1;
+                activeWaypointSetTime = 0L;
+                log(String.format(Locale.ROOT, "[Teleport] Da cuu ho / dich chuyen nhan vat thanh cong den (%.1f, %.1f)!", tx, ty));
+            } catch (Throwable t) {
+                log("[Teleport] Loi khi cuu ho nhan vat: " + t.getMessage());
+            }
+        });
+    }
+
+    /**
      * Mo khoa di chuyen cho nhan vat:
      * 1. Kich hoat master flag canMove = true (Field #102 trong Player) de Navigator.act() khong bi return som.
      * 2. Dam bao Box2D Body o trang thai DynamicBody de tiep nhan xung luc van toc di chuyen.
@@ -2163,7 +2503,7 @@ public final class TinhLinhBot {
         if (player == null) return;
         try {
             player.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75(true);
-            player.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75 = false;
+            player.GIrlkuN75nEKillILLIiiiwhaTdoYouWANTherEhihIHihAhAhahoHOHohEHehEGIRLkUN75 = true;
         } catch (Throwable ignored) {
         }
         try {
@@ -2447,6 +2787,17 @@ public final class TinhLinhBot {
             String wpName = getWaypointName(waypoint);
             boolean sameActiveWaypoint = wpId >= 0 && activeWaypointId == wpId && activeWaypointMapId == curMapId;
 
+            // Dieu huong chinh xac theo Box2D StaticBody Map 5 (Nong trai):
+            // San thap (fix1): X=[10.7, 31.9], Y=2.9
+            // San cao (fix2): X=[31.9, 63.4], Y=4.3 (Them da tai X=31.9 cao 1.4m)
+            // Cong ve Lang (#2): X=45.58, Y=[4.3, 6.5]
+            boolean isMap5Nav = (curMapId == 5 && myPos != null);
+            if (isMap5Nav) {
+                // Map 5 duoc handleMap5LiveMovement dieu huong truc tiep 100% bang Joystick va xung luc vat ly Box2D.
+                // Khong can thiep controller o day de tranh gay reset va giat lui nhan vat ve ho spawn.
+                return true;
+            }
+
             // Khi den gan cong: gui yeu cau qua client.
             // Trong game 2D platformer, chieu cao cong (Y) co the lech 4-5m so voi vi tri dung tren mat dat.
             // Do do kiem tra khoang cach ngang dx <= 2.5m (va dy <= 6.0m) hoac khoang cach hinh hoc 2D <= 2.5m.
@@ -2479,15 +2830,19 @@ public final class TinhLinhBot {
                 }
             }
 
-            // Bo qua lenh lap trong khi cung mot waypoint dang duoc tiep can (giam throttle con 2.5s de bot khong ngat quang buoc di).
-            if (sameActiveWaypoint && now - activeWaypointSetTime < 2_500L) {
+            // Bo qua lenh lap trong khi cung mot waypoint dang duoc tiep can (giam throttle con 1.5s de nhan vat buoc di lien tuc).
+            long throttleMs = isMap5Nav ? 1_500L : 2_500L;
+            if (sameActiveWaypoint && now - activeWaypointSetTime < throttleMs) {
                 return true;
             }
             activeWaypointId = finalWpId;
             activeWaypointMapId = curMapId;
             activeWaypointSetTime = now;
 
-            // Tiep can waypoint bang movement controller, khong gan callback kich hoat cong.
+            final boolean finalIsMap5Nav = isMap5Nav;
+            final float curX = (myPos != null) ? myPos.x : 0.0f;
+            final float curY = (myPos != null) ? myPos.y : 0.0f;
+
             Gdx.app.postRunnable(() -> {
                 try {
                     if (getCurrentMapId() != curMapId) return;
@@ -2498,12 +2853,14 @@ public final class TinhLinhBot {
                     Object controller = player.girLKUn75nEkLiLLlIllLIWhAtdOyouWaNTHErehIHiHiHahAhAHOHoHohEhEHegirLkUN75;
                     if (controller == null) return;
                     Class<?> callbackClass = Class.forName("com.a.c.f.a.b.j.a.GirlKun75NekIlliLiLIiiWhAtdOyOuwAnTHereHIhihiHahAHAHOHOHOhEHeHeGiRLKuN75$GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75");
-                    Method moveMethod = controller.getClass().getMethod(
-                            "GIrlKUn75NEKLiIILilLiLwhAtdOYOuWAntheRehIHIHihAHAHAHohohohEHeHEgiRlkUn75",
-                            float.class, float.class, callbackClass
-                    );
-                    moveMethod.invoke(controller, targetPos.x, targetPos.y, null);
-                    log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
+                    invokeMoveMethod(controller, targetPos.x, targetPos.y, callbackClass);
+
+                    if (finalIsMap5Nav) {
+                        // Map 5 duoc dieu huong hoan toan boi handleMap5LiveMovement (chay joystick va nhay vuot them da)
+                        return;
+                    } else {
+                        log("[Waypoint] Dang di chuyen den cong [" + wpName + "] tai (X=" + targetPos.x + ", Y=" + targetPos.y + ")...");
+                    }
                 } catch (Throwable t) {
                     log("[Waypoint] Loi khi khoi tao di chuyen cong waypoint: " + t.getMessage());
                 }
@@ -3550,10 +3907,15 @@ public final class TinhLinhBot {
                             saved.mapName, saved.mapId, currentPos.x, currentPos.y, distMsg));
                     clearSavedExhaustionCoordinate();
 
-                    // Feature 9: Tu dong Kich hoat Menu Auto Tan Cong sau khi quay lai vi tri kiet suc
+                    // Feature 9: Tu dong Kich hoat Menu Auto Tan Cong, To Doi & Nhat Do sau khi quay lai vi tri kiet suc
                     if (isAutoAttackMenuEnabled()) {
-                        log("[AutoFarm-Combat] Da quay lai vi tri kiet suc cu -> Kich hoat Menu Auto Tan Cong de tiep tuc danh quai...");
+                        log("[AutoFarm-Combat] Da toi Map farm -> Kich hoat Menu Auto Tan Cong, To Doi & Nhat do de bat dau danh quai...");
                         openAutoAttackMenu();
+                    }
+                    enableGameNativeAutoCombat();
+                    handlePartyAutomation(now);
+                    if (isAutoPickupMapItemsEnabled) {
+                        scanExhaustionMap(now, true, true);
                     }
                     return true;
                 }
@@ -4757,6 +5119,9 @@ public final class TinhLinhBot {
         boolean inGame = isPlayerInGame();
         boolean exhausted = isPlayerExhausted();
         SavedCoordinate savedCoord = getSavedExhaustionCoordinate();
+        if (savedCoord == null) {
+            savedCoord = getLastFarmMap();
+        }
         String farmMap = (savedCoord != null) ? savedCoord.mapName : (lastKnownMapName != null ? lastKnownMapName : "");
         int farmMapId = (savedCoord != null) ? savedCoord.mapId : lastKnownMapId;
         int appleHarvestsToday = getAppleHarvestCountToday();
@@ -4912,6 +5277,132 @@ public final class TinhLinhBot {
 
     private static String executeBotCommandOnGameThread(String cmd) {
         log("[API] Nhan lenh qua HTTP API: " + cmd);
+        if ("jump".equals(cmd) || "nhay".equals(cmd)) {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 p =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (p != null) {
+                triggerJumpImpulse(p, 2.0f, 14.0f);
+                return "Da kich hoat xung luc nhay thanh cong (Xung luc: Y=14.0f, X=2.0f)!";
+            }
+            return "Khong tim thay Player de nhay.";
+        }
+        if (cmd.startsWith("tp ") || cmd.startsWith("teleport ")) {
+            String[] parts = cmd.split(" ");
+            if (parts.length >= 3) {
+                try {
+                    float tx = Float.parseFloat(parts[1]);
+                    float ty = Float.parseFloat(parts[2]);
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 p =
+                            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+                    if (p != null) {
+                        teleportPlayer(p, tx, ty);
+                        return "Da teleport nhan vat den (" + tx + ", " + ty + ")!";
+                    }
+                } catch (Throwable t) {
+                    return "Loi teleport: " + t.getMessage();
+                }
+            }
+            return "Cu phap: tp <x> <y>";
+        }
+        if (cmd.startsWith("move ")) {
+            String[] parts = cmd.split(" ");
+            if (parts.length >= 3) {
+                float mx = Float.parseFloat(parts[1]);
+                float my = Float.parseFloat(parts[2]);
+                moveTo(mx, my);
+                return "Dang di chuyen toi (" + mx + ", " + my + ")";
+            }
+        }
+        if (cmd.startsWith("vel ")) {
+            String[] parts = cmd.split(" ");
+            if (parts.length >= 4) {
+                try {
+                    float vx = Float.parseFloat(parts[1]);
+                    float vy = Float.parseFloat(parts[2]);
+                    int ms = Integer.parseInt(parts[3]);
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 p =
+                            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+                    if (p != null) {
+                        applyPlayerVelocity(p, vx, vy, ms);
+                        return "Da ap dung van toc (" + vx + ", " + vy + ") trong " + ms + "ms!";
+                    }
+                } catch (Throwable t) {
+                    return "Loi vel: " + t.getMessage();
+                }
+            }
+            return "Cu phap: vel <vx> <vy> <ms>";
+        }
+        if (cmd.startsWith("joy ")) {
+            String[] parts = cmd.split(" ");
+            if (parts.length >= 3) {
+                try {
+                    float jx = Float.parseFloat(parts[1]);
+                    float jy = Float.parseFloat(parts[2]);
+                    setJoystickDirection(jx, jy);
+                    return "Da dat huong joystick (" + jx + ", " + jy + ")!";
+                } catch (Throwable t) {
+                    return "Loi joy: " + t.getMessage();
+                }
+            }
+            return "Cu phap: joy <x> <y>";
+        }
+        if ("geo".equals(cmd) || "dump_platforms".equals(cmd)) {
+            com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75 p =
+                    com.a.c.f.a.b.j.GirlkUn75NeKiiILIiiiILwHaTDoYOuwAntHErEHIHIhIHAhAhAHohOhOHeHEHeGiRLkUN75.GiRLKUN75NEklliilLliIiwhATDOyOUWanTheREhIhIHiHAHahahOHOHOhEhEHeGiRLkuN75();
+            if (p != null) {
+                com.a.a.b.GIRLkuN75nEkLlLiiLIlLlwhATdoYouwaNtherEHiHiHihaHaHAHOHOHoHehEHeGIrlKun75 phys =
+                        p.GirLKun75nEkLlilLiLlILwHATDOYouWaNtherEHIhIHIHAhahAHoHoHoHEheHegiRlkun75;
+                if (phys != null) {
+                    try {
+                        Method bm = phys.getClass().getMethod("gIrLkUn75nEkIliiIiIILiWHATdoYouWantHEREHIhihIhAhahahohoHoHEheHEGiRlkUn75");
+                        com.badlogic.gdx.physics.box2d.Body body = (com.badlogic.gdx.physics.box2d.Body) bm.invoke(phys);
+                        if (body != null) {
+                            com.badlogic.gdx.physics.box2d.World world = body.getWorld();
+                            Array<com.badlogic.gdx.physics.box2d.Body> bodies = new Array<>();
+                            world.getBodies(bodies);
+                            StringBuilder sb = new StringBuilder("=== MAP BODIES (" + bodies.size + ") ===\n");
+                            for (int i = 0; i < bodies.size; i++) {
+                                com.badlogic.gdx.physics.box2d.Body b = bodies.get(i);
+                                Vector2 bpos = b.getPosition();
+                                sb.append(String.format(Locale.ROOT, "#%d [%s] at (%.2f, %.2f) fixes=%d:\n",
+                                        i, b.getType().name(), bpos.x, bpos.y, b.getFixtureList().size));
+                                for (int fi = 0; fi < b.getFixtureList().size; fi++) {
+                                    com.badlogic.gdx.physics.box2d.Fixture fix = b.getFixtureList().get(fi);
+                                    com.badlogic.gdx.physics.box2d.Shape sh = fix.getShape();
+                                    if (sh instanceof com.badlogic.gdx.physics.box2d.PolygonShape) {
+                                        com.badlogic.gdx.physics.box2d.PolygonShape ps = (com.badlogic.gdx.physics.box2d.PolygonShape) sh;
+                                        int vc = ps.getVertexCount();
+                                        sb.append("   fix").append(fi).append(" Poly(").append(vc).append("): ");
+                                        Vector2 v = new Vector2();
+                                        for (int vi = 0; vi < vc; vi++) {
+                                            ps.getVertex(vi, v);
+                                            sb.append(String.format(Locale.ROOT, "[%.1f,%.1f] ", bpos.x + v.x, bpos.y + v.y));
+                                        }
+                                        sb.append("\n");
+                                    } else if (sh instanceof com.badlogic.gdx.physics.box2d.ChainShape) {
+                                        com.badlogic.gdx.physics.box2d.ChainShape cs = (com.badlogic.gdx.physics.box2d.ChainShape) sh;
+                                        int vc = cs.getVertexCount();
+                                        sb.append("   fix").append(fi).append(" Chain(").append(vc).append("): ");
+                                        Vector2 v = new Vector2();
+                                        for (int vi = 0; vi < vc; vi++) {
+                                            cs.getVertex(vi, v);
+                                            sb.append(String.format(Locale.ROOT, "[%.1f,%.1f] ", bpos.x + v.x, bpos.y + v.y));
+                                        }
+                                        sb.append("\n");
+                                    } else {
+                                        sb.append("   fix").append(fi).append(" ").append(sh.getType().name()).append("\n");
+                                    }
+                                }
+                            }
+                            return sb.toString();
+                        }
+                    } catch (Throwable t) {
+                        return "Loi geo: " + t.getMessage();
+                    }
+                }
+            }
+            return "Khong the lay world geometry.";
+        }
         if ("f6".equals(cmd) || "harvest_apple".equals(cmd)) {
             hasHarvestedApple = false;
             triggerHarvestApple();
